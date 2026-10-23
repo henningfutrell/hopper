@@ -8,6 +8,8 @@ import { optionsJsonSchema } from '../../src/plugins/options.ts';
 import { targetOf } from '../../src/plugins/machine-source/targets.ts';
 import { createLocalMachineSource } from '../../src/machines/index.ts';
 import { enterScopeCommand } from '../../src/executors/herdr/job-scope.ts';
+import { scopeLimitsOf } from '../../src/domain/job-limits.ts';
+import { turnCommand } from '../../src/executors/print-agent.ts';
 import { LOCAL, contextFor, jobWith, setup } from '../herdr/support.ts';
 
 const GIB = 1024 ** 3;
@@ -48,9 +50,10 @@ describe('job limit options', () => {
 });
 
 describe('the job\'s scope with limits', () => {
-  it('is made with MemoryMax in bytes and CPUQuota in percent, in the trial run too', () => {
+  // Issue #2622: MemoryHigh at 90% of MemoryMax, so the kernel reclaims and slows the job before the OOM killer stops it.
+  it('is made with MemoryMax and MemoryHigh in bytes and CPUQuota in percent, in the trial run too', () => {
     const command = enterScopeCommand('j1', { memoryMaxGiB: 1.5, cpuPercent: 200 });
-    expect(command.match(/-p MemoryMax=1610612736 -p CPUQuota=200%/g)).toHaveLength(2);
+    expect(command.match(/-p MemoryMax=1610612736 -p MemoryHigh=1449551462 -p CPUQuota=200%/g)).toHaveLength(2);
     expect(enterScopeCommand('j1', { cpuPercent: 50 })).not.toContain('MemoryMax');
     expect(enterScopeCommand('j1')).not.toMatch(/MemoryMax|CPUQuota/);
   });
@@ -60,5 +63,49 @@ describe('the job\'s scope with limits', () => {
     await executor.run(contextFor(jobWith({ prompt: 'go' }), undefined, { ...LOCAL, jobLimits: { memoryMaxGiB: 8 } }).ctx);
     const typed = herdr.calls.filter((c) => c.method === 'runInPane').map((c) => String(c.args[1]));
     expect(typed.some((c) => c.includes('exec systemd-run --user --scope') && c.includes(`-p MemoryMax=${8 * GIB}`))).toBe(true);
+  });
+
+  it('with no job limits set, takes the default ones of the lane\'s machine (issue #2622)', async () => {
+    const { herdr, executor } = setup({ scopes: true });
+    const resources = { cores: 4, memTotalBytes: 16 * GIB, memAvailableBytes: 8 * GIB };
+    await executor.run(contextFor(jobWith({ prompt: 'go' }), undefined, { ...LOCAL, maxLanes: 4, resources }).ctx);
+    const typed = herdr.calls.filter((c) => c.method === 'runInPane').map((c) => String(c.args[1]));
+    expect(typed.some((c) => c.includes('exec systemd-run --user --scope') && c.includes(`-p MemoryMax=${Math.round(3.6 * GIB)}`))).toBe(true);
+  });
+
+  it('a print agent\'s turn is made with them too, in the trial run too (issue #2622)', () => {
+    const command = turnCommand('j1', 'claude -p', { memoryMaxGiB: 2 });
+    expect(command.match(new RegExp(`-p MemoryMax=${2 * GIB} -p MemoryHigh=${Math.round(1.8 * GIB)}`, 'g'))).toHaveLength(2);
+    expect(turnCommand('j1', 'claude -p')).not.toContain('MemoryMax');
+  });
+});
+
+// Issue #2622: a job with no limit could take the whole host. With no `jobMemoryMaxGiB`, each job's scope gets the
+// machine's memory less its memory floor, shared by its lanes, and never less than a job's memory.
+describe('the default job limits (issue #2622)', () => {
+  const machine = (o: Record<string, unknown> = {}) => ({ ...LOCAL, maxLanes: 4, resources: { cores: 4, memTotalBytes: 16 * GIB, memAvailableBytes: 8 * GIB }, ...o });
+
+  it('are the machine\'s memory less its default floor, shared by its lanes', () => {
+    expect(scopeLimitsOf(machine())).toEqual({ memoryMaxGiB: 3.6 });
+    expect(scopeLimitsOf(machine({ resources: { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 8 * GIB }, maxLanes: 1 }))).toEqual({ memoryMaxGiB: 7 });
+  });
+
+  it('take the machine\'s own floor, and keep its CPU limit', () => {
+    expect(scopeLimitsOf(machine({ memoryFloor: { floorGiB: 4 }, jobLimits: { cpuPercent: 200 } }))).toEqual({ memoryMaxGiB: 3, cpuPercent: 200 });
+  });
+
+  it('are never below a job\'s memory', () => {
+    expect(scopeLimitsOf(machine({ resources: { cores: 4, memTotalBytes: 4 * GIB, memAvailableBytes: 2 * GIB } }))).toEqual({ memoryMaxGiB: 2 });
+    expect(scopeLimitsOf(machine({ resources: { cores: 4, memTotalBytes: 4 * GIB, memAvailableBytes: 2 * GIB }, memoryFloor: { perJobGiB: 3 } }))).toEqual({ memoryMaxGiB: 3 });
+  });
+
+  it('give way to its jobMemoryMaxGiB', () => {
+    expect(scopeLimitsOf(machine({ jobLimits: { memoryMaxGiB: 6, cpuPercent: 100 } }))).toEqual({ memoryMaxGiB: 6, cpuPercent: 100 });
+  });
+
+  it('set no memory limit with no memory reading or no lanes', () => {
+    expect(scopeLimitsOf(machine({ resources: undefined }))).toBeUndefined();
+    expect(scopeLimitsOf(machine({ resources: undefined, jobLimits: { cpuPercent: 50 } }))).toEqual({ cpuPercent: 50 });
+    expect(scopeLimitsOf(machine({ maxLanes: 0 }))).toBeUndefined();
   });
 });

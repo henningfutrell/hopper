@@ -1,0 +1,1 @@
+- Each job now has a memory limit by default, so one job's builds can no longer use all of a machine's memory. The Machines page warns about a machine where nothing limits the memory of its jobs.

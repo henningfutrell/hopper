@@ -26,7 +26,7 @@ describe('resources an ssh target prints', () => {
     // busy: user+nice+system+irq+softirq+steal moved 200+100 = 300; idle+iowait moved 400+100 = 500.
     expect(readResources(printed)).toEqual({
       cores: 8, cpuBusyFrac: 300 / 800, load: [0.52, 0.61, 0.7],
-      memTotalBytes: 16 * GIB, memAvailableBytes: 10 * GIB, swapTotalBytes: 8 * GIB, swapUsedBytes: 2 * GIB,
+      memTotalBytes: 16 * GIB, memAvailableBytes: 10 * GIB, swapTotalBytes: 8 * GIB, swapUsedBytes: 2 * GIB, jobMemoryLimit: 'none',
     });
   });
 
@@ -58,7 +58,7 @@ describe('resources an ssh target prints', () => {
     expect(readResources(printed.replace('hopper-res 8', cg))).toEqual({
       cores: 8, cpuBusyFrac: 300 / 800, load: [0.52, 0.61, 0.7],
       memTotalBytes: 4 * GIB, memAvailableBytes: 1.5 * GIB, container: true,
-      kernelMemTotalBytes: 16 * GIB, kernelMemAvailableBytes: 10 * GIB,
+      kernelMemTotalBytes: 16 * GIB, kernelMemAvailableBytes: 10 * GIB, jobMemoryLimit: 'machine',
     });
   });
 

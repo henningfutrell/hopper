@@ -32,6 +32,7 @@ export function machineBadges(m: MachineView, now: number): MachineBadge[] {
     ...warn(m.cleanupLeftovers !== undefined, 'cleanup leftovers'),
     ...warn(m.resources?.windowsLink?.ok === false, 'Windows link broken'),
     ...warn(m.resources?.nodeFloor, 'Node unpatched'),
+    ...warn(m.resources?.jobMemoryLimit === 'none', 'no memory limit'),
     { status: m.online ? 'online' : 'offline' },
   ];
 }

@@ -62,6 +62,8 @@ export interface ResourceReading {
   memPressure?: { someAvg10: number; fullAvg10: number };
   /** Issue #2499: when this meter last saw its OOM kill count grow (memory.events `oom_kill`, else /proc/vmstat). Absent: not seen. */
   memOomKillAt?: string;
+  /** Issue #2622: what holds its jobs' memory: each job's scope, a cgroup limit over it, or nothing. Absent: not Linux. */
+  jobMemoryLimit?: 'scope' | 'machine' | 'none';
 }
 
 /**
@@ -274,10 +276,13 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
    * Issue #2499: each job scope (`hopper-job-<id>.scope`, job-scope.ts) of its systemd user manager — the `user@<uid>.service`
    * its own cgroup is in, else its user's — in any slice there, with its cgroup path and its memory in use.
    */
-  const jobScopes = (parts: string[]): { id: string; dir: string; bytes: number }[] => {
+  const managerOf = (parts: string[]): string | undefined => {
     const at = parts.findIndex((p) => /^user@\d+\.service$/.test(p));
     const uid = d.uid ?? process.getuid?.();
-    const manager = at >= 0 ? parts.slice(0, at + 1).join('/') : uid !== undefined ? `user.slice/user-${uid}.slice/user@${uid}.service` : undefined;
+    return at >= 0 ? parts.slice(0, at + 1).join('/') : uid !== undefined ? `user.slice/user-${uid}.slice/user@${uid}.service` : undefined;
+  };
+  const jobScopes = (parts: string[]): { id: string; dir: string; bytes: number }[] => {
+    const manager = managerOf(parts);
     if (manager === undefined) return [];
     const list = (dir: string): string[] => { try { return readdirSync(cgroup(dir)); } catch { return []; } };
     return list(manager).filter((s) => s.endsWith('.slice')).flatMap((slice) => list(join(manager, slice)).flatMap((name) => {
@@ -343,13 +348,16 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     return Object.keys(use).length ? { jobUse: use } : {};
   };
 
-  type Memory = Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes' | 'jobUse' | 'kernelMemTotalBytes' | 'kernelMemAvailableBytes' | 'memPressure' | 'memOomKillAt'>;
+  type Memory = Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes' | 'jobUse' | 'kernelMemTotalBytes' | 'kernelMemAvailableBytes' | 'memPressure' | 'memOomKillAt' | 'jobMemoryLimit'>;
   const memory = (at: number): Memory => {
     const parts = platform === 'linux' ? ownCgroup() : [];
     const scopes = platform === 'linux' ? jobScopes(parts) : [];
     const use = jobUseOf(scopes, at);
     const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...use } : {};
     const limited = platform === 'linux' ? cgroupMemory(parts) : undefined;
+    // Issue #2622: what holds its jobs' memory — each job's scope where its user manager runs, else its own cgroup's limit.
+    const manager = platform === 'linux' ? managerOf(parts) : undefined;
+    const held = platform !== 'linux' ? {} : { jobMemoryLimit: manager !== undefined && existsSync(cgroup(manager)) ? 'scope' as const : limited ? 'machine' as const : 'none' as const };
     const info = platform === 'linux' ? fields(text(join(root, 'proc/meminfo'))) : new Map<string, number>();
     const kib = (k: string) => (info.has(k) ? info.get(k)! * 1024 : undefined);
     const total = kib('MemTotal');
@@ -361,7 +369,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       // A scope outside the limited cgroup is not in its use, but takes the same machine's memory.
       const outside = scopes.filter((s) => limited.dir !== '' && s.dir !== limited.dir && !s.dir.startsWith(`${limited.dir}/`)).reduce((n, s) => n + s.bytes, 0);
       const kernel = total !== undefined && available !== undefined && available <= total ? { kernelMemTotalBytes: total, kernelMemAvailableBytes: available } : {};
-      return { memTotalBytes: limited.memTotalBytes, memAvailableBytes: Math.max(0, limited.memAvailableBytes - outside), container: true, ...kernel, ...jobs, ...pressure };
+      return { memTotalBytes: limited.memTotalBytes, memAvailableBytes: Math.max(0, limited.memAvailableBytes - outside), container: true, ...kernel, ...jobs, ...pressure, ...held };
     }
     const swapTotal = kib('SwapTotal');
     const swapFree = kib('SwapFree');
@@ -371,7 +379,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       memAvailableBytes: available ?? (d.freemem ?? freemem)(),
       ...(wsl && total !== undefined && free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}),
       ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
-      ...jobs, ...pressure,
+      ...jobs, ...pressure, ...held,
     };
   };
 
