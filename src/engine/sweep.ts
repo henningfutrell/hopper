@@ -45,7 +45,7 @@ import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, overBudgetT
 import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger } from './resource-ledger.ts';
+import { createLeftovers } from './sweep-leftovers.ts'; import { closeGone, closeLedger } from './resource-ledger.ts';
 import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
 import { retentionOver } from '../domain/retention.ts';
 /** How often the engine looks for a machine whose sweep is due. */
@@ -273,11 +273,12 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       if (machineRanOn(job) === m.id && await removeDiscard(job.id, m, shell)) discarded.add(job.id);
     }
     const kept = new Set(keptWork.filter((k) => !discarded.has(k.jobId)).map((k) => k.jobId));
-    const found = await shell.survey(roots);
+    // The resource ledger's entries whose thing is gone (issue #2504 part 3), also kept work's, closed.
+    const found = await shell.survey(roots), at = c.clock.now().toISOString(); closeGone(c.store, m.id, found, at);
     for (const g of goneKept(found, keptWork.filter((k) => kept.has(k.jobId)), jobOf, m.id)) {
       if (c.stopping()) return;
       log(`hopper: job ${g.jobId}'s kept work is gone from ${m.id}: its scratch dir ${g.scratch} is no longer there`);
-      c.store.events.append({ type: 'job.work_removed', jobId: g.jobId, data: { paths: [g.scratch], gone: true } });
+      c.store.events.append({ type: 'job.work_removed', jobId: g.jobId, data: { paths: [g.scratch], gone: true } }); closeLedger(c.store, g.jobId, { kept: [] }, at);
     }
     const budget = budgetNow();
     const pressed = hopperDiskOf(found.usage, '', budget);

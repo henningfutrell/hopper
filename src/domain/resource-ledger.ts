@@ -3,8 +3,8 @@
 // job's cleanup or by the sweep as each reap says: reaped, kept (work not pushed), or failed with why. A job's **cleanup
 // status** is read from its entries and its cleanup record. Pure: no I/O, no clock — `at` is passed in.
 import type { BomPart, BomStatus } from './job-bom.ts';
-import { jobScratchOf } from './job-layout.ts';
-import type { Reaped } from './machine-shell.ts';
+import { jobScratchOf, scratchParts, worktreeParts } from './job-layout.ts';
+import type { Reaped, Survey } from './machine-shell.ts';
 import { TERMINAL_STATUSES, type Job } from './types.ts';
 
 /** What a ledger entry is. */
@@ -101,6 +101,40 @@ export function cleanupLeftoversOf(open: readonly LedgerEntry[], jobOf: (id: str
     if (now - Date.parse(endedAt) >= CLEANUP_GRACE_MINUTES * 60_000) out.push({ jobId, endedAt, entries });
   }
   return out;
+}
+
+/** Why an entry the survey no longer found is closed `reaped` (issue #2504 part 3): removed outside the hopper, or by a reap no one recorded. */
+export const GONE_REASON = 'not found on the machine';
+
+/**
+ * The reconciler's closures on machine `machineId` (issue #2504 part 3): each open entry (`live` or `failed`) there of an
+ * ended job whose thing the machine's survey no longer found, closed `reaped` with `GONE_REASON`. A scratch dir only in a
+ * work tree the survey looked in (`found.roots`); a job worktree only when the survey also lists job worktrees; a scope
+ * that no longer runs. A job that has not ended, and a job the store does not know, is not judged.
+ */
+export function goneClosures(open: readonly LedgerEntry[], found: Survey, machineId: string, jobOf: (id: string) => Pick<Job, 'status'> | undefined): { entry: LedgerEntry; state: 'reaped'; reason: string }[] {
+  const roots = new Set(found.roots ?? []);
+  const dirs = new Set(found.scratch.map((d) => d.path)), trees = found.trees && new Set(found.trees.map((t) => t.path));
+  const gone = (e: LedgerEntry): boolean => {
+    if (e.kind === 'job_scope') return !found.scopes.includes(e.jobId);
+    if (e.kind === 'scratch_dir') return roots.has(scratchParts(e.locator)?.workTree ?? '') && !dirs.has(e.locator);
+    return trees !== undefined && roots.has(worktreeParts(e.locator)?.workTree ?? '') && !trees.has(e.locator);
+  };
+  return open.filter((e) => e.machineId === machineId && (e.state === 'live' || e.state === 'failed') && gone(e)).filter((e) => {
+    const job = jobOf(e.jobId);
+    return job !== undefined && TERMINAL_STATUSES.includes(job.status);
+  }).map((entry) => ({ entry, state: 'reaped' as const, reason: GONE_REASON }));
+}
+
+/** The cleanup leftovers on one machine, as Machines shows them (issue #2504 part 3): jobs, entries, and how many of those failed. */
+export interface MachineCleanupLeftovers { jobs: number; entries: number; failed: number }
+
+/** The leftovers' counts on machine `machineId`; undefined when none is there. */
+export function machineLeftoversOf(leftovers: readonly CleanupLeftover[], machineId: string): MachineCleanupLeftovers | undefined {
+  const here = leftovers.map((l) => l.entries.filter((e) => e.machineId === machineId)).filter((es) => es.length > 0);
+  if (here.length === 0) return undefined;
+  const entries = here.flat();
+  return { jobs: here.length, entries: entries.length, failed: entries.filter((e) => e.state === 'failed').length };
 }
 
 /** The job's cleanup status, from its entries and its cleanup record (`cleanupDue`, `cleanupDeferred`). */

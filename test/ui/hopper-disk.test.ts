@@ -1,6 +1,6 @@
 // The hopper's own disk use on a Machines card, and the disk budget an admin sets (issue #1120): the model, pure.
 import { describe, expect, it } from 'vitest';
-import { budgetBody, budgetDraft, cachesText, hopperDiskText, storageText } from '../../ui/src/model/hopper-disk.ts';
+import { budgetBody, budgetDraft, cachesText, cleanupLeftoversText, hopperDiskText, storageText } from '../../ui/src/model/hopper-disk.ts';
 
 const GB = 1e9;
 const at = '2026-10-14T10:00:00.000Z';
@@ -48,5 +48,12 @@ describe('the caches and container storage on a card (issue #2494)', () => {
       { runtime: 'podman', kind: 'containers', bytes: 0, reclaimableBytes: 0 },
     ])).toBe('podman: images 20 GB (8.0 GB reclaimable), volumes 3.0 GB');
     expect(storageText([])).toBeUndefined();
+  });
+});
+
+describe('cleanupLeftoversText (issue #2504 part 3)', () => {
+  it('says how many things ended jobs left, of how many jobs, and how many removals failed', () => {
+    expect(cleanupLeftoversText({ jobs: 1, entries: 1, failed: 0 })).toBe('1 thing of 1 ended job, not removed yet');
+    expect(cleanupLeftoversText({ jobs: 2, entries: 3, failed: 2 })).toBe('3 things of 2 ended jobs, 2 removals failed: see Failures');
   });
 });

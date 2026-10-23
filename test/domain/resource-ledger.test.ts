@@ -1,7 +1,7 @@
 // Issue #2504: a job's resource ledger — what the hopper made for a job on a machine, from its executor's saved state, closed
 // as each reap says — and the job's cleanup status read from it. Pure.
 import { describe, expect, it } from 'vitest';
-import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, ledgerEntriesOf, reapClosures, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
+import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, goneClosures, ledgerEntriesOf, machineLeftoversOf, reapClosures, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
 
 const AT = '2026-10-22T10:00:00.000Z';
 const SCRATCH = '/w/.worktrees/@scratch/j1';
@@ -97,5 +97,45 @@ describe('cleanupLeftoversOf (issue #2504)', () => {
 
   it('never names a reaped or kept entry', () => {
     expect(cleanupLeftoversOf([of('j1', 'reaped'), of('j1', 'kept')], (id) => jobs[id], NOW)).toEqual([]);
+  });
+});
+
+describe('goneClosures (issue #2504 part 3)', () => {
+  const ended = (id: string) => (id === 'live' ? { status: 'running' as const } : id === 'j1' || id === 'j2' ? { status: 'finished' as const } : undefined);
+  const found = { scopes: [], processes: [], scratch: [], trees: [], roots: ['/w'] };
+  const all = [entry('scratch_dir', SCRATCH), entry('job_worktree', TREE), entry('job_scope', 'hopper-job-j1.scope', { state: 'failed', reason: 'x' })];
+
+  it("reaps an ended job's entries on this machine that the survey no longer found", () => {
+    expect(goneClosures(all, found, 'm1', ended).map((c) => [c.entry.kind, c.state, c.reason])).toEqual([
+      ['scratch_dir', 'reaped', 'not found on the machine'], ['job_worktree', 'reaped', 'not found on the machine'], ['job_scope', 'reaped', 'not found on the machine'],
+    ]);
+  });
+
+  it('keeps an entry the survey still found', () => {
+    const there = { ...found, scopes: ['j1'], scratch: [{ jobId: 'j1', path: SCRATCH, ageMs: 1 }], trees: [{ path: TREE, ageMs: 1 }] };
+    expect(goneClosures(all, there, 'm1', ended)).toEqual([]);
+  });
+
+  it('judges a dir only in a work tree the survey looked in, and a job worktree only when the survey lists them', () => {
+    expect(goneClosures(all.slice(0, 2), { ...found, roots: ['/v'] }, 'm1', ended)).toEqual([]);
+    const { trees: _trees, ...noTrees } = found;
+    expect(goneClosures(all.slice(0, 2), noTrees, 'm1', ended).map((c) => c.entry.kind)).toEqual(['scratch_dir']);
+  });
+
+  it("never judges a job that has not ended, a job the store does not know, or another machine's entry", () => {
+    const of = (jobId: string, machineId = 'm1') => entry('scratch_dir', `/w/.worktrees/@scratch/${jobId}`, { jobId, machineId });
+    expect(goneClosures([of('live'), of('unknown'), of('j2', 'm2')], found, 'm1', ended)).toEqual([]);
+  });
+});
+
+describe('machineLeftoversOf (issue #2504 part 3)', () => {
+  it('counts the leftover jobs and entries on one machine', () => {
+    const leftovers = [
+      { jobId: 'j1', endedAt: AT, entries: [entry('scratch_dir', SCRATCH), entry('job_scope', 's', { machineId: 'm2' })] },
+      { jobId: 'j2', endedAt: AT, entries: [entry('scratch_dir', 'x', { jobId: 'j2' }), entry('job_worktree', 'y', { jobId: 'j2', state: 'failed' })] },
+    ];
+    expect(machineLeftoversOf(leftovers, 'm1')).toEqual({ jobs: 2, entries: 3, failed: 1 });
+    expect(machineLeftoversOf(leftovers, 'm2')).toEqual({ jobs: 1, entries: 1, failed: 0 });
+    expect(machineLeftoversOf(leftovers, 'm3')).toBeUndefined();
   });
 });

@@ -33292,3 +33292,32 @@ by hand), which today stays a leftover; leftover counts and bytes on Machines.
 `test/domain/stuck.test.ts` (the cause); `test/engine/cleanup-leftovers.test.ts` (told once, also after a restart; a check
 that fails); `test/integration/resource-ledger.test.ts` (real database: Failures lists the job after the grace period, and
 not after a reap removes the entry).
+
+### Part 3: the reconciler closes what is gone; Machines counts leftovers (2026-10-22)
+
+An entry whose thing a person removed by hand (or a cleanup outside the hopper) stayed `live` or `failed` for ever: no reap
+looks for a dir that is not there, so the job stayed a cleanup leftover. And Machines did not show which machine holds them.
+
+- **The reconciler** (`goneClosures`, `src/domain/resource-ledger.ts`, pure; `closeGone`, `src/engine/resource-ledger.ts`).
+  With each sweep of a machine, after its survey and before its reaps, each open entry (`live` or `failed`) on that machine
+  of an ended job whose thing the survey no longer found is closed `reaped`, with the reason `not found on the machine`:
+  a scratch dir only in a work tree the survey looked in (`Survey.roots`); a job worktree only when the survey lists job
+  worktrees (`Survey.trees`; a client older than that lists none, so none is judged); a scope that no longer runs. A job
+  that has not ended, a job the store does not know and another machine's entry are not judged. It removes nothing: what
+  the survey still finds, the sweep's reaps remove as before. It reads the ledger, not the job list, so a job outside the
+  job-list window is judged too.
+- **Kept work that is gone** (issue #1120's `goneKept`, `job.work_removed` with `gone`) now also closes the job's entries
+  `reaped`.
+- **Machines** (`GET /api/machines`, `cleanupLeftovers`): each machine's cleanup leftovers, counted — jobs, entries, and how
+  many entries failed —, absent when none. The card shows them as a fact and a warning badge.
+
+**Left for later parts** of issue #2504: containers, volumes, processes, agent sessions, herdr panes and build daemons as
+entries; the cleanup as a persisted work item per entry with backoff, on each machine's own transport, and container storage
+that only a `podman unshare` removes; the reconciler for things the ledger does not name (a scratch dir of a job the hopper
+does not know, what was left before the ledger) and for machines no longer known; leftover bytes on Machines (the survey
+measures no size per job dir).
+
+**Verification (part 3).** `test/domain/resource-ledger.test.ts` (`goneClosures`, `machineLeftoversOf`);
+`test/engine/sweep-ledger.test.ts` (an entry removed by hand is reaped; kept work gone); `test/ui/hopper-disk.test.ts` (the
+card's text); `test/integration/resource-ledger.test.ts` (real database: `GET /api/machines` counts the leftover on its
+machine after the grace period).
