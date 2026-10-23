@@ -1,6 +1,7 @@
-// Whether a job's push holds a requirements file (issue #2555, design.md "Push requirements"), in the hopper's mirror, as the
-// shrink guard reads a push (push-lines.ts): the base branch is fetched into the mirror when it lacks it, the push's own pack
-// is indexed in a quarantine, removed after, and the pushed commit's tree is listed. Nothing a job pushes enters the mirror.
+// Whether a job's push holds a requirements file, and the files it changes (issue #2555, design.md "Push requirements"), in
+// the hopper's mirror, as the shrink guard reads a push (push-lines.ts): the base branch is fetched into the mirror when it
+// lacks it, the push's own pack is indexed in a quarantine, removed after, the pushed commit's tree is listed, and the files
+// it changes from where it leaves the base, as the job's own client lists them. Nothing a job pushes enters the mirror.
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { requirementsFileDir } from '../domain/push-requirements.ts';
@@ -10,8 +11,11 @@ import { runGitWithInput } from './push-lines.ts';
 
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 
-/** Whether the commit `new` of a push to `repo` holds a requirements file; undefined: git cannot say. */
-export type HoldsRequirements = (repo: string, remote: () => Promise<GitRemote>, push: { base: string; new: string; pack: Buffer }) => Promise<boolean | undefined>;
+/** The commit of a push: whether it holds a requirements file, and the files it changes against its base (every file of
+ * its tree when the base is not on GitHub). */
+export interface PushTree { file: boolean; files: string[] }
+/** The commit `new` of a push to `repo`; undefined: git cannot say. */
+export type HoldsRequirements = (repo: string, remote: () => Promise<GitRemote>, push: { base: string; new: string; pack: Buffer }) => Promise<PushTree | undefined>;
 
 export function createHoldsRequirements(o: { dir: string; log(line: string): void; traffic?: GitHubTraffic; git?: GitRun }): HoldsRequirements {
   const traffic = o.traffic ?? githubTraffic;
@@ -44,7 +48,14 @@ export function createHoldsRequirements(o: { dir: string; log(line: string): voi
       }
       const tree = await run(['ls-tree', '-r', '--name-only', '-z', push.new], q);
       if (tree.code !== 0) return problem(`ls-tree: ${said(tree)}`);
-      return tree.stdout.split('\0').some((f) => f !== '' && requirementsFileDir(f) !== undefined);
+      const all = tree.stdout.split('\0').filter((f) => f !== '');
+      const file = all.some((f) => requirementsFileDir(f) !== undefined);
+      if (!SHA.test(base)) return { file, files: all };
+      const from = await run(['merge-base', base, push.new], q);
+      if (from.code !== 0) return problem(`merge-base: ${said(from)}`);
+      const changed = await run(['diff', '--name-only', '--no-renames', '-z', from.stdout.trim(), push.new], q);
+      if (changed.code !== 0) return problem(`diff: ${said(changed)}`);
+      return { file, files: changed.stdout.split('\0').filter((f) => f !== '') };
     } finally {
       rmSync(quarantine, { recursive: true, force: true });
     }

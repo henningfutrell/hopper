@@ -8851,3 +8851,23 @@ Version 1 (`docs/schemas/delivery_settings.changed.v1.json`). An admin changed t
   "by": "admin"
 }
 ```
+
+## `push_requirements.defaults_changed`
+
+Version 1 (`docs/schemas/push_requirements.defaults_changed.v1.json`). An admin changed the hopper's default push requirements (issue #2555), on Settings → Push requirements: the requirements that apply to every repository's push, below its own file's. `from` and `to`: the ids of the requirements before and after; `by`, who. They apply to the next evaluation and the next push.
+
+| field | type | required |
+|---|---|---|
+| `from` | string[] | yes |
+| `to` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": [],
+  "to": [
+    "workflows"
+  ],
+  "by": "owner"
+}
+```

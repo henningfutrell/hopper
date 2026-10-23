@@ -60,13 +60,19 @@ const requirement = z.strictObject({
   id: z.string().regex(ID, { message: 'an id is lowercase letters, digits, ., _ and -' }),
   when: condition.optional(), checks: z.array(check).min(1, { message: 'a requirement names at least one check' }),
 });
-const file = z.strictObject({ requirements: z.array(requirement) });
+/** A requirements file's value, and the hopper's default requirements (a user setting): `{ requirements: [...] }`. */
+export const requirementsFileSchema = z.strictObject({ requirements: z.array(requirement) });
 
 /** A requirements file's text read, or why it cannot be. */
 export function parseRequirements(text: string): { ok: true; requirements: PushRequirement[] } | { ok: false; problem: string } {
   let raw: unknown;
   try { raw = parseYaml(text); } catch (e) { return { ok: false, problem: `it is not YAML: ${(e as Error).message.split('\n')[0]}` }; }
-  const r = file.safeParse(raw);
+  return readRequirements(raw);
+}
+
+/** A requirements file's value, as YAML or JSON gives it, read; or why it cannot be. */
+export function readRequirements(raw: unknown): { ok: true; requirements: PushRequirement[] } | { ok: false; problem: string } {
+  const r = requirementsFileSchema.safeParse(raw);
   if (!r.success) {
     const i = r.error.issues[0]!;
     const at = i.path.length > 0 ? ` at ${i.path.join('.')}` : '';

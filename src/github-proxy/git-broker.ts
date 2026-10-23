@@ -75,10 +75,10 @@ export interface GitUser {
    */
   shrinkGuard?(push: { repo: string; base: string; old: string; new: string; pack: Buffer }): Promise<{ ok: true } | { ok: false; shrunk: ShrunkFile[]; reason: string }>;
   /**
-   * Push requirements (issue #2555): whether the job may push `new` to a branch of `repo` whose base is `base`: a passing
+   * Push requirements (issue #2555): whether the job may push `new` to `branch` of `repo`, whose base is `base`: a passing
    * evaluation of that commit, or no requirement applies to it. Refused: why, and what to do. Absent: none.
    */
-  pushRequirements?(push: { jobId: string; repo: string; base: string; new: string; pack: Buffer }): Promise<{ ok: true } | { ok: false; reason: string }>;
+  pushRequirements?(push: { jobId: string; repo: string; branch: string; base: string; new: string; pack: Buffer }): Promise<{ ok: true } | { ok: false; reason: string }>;
   /** Direct push (issue #1806): whether a job may push straight to `repo`'s target branch. Absent: never. */
   directPush?(repo: string): boolean;
   /** Whether a push from `old` to `new`, with its pack, is a fast-forward (issue #1806); undefined: git cannot say. Absent: no direct push is taken. */
@@ -311,7 +311,7 @@ export function createGitProxy(o: GitProxyOptions) {
         }
         // Push requirements (issue #2555): each branch the push moves needs a passing evaluation of its new head.
         for (const c of side.pushRequirements ? refs.filter((x) => !ZERO.test(x.new) && x.ref.startsWith('refs/heads/')) : []) {
-          const judged = await side.pushRequirements!({ jobId: job.id, repo: at.repo, base: await baseOf(c.ref), new: c.new, pack: read.pack });
+          const judged = await side.pushRequirements!({ jobId: job.id, repo: at.repo, branch: c.ref.slice('refs/heads/'.length), base: await baseOf(c.ref), new: c.new, pack: read.pack });
           if (judged.ok) continue;
           record('github_proxy.refused', { refs: refs.map((x) => x.ref), reason: judged.reason });
           return refusedReport(plain, refs, judged.reason);

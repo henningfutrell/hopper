@@ -383,8 +383,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // A push kept as a saga (issue #1806): whether the broker recorded the push's event before a stop.
         recorded: (jobId, requestId) => o.store.events.recent(500, [...PUSH_EVENTS], jobId).some((e) => (e.data as { requestId?: unknown }).requestId === requestId),
         ...(o.fastForward ? { fastForward: ({ repo, ...push }: Parameters<CheckFastForward>[2] & { repo: string }) => o.fastForward!(repo, mirrorRemote(repo), push) } : {}),
-        // Push requirements (issue #2555): the job's evaluations, else the commit's tree in the mirror.
-        pushRequirements: pushRequirementsGate({ evaluations: (jobId) => o.store.events.recent(500, [PUSH_REQUIREMENTS_EVALUATED], jobId), ...(o.holdsRequirements ? { holds: o.holdsRequirements } : {}), remote: mirrorRemote }),
+        // Push requirements (issue #2555): the job's evaluations, else the commit's tree in the mirror and the hopper's defaults.
+        pushRequirements: pushRequirementsGate({ evaluations: (jobId) => o.store.events.recent(500, [PUSH_REQUIREMENTS_EVALUATED], jobId), defaults: () => o.store.settings.getPushRequirementDefaults(), job: (jobId) => o.store.jobs.get(jobId), ...(o.holdsRequirements ? { holds: o.holdsRequirements } : {}), remote: mirrorRemote }),
       },
     },
   };
