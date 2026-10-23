@@ -62,6 +62,13 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...r, cpuBusyFrac: 2, load: ['a'] })).toEqual({ cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB });
   });
 
+  it('a client\'s job scope memory (issue #2499): kept per job id when sane, the rest dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    expect(resourcesOf({ ...r, jobMemoryBytes: { j1: GIB, 'a-b_2': 2 } })).toEqual({ ...r, jobMemoryBytes: { j1: GIB, 'a-b_2': 2 } });
+    expect(resourcesOf({ ...r, jobMemoryBytes: { j1: -1, 'x y': 1, j2: 'a' } })).toEqual(r);
+    expect(resourcesOf({ ...r, jobMemoryBytes: [1] })).toEqual(r);
+  });
+
   it('a client\'s Node version (issue #2479): kept when it reads as one, its floor judged here, not taken from the client', () => {
     const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
     expect(resourcesOf({ ...r, node: 'v26.12.1', nodeFloor: '99.0.0' })).toEqual({ ...r, node: 'v26.12.1' });

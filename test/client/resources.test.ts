@@ -21,11 +21,11 @@ const put = (path: string, text: string) => {
 const cpu = (busy: number, idle: number): CpuTimes => ({ user: busy, nice: 0, sys: 0, idle, irq: 0 });
 
 /** A meter over a fake root and fake os readings: the clock and the CPU times move as the test says. */
-function meter(o: { platform?: string; cpus?: () => CpuTimes[]; hostMemory?: HostMemoryReader; env?: Record<string, string>; node?: string } = {}) {
+function meter(o: { platform?: string; cpus?: () => CpuTimes[]; hostMemory?: HostMemoryReader; env?: Record<string, string>; node?: string; uid?: number } = {}) {
   let t = 1_000_000;
   let times = [cpu(0, 0), cpu(0, 0)];
   const read = createResourceMeter({
-    root, platform: o.platform ?? 'linux', now: () => t, env: o.env ?? {}, ...(o.hostMemory ? { hostMemory: o.hostMemory } : {}), ...(o.node ? { node: o.node } : {}),
+    root, platform: o.platform ?? 'linux', now: () => t, env: o.env ?? {}, ...(o.hostMemory ? { hostMemory: o.hostMemory } : {}), ...(o.node ? { node: o.node } : {}), ...(o.uid !== undefined ? { uid: o.uid } : {}),
     cpus: o.cpus ?? (() => times), parallelism: () => 2, loadavg: () => [0.5, 0.75, 1], totalmem: () => 16 * GIB, freemem: () => 4 * GIB,
   });
   return { read, advance(ms: number, next: CpuTimes[]) { t += ms; times = next; } };
@@ -107,6 +107,46 @@ describe('a machine\'s resources', () => {
     const r = meter().read();
     expect(r).toMatchObject({ container: true, memTotalBytes: 4 * GIB });
     expect(r.memAvailableBytes).toBeCloseTo(0.4 * GIB, -3);
+  });
+
+  // Issue #2499: a job on its own wait holds no lane, but its scope keeps its builds. Each job scope's memory is read, and
+  // a scope outside the cgroup whose limit the reading is (a sibling of the hopper's own unit) is taken off its memory.
+  describe('job scopes (issue #2499)', () => {
+    const USER = 'sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service';
+    const scope = (id: string, current: number, inactive: number) => {
+      put(`${USER}/app.slice/hopper-job-${id}.scope/memory.current`, `${current}\n`);
+      put(`${USER}/app.slice/hopper-job-${id}.scope/memory.stat`, `anon 1\ninactive_file ${inactive}\n`);
+    };
+
+    it('a scope outside the limited cgroup: its memory is said, and taken off the memory available', () => {
+      put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+      put('proc/self/cgroup', '0::/user.slice/user-1000.slice/user@1000.service/app.slice/hopper.service\n');
+      put(`${USER}/app.slice/hopper.service/memory.max`, `${4 * GIB}\n`);
+      put(`${USER}/app.slice/hopper.service/memory.current`, `${1 * GIB}\n`);
+      scope('j1', 1.5 * GIB, 0.5 * GIB);
+      put(`${USER}/app.slice/other.scope/memory.current`, `${1 * GIB}\n`);
+      const r = meter().read();
+      expect(r).toMatchObject({ container: true, memTotalBytes: 4 * GIB, memAvailableBytes: 2 * GIB, jobMemoryBytes: { j1: 1 * GIB } });
+    });
+
+    it('a scope inside the limited cgroup: its memory is said, and is already in the use read', () => {
+      put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+      put('proc/self/cgroup', '0::/user.slice/user-1000.slice/user@1000.service/app.slice/hopper.service\n');
+      put(`${USER}/memory.max`, `${6 * GIB}\n`);
+      put(`${USER}/memory.current`, `${3 * GIB}\n`);
+      scope('j1', 1 * GIB, 0);
+      scope('j2', 0.5 * GIB, 0);
+      expect(meter().read()).toMatchObject({ memTotalBytes: 6 * GIB, memAvailableBytes: 3 * GIB, jobMemoryBytes: { j1: 1 * GIB, j2: 0.5 * GIB } });
+    });
+
+    it('no cgroup limit: the scopes of its own user manager are said; the host\'s memory has them', () => {
+      put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+      put('proc/self/cgroup', '0::/\n');
+      scope('j1', 2 * GIB, 0);
+      const r = meter({ uid: 1000 }).read();
+      expect(r).toMatchObject({ memTotalBytes: 14 * GIB, memAvailableBytes: 10 * GIB, jobMemoryBytes: { j1: 2 * GIB } });
+      expect(meter({ uid: 1001 }).read()).not.toHaveProperty('jobMemoryBytes');
+    });
   });
 
   it('a cgroup with no limits (`max`) reads the host', () => {

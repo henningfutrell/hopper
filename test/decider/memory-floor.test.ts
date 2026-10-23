@@ -164,4 +164,11 @@ describe('the memory floor on a seat, and a job\'s demand from its history (issu
     expect(d.start.map((s) => s.jobId)).toEqual(['j1', 'j2']);
     expect(d.wait[0]!.reason).toMatch(/a new job needs 3 GiB over its floor/);
   });
+
+  it('the memory a waiting job\'s scope holds is counted, and its wait names it', () => {
+    const resources = { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 3 * GIB, jobMemoryBytes: { w1: 2.5 * GIB, r1: 1 * GIB } };
+    const d = decide(inputs({ machines: [machine({ maxLanes: 8, resources })], lanes: [busy(1, 'r1')], running: [run('r1', 1, 30)], waiting: [job('a')] }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toBe('waiting for memory: local has 3 GiB available (2.5 GiB is held by 1 job with no lane), and a new job needs 2 GiB over its floor of 1.4 GiB');
+  });
 });
