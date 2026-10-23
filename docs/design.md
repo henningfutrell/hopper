@@ -33824,6 +33824,37 @@ entry with backoff, on each machine's own transport; entries on machines no long
 `goneClosures`, `ledgerRootsOf`, `unledgeredEntriesOf`); `test/integration/resource-ledger.test.ts` (real database: the
 session the executor reports is recorded, reaped by the cleanup at the end also with work kept, and on the parts list).
 
+### Part 12: entries on a retired machine (2026-10-23)
+
+An entry on a machine that left the hopper — a lane pod or a job pod that ended, a sandbox box, an ssh target a person
+removed — stayed `live` or `failed` for good: no sweep surveys a machine that is not listed, so no reap or reconciler ever
+judged it, and the job stayed a cleanup leftover on Failures with nothing a person could do about it.
+
+- **Retired.** A machine is retired as issue #919 says (glossary "Retired machine"): no machine source lists it, and the
+  plugins config does not name it. A machine still configured is not retired, also when it is offline or its instance did
+  not build. While the plugins config has an error, no machine is retired and nothing is judged.
+- **When.** The leftover check, with each sweep pass, first tells each cleanup leftover as before (`job.cleanup_leftover`,
+  after the grace period). Then each told entry on a retired machine (`retiredClosures`, `src/domain/resource-ledger.ts`,
+  pure; `src/engine/cleanup-leftovers.ts`) is closed in the new state `retired`, with the reason "its machine <id> is
+  retired: it is no longer configured, so no reap reaches it", and logged. So the leftover is told once, never silently
+  ignored, and then leaves Failures and the leftover counts; the entry stays as the record.
+- **Not final.** As `kept` and `failed`, a `retired` entry is judged again by a reap and by the reconciler on a machine of
+  that name, should one come back: it becomes `reaped` (or `failed`, `kept`) as the reap says.
+- **Cleanup status** `machine_retired` ("Cleanup: its machine is retired, so what it holds there was not removed"), after
+  `failed` and the live states, before `kept_work`. The entry's part says "not removed: its machine is retired", with the
+  reason.
+- Persisted state: the `state` column is text, so no migration. A build before this one reads a `retired` entry as closed.
+
+**Left for later parts** of issue #2504: herdr panes as entries; the cleanup as a persisted work item per entry with
+backoff, on each machine's own transport.
+
+**Verification (part 12).** `test/domain/resource-ledger-retired.test.ts` (`retiredClosures`: a machine neither listed nor
+configured, one configured but not listed, a plugins config with an error; a `retired` entry is no leftover, is judged
+again by `reapClosures` and `goneClosures`; the cleanup status and the parts); `test/engine/cleanup-leftovers.test.ts` (the
+check tells the leftover, then closes it retired; nothing on a listed or configured machine, nor with a config error);
+`test/integration/resource-ledger.test.ts` (real database: a `retired` entry is kept, is not open, is not on Failures, shows
+on the parts list, and a later reap closes it `reaped`).
+
 ## Push requirements (issue #2555, 2026-10-22)
 
 **The problem.** Jobs pushed without the repository's CI gates run first. In one repository, 8 of 9 red pull request runs

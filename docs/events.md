@@ -1084,7 +1084,7 @@ Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used
 
 ## `job.cleanup_leftover`
 
-Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Failures lists the job as stuck work (`cleanup_leftover`) while an entry stays.
+Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Failures lists the job as stuck work (`cleanup_leftover`) while an entry stays. An entry on a retired machine (no machine source lists it, the plugins config does not name it) is then closed `retired` in the ledger (part 12), and the job leaves Failures.
 
 | field | type | required |
 |---|---|---|

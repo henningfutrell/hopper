@@ -143,4 +143,18 @@ describe('the resource ledger (issue #2504)', () => {
     const bom = (await a.api<JobBom>('GET', `/api/jobs/${job.id}/bom`)).body;
     expect(bom.parts.find((p) => p.id === 'resource:agent_session:s-1')).toMatchObject({ group: 'machines', kind: 'agent_session', label: 'Agent session on local', status: 'recorded' });
   });
+
+  it('keeps an entry closed retired as the record: no leftover, not on Failures, shown on the parts list (part 12)', async () => {
+    const { a, job } = await ended((id) => ({ kept: [], left: [`/w/.worktrees/@scratch/${id}/containers`] }));
+    const store = a.user().store, scratch = `/w/.worktrees/@scratch/${job.id}`;
+    store.jobs.update(job.id, { finishedAt: new Date(Date.now() - 2 * 3600_000).toISOString() });
+    store.resourceLedger.close(job.id, 'scratch_dir', scratch, 'retired', new Date().toISOString(), 'its machine box-7 is retired: it is no longer configured, so no reap reaches it');
+    expect(store.resourceLedger.forJob(job.id).find((e) => e.kind === 'scratch_dir')).toMatchObject({ state: 'retired' });
+    expect(store.resourceLedger.open()).toEqual([]);
+    expect((await a.api<FailuresView>('GET', '/api/failures')).body.stuck.find((c) => c.cause === 'cleanup_leftover')).toBeUndefined();
+    const bom = (await a.api<JobBom>('GET', `/api/jobs/${job.id}/bom`)).body;
+    expect(bom.parts.find((p) => p.id === 'cleanup')).toMatchObject({ status: 'open', label: 'Cleanup: its machine is retired, so what it holds there was not removed' });
+    store.resourceLedger.close(job.id, 'scratch_dir', scratch, 'reaped', new Date().toISOString());
+    expect(store.resourceLedger.forJob(job.id).find((e) => e.kind === 'scratch_dir')).toMatchObject({ state: 'reaped' });
+  });
 });
