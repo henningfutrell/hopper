@@ -47,6 +47,22 @@ describe('resources an ssh target prints', () => {
     expect(readResources(printed)).not.toHaveProperty('memPressure');
   });
 
+  // Issue #2622 part 6: the probe prints the uptime and each page allocation failure dmesg holds (`af <s since boot> <order>`).
+  it('its large page allocation failures in the last 10 minutes (issue #2622 part 6): order 4 or more', () => {
+    const af = ['hopper-res up 1000.50', 'hopper-res af 300.1 7', 'hopper-res af 700.25 7', 'hopper-res af 800 2', 'hopper-res af 950.5 4', 'hopper-res 8'].join('\n');
+    expect(readResources(printed.replace('hopper-res 8', af))).toMatchObject({ memAllocFailures: { count: 2, maxOrder: 7 } });
+    expect(readResources(printed.replace('hopper-res 8', 'hopper-res up 1000.50\nhopper-res af 800 2\nhopper-res 8'))).not.toHaveProperty('memAllocFailures');
+    expect(readResources(printed.replace('hopper-res 8', 'hopper-res af 900 7\nhopper-res 8'))).not.toHaveProperty('memAllocFailures');
+  });
+
+  it('a client\'s allocation failures (issue #2622 part 6): kept when sane, else dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    expect(resourcesOf({ ...r, memAllocFailures: { count: 3, maxOrder: 7 } })).toEqual({ ...r, memAllocFailures: { count: 3, maxOrder: 7 } });
+    for (const bad of [{ count: 0, maxOrder: 7 }, { count: 3, maxOrder: 2 }, { count: 3, maxOrder: 11 }, { count: 1.5, maxOrder: 7 }, { count: 3 }, 'many']) {
+      expect(resourcesOf({ ...r, memAllocFailures: bad })).toEqual(r);
+    }
+  });
+
   it('its tightest cgroup memory limit on its path (issue #2499 part 10): the limit is its total, the kernel\'s memory kept apart', () => {
     // A seat's container (its cgroup namespace root) limits 4 GiB; a slice above its session limits 6 GiB; "max" is no limit.
     const cg = [

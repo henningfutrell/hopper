@@ -44,6 +44,15 @@ describe('a machine\'s badges and alert', () => {
     expect(machineHasAlert(desk({ resources: { ...resources, node: 'v26.12.1', nodeFloor: undefined } } as unknown as Partial<MachineView>), NOW)).toBe(false);
   });
 
+  // Issue #2622 part 6: a burst of large page allocation failures comes before wsl.exe hangs on a WSL host.
+  it('a machine whose kernel logged a burst of large allocation failures has a warning and an alert; fewer have none', () => {
+    const resources = { cores: 2, memTotalBytes: 8, memAvailableBytes: 4, memAllocFailures: { count: 3, maxOrder: 7 } };
+    const m = desk({ resources } as unknown as Partial<MachineView>);
+    expect(machineBadges(m, NOW)).toEqual([{ status: 'allocation failures', tone: 'warn' }, { status: 'online' }]);
+    expect(machineHasAlert(m, NOW)).toBe(true);
+    expect(machineHasAlert(desk({ resources: { ...resources, memAllocFailures: { count: 2, maxOrder: 7 } } } as unknown as Partial<MachineView>), NOW)).toBe(false);
+  });
+
   // Issue #2622: one burst of builds on a machine whose jobs no memory limit holds can take the whole host.
   it('a machine whose jobs no memory limit holds has a no memory limit warning and an alert', () => {
     const resources = { cores: 2, memTotalBytes: 8, memAvailableBytes: 4, jobMemoryLimit: 'none' };
