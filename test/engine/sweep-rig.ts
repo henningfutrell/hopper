@@ -31,6 +31,7 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
   events.push(...(o.told ?? []));
   for (const id of o.proxied ?? []) events.push({ type: 'github_proxy.done', jobId: id, data: { requestId: 'r', op: 'git.push', repo: 'o/r', refs: ['refs/heads/x'], heads: [`tip-${id}`] } });
   const ledger = o.ledger ?? [];
+  const passes: { type: string; machineId?: string; data: unknown }[] = [];
   // Each machine's last disk measure (issue #2494), as the store keeps it; one map shared by two rigs is a restart.
   const measures = o.measures ?? new Map<string, DiskMeasure>();
   const surveyed: string[][] = [];
@@ -111,7 +112,8 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       tx: <T>(fn: () => T): T => fn(),
       events: {
         recent: (_limit: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && (!jobId || e.jobId === jobId)).reverse() as unknown as DomainEvent[],
-        append: (e: { type: string; jobId?: string; machineId?: string; data: unknown }) => { events.push(e); return e as unknown as DomainEvent; },
+        // A pass's record (machine.sweep_passed, issue #2494) goes to `passes`, so each part's tests read only their own events.
+        append: (e: { type: string; jobId?: string; machineId?: string; data: unknown }) => { (e.type === 'machine.sweep_passed' ? passes : events).push(e); return e as unknown as DomainEvent; },
       },
       workItems: { get: (key: string) => (o.itemDone?.some((id) => key === `item:${id}`) ? { key, state: 'done' } : undefined) },
       settings: { getDiskBudget: () => (budget === undefined ? undefined : { bytes: budget }) },
@@ -128,5 +130,5 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       },
     } as never,
   }, (l) => logs.push(l));
-  return { sweep, jobs, ledger, measures, surveyed, reaps, events, logs, listings, removals, prunes, clears, trims: () => trims, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
+  return { sweep, jobs, ledger, passes, measures, surveyed, reaps, events, logs, listings, removals, prunes, clears, trims: () => trims, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
 }

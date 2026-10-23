@@ -8,12 +8,13 @@ import type { MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Survey } from '../domain/ports.ts';
 import type { Trimmed } from '../domain/disk-trim.ts';
 import type { EngineContext } from './context.ts';
+import type { PassTrim } from './sweep-pass.ts';
 
 const GIB = 1024 ** 3;
 
 export interface SweepTrim {
-  /** Adds `freed` bytes to what the machine's cleanups freed, and trims there when the sum reaches its option. Never throws. */
-  pass(m: MachineSnapshot, shell: MachineShell, freed: number): Promise<void>;
+  /** Adds `freed` bytes to what the machine's cleanups freed, and trims there when the sum reaches its option; the result of a trim that ran. Never throws. */
+  pass(m: MachineSnapshot, shell: MachineShell, freed: number): Promise<PassTrim | undefined>;
 }
 
 const used = (s: Survey): number => (s.usage ?? []).reduce((n, u) => n + u.bytes, 0);
@@ -29,9 +30,9 @@ export function createTrim(c: Pick<EngineContext, 'store' | 'stopping'>, log: (l
   return {
     async pass(m, shell, freed) {
       const gib = m.sweep?.trimAboveGiB;
-      if (!gib || !shell.trim) return;
+      if (!gib || !shell.trim) return undefined;
       const sum = (freedSince.get(m.id) ?? 0) + Math.max(0, freed);
-      if (sum < gib * GIB) { freedSince.set(m.id, sum); return; }
+      if (sum < gib * GIB) { freedSince.set(m.id, sum); return undefined; }
       freedSince.delete(m.id);
       let t: Trimmed;
       try {
@@ -40,19 +41,17 @@ export function createTrim(c: Pick<EngineContext, 'store' | 'stopping'>, log: (l
       } catch (e) {
         if (!failing.has(m.id)) log(`hopper: the sweep could not run fstrim on ${m.id}: ${(e as Error).message}`);
         failing.add(m.id);
-        return;
+        return undefined;
       }
-      if (c.stopping()) return;
+      if (c.stopping()) return undefined;
       const host = t.wsl ? '; the host\'s virtual disk shrinks only once it is compacted there' : '';
       const result = t.outcome === 'trimmed' ? `${t.bytes !== undefined ? gb(t.bytes) : 'an unknown size'} trimmed` : `${t.outcome}${t.said ? ` (${t.said})` : ''}`;
       log(`hopper: the sweep ran fstrim on ${m.id} (${t.mount}): ${result}, after its cleanups freed ${gb(sum)}${host}`);
-      c.store.events.append({
-        type: 'machine.disk_trim_ran', machineId: m.id,
-        data: {
-          machineId: m.id, freedBytes: sum, mount: t.mount, outcome: t.outcome,
-          ...(t.bytes !== undefined ? { trimmedBytes: t.bytes } : {}), ...(t.said ? { said: t.said } : {}), ...(t.wsl ? { hostCompaction: true } : {}),
-        },
-      });
+      const ran: PassTrim = {
+        mount: t.mount, outcome: t.outcome, ...(t.bytes !== undefined ? { trimmedBytes: t.bytes } : {}), ...(t.said ? { said: t.said } : {}), ...(t.wsl ? { hostCompaction: true as const } : {}),
+      };
+      c.store.events.append({ type: 'machine.disk_trim_ran', machineId: m.id, data: { machineId: m.id, freedBytes: sum, ...ran } });
+      return ran;
     },
   };
 }
