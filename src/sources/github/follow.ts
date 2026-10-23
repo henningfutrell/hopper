@@ -109,7 +109,7 @@ function seenFromBatch(ctx: PullRequestContext, job: Job, s: Followed, url: stri
   const seen: PullRequestSeen = {
     draft: b.isDraft, conflicting, checks: b.checks ?? 'none', openedAt: b.createdAt, pushedAt, ...(b.base ? { base: b.base } : {}),
     ...(!failing && b.checksWhy ? { checksWhy: b.checksWhy } : {}), ...(!failing && b.checksRefused ? { checksRefused: true } : {}),
-    ...(b.headRef ? { headRef: b.headRef } : {}), ...(failing && before.failedChecks ? { failedChecks: before.failedChecks } : {}),
+    ...(b.headRef ? { headRef: b.headRef } : {}), ...(failing && before.failedChecks ? { failedChecks: before.failedChecks, ...(before.failedHead ? { failedHead: before.failedHead } : {}) } : {}),
     ...(before.commits ? { commits: before.commits } : {}), ...(before.files ? { files: before.files } : {}), ...(before.change ? { change: before.change } : {}),
   };
   return merges(ctx, repo, seen.change?.kind) && readyToMerge(seen, (ctx.clock?.now() ?? new Date()).getTime()) ? undefined : seen;
@@ -239,7 +239,7 @@ export async function waiting(ctx: PullRequestContext, job: Job, url: string, be
   const seen: PullRequestSeen = {
     draft: pr.isDraft, conflicting: pr.conflicting, checks: pr.checks ?? 'none', openedAt: pr.createdAt, pushedAt, ...(pr.base ? { base: pr.base } : {}),
     ...(pr.checksWhy ? { checksWhy: pr.checksWhy } : {}), ...(pr.checksRefused ? { checksRefused: true } : {}),
-    ...(pr.headRef ? { headRef: pr.headRef } : {}), ...(pr.failedChecks?.length ? { failedChecks: pr.failedChecks } : {}),
+    ...(pr.headRef ? { headRef: pr.headRef } : {}), ...(pr.failedChecks?.length ? { failedChecks: pr.failedChecks, ...(pr.headOid ? { failedHead: pr.headOid } : {}) } : {}),
     ...(pr.commits ? { commits: pr.commits } : before?.commits ? { commits: before.commits } : {}),
     ...(pr.files ? { files: pr.files } : before?.files ? { files: before.files } : {}),
   };

@@ -32,7 +32,10 @@ export interface RequirementCheck {
   env?: Record<string, string>;
   /** The values the check must measure, and their bounds; each is also given to it as `HOPPER_MIN_<name>`, `HOPPER_MAX_<name>`. */
   thresholds?: Record<string, Threshold>;
+  /** The CI check it stands for (part 5, push-requirement-metrics.ts): globs of CI check names, and the billed minutes of a CI run that fails on it. */
+  ci?: CiCheck;
 }
+export interface CiCheck { checks: string[]; minutes?: number }
 export interface PushRequirement { id: string; when?: RequirementCondition; checks: RequirementCheck[] }
 /** A requirement as it applies: where it came from, and the folder of a path-scoped one. */
 export interface EffectiveRequirement extends PushRequirement { level: RequirementLevel; dir?: string }
@@ -55,6 +58,7 @@ const check = z.strictObject({
   name: z.string().min(1).max(200), run: z.string().min(1),
   env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string()).optional(),
   thresholds: z.record(z.string().regex(MEASURE, { message: 'a measure is a name of letters, digits and _' }), threshold).optional(),
+  ci: z.strictObject({ checks: words, minutes: z.number().positive().optional() }).optional(),
 });
 const requirement = z.strictObject({
   id: z.string().regex(ID, { message: 'an id is lowercase letters, digits, ., _ and -' }),
@@ -185,7 +189,7 @@ export function planPush(requirements: readonly EffectiveRequirement[], ctx: Pus
 export interface CheckRun { name: string; exit: number; measured?: Record<string, number> }
 export interface RequirementRun { id: string; checks: CheckRun[] }
 
-export interface JudgedCheck { name: string; run: string; exit: number; thresholds?: Record<string, Threshold>; measured?: Record<string, number>; passed: boolean; problem?: string }
+export interface JudgedCheck { name: string; run: string; exit: number; thresholds?: Record<string, Threshold>; measured?: Record<string, number>; ci?: CiCheck; passed: boolean; problem?: string }
 export interface JudgedRequirement { id: string; level: RequirementLevel; status: 'passed' | 'failed' | 'skipped'; reason?: string; checks?: JudgedCheck[] }
 export interface PushEvaluation { passed: boolean; requirements: JudgedRequirement[] }
 
@@ -208,7 +212,7 @@ export function judgeEvaluation(plan: PushPlan, runs: readonly RequirementRun[])
     if (!ran) return { id: q.id, level: q.level, status: 'failed', reason: 'its checks did not run' };
     const checks = q.checks.map((c): JudgedCheck => {
       const one = ran.checks.find((r) => r.name === c.name);
-      const base = { name: c.name, run: c.run, exit: one?.exit ?? -1, ...(c.thresholds ? { thresholds: c.thresholds } : {}), ...(one?.measured ? { measured: one.measured } : {}) };
+      const base = { name: c.name, run: c.run, exit: one?.exit ?? -1, ...(c.thresholds ? { thresholds: c.thresholds } : {}), ...(one?.measured ? { measured: one.measured } : {}), ...(c.ci ? { ci: c.ci } : {}) };
       const problem = one ? checkProblem(c, one) : 'it did not run';
       return problem === undefined ? { ...base, passed: true } : { ...base, passed: false, problem };
     });

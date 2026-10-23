@@ -208,6 +208,8 @@ export interface PullRequestSeen {
   mergeError?: string;
   /** The checks of its head commit that failed (issue #927), as the follow read them: what a `fix_checks` tend is told. */
   failedChecks?: FailedCheck[];
+  /** The head commit whose checks `failedChecks` are (issue #2555 part 5: a CI miss of a push requirement); absent: GitHub did not say. */
+  failedHead?: string;
   /**
    * Ready, the hopper did not merge it (issue #939): it conflicts with this pull request of its repository, which the hopper
    * merged first in the same sync pass. Its URL.

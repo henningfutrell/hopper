@@ -1,0 +1,1 @@
+- The Push requirements settings now show how many pull request check runs the checks before a push saved, with the billed minutes, and how many failed on a check that a job should have caught first.
