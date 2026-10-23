@@ -58,3 +58,26 @@ describe('a machine whose disk is low (issue #410)', () => {
     expect(d.hold[0]!.reason).toMatch(/^disk low on a /);
   });
 });
+
+describe('a machine whose disk is critical (issue #2494)', () => {
+  const critical = { freeBytes: 0.5 * GIB, totalBytes: 100 * GIB, low: true, critical: true as const };
+
+  it('takes no job at all: a job resuming on it waits too, named so', () => {
+    const d = decide(inputs({
+      machines: [machine({ id: 'a', disk: critical })],
+      waiting: [job('r', { pendingAnswer: 'yes', resumeOn: 'a' })],
+    }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.hold).toEqual([{ jobId: 'r', reason: 'pinned machine a disk critical (0.5 GiB free): no new job is claimed there' }]);
+  });
+
+  it('names a new job held for it as critical', () => {
+    const d = decide(inputs({ machines: [machine({ id: 'a', disk: critical })], waiting: [job('j')] }), 'd1');
+    expect(d.hold).toEqual([{ jobId: 'j', reason: 'disk critical on a (0.5 GiB free): no new job is claimed there' }]);
+  });
+
+  it('leaves its lanes idle, saying the disk is critical', () => {
+    const d = decide(inputs({ machines: [machine({ id: 'a', disk: critical })], waiting: [job('j')] }), 'd1');
+    expect(d.lanes.find((l) => l.machineId === 'a')?.idle).toBe('disk critical: no new job is claimed there');
+  });
+});
