@@ -21,7 +21,8 @@
             "enum": [
               "scratch_dir",
               "job_worktree",
-              "job_scope"
+              "job_scope",
+              "container_runtime"
             ]
           },
           "locator": {

@@ -6,6 +6,7 @@ import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, goneClosure
 const AT = '2026-10-22T10:00:00.000Z';
 const SCRATCH = '/w/.worktrees/@scratch/j1';
 const TREE = '/w/.worktrees/app/j1';
+const RUNTIME = `${SCRATCH}/containers`;
 
 const entry = (kind: LedgerEntry['kind'], locator: string, over: Partial<LedgerEntry> = {}): LedgerEntry =>
   ({ jobId: 'j1', machineId: 'm1', kind, locator, createdAt: AT, state: 'live', ...over });
@@ -17,6 +18,14 @@ describe('ledgerEntriesOf', () => {
       { jobId: 'j1', machineId: 'm1', kind: 'job_worktree', locator: TREE, createdAt: AT },
       { jobId: 'j1', machineId: 'm1', kind: 'job_scope', locator: 'hopper-job-j1.scope', createdAt: AT },
     ]);
+  });
+
+  it('names the job\'s own container runtime, its dir in the scratch dir (issue #2504 part 4)', () => {
+    expect(ledgerEntriesOf('j1', 'm1', { cwd: '/w', containerRuntime: RUNTIME }, AT)).toEqual([
+      { jobId: 'j1', machineId: 'm1', kind: 'scratch_dir', locator: SCRATCH, createdAt: AT },
+      { jobId: 'j1', machineId: 'm1', kind: 'container_runtime', locator: RUNTIME, createdAt: AT },
+    ]);
+    expect(ledgerEntriesOf('j1', 'm1', { cwd: '/w', containerRuntime: 'containers' }, AT).map((e) => e.kind)).toEqual(['scratch_dir']);
   });
 
   it('names nothing for a state with no absolute work tree', () => {
@@ -40,6 +49,13 @@ describe('reapClosures', () => {
     const closed = reapClosures(all, { kept: [], left: [`${SCRATCH}/containers`] });
     expect(closed.find((c) => c.entry.kind === 'scratch_dir')).toMatchObject({ state: 'failed', reason: `${SCRATCH}/containers is still there` });
     expect(closed.find((c) => c.entry.kind === 'job_worktree')?.state).toBe('reaped');
+  });
+
+  it('reaps the container runtime with kept work, as the reap resets it, and fails it while its storage stays (part 4)', () => {
+    const runtime = entry('container_runtime', RUNTIME);
+    expect(reapClosures([runtime], { kept: [SCRATCH] }).map((c) => c.state)).toEqual(['reaped']);
+    expect(reapClosures([runtime], { kept: [], left: [`${RUNTIME}/storage`] })).toMatchObject([{ state: 'failed', reason: `${RUNTIME}/storage is still there` }]);
+    expect(reapClosures([runtime], { kept: [] }, false)).toEqual([]);
   });
 
   it('closes kept work a later reap removed, and never judges a reaped entry again', () => {
@@ -109,6 +125,13 @@ describe('goneClosures (issue #2504 part 3)', () => {
     expect(goneClosures(all, found, 'm1', ended).map((c) => [c.entry.kind, c.state, c.reason])).toEqual([
       ['scratch_dir', 'reaped', 'not found on the machine'], ['job_worktree', 'reaped', 'not found on the machine'], ['job_scope', 'reaped', 'not found on the machine'],
     ]);
+  });
+
+  it('reaps the container runtime with its scratch dir gone, and keeps it while the scratch dir is there (part 4)', () => {
+    const runtime = [entry('container_runtime', RUNTIME)];
+    expect(goneClosures(runtime, found, 'm1', ended).map((c) => [c.entry.kind, c.reason])).toEqual([['container_runtime', 'not found on the machine']]);
+    expect(goneClosures(runtime, { ...found, scratch: [{ jobId: 'j1', path: SCRATCH, ageMs: 1 }] }, 'm1', ended)).toEqual([]);
+    expect(goneClosures(runtime, { ...found, roots: [] }, 'm1', ended)).toEqual([]);
   });
 
   it('keeps an entry the survey still found', () => {
