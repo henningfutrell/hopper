@@ -12,8 +12,8 @@
 // Research this and Propose this (issue #548): a phase shift — a fork, or a switch of the whole job — where the server
 // takes one, else why not; a suggested one in one click; an admin's phase-shift settings below the questions. The forks
 // made from a question show on its card, with their status and a link (issue #570).
-// A parked job's question is not here: it is in Parked, with its job, and comes back when the job is picked up with
-// it still open (issue #565).
+// A parked job's question is here too (issue #2634): it still blocks its job, and most waits park by themselves. Parked
+// also lists it, with its job (issue #565).
 // The question, the levels' answers and reasons are rendered as Markdown, sanitized; a long question shows its summary
 // first, the rest behind Show all (issue #569).
 // Why it came to a person (issue #679): one sentence at the top of the card, with what the level recommends, and the

@@ -12908,9 +12908,11 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   end; the deferred cleanup is of ended jobs: none touches a parked job. Restart recovery leaves it as it is.
   Credential files left in the scratch dir are not renewed while parked (no process reads them) and are
   written again at the re-queue's start.
-- **Its question.** Stays open, in **Parked** with its job, not in Questions (issue #565): neither Questions, its
-  badge nor the Attention panel shows it, and `GET /api/sections` counts it in `parked`, not `questions`
-  (`GET /api/questions` still lists it). Picked up with it still open, it is back in Questions. While its job is parked it never
+- **Its question.** Stays open, in **Parked** with its job (issue #565), and in Questions too (issue #2634): it still
+  blocks its job, and since every wait on a person parks its job (issue #2335) most open questions are a parked job's.
+  Questions, its badge, Needs you and the Attention panel show it, and `GET /api/sections` counts it in `questions`
+  as its job is counted in `parked`; the cloud link's `questionsAwaitingOwner` counts it too. One answer, from either
+  place, clears it from both. While its job is parked it never
   expires and is not renotified (`QuestionService`: `expire`, `renotify` and `armHuman` skip it). An answer
   or a close is kept as `pendingAnswer`; the job stays parked. Dismissing it cancels the job, as for any job
   on its question.
@@ -14158,7 +14160,7 @@ server takes. The structural home for #537 (proposals) and #538 (research report
 subscribes to them like any), and for a review section its review kind.
 `GET /api/sections` (`src/http/sections.ts`) answers each with `open`, `waiting` (of those, what waits on a person) and
 `high` (of those, a high-priority job's), each counted by the section's own open rule: an open question at the human
-tier, its job not parked on it; a pending login; an open problem or hand-off; a review item open or revising, waiting
+tier, a parked job's too (issue #2634); a pending login; an open problem or hand-off; a review item open or revising, waiting
 at the human stage; a parked job. The UI
 lists the same kinds (`ui/src/model/sections.ts`, checked against the server's `SectionKind` at typecheck): every
 section's nav entry and its badge follow one rule (`sectionBadges`, `useSectionBadges`): what is open and waits on a

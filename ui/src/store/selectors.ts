@@ -11,7 +11,7 @@ import { reviewBadge } from '@/model/reviews';
 import { sectionBadges, type SectionBadge } from '@/model/sections';
 import { keptAlone, openHandoffs, openProblems } from '@/model/failures';
 import { highHandoffs, highQuestions, isHighJob } from '@/model/priority';
-import { awaitsOwner, notParked } from '@/model/questions';
+import { awaitsOwner } from '@/model/questions';
 import { awaitingSort } from '@/model/queue';
 import type { HeaderBadge, Job, QuestionView, SectionKind } from '@/model/wire';
 import { useHopper } from './index';
@@ -56,14 +56,13 @@ export function useQuestionWaits(since: number): QuestionWait[] {
   return useMemo(() => questionWaits(history, since, jobs), [history, since, jobs]);
 }
 
-/** The open questions but a parked job's (issue #565): what Questions shows and counts, and Attention lists. */
-export function useQuestions(): QuestionView[] {
-  const questions = useHopper((s) => s.questions);
-  const jobs = useJobIndex();
-  return useMemo(() => notParked(questions, jobs), [questions, jobs]);
-}
+/**
+ * Every open question, a parked job's too (issue #2634: it still blocks its job, and most waits park by themselves):
+ * what Questions shows and counts, Needs you counts, Attention lists, and the critical job tracker reads.
+ */
+export const useQuestions = (): QuestionView[] => useHopper((s) => s.questions);
 
-/** How many open questions wait on the owner, seen or not: the nav badge (issue #499); a parked job's not (issue #565). */
+/** How many open questions wait on the owner, seen or not: the nav badge (issue #499), a parked job's too (issue #2634). */
 export const useAwaitingOwner = (): number => useQuestions().filter(awaitsOwner).length;
 
 /** The parked jobs, and how many are high priority: the Parked nav badge (issue #565). */
