@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readReap, reapArgv } from '../../src/client/reap.ts';
+import { withoutUse } from '../support/reap-said.ts';
 
 const JOB = 'job-1187-abcdef';
 
@@ -83,13 +84,13 @@ describe('work already on a remote under other commits (issue #1187): not kept',
 
   it('its commits squash-merged to the default branch', () => {
     land((d) => commit(d, { 'a.txt': 'a2\n', 'b.txt': 'b\n', 'c.txt': 'c\n' }, 'squashed'));
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
     expect(existsSync(tree)).toBe(false);
   });
 
   it('its commits rebased onto the default branch, and a later change to the same file there', () => {
     land((d) => { work(d); commit(d, { 'b.txt': 'b, later\n' }, 'later'); });
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
   });
 
   it('its commits made again by another job, on a branch not merged', () => {
@@ -97,27 +98,27 @@ describe('work already on a remote under other commits (issue #1187): not kept',
     work(other, ' again');
     git(other, 'push', '-q', 'origin', 'issue-1-again');
     git(main, 'fetch', '-q', 'origin');
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
   });
 
   it('its own branch rebased locally onto a newer default branch, once that branch was pushed', () => {
     git(tree, 'push', '-q', 'origin', 'issue-1');
     land(() => undefined);
     git(tree, 'rebase', '-q', 'origin/main');
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
   });
 
   it('kept when the remote has only part of it, or the same files with other content', () => {
     land((d) => commit(d, { 'b.txt': 'b\n' }, 'part'));
-    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] } });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] } });
     land((d) => commit(d, { 'a.txt': 'a3\n', 'c.txt': 'c\n' }, 'other content'));
-    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] } });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] } });
   });
 
   it('kept when it adds work of its own on top of what landed', () => {
     land((d) => commit(d, { 'a.txt': 'a2\n', 'b.txt': 'b\n', 'c.txt': 'c\n' }, 'squashed'));
     commit(tree, { 'd.txt': 'd\n' }, 'd');
-    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] } });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] } });
   });
 
   it('a merge of its own not on the remote keeps it, though each patch is there', () => {
@@ -128,6 +129,6 @@ describe('work already on a remote under other commits (issue #1187): not kept',
     git(tree, 'merge', '-q', '--no-edit', 'origin/side');
     git(tree, 'push', '-q', 'origin', 'HEAD^1:refs/heads/issue-1');
     git(main, 'fetch', '-q', 'origin');
-    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] }, pushed: [tree] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] }, pushed: [tree] });
   });
 });

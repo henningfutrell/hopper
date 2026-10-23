@@ -15,7 +15,8 @@ import type { AttachedMachine, HerdrVersions, HostKeyOffer, MachineSnapshot } fr
 import type { DiskReading } from '../domain/machines.ts';
 import type { ResourceReading } from '../domain/machine-history.ts';
 import { DF_COMMAND, judged, readDf } from './disk.ts';
-import { RESOURCES_COMMAND, readResources } from './resources.ts';
+import { RESOURCES_COMMAND, readOomKills, readResources } from './resources.ts';
+import { oomWatch, type OomCount } from '../client/resources.ts';
 import { INFRA_CREDENTIALS_COMMAND, isInfraCredentialsLine, readInfraCredentials } from '../client/infra-credentials.ts';
 import { scrubbedEnv } from '../executors/env.ts';
 import type { ClientTransport } from '../executors/client.ts';
@@ -41,6 +42,8 @@ export interface MachineProbe {
   disk?: DiskReading;
   /** Its CPU, memory and swap (issue #560). Absent: not read. */
   resources?: ResourceReading;
+  /** An ssh target: its OOM kill count (issue #2499 part 13), which the machine compares with its probe before. Absent: not read. */
+  oomKills?: OomCount;
   /** The infra credentials its job user holds (issues #1128 part 7, #1248): any makes it not ready. Absent: not read. */
   infraCredentials?: string[];
   /** Why its work tree cannot be made usable (issue #361). Absent: it was made, or the probe could not say. */
@@ -91,8 +94,9 @@ export function createAttachedMachineSource(o: AttachedOptions & {
   let home: string | undefined;
   // Only the last probe's: a disk fills.
   let disk: DiskReading | undefined;
-  // Only the last probe's, as the disk: a machine offline has none.
+  // Only the last probe's, as the disk: a machine offline has none. Its last OOM kill is kept across probes (issue #2499 part 13).
   let resources: ResourceReading | undefined;
+  const kills = oomWatch();
   // Only the last probe's (issue #1128 part 7): a folder may be removed between probes.
   let infraCredentials: string[] | undefined;
   // What the last probe found wrong with its work tree (issue #361); each probe says afresh.
@@ -121,7 +125,7 @@ export function createAttachedMachineSource(o: AttachedOptions & {
     const from = Date.now();
     o.probe().then(
       (p) => {
-        online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; resources = p.online ? p.resources : undefined; infraCredentials = p.online ? p.infraCredentials : undefined; workTreeProblem = p.online ? p.workTreeProblem : undefined;
+        online = p.online; clientRelease = p.online ? p.client : undefined; home = p.home ?? home; disk = p.disk; const killAt = kills(p.online ? p.oomKills : undefined, now()); resources = p.online && p.resources ? { ...p.resources, ...(killAt !== undefined && !p.resources.memOomKillAt ? { memOomKillAt: new Date(killAt).toISOString() } : {}) } : undefined; infraCredentials = p.online ? p.infraCredentials : undefined; workTreeProblem = p.online ? p.workTreeProblem : undefined;
         // Its address check waited on the hopper's own held loop (issue #2427): no proof. Kept as it was; probed again.
         const doubted = p.online && p.addressProblem !== undefined && loopHeldDoubts(from);
         if (doubted) lastProbe = -Infinity;
@@ -200,7 +204,7 @@ export function probeSsh(o: {
   hopperUrls?: readonly string[];
   /** The address a WSL machine on the hopper's computer reaches it at (issue #1248 part 4): asked after the others, only there. */
   wsl?: WslAddress;
-}): Promise<{ home: string; disk?: DiskReading; resources?: ResourceReading; infraCredentials?: string[]; workTreeProblem?: string; hopperUrl?: string; addressProblem?: string }> {
+}): Promise<{ home: string; disk?: DiskReading; resources?: ResourceReading; oomKills?: OomCount; infraCredentials?: string[]; workTreeProblem?: string; hopperUrl?: string; addressProblem?: string }> {
   const workTree = o.workTree ?? DEFAULT_WORK_TREE;
   // `~` as "$HOME" there; the path itself never reaches the shell unquoted.
   const there = workTree === '~' || workTree.startsWith('~/') ? `"$HOME"${shellQuote(workTree.slice(1))}` : shellQuote(workTree);
@@ -223,9 +227,9 @@ export function probeSsh(o: {
         const home = lines.find((l) => l.startsWith(HOME_LINE))?.slice(HOME_LINE.length) ?? '';
         if (!home.startsWith('/')) return reject(new Error(`${o.target}: its home is not an absolute path: ${JSON.stringify(home)}${home ? '' : ' (its session has no HOME, and its user database names none)'}`));
         const disk = readDf(stdout);
-        const resources = readResources(stdout);
+        const resources = readResources(stdout), oomKills = resources ? readOomKills(stdout) : undefined;
         const infraCredentials = readInfraCredentials(stdout);
-        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(infraCredentials ? { infraCredentials } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls, o.wsl?.url) : {}) };
+        const found = { home, ...(disk ? { disk } : {}), ...(resources ? { resources } : {}), ...(oomKills ? { oomKills } : {}), ...(infraCredentials ? { infraCredentials } : {}), ...(o.hopperUrls ? readAddress(stdout, o.hopperUrls, o.wsl?.url) : {}) };
         const refused = resolveWorkTree(workTree, home);
         if ('problem' in refused) return resolve({ ...found, workTreeProblem: refused.problem });
         if (lines.at(-1) === WORK_TREE_OK) return resolve(found);

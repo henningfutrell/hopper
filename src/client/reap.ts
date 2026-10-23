@@ -127,6 +127,9 @@ const REAP_SCRIPT = [
   'gone() { [ -e "$1" ] && [ ! -L "$1" ] || return 0; rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+rwX "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; };',
   'dirs() { for d in "$n" "$o"; do [ -d "$d" ] && [ ! -L "$d" ] && printf "%s\\n" "$d"; done; };',
   `trees() { for t in "$w"/${LAYOUT.worktrees}/*/"$id" "$w"/${LAYOUT.oldWorktrees}/*-"$id"; do case $t in "$w"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };`,
+  // The disk the job's scratch dir and worktrees hold (issue #2498 part 4), read before the reap removes or keeps them: one
+  // `du -skx` per dir, so a link in it (a worktree's node_modules) counts no more than the link.
+  '{ dirs; trees; } | while IFS= read -r d; do $to du -skx "$d" 2>/dev/null; done | awk \'$1 ~ /^[0-9]+$/ { k += $1; n = 1 } END { if (n) print "hopper-disk " k }\';',
   'repos() { { dirs | while IFS= read -r d; do find "$d" -name node_modules -prune -o -name .git -print -prune; done; trees | while IFS= read -r t; do [ -e "$t/.git" ] && printf "%s\\n" "$t/.git"; done; } 2>/dev/null; };',
   ...UNPUSHED_SH,
   // The commits of a clean checkout $1 that hold work no remote has (issue #2087): a worktree's HEAD, a clone's HEAD and
@@ -226,13 +229,17 @@ const SURVEY_SCRIPT = [
   '    set -- "$@" "$p";',
   '  done; [ $# -gt 0 ] || return 0;',
   `  $to du -skx "$@" 2>/dev/null | awk -F '\t' '$1 ~ /^[0-9]+$/ { k = $1; sub(/^[^\t]*\t/, ""); print "hopper-du " k " " $0 }'; };`,
+  // Each job's scratch dir and job worktree on its own (issue #2494), `hopper-jobdu <KiB> <path>`; no `@` dir but the scratch area.
+  `jobdu() { set --; for d in "$r"/${LAYOUT.worktrees}/*/*; do [ -d "$d" ] && [ ! -L "$d" ] || continue;`,
+  `    case $d in "$r"/${LAYOUT.scratch}/*) ;; "$r"/${LAYOUT.worktrees}/@*) continue;; esac; set -- "$@" "$d"; done; [ $# -gt 0 ] || return 0;`,
+  `  $to du -skx "$@" 2>/dev/null | awk -F '\t' '$1 ~ /^[0-9]+$/ { k = $1; sub(/^[^\t]*\t/, ""); print "hopper-jobdu " k " " $0 }'; };`,
   // `ages <dir|tree> <paths>`: the dirs of the paths, with their ages, by one `stat` (issue #2490: a start per dir was too
   // slow under MSYS). `for` takes its list once, so each pass shifts its path off and puts a dir back at the end.
   'ages() { k=$1; shift; for d do shift; [ -d "$d" ] && [ ! -L "$d" ] || continue;',
   `  [ "$k" = tree ] && case $d in "$r"/${LAYOUT.worktrees}/@*) continue;; esac; set -- "$@" "$d"; done; [ $# -gt 0 ] || return 0;`,
   `  mtimes "$@" 2>/dev/null | awk -v now="$now" -v k="$k" '$1 ~ /^[0-9]+$/ { m = $1; sub(/^[^ ]* /, ""); print "hopper-" k " " (now - m) " " $0 }'; };`,
   `for r in "$@"; do if [ -d "$r/${LAYOUT.worktrees}" ] || [ -d "$r/${LAYOUT.oldScratch}" ]; then printf "hopper-root %s\\n" "$r";`,
-  '  [ -n "$to" ] && measure;',
+  '  [ -n "$to" ] && { measure; jobdu; };',
   `fi; ages dir "$r"/${LAYOUT.scratch}/* "$r"/${LAYOUT.oldScratch}/*; ages tree "$r"/${LAYOUT.worktrees}/*/* "$r"/${LAYOUT.oldWorktrees}/*;`,
   'done;',
   // The machine's caches and container storage (issue #2494), once per survey, only where `timeout` cuts each call off.
@@ -311,15 +318,25 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
   };
 }
 
-/** What a job's scope used (issue #2498), as `job.resources_used` records it: each field absent where its cgroup had none. */
-export interface ResourceUse { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number }
+/**
+ * What a job used (issue #2498), as `job.resources_used` records it: its scope's, each field absent where its cgroup had
+ * none, and the disk its scratch dir and worktrees held (part 4), absent where it had neither.
+ */
+export interface ResourceUse { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; diskBytes?: number }
 
-/** The reap's `hopper-used <peak bytes> <CPU µs> <OOM kills>` line, each `-` when unread; nothing when no field was read. */
+/**
+ * The reap's `hopper-used <peak bytes> <CPU µs> <OOM kills>` line, each `-` when unread, and its `hopper-disk <KiB>` line;
+ * nothing when no field was read.
+ */
 function usedOf(lines: readonly string[]): { used?: ResourceUse } {
   const m = lines.map((l) => /^hopper-used (\S+) (\S+) (\S+)$/.exec(l)).find((x) => x !== null);
   const n = (v: string | undefined): number | undefined => (v && /^\d+$/.test(v) ? Number(v) : undefined);
   const peak = n(m?.[1]), usec = n(m?.[2]), oom = n(m?.[3]);
-  const used: ResourceUse = { ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}) };
+  const kib = n(lines.map((l) => /^hopper-disk (\d+)$/.exec(l)?.[1]).find((x) => x !== undefined));
+  const used: ResourceUse = {
+    ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}),
+    ...(kib !== undefined ? { diskBytes: kib * 1024 } : {}),
+  };
   return Object.keys(used).length ? { used } : {};
 }
 
@@ -338,8 +355,10 @@ export interface SurveyedCache { kind: CacheDirKind; path: string; bytes: number
 export interface SurveyedStorage { runtime: 'docker' | 'podman'; kind: 'images' | 'containers' | 'volumes' | 'build-cache'; bytes: number; reclaimableBytes: number }
 /** One exited container the survey found (issue #2494), for the storage prune: its full id, when it stopped as the runtime said, its label keys. */
 export interface SurveyedExited { runtime: 'docker' | 'podman'; id: string; finishedAt: string; labels: string[] }
+/** One job's scratch dir or job worktree the survey measured on its own (issue #2494). */
+export interface SurveyedJobDisk { jobId: string; kind: 'scratch' | 'tree'; path: string; bytes: number }
 /** What a finished survey found. Undefined when it did not finish. */
-export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[]; caches?: SurveyedCache[]; storage?: SurveyedStorage[]; exited?: SurveyedExited[] }
+export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[]; caches?: SurveyedCache[]; storage?: SurveyedStorage[]; exited?: SurveyedExited[]; jobs?: SurveyedJobDisk[] }
 
 const STORAGE_KINDS: Record<string, SurveyedStorage['kind']> = { 'Images': 'images', 'Containers': 'containers', 'Local Volumes': 'volumes', 'Build Cache': 'build-cache' };
 const UNITS: Record<string, number> = { '': 1, k: 1e3, K: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15 };
@@ -365,7 +384,10 @@ export function readSurvey(stdout: string): Survey | undefined {
   const caches: SurveyedCache[] = [];
   const storage: SurveyedStorage[] = [];
   const exited: SurveyedExited[] = [];
+  const jobs: SurveyedJobDisk[] = [];
   for (const l of lines) {
+    const j = /^hopper-jobdu (\d+) (\/.*\/\.worktrees\/(@scratch|[^/@][^/]*)\/([^/]+))$/.exec(l);
+    if (j && isJobId(j[4])) jobs.push({ jobId: j[4]!, kind: j[3] === '@scratch' ? 'scratch' : 'tree', path: j[2]!, bytes: Number(j[1]) * 1024 });
     const ca = /^hopper-cache (\d+) (\/.*)$/.exec(l);
     const kind = ca ? cacheKindOf(ca[2]!) : undefined;
     if (ca && kind) caches.push({ kind, path: ca[2]!, bytes: Number(ca[1]) * 1024 });
@@ -386,7 +408,7 @@ export function readSurvey(stdout: string): Survey | undefined {
     const t = /^hopper-tree (\d+) (\/.*\/(?:\.worktrees\/[^/@][^/]*\/[^/]+|workspace\/worktrees\/[^/]+))$/.exec(l);
     if (t) trees.push({ path: t[2]!, ageMs: Number(t[1]) * 1000 });
   }
-  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container '), caches, storage, ...(exited.length ? { exited } : {}) };
+  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container '), caches, storage, ...(exited.length ? { exited } : {}), ...(jobs.length ? { jobs } : {}) };
 }
 
 /** A scratch dir a reap may name: absolute, one line, and the job's own, of either layout. */

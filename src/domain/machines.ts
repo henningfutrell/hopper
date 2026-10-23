@@ -275,6 +275,8 @@ export interface SweepSettings {
   pruneAfterDays?: number;
   /** The trim's threshold in GiB (issue #2494, src/engine/sweep-trim.ts): fstrim once the cleanups freed this much; absent: never. */
   trimAboveGiB?: number;
+  /** The cap of each kind of cache in GiB (issue #2494, src/engine/sweep-caches.ts); a kind with none is never cleared. */
+  cacheCapsGiB?: import('./cache-caps.ts').CacheCaps;
 }
 
 /** A job's side of its machine's link (issue #752, design.md "Link-lost hold"). */

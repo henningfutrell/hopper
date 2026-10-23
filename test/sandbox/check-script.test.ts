@@ -139,6 +139,19 @@ describe('the read-only check script (issue #716)', () => {
     expect(readResults(runs, `HOPPER-PROBE 0 1 ${b64(init('dial tcp: lookup registry.terraform.io: no such host'))}\n`)[0]).toMatchObject({ outcome: 'error', passed: false });
   });
 
+  it('a provider download refused is a refusal when terraform wraps its error at 78 columns (issue #2564)', () => {
+    const runs = probeCatalog(PROBES).runsFor([read('terraform-workspace', 'shop-prod')]).filter((r) => r.probe.id === 'terraform.provider-download');
+    const b64 = (s: string): string => Buffer.from(s).toString('base64');
+    // As terraform prints it off a terminal: the mirror does not hold the provider, and no registry is in reach.
+    const mirror = 'Error: Failed to query available provider packages\n\nCould not retrieve the list of available versions for provider\nhashicorp/dns: provider registry.terraform.io/hashicorp/dns was not found in\nany of the search locations\n\n- /opt/hopper-tools/providers\n';
+    expect(readResults(runs, `HOPPER-PROBE 0 1 ${b64(mirror)}\n`)[0]).toMatchObject({ outcome: 'denied', passed: true });
+    const filtered = 'Error: Failed to query available provider packages\n\nCould not retrieve the list of available versions for provider\nhashicorp/dns: could not connect to registry.terraform.io: failed to request\ndiscovery document: Get "https://registry.terraform.io/.well-known/terraform.json":\nFiltered\n';
+    expect(readResults(runs, `HOPPER-PROBE 0 1 ${b64(filtered)}\n`)[0]).toMatchObject({ outcome: 'denied', passed: true });
+    // A Filtered in another paragraph is not the registry's answer.
+    const elsewhere = 'Error: could not connect to registry.terraform.io: no such host\n\nFiltered\n';
+    expect(readResults(runs, `HOPPER-PROBE 0 1 ${b64(elsewhere)}\n`)[0]).toMatchObject({ outcome: 'error', passed: false });
+  });
+
   it('a probe with no line did not run; a failure that is not a refusal is an error', () => {
     const runs = probeCatalog(PROBES).runsFor([read('cluster', 'lab')]);
     const b64 = (s: string): string => Buffer.from(s).toString('base64');

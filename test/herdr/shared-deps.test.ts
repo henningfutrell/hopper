@@ -156,8 +156,9 @@ describe('the reap after shared dependencies (issue #410)', () => {
     expect(await share(w)).toBe('installed');
     const shared = readlinkSync(join(w, 'node_modules'));
     const { reapArgv, readReap } = await import('../../src/client/reap.ts');
+    const { withoutUse } = await import('../support/reap-said.ts');
     const [file, ...args] = reapArgv('j1', join(tree, '.worktrees', '@scratch', 'j1'));
-    expect(readReap(execFileSync(file!, args, { encoding: 'utf8' }))).toEqual({ kept: [] });
+    expect(withoutUse(readReap(execFileSync(file!, args, { encoding: 'utf8' })))).toEqual({ kept: [] });
     expect(existsSync(w)).toBe(false);
     expect(existsSync(join(shared, 'left-pad', 'index.js'))).toBe(true);
     expect(git(tree, 'worktree', 'list')).not.toContain(w);

@@ -115,13 +115,13 @@ describe('bastions (issue #2146)', () => {
     const asked = await skill(b.a, creds, ['bastion', '--template', t.name, '--targets', 'lab/monitoring/svc/grafana:3000', '--why', 'Read the lab dashboards']);
     expect(asked.code, asked.stdout + asked.stderr).toBe(0);
     expect(asked.stdout).toMatch(new RegExp(`bastion [0-9a-f-]{36} of template ${t.name} is (starting|running)`));
-    expect(asked.stdout).toContain('lab/monitoring/svc/grafana:3000 on 127.0.0.1:20000 in the box');
+    expect(asked.stdout).toContain('lab/monitoring/svc/grafana:3000 on a port kubectl picks in the box');
 
     const box = [...b.runtime.boxes.values()].find((c) => c.spec.name.startsWith(`hopper-bastion-${t.name}-`))!;
     expect(box).toBeDefined();
     const log = join(homeOf(box.spec.name), 'kubectl.log');
     await waitFor(() => existsSync(log) && readFileSync(log, 'utf8').includes('port-forward'), { timeoutMs: 10_000 });
-    expect(readFileSync(log, 'utf8')).toContain(`kubectl --context lab-monitoring --namespace monitoring port-forward --address 127.0.0.1 svc/grafana 20000:3000 token=${MINTED_KUBE_TOKEN}`);
+    expect(readFileSync(log, 'utf8')).toContain(`kubectl --context lab-monitoring --namespace monitoring port-forward --address 127.0.0.1 svc/grafana :3000 token=${MINTED_KUBE_TOKEN}`);
     expect(JSON.stringify(box.spec.env)).not.toContain(MINTED_KUBE_TOKEN);
     expect(asked.stdout).not.toContain(MINTED_KUBE_TOKEN);
 
@@ -153,7 +153,7 @@ describe('bastions (issue #2146)', () => {
     const box = [...b.runtime.boxes.values()].find((c) => c.spec.name.startsWith(`hopper-bastion-${t.name}-`))!;
 
     const view = (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body;
-    expect(view.bastions).toMatchObject([{ jobId, template: t.name, box: box.spec.name, targets: [{ target: 'lab/monitoring/svc/grafana:3000', local: 20000 }] }]);
+    expect(view.bastions).toMatchObject([{ jobId, template: t.name, box: box.spec.name, targets: [{ target: 'lab/monitoring/svc/grafana:3000' }] }]);
     expect(JSON.stringify(view.bastions)).not.toContain(MINTED_KUBE_TOKEN);
 
     const stopped = await b.a.ui('/ui/api/bastions/stop', { job: jobId }, { token: b.token });

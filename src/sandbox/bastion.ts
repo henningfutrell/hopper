@@ -1,7 +1,7 @@
 // A bastion (issue #2146, design.md "Bastions"): the one sandbox that outlives a step. A job names its targets — a
 // service, a pod or a deployment and one port, in a namespace of a cluster — and the hopper starts one need box of a
 // template approved for an **observe** on each target's namespace or cluster. The box holds `kubectl port-forward` to
-// each target on 127.0.0.1 inside it, a local port each, and starts a forward again when it ends (a pod that restarted).
+// each target on 127.0.0.1 inside it, a local port each that kubectl picks, and starts a forward again when it ends (a pod that restarted).
 // Its kube tokens are files the hopper renews while it runs (the kubeconfig's `tokenFile`, which kubectl reads again
 // within a minute); they never go to the job. Only the box reaches the forwards: the hopper's relay (part 2) joins a
 // job's connection to one through a command it starts in the box for each connection (relayCommand). Part 3: a bastion
@@ -18,8 +18,6 @@ export const BASTION_MAX_MS = 12 * 60 * 60_000;
 export const BASTION_RENEW_MS = 5 * 60_000;
 /** The most targets one bastion forwards to. */
 export const BASTION_TARGETS_MAX = 8;
-/** The first target's port on 127.0.0.1 in the box; the next target takes the next port. */
-export const BASTION_FIRST_PORT = 20000;
 
 /** What a forward may name, as `kubectl port-forward` takes it. */
 export const TARGET_KINDS = ['svc', 'pod', 'deploy'] as const;
@@ -27,8 +25,8 @@ export type TargetKind = (typeof TARGET_KINDS)[number];
 
 /** One target: `<cluster>/<namespace>/<kind>/<name>:<port>`. */
 export interface BastionTarget { cluster: string; namespace: string; kind: TargetKind; name: string; port: number }
-/** A target in its bastion: the kubeconfig context of its observe, and its port on 127.0.0.1 in the box. */
-export interface PlacedTarget extends BastionTarget { context: string; local: number }
+/** A target in its bastion: the kubeconfig context of its observe. Its port on 127.0.0.1 in the box is kubectl's pick. */
+export interface PlacedTarget extends BastionTarget { context: string }
 
 /** A Kubernetes name: a DNS label or subdomain. A cluster's name as the hopper names it. */
 const KUBE_NAME = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/;
@@ -66,17 +64,17 @@ export function observeOf(t: BastionTarget, profiles: readonly OperationProfile[
     ?? observes.find((p) => p.asset.kind === 'cluster' && p.asset.name === t.cluster);
 }
 
-/** Each target with its context and port, and the observes they need, each once; or why a target is out of reach. */
+/** Each target with its context, and the observes they need, each once; or why a target is out of reach. */
 export function placeTargets(targets: readonly BastionTarget[], profiles: readonly OperationProfile[]): { placed: PlacedTarget[]; observes: OperationProfile[] } | string {
   const out = targets.filter((t) => !observeOf(t, profiles));
   if (out.length) {
     return `the template has no observe on ${out.map((t) => `${t.cluster}/${t.namespace}`).join(', ')}: ask for a template with ${[...new Set(out.map((t) => `observe/namespace/${t.cluster}/${t.namespace}`))].join(' ')}`;
   }
   const observes: OperationProfile[] = [];
-  const placed = targets.map((t, i) => {
+  const placed = targets.map((t) => {
     const p = observeOf(t, profiles)!;
     if (!observes.includes(p)) observes.push(p);
-    return { ...t, context: credentialName(p), local: BASTION_FIRST_PORT + i };
+    return { ...t, context: credentialName(p) };
   });
   return { placed, observes };
 }
@@ -152,16 +150,18 @@ export const bastionEnv = (placed: readonly PlacedTarget[], credentials: readonl
   ({ HOPPER_STEP_COMMAND: bastionCommand(placed), HOPPER_STEP_OUTPUTS: '', HOPPER_STEP_KUBECONFIG: bastionKubeconfig(credentials) });
 
 /**
- * The bastion's command: a forward to each target on 127.0.0.1, each in a loop that starts it again 2 s after it ends,
- * its lines marked with its target; then it waits. It ends only when the hopper stops its box.
+ * The bastion's command: a forward to each target on 127.0.0.1, on a free port kubectl picks, each in a loop that starts it again 2 s after it ends,
+ * its lines marked with its target; then it waits. It ends only when the hopper stops its box. Issue #2566: a box on a
+ * client machine shares the machine's network, so a fixed port (20000 and on, before) may be another box's or process's:
+ * the relay reaches the port kubectl says it forwards from (forwardWatch).
  */
 export function bastionCommand(placed: readonly PlacedTarget[]): string {
-  const lines = placed.map((t) => `forward '${t.context}' '${t.namespace}' '${t.kind}/${t.name}' ${t.local} ${t.port} '${targetText(t)}' &`);
+  const lines = placed.map((t) => `forward '${t.context}' '${t.namespace}' '${t.kind}/${t.name}' ${t.port} '${targetText(t)}' &`);
   return [
     'forward() {',
     '  while :; do',
-    '    kubectl --context "$1" --namespace "$2" port-forward --address 127.0.0.1 "$3" "$4:$5" 2>&1 | while IFS= read -r line; do echo "[$6] $line"; done',
-    '    echo "[$6] the forward ended: it starts again in 2 s"',
+    '    kubectl --context "$1" --namespace "$2" port-forward --address 127.0.0.1 "$3" ":$4" 2>&1 | while IFS= read -r line; do echo "[$5] $line"; done',
+    '    echo "[$5] the forward ended: it starts again in 2 s"',
     '    sleep 2',
     '  done',
     '}',
@@ -171,14 +171,24 @@ export function bastionCommand(placed: readonly PlacedTarget[]): string {
   ].join('\n');
 }
 
-/** What the bastion's output says of one forward (issue #2413): it listens, or not, with the last thing kubectl said. */
-export interface ForwardState { listening: boolean; said?: string }
+/**
+ * What the bastion's output says of one forward (issue #2413): it listens, or not, with the last thing kubectl said;
+ * `local` (issue #2566): the port on 127.0.0.1 in the box it listens on, as kubectl said.
+ */
+export interface ForwardState { listening: boolean; local?: number; said?: string }
 
 /** The last thing kubectl said of a forward that was no state (issue #2474), and how many such lines it said. */
 export interface ForwardProblem { n: number; said: string }
 
 const FORWARD_LINE = /^\[([^\]]+)\] (.*)$/;
 const ENDED = 'the forward ended:';
+const FORWARDING = /^Forwarding from 127\.0\.0\.1:(\d{1,5}) /;
+
+/** A forward that listens, with its port when kubectl's line names it. */
+const listening = (words: string): ForwardState => {
+  const port = Number(FORWARDING.exec(words)?.[1]);
+  return port > 0 && port < 65536 ? { listening: true, local: port } : { listening: true };
+};
 
 /**
  * Reads the bastion's output as it comes (bastionCommand marks each forward's lines with its target): a forward listens
@@ -197,7 +207,7 @@ export function forwardWatch(): { add(chunk: string): void; of(target: string): 
     const m = FORWARD_LINE.exec(text.replace(/\r$/, ''));
     if (!m) return;
     const [, target, words] = m as unknown as [string, string, string];
-    if (words.startsWith('Forwarding from ')) { states.set(target, { listening: true }); said.delete(target); return; }
+    if (words.startsWith('Forwarding from ')) { states.set(target, listening(words)); said.delete(target); return; }
     if (words.startsWith('Handling connection for ')) return;
     if (words.startsWith(ENDED)) { states.set(target, { listening: false, said: said.get(target) ?? words }); said.delete(target); return; }
     said.set(target, words);
@@ -211,7 +221,7 @@ export function forwardWatch(): { add(chunk: string): void; of(target: string): 
       // Issue #2484: the need box holds back a last new line (it may start its outputs' mark), so kubectl's "Forwarding
       // from", often its last line for a long time, comes with no new line: it counts before its new line comes.
       const m = FORWARD_LINE.exec(rest);
-      if (m?.[2]?.startsWith('Forwarding from ')) states.set(m[1]!, { listening: true });
+      if (m?.[2]?.startsWith('Forwarding from ')) states.set(m[1]!, listening(m[2]));
     },
     of: (target) => states.get(target),
     problem: (target) => problems.get(target),

@@ -40,14 +40,15 @@
 // pushed, and keeps, in memory, the leftovers it does not judge — a dir of no job the hopper knows, and the repository mirrors.
 // Machines shows them; a person keeps or removes each one (`decideLeftover`). The sweep removes none by itself.
 // The storage prune (issue #2494, sweep-prune.ts): last, on a machine with `sweep.pruneAfterDays`, once a day.
+// The cache caps (issue #2494, sweep-caches.ts): then, on a machine with `sweep.cacheCapsGiB`, while no job is there.
 // The trim (issue #2494, sweep-trim.ts): then, on a machine with `sweep.trimAboveGiB`, fstrim once the cleanups freed that much.
 import type { ActingPerson, Discarding, DiskBudget, DiskMeasure, HopperDisk, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
-import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, overBudgetTold, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
+import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, jobDiskOf, overBudgetTold, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
 import { jobScratchOf, scratchParts, worktreeJobOf as treeJob, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger, sweptRoots } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts';
+import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger, sweptRoots } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts'; import { createCaches } from './sweep-caches.ts';
 import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
 import { retentionOver } from '../domain/retention.ts';
 /** How often the engine looks for a machine whose sweep is due. */
@@ -178,7 +179,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     return undefined;
   };
   /** The leftovers the sweep does not judge (issue #1116), listed after each pass's reaps. */
-  const leftovers = createLeftovers(c, shellOf, log); const prune = createPrune(c, log), trim = createTrim(c, log);
+  const leftovers = createLeftovers(c, shellOf, log); const prune = createPrune(c, log), trim = createTrim(c, log), caches = createCaches(c, log);
 
   /** The commits the hopper pushed for the job (issue #2087). */
   const pushedFor = (jobId: string): Set<string> => proxyPushedOf(c.store.events.recent(PUSHES_READ, [...PROXY_PUSH_EVENTS], jobId));
@@ -204,8 +205,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   /** The machine's measure kept, and a person told when it goes over the budget or back within it. */
   function measure(m: MachineSnapshot, found: Survey, budget: DiskBudget | undefined): void {
     const at = c.clock.now().toISOString();
-    const more = { caches: found.caches, storage: found.storage }, disk = hopperDiskOf(found.usage, at, budget, more);
-    if (!disk) return; const last: DiskMeasure = { at, paths: disk.paths, ...(found.caches?.length ? { caches: found.caches } : {}), ...(found.storage?.length ? { storage: found.storage } : {}) };
+    const more = { caches: found.caches, storage: found.storage, jobs: jobDiskOf(found.jobs ?? []) }, disk = hopperDiskOf(found.usage, at, budget, more);
+    if (!disk) return; const last: DiskMeasure = { at, paths: disk.paths, ...(found.caches?.length ? { caches: found.caches } : {}), ...(found.storage?.length ? { storage: found.storage } : {}), ...(disk.jobs ? { jobs: disk.jobs } : {}) };
     measured().set(m.id, last); c.store.diskMeasures.keep(m.id, last);
     if (!budget) { told().delete(m.id); return; }
     if (disk.over && !told().has(m.id)) {
@@ -278,7 +279,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     const after = (pressed?.over || m.sweep?.trimAboveGiB) && removed > 0 ? await shell.survey(roots).catch(() => found) : found;
     measure(m, after, budget);
     if (c.stopping()) return;
-    await leftovers.list(m, shell, found.roots ?? [], jobOf); if (!c.stopping()) await trim.pass(m, shell, freedBetween(found, after) + await prune.pass(m, shell, found));
+    await leftovers.list(m, shell, found.roots ?? [], jobOf); if (!c.stopping()) await trim.pass(m, shell, freedBetween(found, after) + await prune.pass(m, shell, found) + await caches.pass(m, shell, found));
   }
 
   /** The reaps of one pass on the machine; how many scratch dirs they removed. */

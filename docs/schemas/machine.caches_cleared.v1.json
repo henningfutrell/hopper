@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "bytes": {
+      "type": "number"
+    },
+    "low": {
+      "type": "boolean",
+      "const": true
+    },
+    "removed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "nuget",
+              "gradle",
+              "go",
+              "npm",
+              "pnpm",
+              "yarn",
+              "pip"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "bytes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "path",
+          "bytes"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "machineId",
+    "bytes",
+    "removed"
+  ],
+  "additionalProperties": false
+}

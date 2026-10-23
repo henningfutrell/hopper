@@ -44,7 +44,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the dedupe keys, hashed, through `OutboundKeyRepository` in the database (issue #1627); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
 | `src/plugins/` | the plugin SDK (`sdk.ts`, imported by authors as `hopper/plugin`), built-in list (`builtin.ts`), custom loader, detection kit, the plugins config (`plugins-config.ts`) + watch, the host's contract (`host-types.ts`), the role slots (`router-slot.ts` with the shared `instantiate`, `queue-sorter-slot.ts`, `level-slot.ts`, `executor-slot.ts`, `source-slots.ts` for job, machine and usage sources and vault backends, `notifier-slot.ts`), attaching an ssh target as an `ssh` machine instance (`attached-edit.ts`; `attached-slot.ts` wires it into the host), the plugins-file migration and the built-in instances (`migrate.ts`), the locked-down `claude -p` runner the claude plugins share (`claude-print.ts`), `expand-home.ts`; built-in plugins under `<role>/<id>/` (`router/jev-router/` holds the Jev shim; `escalation-level/claude-cli/` holds its prompt, `escalation-level/anthropic-api/` asks the Claude API with the same prompt; `executor/herdr-claude/`, `executor/cursor-agent/`, `executor/command/` and `executor/test/` wrap the adapters in `src/executors/`; `job-source/github-app/` and `job-source/github-account/` build the GitHub sources of `src/sources/`; `machine-source/local/` wraps `src/machines/`; `machine-source/ssh/`, `machine-source/container/`, `machine-source/client/` are the attached machines, reached through the context's `target` (issue #74); `usage-source/claude-plan/` reads Claude subscription usage and the Claude account from the claude CLI (parser); `usage-source/command-usage/` reads any agent framework's usage and account from a command that prints them as JSON; `usage-source/polled.ts` the background refresh both share, `usage-source/run.ts` their command runner; `notifier/grokbot-routine/` is the Grok Bot routine webhook — the routine from the runtime, the notifier, its payloads, its deliveries kept in memory when the feed gives no store; `vault-backend/hashicorp-vault/`, `vault-backend/1password/`, `vault-backend/bitwarden/` the vault backends (issue #585), `vault-backend/credential.ts` their token from the runtime; `queue-sorter/priority/`, `queue-sorter/oldest-first/`, `queue-sorter/newest-first/` the built-in queue sorters); the routing rules as configured, their report and UI edit (`routing-config.ts`); the plugin store (`plugin-store.ts` the service, `plugin-store-catalogue.ts` its catalogue, `plugin-store-git.ts` its git mirror — "Plugin store") | engine, http, store, decider, questions |
 | `src/executors/` | `Executor` adapters (`test`, `herdr/`, `command.ts` — a job's body run on its machine through its connection, `print-agent.ts` — an agent CLI in print mode there, Cursor's agent (issue #142), codex, opencode and omp (issue #307), each CLI's call and reading in `print-agents.ts`) and the registry; reached through the executor plugins. The connections and their target authentication ("Target authentication"): `ssh.ts` (key-only ssh to pinned host keys), `ssh-key.ts` (the hopper's own ssh key, kept in the user's store, issue #293), `client.ts` (a client target's tunnel, signed calls); `env.ts` the scrubbed child environment; `kubernetes.ts` the kubernetes executor — herdr-claude on each job's own pod (issue #1283, "Job pods on Kubernetes"), its pane given the user's Claude setup token (issue #1287) | engine, http, store, plugins |
-| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `leftovers.ts` (the leftovers listing and a leftover's removal, `POST /leftovers` and `POST /leftover-remove`, issue #1116; shared with `src/executors/machine-shell.ts`), `prune.ts` (the storage prune, `POST /prune`, issue #2494; shared with `src/executors/machine-shell.ts`), `trim.ts` (the trim, fstrim on the home's filesystem, `POST /trim`, issue #2494; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `turn.ts` (a print-mode agent's turn, `POST /turn`, issue #865), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
+| `src/client/` | the hopper client ("Client targets", "Joining a machine"), installed on a client target as plain files: `server.ts` (signed `POST /herdr`, `/release`, `/load`, `/claude`, `/level`, `/reap`, `/survey`, `/credential`, `/work-tree`, `/discover` over HTTP/2 on its link), `reap.ts` (the reap and the survey scripts, issues #401, #410, #1103; shared with `src/executors/machine-shell.ts`), `leftovers.ts` (the leftovers listing and a leftover's removal, `POST /leftovers` and `POST /leftover-remove`, issue #1116; shared with `src/executors/machine-shell.ts`), `prune.ts` (the storage prune, `POST /prune`, issue #2494; shared with `src/executors/machine-shell.ts`), `trim.ts` (the trim, fstrim on the home's filesystem, `POST /trim`, issue #2494; shared with `src/executors/machine-shell.ts`), `caches.ts` (the cache clear, `POST /caches`, issue #2494; shared with `src/executors/machine-shell.ts`), `job-runtime.ts` (the job's container runtime: its set-up, the guards `podman`, `docker` and `systemd-run`, and its part of the reap and the survey, issue #1295; shared with `src/executors/herdr/start.ts` and `src/executors/print-agent.ts`), `job-sandbox.ts` (the job's sandbox: bubblewrap around Claude, its runner and its `claude`, issue #1295; shared with `src/executors/herdr/start-isolation.ts` and `src/executors/print-agent.ts`), `discover.ts` (the discovery script and the curated AWS actions and kubectl checks it asks, issue #542), `credential.ts` (a running job's credential file, issue #441), `level.ts` (an escalation level's locked-down claude run, its argv and its call; shared with `src/plugins/claude-print.ts`, issue #482), `work-tree.ts` (making a machine's work tree, shared with this machine's source, issue #361), `spawn.ts` (a fixed script's argv run with no `env` program, issues #691, #1348), `cluster.ts` (whether it runs in a Kubernetes pod, and the pod's limits, issue #1289), `resources.ts` (the machine's CPU, memory and swap meter, shared with this machine's source, issue #560), `dial.ts` (its dial-in to the hopper's URL), `door.ts` (the client door, issue #695), `reach.ts` (the reach check, `POST /reach`, issue #695), `runtime.ts` (the remote runtime's end, `POST /runtime`: the hopper's container runtime calls on this machine's own Podman or Docker, checked, issue #708), `join.ts` (joining with a join line), `leave.ts` (leaving the hopper, a lane pod's drain, issue #1284), `link.ts` (the link keys and the client token they give; shared with the hopper), `release.ts` (the client release: its files, its manifest and id, checking and installing one — "Client releases"), `infra-credentials.ts` (the infra credentials a machine's job user holds — folders and files in its home, a git credential helper, token variables: this machine's and the client's read, the ssh probe's command and its reading, a client's answer checked; shared with `src/machines/`, issues #1128 part 7, #1248), `turn.ts` (a print-mode agent's turn, `POST /turn`, issue #865), `sign-in.ts` (a tool's sign-in, `POST /sign-in`: `claude auth login` with its stdin open, its URL read, the pasted code written to it; shared with the claude-plan usage source, issue #1128), `main.ts`; `signature.ts` (the token's HMAC, shared with `src/executors/client.ts`) | everything in `src/` outside `src/client/` |
 | `src/machines/` | `MachineSource` adapters: `local` (reached through the `local` machine-source plugin), attached machines (`createAttachedMachines`, following the plugins config; ssh probe and the check that herdr is found there by name (`REMOTE_PATH`, issue #311) through the herdr CLI client's ssh argv; a container target is online while a command box can start, issue #865), the detected ssh targets (`ssh-config.ts`) and which of them is this machine (`this-machine.ts`, issue #275), a machine's disk (`disk.ts`) and its CPU, memory and swap (`resources.ts`: the ssh probe's reading and a client's answer checked, issue #560), the resource recorder (`history.ts`, issue #560, over the `MachineHistoryRepository` port), keeping each ssh target on the hopper's own herdr (`herdr-owned.ts`, pure; `herdr-owned-ssh.ts`, over ssh; issue #741), keeping each client target on the hopper's client release (`client-release.ts`) and the bridge for a client with a fixed file list (`client-bridge.ts`, issue #545), the links of the machines dialled in (`links.ts`) and their join codes (`join-code.ts`, issue #308), the lane pool key and the keys the hopper issues (`lane-pool.ts`, issues #1284, #1454), `combineMachineSources` | engine, http, store, plugins |
 | `src/usage/` | `UsageSource` adapters: `fake` — a test double at the seam (`AppSeams.fakeUsage`), never composed in production (the production usage source is the `claude-plan` plugin); the usage history's recorder (`history.ts`, issue #385), over the `UsageHistoryRepository` port | engine, http, store, plugins |
 | `src/logins/` | logins (issue #476, "Logins"): the logins a job or run waits on (`service.ts`: report, check, complete, fail, cancel, new code, the requester's outcome and a person's dismiss (issue #1110), the sweep, the view), the login kinds (`kinds.ts`), each CLI's device-code prompt and hiding its code (`recognise.ts`, pure), a print-mode run's output watched for one (`run-output.ts`), `hopper-login` (`script.ts`, issue #1110; its route `src/http/job-login.ts`), the last account of each machine's tool, kept from the usage sources' reads and shown on its logins (`last-accounts.ts`, issue #1269), the tool sign-ins a person starts from Accounts — a `paste_code` login per sign-in a usage source started, through the `UsageSource.signIn` port (`sign-ins.ts`, issue #1128; its routes `src/http/ui/tool-sign-in.ts`; a completed one calls `onSignedIn`, which the composition root gives to the questions), and the hopper's Claude sign-in for pods — `claude setup-token` in a pseudo-terminal, its token set as the user's `CLAUDE_TOKEN` through the vault's `set` the composition root gives (`setup-token.ts`, issue #1287). Its URL and code are kept in memory only. Executors and plugins use `recognise.ts` and `run-output.ts`, never the service: they report through the `RunLogins` port | engine, http, store, plugins, executors, decider, questions |
@@ -916,7 +916,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   though Claude is still in front of its pane, and though the pane is gone (a crashed hopper, a lost
   pane). The script, on whichever machine the job ran:
   1. reads what the job's scope used from its cgroup — its peak memory, CPU time and OOM kills (issue #2498, "A job's
-     parts list" → "Resources used") —, then stops the scope, `systemctl --user stop hopper-job-<job id>.scope`, which
+     parts list" → "Resources used"; the disk its scratch dir and worktrees hold is read later, before they go, "Disk used") —, then stops the scope, `systemctl --user stop hopper-job-<job id>.scope`, which
      kills every process in it and waits up to 10 s (`TimeoutStopSec`);
   2. then every process whose environment still carries the job's `HOPPER_JOB_ID` gets `SIGTERM`, then
      `SIGKILL` after 3 s — the fallback where there is no systemd. The script runs with the variable
@@ -11268,7 +11268,8 @@ registry.
   terraform on PATH, must fail. `hashicorp/null` is small and real: with the registry in reach and no mirror, `init`
   installs it, and the probe fails. A box with no mirror config fails it, unless the egress proxy filters the registry:
   `init` then fails with `could not connect to registry.terraform.io: … Filtered`, and that is a refusal too (issue
-  #2107). A registry out of reach for another reason (no DNS, no route) is an error.
+  #2107). A registry out of reach for another reason (no DNS, no route) is an error. Off a terminal terraform wraps its
+  error at 78 columns, so the probe reads these words across a line break (issue #2564).
 
 Considered and not built: a read-only plugin cache (`TF_PLUGIN_CACHE_DIR` on a directory the box cannot write) — a cache
 does not stop a download, it only keeps one; more providers or more versions of the AWS provider — no case asks for one
@@ -13124,8 +13125,9 @@ never a hold, read from a machine reading taken before the burst took its memory
   else in `/proc/vmstat`. A count is a counter, so the meter compares it with its read before: its first read, and a read
   of another cgroup, see no kill. A machine whose last OOM kill is less than 10 minutes old (`MEMORY_OOM_KILL_MS`) takes
   no new job and no job back, and has no memory room: `waiting for memory: a's memory killed a process 3 min ago (out of
-  memory), and a new job starts only 10 min after`. A floor of 0 turns this check off too. An ssh target's probe keeps no
-  count from one read to the next, so it says none. `memory.events` `max` (the limit was hit and memory reclaimed) is not
+  memory), and a new job starts only 10 min after`. A floor of 0 turns this check off too. An ssh target's probe prints the
+  same counts (`cgo <dir> <n>` for each cgroup with a limit, `oom <n>` from `/proc/vmstat`), and its attached machine keeps
+  the count from one probe to the next (`oomWatch`, part 13). `memory.events` `max` (the limit was hit and memory reclaimed) is not
   read: a cgroup full of page cache hits it in normal work, and the memory pressure already says when the reclaim stalls tasks.
 - **The CPU throttle** (issue #2499, `src/decider/cpu-throttle.ts`). A seat with a CPU quota (`cpu.max`) whose tasks want
   more CPU than the quota gives is throttled, while its CPU busy can read below resource pressure. Each reading says its
@@ -13135,8 +13137,9 @@ never a hold, read from a machine reading taken before the burst took its memory
   `waiting for CPU: a's CPU quota held its tasks back in 62% of its periods lately, and a new job starts only below 50%`.
   A memory wait comes first: the CPU wait names only machines whose memory holds the job. A machine with free lanes and a
   waiting job says so on its lane plan (`CPU holds no more job: …`), and a wait names it as left out (`a is throttled: …`).
-  It is not turned off by a floor of 0, since it is no memory check. A machine with no quota, an ssh target and a first
-  read say none.
+  It is not turned off by a floor of 0, since it is no memory check. A machine with no quota and a first read say none.
+  An ssh target's probe keeps no count from one probe to the next, so it reads `cpu.stat` of each cgroup with a quota
+  before and after its one second of CPU lines (`ct0`, `ct1`, part 13): its throttle is that second's.
 - **Placement by memory room** (issue #2499, `better` in `src/decider/assign.ts`). A machine's lane cap is a count of jobs,
   and 9 lanes of 2 GiB each did not fit a 14 GiB VM. So of the machines a job may go to, after placement pressure, the one
   with the most **real room** goes first: its lane room, only as far as its **memory room** holds jobs (its memory over its
@@ -15152,7 +15155,8 @@ memory total and available (available, not free), and swap total and used where 
   memory in use less the page cache it could drop, by job id (`jobMemoryBytes`). A scope outside the cgroup whose limit the
   reading is (a sibling of the hopper's own unit with a `MemoryMax`) is not in that cgroup's use, but takes the same
   machine's memory: it is taken off the memory available. A client target's client says the same in its `/release`
-  answer, checked by `resourcesOf`; an ssh target says none. What the scopes hold for jobs with no lane in use there — a
+  answer, checked by `resourcesOf`. An ssh target's probe prints each scope of its user manager (`cgj <dir> cur=<n> i=<n>
+  peak=<n> usec=<n> oom=<n>`, part 13), read the same way. What the scopes hold for jobs with no lane in use there — a
   job on its own wait, parked, or queued to resume, whose builds still run — is the machine's **waiting memory**.
 - **its kernel** (issue #2499): on Linux each reading names its kernel's boot id (`bootId`); an ssh target's probe prints
   it as `boot <id>`. Under a cgroup limit the meter also says the kernel's own memory (`kernelMemTotalBytes`,
@@ -19771,10 +19775,24 @@ their environment. Three decisions:
    records `job.resources_used` with the job's machine. A cgroup path with `..` is never read.
 2. *What it misses.* A job with no scope there (no systemd user manager), a scope that ended before the reap (a parked
    job's pane closed at the park; a print-mode agent's turn ended), and a client older than this: no event. Disk per job
-   is not read here: a later part of issue #2498.
+   is read by the same reap (part 4, below).
 3. *What the part shows.* One part, `resources` in the machines group: "Peak memory <n>, CPU <time>", the OOM kills when
    there were any, and the machines. A job reaped on more than one machine (moved, resumed elsewhere) shows the highest
    peak, and the CPU time and OOM kills of all of them (`src/domain/job-resources.ts`).
+
+**Disk used** (issue #2498 part 4). A job's build output, caches and test data are in its scratch dir and worktrees
+("Work tree"), and nothing said how much a job left there. Three decisions:
+
+1. *When it is read.* By the reap, after it stopped the job's processes and before it removes or keeps those dirs: one
+   `du -skx` of each (cut off at 30 s where `timeout` is), added up, as one line `hopper-disk <KiB>`. `-x` keeps it on one
+   file system, and du follows no link, so a worktree's `node_modules` link to the shared dependencies counts as a link
+   only. `readReap` reads it as `used.diskBytes`, and `job.resources_used` records it with the scope's fields; with no
+   scope there it is recorded alone. No scratch dir and no worktree there: none.
+2. *What it is.* What the job held there at its end, not a peak over its life: the scratch dir only grows while the job
+   runs, but a job that removed its own build output says less than it held. The sweep's survey still measures each work
+   tree as a whole (issue #2494); it keeps nothing per job.
+3. *What the part shows.* The `resources` part says "disk <n>" after the memory and the CPU time: the most one reap found
+   (a job reaped on two machines held its dirs on each, and the highest says what one machine needed).
 
 **Resources in use now** (issue #2498 part 3). The reap reads a job's use only at its end; a person who looks at a running
 job, or at a machine that is full, could not see which job holds what. Three decisions:
@@ -19784,8 +19802,9 @@ job, or at a machine that is full, could not see which job holds what. Three dec
    reap (`memory.peak`, `cpu.stat` `usage_usec`, `memory.events` `oom_kill`) and says them as `jobUse`, per job id, with
    the CPU cores the scope kept busy since the read before (`cpuCores`; none at its first read, and a read sooner than a
    second after keeps the one before). A client's reading is checked field by field before it is believed
-   (`src/machines/resources.ts`). No second reader and no new probe: a machine with no systemd user manager, an ssh
-   target and an older client say none.
+   (`src/machines/resources.ts`). No second reader and no new probe: an ssh target's probe prints the same files for each
+   scope (issue #2499 part 13), with no cores busy, since it reads each scope once. A machine with no systemd user manager
+   and an older client say none.
 2. *Where it shows.* The job's parts list: one part `resources-now:<machine>` in the machines group, status `running`,
    "Memory <n> now, peak <n>, CPU <n> cores", and the CPU time so far, the OOM kills and the machine
    (`resourcesNow` in `src/domain/job-resources.ts`). `GET /api/jobs/:id/bom` reads the machines' last readings only for
@@ -24584,6 +24603,47 @@ a discard. Nothing told it: the space the reaps and the prune freed stayed taken
 - **Residual risk.** On a machine where the hopper's user has sudo with no password, the hopper runs `fstrim` as root, with
   its full path and the mount point only. fstrim on a busy filesystem slows its disk for a short time.
 
+**Part 10: the cache caps** (issue #2494, `src/client/caches.ts`, `src/domain/cache-caps.ts`, `src/engine/sweep-caches.ts`).
+The tools' caches in a machine's home (NuGet, Gradle, Go, npm, pnpm, Yarn, pip) grow with every job and nothing capped
+them. The survey measures them since part 5; this part caps them.
+- **Off by default.** A machine option per kind, `cacheCap<Kind>GiB` (`cacheCapNugetGiB`, `cacheCapGradleGiB`,
+  `cacheCapGoGiB`, `cacheCapNpmGiB`, `cacheCapPnpmGiB`, `cacheCapYarnGiB`, `cacheCapPipGiB`), turns on that kind's cap.
+  The rest of `~/.cache` has no cap: its contents are not known.
+- **Which kinds.** Each kind whose places, as the pass's survey measured them, take more than its cap. While the
+  machine's disk is low, each kind with a cap that holds anything, under its cap too: a low disk frees what it can.
+- **Only while no job is there.** No clear while a job that has not ended (queued for the machine, claimed, running,
+  waiting, parked, led by an operator) is on that machine, as the store says just before the clear, or while the pass's
+  survey found a scope or a process of any job there (another hopper's too). Jobs never wait on it: the sweep tries again
+  at a later pass. Once a machine's caches are cleared, not again for an hour.
+- **The clear.** A fixed sh script through the machine's own connection (this machine, ssh, a client target's
+  `/caches`), its arguments the kinds, each checked against the known ones on both sides. It empties a kind whole: it
+  removes the kind's fixed places under the home (the survey's `CACHE_DIRS`), each only when it is a dir and no link, each
+  removal cut off at 120 s. Go's module cache is made writable first (Go makes it read-only). For Gradle, the Gradle
+  daemons of the machine's user are stopped first (`pkill`, issue #2489): they hold its caches open. Nothing else of the
+  home is touched: never `~/.claude`, `~/.claude.json`, the rest of `~/.cache`, or a link and what it points at.
+- **Recorded.** One `machine.caches_cleared` event per clear that removed something: each place removed, by its kind,
+  with its size as the survey measured it, and the sum. The sum counts toward the trim (part 9). A clear that cannot run
+  (a client older than this has no `/caches`) is logged once while it fails.
+- **Why the whole kind, not the oldest entries.** A cache is a copy of what its tool fetches again. Emptying it costs one
+  slower build, the next one; an eviction by age needs a size per entry, and each tool lays out its cache its own way.
+  The tools' own commands (`go clean -modcache`, `npm cache clean`) were not used either: a non-login shell over ssh
+  often has no tool on its PATH, and each does what the removal of its place does.
+- **Residual risk.** A job that starts on the machine between the store's check and the end of the clear finds a cache
+  emptied under it: its tool fetches again what it misses. The clear's own window is short, and the hour between clears
+  keeps it rare.
+
+**Part 11: the bytes of each job** (issue #2494, `src/client/reap.ts` `jobdu`, `src/domain/hopper-disk.ts` `jobDiskOf`).
+The measure said what `.worktrees` takes as a whole, not which jobs take it.
+- **The measure.** In the same survey, where `timeout` is, one more `du -skx` per work tree: each job's scratch dir
+  (`.worktrees/@scratch/<job id>`) and each job worktree (`.worktrees/<name>/<job id>`) on its own, cut off at 20 s. No
+  other `@` dir, no link, and no dir whose name is not a job id. The layout before issue #1188 is not measured by job.
+- **Kept.** Each job's worktrees and scratch dir summed (`worktreeBytes`, `scratchBytes`, `bytes`), biggest first, the
+  50 biggest only (`KEPT_JOB_DISKS`), so a machine with many jobs left keeps a short measure. They go in the measure the
+  store keeps (part 7) and in `hopperDisk.jobs` on `GET /api/machines`. The budget counts `.worktrees` as before.
+- **Shown.** The Machines card names the three biggest jobs, with their sizes, and how many more there are.
+- **Cost.** The job dirs are read a second time in each pass, after the `.worktrees` measure, so their entries are in
+  the page cache already.
+
 The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
 know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
@@ -24603,7 +24663,9 @@ container storage for real, with a fake runtime), `test/domain/hopper-disk.test.
 (the measure written and shown after a restart; told once across a restart). Part 8: `test/client/storage-prune.test.ts`
 (the survey's listing and the prune for real, with a fake runtime), `test/domain/storage-prune.test.ts`,
 `test/engine/sweep-prune.test.ts`. Part 9: `test/client/disk-trim.test.ts` (the trim for real, with a fake fstrim and sudo),
-`test/engine/sweep-trim.test.ts`.
+`test/engine/sweep-trim.test.ts`. Part 10: `test/client/caches.test.ts` (the clear for real in a home made for the test,
+with a fake pkill), `test/domain/cache-caps.test.ts`, `test/engine/sweep-caches.test.ts`. Part 11:
+`test/client/survey-job-disk.test.ts` (the measure for real), `test/domain/job-disk.test.ts`, `test/engine/sweep-disk-kept.test.ts`.
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 
@@ -32441,7 +32503,13 @@ credential.
   bound to a Secret of its own). The box is a need box of the template through the sandbox module's `needStep`: its run in
   the sandbox runs ledger, the sweep leaves it while it runs, and it is burned when it ends. Its command
   (`bastionCommand`) runs `kubectl port-forward --address 127.0.0.1` to each target in a loop that starts it again 2 s
-  after it ends (a pod that restarted), each on a port of its own from 20000, its lines marked with its target.
+  after it ends (a pod that restarted), each on a free port kubectl picks (`:<port>`), its lines marked with its target.
+- **Each forward's port is kubectl's pick** (issue #2566). A box on a client machine shares the machine's network, so
+  the fixed ports a bastion took before (20000 and on) could be another box's or another process's: a bastion's first
+  target, on 20000, gave only "Empty reply from server" while its other targets answered. `forwardWatch` reads the port
+  from kubectl's `Forwarding from 127.0.0.1:<port>` (`BastionView.targets[].local`, absent until kubectl said it, and
+  again after the forward ends), and the relay, and so a bastion read, connects to that port only; a forward that
+  listens but named no port is a 503.
 - **Whether each forward listens** (issue #2413, `forwardWatch`). A bastion once said "running" and listed its forwards
   while each kubectl failed in the box (no RBAC, no kubectl), and every read answered only curl's "Failed to connect". The
   hopper reads each forward's lines in the box's output as they come: a forward listens once kubectl says "Forwarding

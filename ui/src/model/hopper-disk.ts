@@ -1,6 +1,6 @@
 // The hopper's own disk use on a Machines card, and the disk budget an admin sets there (issue #1120, design.md "Hopper's
 // own disk use" → "Part 2"). The budget is in GB in the form and in bytes on the wire. Pure.
-import type { CacheKind, CacheUse, ContainerStorage, DiskBudget, HopperDisk } from '../../../src/domain/types.ts';
+import type { CacheKind, CacheUse, ContainerStorage, DiskBudget, HopperDisk, JobDiskUse } from '../../../src/domain/types.ts';
 import type { MachineCleanupLeftovers } from '../../../src/domain/resource-ledger.ts';
 
 const size = (bytes: number): string => (bytes >= 1e9 ? `${bytes >= 1e10 ? Math.round(bytes / 1e9) : (bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
@@ -26,6 +26,13 @@ export function storageText(storage: readonly ContainerStorage[] | undefined): s
   const runtimes = [...new Set(used.map((s) => s.runtime))];
   return runtimes.map((rt) => `${rt}: ${used.filter((s) => s.runtime === rt)
     .map((s) => `${s.kind.replace('-', ' ')} ${size(s.bytes)}${s.reclaimableBytes > 0 ? ` (${size(s.reclaimableBytes)} reclaimable)` : ''}`).join(', ')}`).join(' · ');
+}
+
+/** The jobs that take the most on a machine (issue #2494), the three biggest with their sizes; undefined when none was measured. */
+export function jobsDiskText(jobs: readonly JobDiskUse[] | undefined): string | undefined {
+  if (!jobs?.length) return undefined;
+  const sorted = [...jobs].sort((a, b) => b.bytes - a.bytes), more = sorted.length - 3;
+  return `${sorted.slice(0, 3).map((j) => `${j.jobId} ${size(j.bytes)}`).join(' · ')}${more > 0 ? `, and ${more} more` : ''}`;
 }
 
 const REFUSED = 'The budget must be a number of GB above 0, or empty for none';

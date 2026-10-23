@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readReap, reapArgv } from '../../src/client/reap.ts';
+import { withoutUse } from '../support/reap-said.ts';
 
 const JOB = 'job-2494-abcdef';
 
@@ -59,20 +60,20 @@ describe('a stash is work (issue #2494)', () => {
   it('a clean, pushed worktree with a stash made in it: kept, with no tip', () => {
     stash(tree);
     expect(git(tree, 'status', '--porcelain')).toBe('');
-    expect(readReap(reap())).toEqual({ kept: [tree], reasons: { [tree]: ['stash'] } });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [tree], reasons: { [tree]: ['stash'] } });
     expect(existsSync(tree)).toBe(true);
   });
 
   it('a clean, pushed worktree with a commit the hopper pushed and a stash: kept, with no tip', () => {
     commit(tree, 'b.txt', 'b\n');
     stash(tree);
-    expect(readReap(reap())).toEqual({ kept: [tree], reasons: { [tree]: ['stash', 'unpushed'] } });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [tree], reasons: { [tree]: ['stash', 'unpushed'] } });
   });
 
   it('a clean, pushed worktree whose repository has a stash made on another commit: removed', () => {
     commit(main, 'c.txt', 'c\n');
     stash(main);
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
   });
 
@@ -82,7 +83,7 @@ describe('a stash is work (issue #2494)', () => {
     const clone = join(scratch, 'clone');
     git(root, 'clone', '-q', join(root, 'remote.git'), clone);
     stash(clone);
-    expect(readReap(reap())).toEqual({ kept: [clone], reasons: { [clone]: ['stash'] } });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [clone], reasons: { [clone]: ['stash'] } });
     expect(existsSync(clone)).toBe(true);
   });
 
@@ -90,7 +91,7 @@ describe('a stash is work (issue #2494)', () => {
     rmSync(tree, { recursive: true, force: true });
     git(main, 'worktree', 'prune');
     git(root, 'clone', '-q', join(root, 'remote.git'), join(scratch, 'clone'));
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
   });
 });

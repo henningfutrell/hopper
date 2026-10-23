@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mintToken } from '../../src/client/signature.ts';
 import { clientScript } from '../../src/executors/client.ts';
+import { withoutUse } from '../support/reap-said.ts';
 import { clientShell, localShell } from '../../src/executors/machine-shell.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
 
@@ -62,7 +63,7 @@ describe.each([
     const found = await shell.survey([work]);
     expect(found.processes).toContain(JOB);
     expect(found.scratch).toEqual([{ jobId: JOB, path: scratch, ageMs: expect.any(Number) }]);
-    expect(await shell.reap(JOB, scratch)).toEqual({ kept: [] });
+    expect(withoutUse(await shell.reap(JOB, scratch))).toEqual({ kept: [] });
     await exited(p);
     expect(existsSync(scratch)).toBe(false);
     expect((await shell.survey([work])).processes).not.toContain(JOB);

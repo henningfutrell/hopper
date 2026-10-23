@@ -19,18 +19,29 @@ export interface CacheUse { kind: CacheKind; bytes: number; paths: string[] }
 /** What one container runtime's storage of one kind takes on a machine, as its `system df` says (issue #2494). */
 export interface ContainerStorage { runtime: 'docker' | 'podman'; kind: 'images' | 'containers' | 'volumes' | 'build-cache'; bytes: number; reclaimableBytes: number }
 
+/** One job's scratch dir or one of its worktrees, as the survey measured it on its own (issue #2494). */
+export interface SurveyedJobDisk { jobId: string; kind: 'scratch' | 'tree'; path: string; bytes: number }
+
+/** What one job takes on a machine (issue #2494): its worktrees and its scratch dir, and their sum. */
+export interface JobDiskUse { jobId: string; bytes: number; worktreeBytes: number; scratchBytes: number }
+
+/** How many jobs a measure keeps (issue #2494): the biggest only, so a machine with many jobs left keeps a short measure. */
+export const KEPT_JOB_DISKS = 50;
+
 /**
  * The hopper's own disk use on one machine, as the sweep last measured it (issue #1120): the bytes of each place, their
  * sum, and when. `budgetBytes`: the disk budget now, absent when there is none; `over`: the use is more than it.
  * `caches`, `storage` (issue #2494): the machine's caches and its container storage, absent when not measured.
+ * `jobs` (issue #2494): what each job there takes, biggest first, at most KEPT_JOB_DISKS; absent when not measured.
  */
-export interface HopperDisk { bytes: number; at: string; paths: HopperDiskPath[]; budgetBytes?: number; over: boolean; caches?: CacheUse[]; storage?: ContainerStorage[] }
+export interface HopperDisk { bytes: number; at: string; paths: HopperDiskPath[]; budgetBytes?: number; over: boolean; caches?: CacheUse[]; storage?: ContainerStorage[]; jobs?: JobDiskUse[] }
 
 /**
  * What the sweep last measured on one machine (issue #2494), as the store keeps it: its places, when, and its caches and
- * container storage as the survey said them. The disk budget is applied at each read, so a new budget needs no new measure.
+ * container storage as the survey said them, and what each job takes. The disk budget is applied at each read, so a new
+ * budget needs no new measure.
  */
-export interface DiskMeasure { at: string; paths: HopperDiskPath[]; caches?: SurveyedCache[]; storage?: ContainerStorage[] }
+export interface DiskMeasure { at: string; paths: HopperDiskPath[]; caches?: SurveyedCache[]; storage?: ContainerStorage[]; jobs?: JobDiskUse[] }
 
 /** Each machine's last disk measure (issue #2494, tenant migration 94): one per machine, the newest replaces the one before. */
 export interface DiskMeasureRepository {
@@ -68,13 +79,24 @@ export function cacheUseOf(found: readonly SurveyedCache[]): CacheUse[] {
   return [...byKind.values()].sort((a, b) => b.bytes - a.bytes);
 }
 
+/** What each job takes (issue #2494): its places summed, biggest first, the KEPT_JOB_DISKS biggest only. */
+export function jobDiskOf(found: readonly SurveyedJobDisk[]): JobDiskUse[] {
+  const byJob = new Map<string, JobDiskUse>();
+  for (const f of found) {
+    const use = byJob.get(f.jobId) ?? { jobId: f.jobId, bytes: 0, worktreeBytes: 0, scratchBytes: 0 };
+    byJob.set(f.jobId, { ...use, bytes: use.bytes + f.bytes, ...(f.kind === 'tree' ? { worktreeBytes: use.worktreeBytes + f.bytes } : { scratchBytes: use.scratchBytes + f.bytes }) });
+  }
+  return [...byJob.values()].sort((a, b) => b.bytes - a.bytes).slice(0, KEPT_JOB_DISKS);
+}
+
 /** The hopper's disk use from what a survey measured, at `at`, against `budget`; undefined when it measured nothing. */
 export function hopperDiskOf(paths: readonly HopperDiskPath[] | undefined, at: string, budget: DiskBudget | undefined,
-  more: { caches?: readonly SurveyedCache[]; storage?: readonly ContainerStorage[] } = {}): HopperDisk | undefined {
+  more: { caches?: readonly SurveyedCache[]; storage?: readonly ContainerStorage[]; jobs?: readonly JobDiskUse[] } = {}): HopperDisk | undefined {
   const caches = more.caches?.length ? cacheUseOf(more.caches) : undefined;
   const storage = more.storage?.length ? [...more.storage] : undefined;
+  const jobs = more.jobs?.length ? [...more.jobs] : undefined;
   if (!paths?.length && !caches && !storage) return undefined;
   const bytes = (paths ?? []).reduce((sum, p) => sum + p.bytes, 0);
   return { bytes, at, paths: [...(paths ?? [])], ...(budget ? { budgetBytes: budget.bytes } : {}), over: budget !== undefined && bytes > budget.bytes,
-    ...(caches ? { caches } : {}), ...(storage ? { storage } : {}) };
+    ...(caches ? { caches } : {}), ...(storage ? { storage } : {}), ...(jobs ? { jobs } : {}) };
 }

@@ -1,5 +1,5 @@
 // What a job used in its parts list (issue #2498, design.md "A job's parts list" → "Resources used"): its scope's peak
-// memory, CPU time and OOM kills, as each reap read them (`job.resources_used`), beside job-bom.ts for its size; and while
+// memory, CPU time and OOM kills, and the disk of its scratch dir and worktrees (part 4), as each reap read them (`job.resources_used`), beside job-bom.ts for its size; and while
 // it runs (part 3), what its scope uses now, as its machine's meter last read it (`jobMemoryBytes`, `jobUse`). Pure.
 import type { BomPart } from './job-bom.ts';
 import type { JobUseNow, ResourceReading } from './machine-history.ts';
@@ -17,8 +17,9 @@ function cpuText(seconds: number): string {
 }
 
 /**
- * One part for every reap that read the job's scope (a job resumed elsewhere is reaped on each machine): the highest peak
- * memory, the CPU time and the OOM kills of all of them, and the machines. None when no reap read one.
+ * One part for every reap that read the job's scope or disk (a job resumed elsewhere is reaped on each machine): the highest
+ * peak memory, the CPU time and the OOM kills of all of them, the most disk one reap found, and the machines. None when no
+ * reap read one.
  */
 export function resourcesUsed(events: readonly DomainEvent[]): BomPart[] {
   const read = events.filter((e) => e.type === 'job.resources_used');
@@ -27,9 +28,13 @@ export function resourcesUsed(events: readonly DomainEvent[]): BomPart[] {
   const peaks = all.flatMap((u) => (u.memoryPeakBytes !== undefined ? [u.memoryPeakBytes] : []));
   const cpus = all.flatMap((u) => (u.cpuSeconds !== undefined ? [u.cpuSeconds] : []));
   const ooms = all.flatMap((u) => (u.oomKills !== undefined ? [u.oomKills] : []));
+  const disks = all.flatMap((u) => (u.diskBytes !== undefined ? [u.diskBytes] : []));
   const machines = [...new Set(read.flatMap((e) => (e.machineId ? [e.machineId] : [])))];
-  const label = [peaks.length ? `Peak memory ${memoryText(Math.max(...peaks))}` : undefined, cpus.length ? `CPU ${cpuText(cpus.reduce((a, b) => a + b, 0))}` : undefined]
-    .filter(Boolean).join(', ') || 'Resources used';
+  const said = [
+    peaks.length ? `Peak memory ${memoryText(Math.max(...peaks))}` : undefined, cpus.length ? `CPU ${cpuText(cpus.reduce((a, b) => a + b, 0))}` : undefined,
+    disks.length ? `disk ${memoryText(Math.max(...disks))}` : undefined,
+  ].filter((t) => t !== undefined).join(', ');
+  const label = said ? said[0]!.toUpperCase() + said.slice(1) : 'Resources used';
   const kills = ooms.reduce((a, b) => a + b, 0);
   const detail = [ooms.length && kills > 0 ? `${kills} OOM kill${kills === 1 ? '' : 's'}` : undefined, machines.length ? `on ${machines.join(' and ')}` : undefined].filter(Boolean).join(', ');
   const at = read.map((e) => e.at).sort().at(-1);

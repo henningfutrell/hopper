@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readReap, reapArgv } from '../../src/client/reap.ts';
+import { withoutUse } from '../support/reap-said.ts';
 
 const JOB = 'job-1452-abcdef';
 
@@ -36,7 +37,7 @@ describe.skipIf(process.getuid?.() === 0)('a scratch dir that resists its remova
     writeFileSync(join(mod, 'x@v1', 'x.go'), 'package x\n');
     chmodSync(join(mod, 'x@v1'), 0o555);
     chmodSync(mod, 0o555);
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
   });
 
@@ -47,7 +48,7 @@ describe.skipIf(process.getuid?.() === 0)('a scratch dir that resists its remova
     mkdirSync(join(work, 'work', 'inner'), { recursive: true });
     chmodSync(join(work, 'work'), 0o200);
     chmodSync(work, 0o000);
-    expect(readReap(reap())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(reap()))).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
   });
 
@@ -56,7 +57,7 @@ describe.skipIf(process.getuid?.() === 0)('a scratch dir that resists its remova
     writeFileSync(join(scratch, 'tmp.txt'), 'x');
     chmodSync(area, 0o555);
     try {
-      expect(readReap(reap())).toEqual({ kept: [], left: [scratch] });
+      expect(withoutUse(readReap(reap()))).toEqual({ kept: [], left: [scratch] });
       expect(existsSync(scratch)).toBe(true);
     } finally {
       chmodSync(area, 0o755);

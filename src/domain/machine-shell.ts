@@ -2,11 +2,12 @@
 // from it) for its size.
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { CheckpointCapture } from './checkpoints.ts';
-import type { ContainerStorage, SurveyedCache } from './hopper-disk.ts';
+import type { ContainerStorage, SurveyedCache, SurveyedJobDisk } from './hopper-disk.ts';
 import type { Leftover } from './leftovers.ts';
 import type { KeptReason } from './kept-work.ts';
 import type { ExitedContainer, Pruned } from './storage-prune.ts';
 import type { Trimmed } from './disk-trim.ts';
+import type { CappedKind, Cleared } from './cache-caps.ts';
 
 /**
  * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
@@ -25,9 +26,10 @@ export interface Reaped {
 
 /**
  * What a job's scope used (issue #2498), as `job.resources_used` records it: its peak memory (cgroup `memory.peak`), its CPU
- * time (`cpu.stat` `usage_usec`) and the OOM kills in it (`memory.events` `oom_kill`), each absent where the cgroup had none.
+ * time (`cpu.stat` `usage_usec`) and the OOM kills in it (`memory.events` `oom_kill`), each absent where the cgroup had none;
+ * and the disk its scratch dir and worktrees held before the reap removed them (part 4), absent where it had neither.
  */
-export type ResourceUse = { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number };
+export type ResourceUse = { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; diskBytes?: number };
 
 /**
  * The containers and volumes a reap removed (issue #1120), as `job.containers_removed` records them; `details` (issue #975):
@@ -65,6 +67,8 @@ export interface Survey {
   storage?: ContainerStorage[];
   /** Each exited container of each container runtime there (issue #2494), for the storage prune; absent, none (or a client older than this). */
   exited?: ExitedContainer[];
+  /** Each job's scratch dir and job worktree there, measured on its own (issue #2494); absent or empty: not measured. */
+  jobs?: SurveyedJobDisk[];
 }
 
 /**
@@ -119,4 +123,6 @@ export interface MachineShell {
   prune?(days: number, containers: string[]): Promise<Pruned>;
   /** The trim (issue #2494): fstrim on the filesystem the machine's home is on; says how it ended. Absent: the shell trims nothing. */
   trim?(): Promise<Trimmed>;
+  /** The cache clear (issue #2494): removes the machine's cache places of the kinds; says what it removed. Absent: the shell clears none. */
+  clearCaches?(kinds: CappedKind[]): Promise<Cleared>;
 }

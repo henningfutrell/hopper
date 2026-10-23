@@ -12,6 +12,7 @@ import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { clientTurn } from '../../src/executors/client.ts';
 import { createPrintAgentExecutor } from '../../src/executors/index.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
+import { withoutUse } from '../support/reap-said.ts';
 import { useStandInPodman } from '../support/stand-in-podman.ts';
 
 const FAKE = join(import.meta.dirname, 'fake-print-agent.mjs');
@@ -96,7 +97,7 @@ describe('a print-mode agent on a client target', () => {
     expect(await ex.run(ctx)).toMatchObject({ kind: 'finished' });
     const scratch = `${work}/.worktrees/@scratch/${ID}`;
     expect(existsSync(scratch)).toBe(true);
-    expect(await ex.cleanup!({ ...ctx.job, status: 'finished', executorState: saved.at(-1)! })).toEqual({ kept: [] });
+    expect(withoutUse(await ex.cleanup!({ ...ctx.job, status: 'finished', executorState: saved.at(-1)! }))).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
     expect(ex.machineShell!(STUDIO())).toBeDefined();
   });

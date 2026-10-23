@@ -1,0 +1,1 @@
+- The hopper now sees how much memory each job uses on machines it reaches over ssh, when their processes are killed for memory, and when their CPU limit holds them back, so it does not start new jobs on them when they are full.

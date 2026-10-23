@@ -40,7 +40,7 @@ const until = async (what: () => boolean): Promise<void> => {
 
 /** What kubectl says in the box once each forward of its command listens. */
 const listening = (box: { env: Record<string, string> }): string =>
-  [...(box.env.HOPPER_STEP_COMMAND ?? '').matchAll(/ '([^']+)' &$/gm)].map((m) => `[${m[1]}] Forwarding from 127.0.0.1 -> remote\n`).join('');
+  [...(box.env.HOPPER_STEP_COMMAND ?? '').matchAll(/ '([^']+)' &$/gm)].map((m, i) => `[${m[1]}] Forwarding from 127.0.0.1:${20000 + i} -> remote\n`).join('');
 
 /** Bastions with the box a double that runs until it is stopped, and a mint that counts. */
 function bastions(o: Partial<BastionsOptions> & { pipe?: RunningNeedBox['pipe'] } = {}) {
@@ -72,15 +72,14 @@ function bastions(o: Partial<BastionsOptions> & { pipe?: RunningNeedBox['pipe'] 
 }
 
 describe('a bastion (issue #2146)', () => {
-  it('starts one box of the template with each observe minted for it, its tokens as files, each target on a port of its own', async () => {
+  it('starts one box of the template with each observe minted for it, its tokens as files, each target on a port kubectl picks', async () => {
     const { b, events, boxes, minted } = bastions();
     const r = await b.start(JOB, TEMPLATE, TARGETS);
     if ('no' in r) throw new Error(r.no);
-    expect(r).toMatchObject({ jobId: 'job-1', template: 'observe-uat', targets: [
-      { target: 'uat/monitoring/svc/prometheus-server:9090', local: 20000 }, { target: 'uat/monitoring/svc/grafana:80', local: 20001 },
-    ] });
+    expect(r).toMatchObject({ jobId: 'job-1', template: 'observe-uat', targets: [{ target: 'uat/monitoring/svc/prometheus-server:9090' }, { target: 'uat/monitoring/svc/grafana:80' }] });
     expect(minted()).toBe(1);
     await until(() => b.of('job-1')?.state === 'running');
+    expect(b.of('job-1')?.targets.map((t) => t.local)).toEqual([20000, 20001]);
     const [{ box }] = boxes as [typeof boxes[number]];
     expect(box.name).toBe(r.box);
     expect(box.files).toEqual({ secrets: { 'kube-uat-monitoring': 'token-1' } });

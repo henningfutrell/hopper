@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readReap, reapArgv } from '../../src/client/reap.ts';
+import { withoutUse } from '../support/reap-said.ts';
 
 const JOB = 'job-401-abcdef';
 
@@ -56,7 +57,7 @@ describe('the reap that discards kept work (issue #1010): a person said the work
     git(ahead, 'add', '.');
     git(ahead, 'commit', '-q', '-m', 'd');
     writeFileSync(join(ahead, 'e.txt'), 'e\n');
-    expect(readReap(discarding())).toEqual({ kept: [] });
+    expect(withoutUse(readReap(discarding()))).toEqual({ kept: [] });
     expect(existsSync(scratch)).toBe(false);
     expect(git(main, 'worktree', 'list')).not.toContain(ahead);
     expect(existsSync(join(main, 'a.txt'))).toBe(true);
@@ -65,7 +66,7 @@ describe('the reap that discards kept work (issue #1010): a person said the work
   it('touches nothing but a job scratch dir', () => {
     const elsewhere = join(root, 'work');
     writeFileSync(join(elsewhere, 'keep.txt'), 'x');
-    expect(readReap(discarding(elsewhere))).toEqual({ kept: [] });
+    expect(withoutUse(readReap(discarding(elsewhere)))).toEqual({ kept: [] });
     expect(existsSync(join(elsewhere, 'keep.txt'))).toBe(true);
   });
 });
