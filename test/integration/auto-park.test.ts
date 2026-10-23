@@ -212,7 +212,7 @@ describe('auto-park', () => {
     });
     apps.push(a);
     const token = await a.login();
-    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained }, { token })).status).toBe(200);
+    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained, ...(drained ? { reason: 'test' } : {}) }, { token })).status).toBe(200);
 
     await drain('host', true);
     const job = await a.pull({}, { executor: 'herdr-claude', prompt: 'Paint the shed', env: {} });

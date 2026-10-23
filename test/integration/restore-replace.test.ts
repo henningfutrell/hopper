@@ -41,7 +41,7 @@ describe('a checkpoint restore with no way to the hopper (issue #2355)', () => {
       seams: { herdr: seat, herdrSessions: { 'seat-s': seat, 'host-s': host, 'spare-s': spare }, herdrSession: async () => {}, levels: [] },
     });
     const admin = await a.login();
-    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained }, { token: admin })).status).toBe(200);
+    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained, ...(drained ? { reason: 'test' } : {}) }, { token: admin })).status).toBe(200);
 
     // It starts on seat and goes on its own wait: its agent ends, its checkpoint is taken.
     await drain('host', true);

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #1511: draining a machine on its Machines card, rendered inside the whole app against a fake of the daemon's HTTP
 // surface. Drain asks first, then posts; a drained machine shows a badge, who drained it and the jobs still on it, and
-// Undrain posts at once.
+// Undrain posts at once. Issue #2499: the drain names its reason and when it ends; Drain stays off until a reason is typed.
 //
 // Feature: draining a machine
 //   Scenario: Drain asks first, then posts the drain
@@ -64,6 +64,11 @@ async function boot(machines: unknown[]) {
   await vi.waitFor(() => expect(button(/^Drain$|^Undrain$/)).toBeDefined());
 }
 
+const type = (el: HTMLInputElement, text: string) => act(async () => {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(el, text);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+});
+
 const posts = (path: string) => calls.filter((c) => c.method === 'POST' && c.path === path);
 
 afterEach(() => {
@@ -81,14 +86,20 @@ describe('draining a machine on its Machines card (issue #1511)', () => {
     expect(dialog.textContent).toContain('The jobs on it now run to their end.');
     expect(posts('/ui/api/machines/drain')).toEqual([]);
     const confirm = [...dialog.querySelectorAll('button')].find((b) => /^Drain$/.test(b.textContent ?? ''))!;
+    expect(confirm.disabled).toBe(true);
+    await type(dialog.querySelector<HTMLInputElement>('input[name="drain-reason"]')!, 'seat rebuild');
+    await type(dialog.querySelector<HTMLInputElement>('input[name="drain-hours"]')!, '6');
+    expect(confirm.disabled).toBe(false);
     await act(async () => { confirm.click(); });
-    await vi.waitFor(() => expect(posts('/ui/api/machines/drain')).toEqual([expect.objectContaining({ body: { machineId: 'desk', drained: true } })]));
+    await vi.waitFor(() => expect(posts('/ui/api/machines/drain')).toEqual([expect.objectContaining({ body: { machineId: 'desk', drained: true, reason: 'seat rebuild', hours: 6 } })]));
   });
 
   it('a drained machine says so, by whom, and the jobs still on it; Undrain posts at once', async () => {
-    await boot([{ ...DESK, lanes: BUSY, drained: { person: 'Pat', via: 'cli', at: new Date().toISOString() } }]);
+    await boot([{ ...DESK, lanes: BUSY, drained: { person: 'Pat', via: 'cli', at: new Date().toISOString(), reason: 'seat rebuild', until: new Date(Date.now() + 3 * 3_600_000).toISOString() } }]);
     const notice = document.querySelector<HTMLElement>('[data-slot="drained"]')!;
     expect(notice.textContent).toContain('Drained by Pat');
+    expect(notice.textContent).toContain('seat rebuild');
+    expect(notice.textContent).toMatch(/ends by itself in 3 h/);
     expect(notice.textContent).toContain('The 1 job still on it runs to its end.');
     expect(document.body.textContent).toContain('drained');
     await act(async () => { button(/^Undrain$/)!.click(); });
