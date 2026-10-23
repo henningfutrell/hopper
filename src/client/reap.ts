@@ -216,6 +216,8 @@ const SURVEY_SCRIPT = [
   'for rt in docker podman; do command -v "$rt" >/dev/null 2>&1 || continue;',
   `  c=$($to "$rt" ps -aq --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$c" ] && $to "$rt" inspect --format '{{index .Config.Labels "${JOB_LABEL}"}}' $c 2>/dev/null | sed "s/^/hopper-container /";`,
   `  v=$($to "$rt" volume ls -q --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$v" ] && $to "$rt" volume inspect --format '{{index .Labels "${JOB_LABEL}"}}' $v 2>/dev/null | sed "s/^/hopper-container /";`,
+  // Each exited container (issue #2494), for the storage prune: `hopper-exited|<runtime>|<id>|<stopped at>|<label keys>`.
+  `  x=$($to "$rt" ps -aq --filter status=exited 2>/dev/null); [ -n "$x" ] && $to "$rt" container inspect --format '{{.Id}}|{{.State.FinishedAt}}|{{range $k, $v := .Config.Labels}}{{$k}} {{end}}' $x 2>/dev/null | sed "s/^/hopper-exited|$rt|/";`,
   'done;',
   // Each job's own container runtime left (issue #1295, job-runtime.ts), as a job with a container left.
   SURVEY_RUNTIME_SH,
@@ -334,8 +336,10 @@ export interface SurveyedUsage { path: string; bytes: number }
 export interface SurveyedCache { kind: CacheDirKind; path: string; bytes: number }
 /** What one container runtime's storage of one kind takes, as its `system df` said (issue #2494). */
 export interface SurveyedStorage { runtime: 'docker' | 'podman'; kind: 'images' | 'containers' | 'volumes' | 'build-cache'; bytes: number; reclaimableBytes: number }
+/** One exited container the survey found (issue #2494), for the storage prune: its full id, when it stopped as the runtime said, its label keys. */
+export interface SurveyedExited { runtime: 'docker' | 'podman'; id: string; finishedAt: string; labels: string[] }
 /** What a finished survey found. Undefined when it did not finish. */
-export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[]; caches?: SurveyedCache[]; storage?: SurveyedStorage[] }
+export interface Survey { scopes: string[]; processes: string[]; scratch: SurveyedDir[]; trees?: SurveyedTree[]; roots?: string[]; usage?: SurveyedUsage[]; containers?: string[]; caches?: SurveyedCache[]; storage?: SurveyedStorage[]; exited?: SurveyedExited[] }
 
 const STORAGE_KINDS: Record<string, SurveyedStorage['kind']> = { 'Images': 'images', 'Containers': 'containers', 'Local Volumes': 'volumes', 'Build Cache': 'build-cache' };
 const UNITS: Record<string, number> = { '': 1, k: 1e3, K: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15 };
@@ -360,6 +364,7 @@ export function readSurvey(stdout: string): Survey | undefined {
   const usage: SurveyedUsage[] = [];
   const caches: SurveyedCache[] = [];
   const storage: SurveyedStorage[] = [];
+  const exited: SurveyedExited[] = [];
   for (const l of lines) {
     const ca = /^hopper-cache (\d+) (\/.*)$/.exec(l);
     const kind = ca ? cacheKindOf(ca[2]!) : undefined;
@@ -368,6 +373,9 @@ export function readSurvey(stdout: string): Survey | undefined {
     const bytes = sizeOf(size);
     if (mark === 'hopper-df' && (runtime === 'docker' || runtime === 'podman') && type && Object.hasOwn(STORAGE_KINDS, type) && bytes !== undefined) {
       storage.push({ runtime, kind: STORAGE_KINDS[type]!, bytes, reclaimableBytes: sizeOf(reclaimable) ?? 0 });
+    }
+    if (mark === 'hopper-exited' && (runtime === 'docker' || runtime === 'podman') && type && /^[0-9a-f]{64}$/.test(type) && size) {
+      exited.push({ runtime, id: type, finishedAt: size, labels: (reclaimable ?? '').split(' ').filter(Boolean) });
     }
     const u = /^hopper-du (\d+) (\/.*\/(?:\.worktrees|\.hopper-scratch|workspace\/[^/]+))$/.exec(l);
     if (u) usage.push({ path: u[2]!, bytes: Number(u[1]) * 1024 });
@@ -378,7 +386,7 @@ export function readSurvey(stdout: string): Survey | undefined {
     const t = /^hopper-tree (\d+) (\/.*\/(?:\.worktrees\/[^/@][^/]*\/[^/]+|workspace\/worktrees\/[^/]+))$/.exec(l);
     if (t) trees.push({ path: t[2]!, ageMs: Number(t[1]) * 1000 });
   }
-  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container '), caches, storage };
+  return { scopes: ids('hopper-scope '), processes: ids('hopper-proc '), scratch, trees, roots, usage, containers: ids('hopper-container '), caches, storage, ...(exited.length ? { exited } : {}) };
 }
 
 /** A scratch dir a reap may name: absolute, one line, and the job's own, of either layout. */
