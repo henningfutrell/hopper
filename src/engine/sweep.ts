@@ -171,7 +171,7 @@ const count = (n: number, what: string): string => `${n} ${what}${n === 1 ? '' :
 export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'clock' | 'stopping'>, log: (line: string) => void = (l) => console.warn(l)): Sweep {
   const schedule = createSweepDue();
   /** Each machine's last measure (issue #1120), and the machines told over the disk budget. */
-  const measured = new Map<string, { paths: HopperDiskPath[]; at: string }>();
+  const measured = new Map<string, { paths: HopperDiskPath[]; at: string; more: Pick<Survey, 'caches' | 'storage'> }>();
   const told = new Set<string>();
   /** The jobs, by `<machine>/<job id>`, whose dirs the reap could not remove, told once (issue #1452), with when to try again (issue #1613). */
   const stuck = new Map<string, number>();
@@ -217,9 +217,9 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   /** The machine's measure kept, and a person told when it goes over the budget or back within it. */
   function measure(m: MachineSnapshot, found: Survey, budget: DiskBudget | undefined): void {
     const at = c.clock.now().toISOString();
-    const disk = hopperDiskOf(found.usage, at, budget);
+    const more = { caches: found.caches, storage: found.storage }, disk = hopperDiskOf(found.usage, at, budget, more);
     if (!disk) return;
-    measured.set(m.id, { paths: disk.paths, at });
+    measured.set(m.id, { paths: disk.paths, at, more });
     if (!budget) { told.delete(m.id); return; }
     if (disk.over && !told.has(m.id)) {
       told.add(m.id);
@@ -361,7 +361,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   return {
     disk(machineId) {
       const m = measured.get(machineId);
-      return m ? hopperDiskOf(m.paths, m.at, budgetNow()) : undefined;
+      return m ? hopperDiskOf(m.paths, m.at, budgetNow(), m.more) : undefined;
     },
     leftovers: (machineId) => leftovers.view(machineId),
     decideLeftover: (machineId, path, decision, by) => leftovers.decide(machineId, path, decision, by),

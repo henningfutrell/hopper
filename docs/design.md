@@ -24366,6 +24366,24 @@ each fetch. The measure left it out, so a machine could be over its disk budget 
   (each start fetches under the start lock with gc in the foreground, issue #1075). Over the budget, the checkouts are in
   `machine.disk_over_budget`'s `paths`, so a person sees why it stays over.
 
+**Part 6: the caches and the container storage** (issue #2494, `src/client/reap.ts` survey, `src/domain/hopper-disk.ts`).
+Seat homes grew to 20–30 GB each, mostly package caches (NuGet, Gradle, Go, npm) and container storage, and Machines
+showed none of it. This part measures them; a cache policy and an image prune are later parts of issue #2494.
+- **The survey measures the caches** in the home of the user it runs as, once per survey: each place of `CACHE_DIRS`
+  (`~/.nuget/packages`, `~/.gradle/caches`, `~/.gradle/wrapper/dists`, `~/go/pkg/mod`, `~/.cache/go-build`, `~/.npm`,
+  `~/.local/share/pnpm/store`, `~/.cache/yarn`, `~/.yarn/berry/cache`, `~/.cache/pip`) that is there and no link, by one
+  `du -skx`, and `~/.cache` whole by a second, each cut off at 20 s: `hopper-cache <KiB> <path>`. Fixed places only, with
+  no variable that could name another: nothing else of the home is read, `~/.claude` least of all. The hopper counts in
+  `cache` only what the other kinds' places in `~/.cache` do not hold (`cacheUseOf`).
+- **It measures the container storage**: each runtime there (`docker`, `podman`) answers `system df` (cut off at 20 s),
+  `hopper-df|<runtime>|<type>|<size>|<reclaimable>`; the hopper reads `Images`, `Containers`, `Local Volumes` and
+  `Build Cache` and their sizes in decimal units, and leaves any other type out.
+- Neither runs where `timeout` is missing. The survey may now take 120 s (`SURVEY_TIMEOUT_MS`), on this machine, over ssh
+  and through a client target's `/survey`; a client older than this measures neither.
+- **Shown with the disk use.** `hopperDisk` on `GET /api/machines` carries them as `caches` (per kind, biggest first) and
+  `storage`, and each Machines card says them (`caches`, `container storage`). They are not the hopper's own disk use:
+  the disk budget does not count them, and the sweep removes none of them. Kept in memory with the rest of the measure.
+
 The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
 know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
@@ -24379,7 +24397,8 @@ removed, none on a failed update), `test/integration/disk-budget.test.ts` (the s
 survey for real, with a fake container runtime), `test/engine/sweep.test.ts` ("a job's containers and volumes"),
 `test/integration/work-kept.test.ts` (the event at a job's end), `test/support-run.test.ts` (the tests' labels). Part 4:
 `test/sandbox/leftover-builds.test.ts` (which builds are leftover, their removal, once an hour from the reconcile pass),
-`test/adapters/runtime-images.test.ts` (the image calls of both runtimes), `test/sandbox/tools.test.ts` (the stage label). Part 5: `test/client/survey-roots.test.ts` (each checkout measured, not a plain folder or a link).
+`test/adapters/runtime-images.test.ts` (the image calls of both runtimes), `test/sandbox/tools.test.ts` (the stage label). Part 5: `test/client/survey-roots.test.ts` (each checkout measured, not a plain folder or a link). Part 6: `test/client/survey-disk-use.test.ts` (the caches and the
+container storage for real, with a fake runtime), `test/domain/hopper-disk.test.ts`, `test/ui/hopper-disk.test.ts`.
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 
