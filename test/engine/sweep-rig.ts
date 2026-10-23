@@ -110,6 +110,8 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       // The resource ledger (issue #2504): `ledger`'s entries, closed in place.
       resourceLedger: {
         forJob: (id: string) => ledger.filter((e) => e.jobId === id), open: () => ledger.filter((e) => e.state === 'live' || e.state === 'failed'),
+        onMachine: (machineId: string) => ledger.filter((e) => e.machineId === machineId),
+        record: (e: Omit<LedgerEntry, 'state'>) => { if (!ledger.some((x) => x.jobId === e.jobId && x.kind === e.kind && x.locator === e.locator)) ledger.push({ ...e, state: 'live' }); },
         close: (id: string, kind: string, locator: string, state: LedgerEntry['state'], at: string, reason?: string) => {
           const e = ledger.find((x) => x.jobId === id && x.kind === kind && x.locator === locator && x.state !== 'reaped');
           if (e) Object.assign(e, { state, endedAt: at, ...(reason ? { reason } : {}) });

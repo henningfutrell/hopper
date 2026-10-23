@@ -50,4 +50,22 @@ describe('the sweep and the resource ledger (issue #2504)', () => {
     await r.sweep.run(true);
     expect(r.ledger[0]).toMatchObject({ state: 'reaped' });
   });
+
+  it('records what it finds of an ended job that the ledger does not name, then its reap closes it (part 6)', async () => {
+    const scratch = '/w/.worktrees/@scratch/old';
+    const r = rig({ lefts: ['old'], found: { ...none, roots: ['/w'], scopes: ['old'], scratch: [{ jobId: 'old', path: scratch, ageMs: 25 * HOUR }, { jobId: 'stranger', path: '/w/.worktrees/@scratch/stranger', ageMs: 99 * HOUR }], trees: [] } });
+    await r.sweep.run(true);
+    expect(r.ledger.map((e) => [e.jobId, e.kind, e.locator, e.state, e.createdAt])).toEqual([
+      ['old', 'scratch_dir', scratch, 'failed', '2026-10-08T00:00:00.000Z'], ['old', 'job_scope', 'hopper-job-old.scope', 'reaped', '2026-10-08T00:00:00.000Z'],
+    ]);
+    expect(r.ledger[0]?.retainedUntil).toBe('2026-10-07T23:00:00.000Z');
+    // A job the hopper does not know is never touched, nor recorded.
+    expect(r.reaps.map((x) => x.jobId)).toEqual(['old']);
+  });
+
+  it('keeps an entry the ledger names as it is', async () => {
+    const r = rig({ found: { ...none, roots: ['/w'], scratch: [{ jobId: 'old', path: '/w/.worktrees/@scratch/old', ageMs: 1 * HOUR }], trees: [] }, ledger: [entry('old', 'scratch_dir', '/w/.worktrees/@scratch/old')] });
+    await r.sweep.run(true);
+    expect(r.ledger).toEqual([entry('old', 'scratch_dir', '/w/.worktrees/@scratch/old')]);
+  });
 });

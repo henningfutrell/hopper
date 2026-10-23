@@ -1,7 +1,7 @@
 // The retention per job status (issue #2494, design.md "The sweep"): how long an ended job's scratch dir and job worktrees
 // stay on its machine. Set for the status, counted from the job's end; not set, the sweep's scratch age, as before.
 import { describe, expect, it } from 'vitest';
-import { retainedUntilOf, retainsAtEnd, retentionOver } from '../../src/domain/retention.ts';
+import { retainedUntilOf, retainsAtEnd, retentionOver, sweepReapAtOf } from '../../src/domain/retention.ts';
 import type { Job } from '../../src/domain/types.ts';
 
 const HOUR = 3600_000;
@@ -52,5 +52,13 @@ describe('the retention per job status (issue #2494)', () => {
     expect(retainedUntilOf({ retainHours: { failed: 0 } }, { status: 'failed', finishedAt: end }, NOW)).toBeUndefined();
     expect(retainedUntilOf(undefined, { status: 'failed', finishedAt: end, liveness: { outputAt: end } }, NOW)).toBe(at(24));
     expect(retainedUntilOf({ scratchMaxAgeHours: 6 }, { status: 'failed', finishedAt: end, liveness: { outputAt: end } }, NOW)).toBe(at(6));
+  });
+
+  it('the sweep reaps a dir it finds when its retention is over: by its age, else from the job\'s end (issue #2504 part 6)', () => {
+    const at = (h: number) => new Date(NOW + h * HOUR).toISOString();
+    expect(sweepReapAtOf(undefined, ended('failed', 30), 2 * HOUR, NOW)).toBe(at(22));
+    expect(sweepReapAtOf({ scratchMaxAgeHours: 6 }, ended('finished', 30), 30 * HOUR, NOW)).toBe(at(-24));
+    expect(sweepReapAtOf({ retainHours: { failed: 48 } }, ended('failed', 30), 99 * HOUR, NOW)).toBe(at(18));
+    expect(sweepReapAtOf({ retainHours: { failed: 48 } }, ended('failed'), 40 * HOUR, NOW)).toBe(at(8));
   });
 });

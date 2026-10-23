@@ -122,4 +122,16 @@ describe('the resource ledger (issue #2504)', () => {
     store.resourceLedger.retain(job.id, 'scratch_dir', scratch, '2026-10-24T00:00:00.000Z');
     expect(store.resourceLedger.forJob(job.id).find((e) => e.kind === 'scratch_dir')?.retainedUntil).toBe(until);
   });
+
+  it('records an entry with its retention, never over one the ledger has, and lists the entries on a machine (part 6)', async () => {
+    const { a, job } = await ended(() => ({ kept: [] }));
+    const store = a.user().store, machineId = store.resourceLedger.forJob(job.id)[0]!.machineId, until = '2026-10-23T00:00:00.000Z';
+    store.resourceLedger.record({ jobId: job.id, machineId, kind: 'scratch_dir', locator: '/v/.worktrees/@scratch/x', createdAt: until, retainedUntil: until });
+    store.resourceLedger.record({ jobId: job.id, machineId, kind: 'scratch_dir', locator: `/w/.worktrees/@scratch/${job.id}`, createdAt: until, retainedUntil: until });
+    const here = store.resourceLedger.onMachine(machineId);
+    expect(here.find((e) => e.locator === '/v/.worktrees/@scratch/x')).toMatchObject({ state: 'live', retainedUntil: until });
+    expect(here.find((e) => e.locator === `/w/.worktrees/@scratch/${job.id}`)).toMatchObject({ state: 'reaped' });
+    expect(here.find((e) => e.locator === `/w/.worktrees/@scratch/${job.id}`)?.retainedUntil).toBeUndefined();
+    expect(store.resourceLedger.onMachine('elsewhere')).toEqual([]);
+  });
 });
