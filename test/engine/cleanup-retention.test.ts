@@ -6,7 +6,7 @@ import { createCleanups } from '../../src/engine/cleanup.ts';
 import type { Reaped } from '../../src/domain/ports.ts';
 import type { LedgerEntry } from '../../src/domain/resource-ledger.ts';
 
-function setup(o: { status?: string; retainHours?: Record<string, number>; route?: 'own' | 'machine'; machinesFail?: boolean } = {}) {
+function setup(o: { status?: string; retainHours?: Record<string, number>; dryRun?: boolean; route?: 'own' | 'machine'; machinesFail?: boolean } = {}) {
   const job = {
     id: 'j', status: o.status ?? 'failed', spec: { executor: 'herdr' }, executorState: { cwd: '/w', laneId: 'm1/lane-1' }, finishedAt: '2026-10-21T23:00:00.000Z',
   };
@@ -28,7 +28,7 @@ function setup(o: { status?: string; retainHours?: Record<string, number>; route
     if (o.route === 'machine') throw new Error('ssh: Could not resolve hostname old-name');
     return { kept: [] };
   };
-  const machine = { id: 'm1', online: true, executors: ['herdr'], ...(o.retainHours ? { sweep: { retainHours: o.retainHours } } : {}) };
+  const machine = { id: 'm1', online: true, executors: ['herdr'], ...(o.retainHours || o.dryRun ? { sweep: { ...(o.retainHours ? { retainHours: o.retainHours } : {}), ...(o.dryRun ? { dryRun: true } : {}) } } : {}) };
   const c = {
     store: {
       jobs: { list: () => [job], get: () => job, update: () => job }, resourceLedger,
@@ -55,6 +55,12 @@ describe('the cleanup at a job\'s end and the retention per job status (issue #2
       await t.cleanups.run('j');
       expect(t.asked).toEqual([{ keepScratch: false }]);
     }
+  });
+
+  it('a machine in dry run (issue #2494 part 14): the reap keeps the scratch dir, so the sweep lists it', async () => {
+    const t = setup({ dryRun: true });
+    await t.cleanups.run('j');
+    expect(t.asked).toEqual([{ keepScratch: true }]);
   });
 
   it('the machines cannot be read: the reap removes it as before', async () => {
