@@ -47,14 +47,16 @@ describe('herdr-claude executor: a dialog as a question', () => {
   });
 
   // Issue #2489: a Gradle daemon idles 3 hours after its build by default, and so outlived the job's work. Every job's tab
-  // gives Gradle a 5-minute idle timeout, after the payload's own GRADLE_OPTS, which it keeps.
-  it("gives Gradle's daemon a short idle timeout, and keeps the payload's own GRADLE_OPTS", async () => {
+  // gives Gradle a 5-minute idle timeout, after the payload's own GRADLE_OPTS, which it keeps. Issue #2622: the build
+  // defaults come first, so a project's own heap settings cannot multiply across lanes, and the payload's own win.
+  it("gives Gradle's daemon a short idle timeout and capped build defaults, and keeps the payload's own GRADLE_OPTS", async () => {
+    const caps = '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.workers.max=2 -Dkotlin.compiler.execution.strategy=in-process';
     const idle = '-Dorg.gradle.daemon.idletimeout=300000';
     const plain = setup({ turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
     await plain.executor.run(contextFor(jobWith({ prompt: 'go' })).ctx);
-    expect(plain.herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { GRADLE_OPTS: idle } });
+    expect(plain.herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { GRADLE_OPTS: `${caps} ${idle}`, MAVEN_OPTS: '-Xmx2g' } });
     const own = setup({ turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
-    await own.executor.run(contextFor(jobWith({ prompt: 'go', env: { GRADLE_OPTS: '-Xmx1g' } })).ctx);
-    expect(own.herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { GRADLE_OPTS: `-Xmx1g ${idle}` } });
+    await own.executor.run(contextFor(jobWith({ prompt: 'go', env: { GRADLE_OPTS: '-Xmx1g', MAVEN_OPTS: '-Xmx1g' } })).ctx);
+    expect(own.herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { GRADLE_OPTS: `${caps} -Xmx1g ${idle}`, MAVEN_OPTS: '-Xmx2g -Xmx1g' } });
   });
 });
