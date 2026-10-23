@@ -116,12 +116,9 @@ export type RestoreOutcome = 'restored' | 'partly' | 'kept' | 'failed';
 
 /** The line the restore prints when the pane has no way to the hopper (issue #2316): the job cannot go on on that machine, another may (issue #2355). Never in the script's text, which the pane's screen echoes. */
 export const RESTORE_NO_WAY = 'hopper: the job has no way to the hopper';
-/** The line the restore prints when it cannot fetch the base because the remote does not answer (issue #2639: a network outage): the same checkpoint is tried again later. Never in the script's text. */
-export const RESTORE_REMOTE_OUT_OF_REACH = 'hopper: the remote is out of reach';
 
 // Run by `sh` in the job's worktree, with the job's variables (HOPPER_URL, HOPPER_TOKEN_FILE; git reaches GitHub through
-// the hopper; a token file not readable yet is waited for a few seconds, issue #2316; a base not fetched with the remote not
-// answering is said apart from a base not on it, issue #2639): $1 the base, $2 the branch (empty: none), $3 the session id, $4 1 when the checkpoint holds the session,
+// the hopper; a token file not readable yet is waited for a few seconds, issue #2316): $1 the base, $2 the branch (empty: none), $3 the session id, $4 1 when the checkpoint holds the session,
 // $5 the checkpoint's head when the remote holds it (issue #2459; empty: not pushed): after the patch, the branch moves to
 // it and the work tree stays, so only the work not committed is uncommitted; a file the patch left out takes its content.
 // It gets the checkpoint's parts from the hopper first, then checks out the base (fetched when it is not here), applies
@@ -145,7 +142,7 @@ const RESTORE_SCRIPT = [
   'place() { [ "$hs" = 1 ] || return 0; [ -f "$d/$s.jsonl" ] && return 0; mkdir -p "$d" && cp "$t/s" "$d/$s.jsonl"; };',
   'if [ -n "$(git status --porcelain -- . ":(exclude)node_modules" 2>/dev/null)" ]; then place || no "could not put the session"; rm -rf "$t"; echo kept; exit 0; fi;',
   'git cat-file -e "$base^{commit}" 2>/dev/null || git fetch --quiet origin "$base" 2>/dev/null || { [ -n "$b" ] && git fetch --quiet origin "$b"; };',
-  'git cat-file -e "$base^{commit}" 2>/dev/null || { git ls-remote origin HEAD >/dev/null 2>&1 || no "the remote is out of reach: could not fetch the checkpoint\'s base $base"; no "the checkpoint\'s base $base is not on the remote"; };',
+  'git cat-file -e "$base^{commit}" 2>/dev/null || no "the checkpoint\'s base $base is not on the remote";',
   'if [ -n "$b" ]; then git checkout --quiet -B "$b" "$base" 2>/dev/null || git checkout --quiet --detach "$base"; else git checkout --quiet --detach "$base"; fi || no "could not check out $base";',
   'o=restored; a() { git apply --binary --whitespace=nowarn "$@" "$t/p" 2>/dev/null; };',
   'if [ -s "$t/p" ] && ! a; then o=partly;',

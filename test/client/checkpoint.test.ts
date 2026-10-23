@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { checkpointArgv, checkpointOf, readCheckpoint, RESTORE_NO_WAY, RESTORE_REMOTE_OUT_OF_REACH, restoreArgv, restoreCommand, restoredInPart, restoreOutcome } from '../../src/client/checkpoint.ts';
+import { checkpointArgv, checkpointOf, readCheckpoint, RESTORE_NO_WAY, restoreArgv, restoreCommand, restoredInPart, restoreOutcome } from '../../src/client/checkpoint.ts';
 
 const JOB = 'job-921-abcdef';
 const SESSION = '0f8fad5b-d9cb-469f-a165-70867728950e';
@@ -252,32 +252,6 @@ describe('restoring a checkpoint on another machine', () => {
     const out = await run(restoreArgv({ base: 'a'.repeat(40), session: SESSION, hasSession: false }), there, { HOPPER_URL: url, HOPPER_TOKEN_FILE: tokenFile });
     expect(out.trim()).toBe('failed');
     expect(existsSync(join(there, 'a.txt'))).toBe(true);
-  });
-
-  // Issue #2639: a base it cannot fetch because the remote does not answer is not a base gone from the remote.
-  it('with the remote out of reach: fails, saying the remote is out of reach, not that the base is not on it', async () => {
-    const there = jobClone('two');
-    git(there, 'remote', 'set-url', 'origin', join(root, 'gone.git'));
-    const url = await serve({ patch: Buffer.from('') }, 'tok');
-    const tokenFile = join(root, 'token');
-    writeFileSync(tokenFile, 'tok');
-    const { out, err } = await runBoth(restoreArgv({ base: 'a'.repeat(40), branch: 'hopper/921', session: SESSION, hasSession: false }), there,
-      { HOME: join(root, 'two-home'), CLAUDE_CONFIG_DIR: '', HOPPER_URL: url, HOPPER_TOKEN_FILE: tokenFile });
-    expect(out.trim()).toBe('failed');
-    expect(err).toContain(RESTORE_REMOTE_OUT_OF_REACH);
-    expect(err).not.toContain('is not on the remote');
-  });
-
-  it('with the remote in reach and the base not on it: fails, saying the base is not on the remote', async () => {
-    const there = jobClone('two');
-    const url = await serve({ patch: Buffer.from('') }, 'tok');
-    const tokenFile = join(root, 'token');
-    writeFileSync(tokenFile, 'tok');
-    const { out, err } = await runBoth(restoreArgv({ base: 'a'.repeat(40), session: SESSION, hasSession: false }), there,
-      { HOME: join(root, 'two-home'), CLAUDE_CONFIG_DIR: '', HOPPER_URL: url, HOPPER_TOKEN_FILE: tokenFile });
-    expect(out.trim()).toBe('failed');
-    expect(err).toContain(`the checkpoint's base ${'a'.repeat(40)} is not on the remote`);
-    expect(err).not.toContain(RESTORE_REMOTE_OUT_OF_REACH);
   });
 
   // Issue #2316: the restore names what of the job's way to the hopper is missing, and waits a moment for a token file.

@@ -1,14 +1,12 @@
 // Issue #2355: a parked job picked up to resume on another machine from its checkpoint found no way to the hopper in its
 // pane there (HOPPER_URL not set), and each new pane on that machine had none either: it ended failed after 3 attempts.
 // Now it goes back to the queue, its session and checkpoint kept, that machine held for a while, and it resumes on a
-// healthy machine. Real daemon over the fake herdr. So does one whose restore found the remote out of reach (issue #2639:
-// a network outage), where before the failure assessor ran it again as a new job, its checkpoint and approvals lost.
+// healthy machine. Real daemon over the fake herdr.
 import { homedir } from 'node:os';
 import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CheckpointCapture } from '../../src/domain/types.ts';
 import { createFakeHerdrClient } from '../../src/executors/herdr/index.ts';
-import type { FakeRestore } from '../../src/executors/herdr/fake-shell.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
 
@@ -25,18 +23,15 @@ afterEach(async () => {
   cleanup?.();
 });
 
-describe('a checkpoint restore with no way to the hopper (issue #2355), or with the remote out of reach (issue #2639)', () => {
-  it.each<[FakeRestore, RegExp]>([
-    ['no-way', /no way to the hopper/],
-    ['remote-out-of-reach', /the remote out of reach/],
-  ])('%s: puts the job back in the queue, holds that machine, and resumes the job on another machine from its checkpoint', { timeout: 60000 }, async (restore, reason) => {
+describe('a checkpoint restore with no way to the hopper (issue #2355)', () => {
+  it('puts the job back in the queue, holds that machine, and resumes the job on another machine from its checkpoint', { timeout: 60000 }, async () => {
     const BASE = 'b'.repeat(40);
     const checkpoint: CheckpointCapture = {
       taken: { branch: 'hopper/deploy', base: BASE, head: 'c'.repeat(40), commits: [], patch: gzipSync('diff'), session: gzipSync('{"session":true}') },
     };
     const repositories = [`${homedir()}/deploy`];
     const seat = createFakeHerdrClient({ session: 'seat-s', turns: [WAIT], repositories, checkpoint });
-    const host = createFakeHerdrClient({ session: 'host-s', turns: [DONE], repositories, checkpoint, restore });
+    const host = createFakeHerdrClient({ session: 'host-s', turns: [DONE], repositories, checkpoint, restore: 'no-way' });
     const spare = createFakeHerdrClient({ session: 'spare-s', turns: [DONE], repositories, checkpoint });
     const db = tempDbPath();
     cleanup = db.cleanup;
@@ -61,7 +56,7 @@ describe('a checkpoint restore with no way to the hopper (issue #2355), or with 
     await drain('host', false);
     await drain('seat', true);
     expect((await a.ui(`/ui/api/jobs/${waiter.id}/end-wait`, {}, { token: admin })).status).toBe(200);
-    const requeued = await waitFor(async () => (await a.events('types=job.requeued')).find((e) => e.jobId === waiter.id && reason.test((e.data as { reason: string }).reason)),
+    const requeued = await waitFor(async () => (await a.events('types=job.requeued')).find((e) => e.jobId === waiter.id && /no way to the hopper/.test((e.data as { reason: string }).reason)),
       { what: 'the job back in the queue', timeoutMs: 20000 });
     expect((requeued.data as { reason: string }).reason).toContain('host');
     expect(host.restores).toHaveLength(1);
