@@ -276,6 +276,8 @@ describe('several hoppers on one database (issue #1662)', () => {
     const a = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(1) }, source, seams: { executors: [m.executor('first')] } });
     apps.push(a);
     const job = await a.pull({}, { executor: 'split' });
+    // The source offers the item no more, as a GitHub issue whose job was cancelled: a later sync makes no new job of it.
+    source.remove(job.source!.key);
     await held.begun;
     expect(a.user(ADMIN_ID).engine.cancel(job.id, 'cancelled in UI').status).toBe('running');
     held.release();
