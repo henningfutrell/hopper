@@ -12,7 +12,7 @@ const machine = (id: string, o: Partial<MachineSnapshot> = {}): MachineSnapshot 
 const drain = (o: Partial<MachineDrain> = {}): MachineDrain => ({ person: 'Pat', via: 'ui', at: at(-60), reason: 'rebuild', until: at(24 * 60), ...o });
 const queued = (id: string, executor = 'claude'): Job => ({ id, status: 'queued', spec: { executor } }) as unknown as Job;
 
-function watch(o: { drains?: MachineDrains; queued?: Job[]; lanes?: Lane[] } = {}) {
+function watch(o: { drains?: MachineDrains; queued?: Job[]; lanes?: readonly Lane[] } = {}) {
   const told: DrainWatchEvent[] = [];
   const expired: string[][] = [];
   let reads = 0;

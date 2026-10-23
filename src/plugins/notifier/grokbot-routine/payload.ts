@@ -92,6 +92,11 @@ export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: s
     const d = e.data as { machineId: string; label: string; since: string };
     return { ...b, machineId: d.machineId, label: d.label, since: d.since };
   }
+  // A drained machine idle with a backlog (issue #2499): the drain's end and reason, its free lanes, the jobs queued.
+  if (e.type === 'machine.drained_idle') {
+    const d = e.data as { machineId: string; label: string; since: string; drainedAt: string; until: string; reason?: string; freeLanes: number; queued: number };
+    return { ...b, machineId: d.machineId, label: d.label, since: d.since, drainedAt: d.drainedAt, until: d.until, ...(d.reason ? { reason: d.reason } : {}), freeLanes: d.freeLanes, queued: d.queued };
+  }
   return b;
 }
 

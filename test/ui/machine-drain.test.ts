@@ -99,7 +99,7 @@ describe('draining a machine on its Machines card (issue #1511)', () => {
     const notice = document.querySelector<HTMLElement>('[data-slot="drained"]')!;
     expect(notice.textContent).toContain('Drained by Pat');
     expect(notice.textContent).toContain('seat rebuild');
-    expect(notice.textContent).toMatch(/ends by itself in 3 h/);
+    expect(notice.textContent).toMatch(/ends by itself in 2h 59m/);
     expect(notice.textContent).toContain('The 1 job still on it runs to its end.');
     expect(document.body.textContent).toContain('drained');
     await act(async () => { button(/^Undrain$/)!.click(); });

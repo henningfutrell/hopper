@@ -3273,19 +3273,23 @@ Version 1 (`docs/schemas/machine.leftover_removed.v1.json`). A person removes a 
 
 ## `machine.drained`
 
-Version 1 (`docs/schemas/machine.drained.v1.json`). A person drained `machineId` (issue #1511): from now on no new job is placed on it, and the jobs on it run to their end. A job resuming there returns to its pane. Kept across restarts until a person undrains it. `person` and `via` say who and the way.
+Version 1 (`docs/schemas/machine.drained.v1.json`). A person drained `machineId` (issue #1511): from now on no new job is placed on it, and the jobs on it run to their end. A job resuming there returns to its pane. Kept across restarts until a person undrains it, or until `until`, when it ends by itself (`machine.drain_expired`, issue #2499). `person` and `via` say who and the way; `reason` why (issue #2499).
 
 | field | type | required |
 |---|---|---|
 | `machineId` | string | yes |
 | `person` | string | yes |
 | `via` | `ui` \| `cli` \| `api` | yes |
+| `reason` | string | no |
+| `until` | string | no |
 
 ```json
 {
   "machineId": "desk",
   "person": "Pat",
-  "via": "cli"
+  "via": "cli",
+  "reason": "seat rebuild",
+  "until": "2026-10-23T09:00:00.000Z"
 }
 ```
 
@@ -3304,6 +3308,58 @@ Version 1 (`docs/schemas/machine.undrained.v1.json`). A person undrained `machin
   "machineId": "desk",
   "person": "Pat",
   "via": "ui"
+}
+```
+
+## `machine.drain_expired`
+
+Version 1 (`docs/schemas/machine.drain_expired.v1.json`). The drain of `machineId` reached its end, `until`, and ended by itself (issue #2499): new jobs are placed on it again. `person` and `via` say who drained it and the way, `at` when, `reason` why. A drain recorded before drains had an end ends a day after `at`.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `person` | string | yes |
+| `via` | `ui` \| `cli` \| `api` | yes |
+| `at` | string | yes |
+| `until` | string | yes |
+| `reason` | string | no |
+
+```json
+{
+  "machineId": "desk",
+  "person": "Pat",
+  "via": "cli",
+  "at": "2026-10-22T09:00:00.000Z",
+  "until": "2026-10-23T09:00:00.000Z",
+  "reason": "seat rebuild"
+}
+```
+
+## `machine.drained_idle`
+
+Version 1 (`docs/schemas/machine.drained_idle.v1.json`). A drained machine stayed online with `freeLanes` free lanes, while `queued` jobs it could run waited, from `since` for ten minutes (issue #2499): told once, so a person can undrain it. Told again after the backlog clears, the machine is undrained, offline or full, and it is idle with a backlog again. `drainedAt`, `until` and `reason` are its drain's.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `since` | string | yes |
+| `drainedAt` | string | yes |
+| `until` | string | yes |
+| `reason` | string | no |
+| `freeLanes` | integer | yes |
+| `queued` | integer | yes |
+
+```json
+{
+  "machineId": "desk",
+  "label": "desk",
+  "since": "2026-10-22T10:00:00.000Z",
+  "drainedAt": "2026-10-22T09:00:00.000Z",
+  "until": "2026-10-23T09:00:00.000Z",
+  "reason": "seat rebuild",
+  "freeLanes": 2,
+  "queued": 31
 }
 ```
 

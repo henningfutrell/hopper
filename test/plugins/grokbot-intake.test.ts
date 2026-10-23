@@ -118,6 +118,17 @@ describe('Grok Bot routine: intake stopped', () => {
     expect(r.hits[0]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.offline', ...seat }));
     expect(r.hits[1]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.back_online', ...seat }));
   });
+  it('posts machine.drained_idle (issue #2499): a drained seat sits idle while jobs are queued', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    const idle = { machineId: 'seat-l3', label: 'seat l3', since: '2026-10-22T10:00:00.000Z', drainedAt: '2026-10-21T04:00:00.000Z', until: '2026-10-22T04:00:00.000Z', reason: 'rebuild', freeLanes: 3, queued: 31 };
+    for (const l of listeners) l(event('machine.drained_idle', idle));
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    await n.stop();
+    expect(r.hits[0]).toEqual(expect.objectContaining({ source: 'hopper', kind: 'machine.drained_idle', ...idle }));
+  });
   it('posts machine.disk_over_budget and machine.disk_within_budget (issue #1203): a machine stays over its disk budget, and is back within it', async () => {
     const r = await receiver();
     const listeners: ((e: DomainEvent) => void)[] = [];

@@ -173,6 +173,8 @@
         "machine.leftover_removed",
         "machine.drained",
         "machine.undrained",
+        "machine.drain_expired",
+        "machine.drained_idle",
         "machine.sandbox_host_set",
         "minor_decision.picked",
         "minor_decision.compared",

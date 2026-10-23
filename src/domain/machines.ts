@@ -38,8 +38,20 @@ export interface MachineInfraCredentials { infraCredentials?: string[] }
  */
 export interface MachineLeaving { leaving?: true }
 
-/** Who drained a machine, the way, and when (issue #1511): kept in the user's settings, per machine id. */
-export interface MachineDrain { person: string; via: ActionVia; at: string }
+/**
+ * Who drained a machine, the way, and when (issue #1511): kept in the user's settings, per machine id. Issue #2499: why
+ * (`reason`), and when it ends by itself (`until`); a drain kept before them has neither, and ends a day after `at`.
+ */
+export interface MachineDrain { person: string; via: ActionVia; at: string; reason?: string; until?: string }
+
+/** How long a drain lasts when its drain names no hours, and the most it may name (issue #2499). */
+export const DRAIN_DEFAULT_HOURS = 24;
+export const DRAIN_MAX_HOURS = 720;
+/** How long a drained machine stays online with free lanes while a job it could run is queued before it is told (issue #2499). */
+export const DRAINED_IDLE_AFTER_MS = 10 * 60_000;
+
+/** When a drain ends by itself: its `until`, or `DRAIN_DEFAULT_HOURS` after it began. */
+export const drainEnds = (d: MachineDrain): string => d.until ?? new Date(Date.parse(d.at) + DRAIN_DEFAULT_HOURS * 3_600_000).toISOString();
 
 /** The drained machines (issue #1511), keyed by machine id. */
 export type MachineDrains = Readonly<Record<string, MachineDrain>>;
@@ -60,9 +72,9 @@ export interface UnhealthyLane { laneId: LaneId; failures: number; error: string
 /** A machine's unhealthy lanes, as its snapshot (`MachineSnapshot`) carries them (issue #2234). Absent: none. */
 export interface MachineLaneHealth { unhealthyLanes?: UnhealthyLane[] }
 
-/** The machines with the drained ones marked (issue #1511). A drain of a machine not listed marks nothing. */
-export const withDrains = <M extends { id: string }>(machines: readonly M[], drains: MachineDrains): (M & MachineDrained)[] =>
-  machines.map((m) => { const d = drains[m.id]; return d ? { ...m, drained: d } : m; });
+/** The machines with the drained ones marked at `at` (issue #1511). A drain of a machine not listed, or one ended (issue #2499), marks nothing. */
+export const withDrains = <M extends { id: string }>(machines: readonly M[], drains: MachineDrains, at: string): (M & MachineDrained)[] =>
+  machines.map((m) => { const d = drains[m.id]; return d && Date.parse(drainEnds(d)) > Date.parse(at) ? { ...m, drained: d } : m; });
 
 /** A machine's herdr, as its snapshot (`MachineSnapshot`) carries it. */
 export interface MachineHerdr {
