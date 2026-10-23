@@ -189,4 +189,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // on it, and names its columns when it writes.
   `ALTER TABLE machine_samples ADD COLUMN mem_pressure DOUBLE PRECISION;
    ALTER TABLE machine_samples ADD COLUMN cpu_throttled DOUBLE PRECISION`,
+  // 97: Each machine sample's disk use of the hopper and of the caches (issue #2494). Columns with no default: the build
+  // before runs on it, and names its columns when it writes.
+  `ALTER TABLE machine_samples ADD COLUMN hopper_disk DOUBLE PRECISION;
+   ALTER TABLE machine_samples ADD COLUMN cache_disk DOUBLE PRECISION`,
 ];

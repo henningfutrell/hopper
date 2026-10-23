@@ -120,6 +120,9 @@ export interface MachineSample {
   /** Issue #2499: its memory pressure (`memPressure.someAvg10`) as a share, 0..1, and its CPU throttle; absent, not read. */
   memPressureFrac?: number;
   cpuThrottledFrac?: number;
+  /** Issue #2494: the hopper's own disk use there and its caches, from the sweep's last measure (at most an hour old); absent, none. */
+  hopperDiskBytes?: number;
+  cacheDiskBytes?: number;
   lanesBusy: number;
   lanesMax: number;
 }
@@ -127,9 +130,10 @@ export interface MachineSample {
 /**
  * What the resource graph draws per machine: each a share, 0..1. A WSL machine (issue #868) adds memory held (the memory
  * its VM holds, of its memory total) and host memory (Windows' memory used); a machine with PSI or a CPU quota (issue
- * #2499) its memory pressure and its CPU throttle.
+ * #2499) its memory pressure and its CPU throttle; a machine the sweep measured (issue #2494) the hopper's own disk use
+ * and its caches, each of its disk total.
  */
-export const MACHINE_RESOURCES = ['cpu', 'memory', 'held', 'host', 'swap', 'disk', 'lanes', 'pressure', 'throttle'] as const;
+export const MACHINE_RESOURCES = ['cpu', 'memory', 'held', 'host', 'swap', 'disk', 'lanes', 'pressure', 'throttle', 'hopper', 'caches'] as const;
 export type MachineResource = typeof MACHINE_RESOURCES[number];
 
 /** One line of the resource graph: one machine's resource, per graph step its peak share; the gaps where the machine gave no sample. */

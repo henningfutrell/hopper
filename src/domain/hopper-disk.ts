@@ -100,3 +100,16 @@ export function hopperDiskOf(paths: readonly HopperDiskPath[] | undefined, at: s
   return { bytes, at, paths: [...(paths ?? [])], ...(budget ? { budgetBytes: budget.bytes } : {}), over: budget !== undefined && bytes > budget.bytes,
     ...(caches ? { caches } : {}), ...(storage ? { storage } : {}), ...(jobs ? { jobs } : {}) };
 }
+
+/** A disk measure older than this is not in a machine sample or a disk gauge (issue #2494): the sweep measures every 10 minutes. */
+export const DISK_MEASURE_FRESH_MS = 3_600_000;
+
+/** The measure, when it is at most DISK_MEASURE_FRESH_MS older than `at`; else undefined. */
+export const freshMeasure = (m: DiskMeasure | undefined, at: string): DiskMeasure | undefined =>
+  (m && Date.parse(at) - Date.parse(m.at) <= DISK_MEASURE_FRESH_MS ? m : undefined);
+
+/** What a measure says the hopper's own places take, and the caches (each counted once); `caches` undefined when none measured. */
+export function diskUseOf(m: DiskMeasure): { hopperBytes: number; cacheBytes?: number } {
+  const caches = m.caches?.length ? cacheUseOf(m.caches).reduce((n, c) => n + c.bytes, 0) : undefined;
+  return { hopperBytes: m.paths.reduce((n, p) => n + p.bytes, 0), ...(caches !== undefined ? { cacheBytes: caches } : {}) };
+}

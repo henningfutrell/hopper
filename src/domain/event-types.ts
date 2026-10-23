@@ -48,6 +48,7 @@ export const EVENT_TYPES = [
   'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed', 'landing_batch.back_merge_issue_filed',
   'landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed', 'landing_batch.canary_promoted', 'landing_batch.stuck', 'landing_batch.restarted',
   'hopper.event_loop_stalled',
+  'push_requirements.evaluated',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -104,4 +105,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'landing_batch.back_merge_opened': 1, 'landing_batch.back_merged': 1, 'landing_batch.back_merge_failed': 1, 'landing_batch.back_merge_issue_filed': 1,
   'landing_batch.canary_started': 1, 'landing_batch.canary_held': 1, 'landing_batch.canary_issue_filed': 1, 'landing_batch.canary_promoted': 1, 'landing_batch.stuck': 1, 'landing_batch.restarted': 1,
   'hopper.event_loop_stalled': 1,
+  'push_requirements.evaluated': 1,
 };

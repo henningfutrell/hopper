@@ -3,11 +3,13 @@
 // restart (issue #356). After a record that kept new machine samples, `afterMachineRecord` runs: lane tuning (issue #688).
 // Each record shows the machines to the memory alert (issue #868) and to the Windows link watch (issue #712), which also
 // takes the reports of the keep-alive loop on Windows, and to the offline watch (issue #1497), and to the drain watch (issue #2499),
-// and to the disk watch (issue #2494), which starts from the newest disk events of the event log.
+// and to the disk watch (issue #2494), which starts from the newest disk events of the event log, and to the disk gauges (issue #2494).
+// Each machine sample keeps the hopper's disk use there from the machine's last disk measure in the store.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { DEFAULT_HISTORY_RETENTION_DAYS, type MachineSnapshot, type UsageReading, type UsageSourceReport } from '../domain/types.ts';
 import { createResourceRecorder, type ResourceRecorder } from '../machines/history.ts';
 import { createDrainWatch } from '../machines/drain-watch.ts';
+import { createDiskGauges } from '../machines/disk-gauges.ts';
 import { createDiskWatch, toldOf } from '../machines/disk-watch.ts';
 import { createMemoryWatch } from '../machines/memory-alert.ts';
 import { createOfflineWatch } from '../machines/offline-watch.ts';
@@ -39,9 +41,13 @@ export function createHistoryRecorders(o: {
     drains: () => o.store.settings.getMachineDrains(), queued: () => o.store.jobs.list({ status: ['queued'] }), lanes: () => o.store.lanes.list(),
     expire: (ids) => { o.expireDrains?.(ids); }, tell: (e) => { o.store.events.append(e); },
   });
-  const observe = (machines: readonly MachineSnapshot[], at: string) => { memory.observe(machines, at); windowsLink.observe(machines, at); offline.observe(machines, at); drains.observe(machines, at); disk.observe(machines, at); };
+  const diskMeasures = () => o.store.diskMeasures.all();
+  const gauges = createDiskGauges({ measures: diskMeasures, clock: o.clock });
+  const observe = (machines: readonly MachineSnapshot[], at: string) => {
+    memory.observe(machines, at); windowsLink.observe(machines, at); offline.observe(machines, at); drains.observe(machines, at); disk.observe(machines, at); gauges.observe(machines);
+  };
   const machineHistory = createResourceRecorder({
-    machines: o.machines, lanes: () => o.store.lanes.list(), history: o.store.machineHistory, retentionDays, clock: o.clock, logger: o.logger, observe,
+    machines: o.machines, lanes: () => o.store.lanes.list(), history: o.store.machineHistory, retentionDays, clock: o.clock, logger: o.logger, observe, diskMeasures,
   });
   const after = o.afterMachineRecord;
   if (after) {
@@ -52,8 +58,8 @@ export function createHistoryRecorders(o: {
   return {
     recorders: { usageHistory, machineHistory },
     windowsLink,
-    start() { usageHistory.start(); machineHistory.start(); },
-    stop() { usageHistory.stop(); machineHistory.stop(); },
+    start() { usageHistory.start(); machineHistory.start(); gauges.start(); },
+    stop() { usageHistory.stop(); machineHistory.stop(); gauges.stop(); },
   };
 }
 

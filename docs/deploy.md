@@ -1351,7 +1351,10 @@ and `hopper_work_items_label_corrections_total` counts the corrections the label
 
 Two gauges show what runs now (docs/design.md "Telemetry: what runs now"): `hopper_sandboxes`, the sandboxes that run at
 the same time, by kind (`need`, `playground`), place (`local`, `machine`) and state, and `hopper_db_connections`, the
-store's open connections.
+store's open connections. Two more show the machines' disks (docs/design.md "Hopper's own disk use" → "Part 12"):
+`hopper_disk_bytes`, what the machines online take on disk by kind (`hopper` for the hopper's own places, each cache kind,
+`images`, `containers`, `volumes`, `build-cache`), and `hopper_machines_disk`, the machines online by their disk's state
+(`ok`, `low`, `critical`). Neither names a machine: Machines and `GET /api/machines` show each machine's.
 
 The steps the hopper does for a job are spans of the job's trace (docs/design.md "Telemetry: job steps"):
 `hopper.job.worktree` (the job's worktree on its machine), `hopper.job.follow` (a follow of its pull request: the hopper's

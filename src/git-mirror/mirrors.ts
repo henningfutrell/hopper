@@ -135,8 +135,8 @@ export const said = (r: { stderr: string; code: number }): string => r.stderr.tr
 /** The mirror, made bare and blobless the first time (in a temporary path, then moved in), its origin `url`. */
 export async function readyMirror(git: GitRun, path: string, url: string, env: Record<string, string>): Promise<string | undefined> {
   if (!existsSync(join(path, 'HEAD'))) {
-    const made = `${path}.hopper-init-${process.pid}`;
-    rmSync(made, { recursive: true, force: true });
+    // Its own name per make: a sync pass and a push's read (issue #2555) may make one mirror at once in one process.
+    const made = `${path}.hopper-init-${process.pid}-${Math.random().toString(36).slice(2)}`;
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     for (const args of [
       ['init', '--quiet', '--bare', made],
@@ -150,7 +150,13 @@ export async function readyMirror(git: GitRun, path: string, url: string, env: R
       if (r.code !== 0) { rmSync(made, { recursive: true, force: true }); return said(r); }
     }
     if (existsSync(join(path, 'HEAD'))) rmSync(made, { recursive: true, force: true });
-    else renameSync(made, path);
+    else {
+      try { renameSync(made, path); } catch (e) {
+        // Another make moved its mirror in first: that one is the mirror.
+        rmSync(made, { recursive: true, force: true });
+        if (!existsSync(join(path, 'HEAD'))) return (e as Error).message;
+      }
+    }
   }
   const now = await git(['--git-dir', path, 'remote', 'get-url', 'origin'], env);
   if (now.code === 0 && now.stdout.trim() === url) return undefined;

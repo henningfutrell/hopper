@@ -227,14 +227,15 @@ export function createSourceSync(o: SourceSyncOptions): SourceSync {
   }
 
   async function pull(slot: Slot, asked: boolean): Promise<{ seen: number; created: number }> {
-    const discovered = await slot.source.discover(asked ? undefined : { due: true }); slot.answer = answerPrint(discovered);
+    const passAt = clock.now().toISOString(); const discovered = await slot.source.discover(asked ? undefined : { due: true }); slot.answer = answerPrint(discovered);
     // The items free to run at the listing: a job whose end is reported after it is not run again on it, as the listing is older than its end (issue #2392).
+    // Nor one made or ended while this pass ran (issue #2570): another hopper's job of the same Run again, which this listing does not know.
     const listedFree = new Set(discovered.filter((i) => { const e = store.jobs.getBySourceKey(i.key); return !e || isRerunnable(e); }).map((i) => i.key)), items = await intakeOrder(o.jevFirst, slot.source.name, discovered, (i) => listedFree.has(i.key));
-    let created = 0;
+    let created = 0; const newer = (j: Job): boolean => j.createdAt > passAt || (j.finishedAt ?? '') > passAt;
     const notRerun: NotRerun[] = [], yieldIfHeld = loopYield();
     for (const item of items) {
       // Each item its own step: a long pass gives the loop back between items, and a request waits for one item, not the pass (issue #2392). Its job is read after the yield.
-      await yieldIfHeld(); const existing = store.jobs.getBySourceKey(item.key); if (existing && isRerunnable(existing) && !listedFree.has(item.key)) continue;
+      await yieldIfHeld(); const existing = store.jobs.getBySourceKey(item.key); if (existing && isRerunnable(existing) && (!listedFree.has(item.key) || newer(existing))) continue;
       if (existing && isTerminal(existing) && !isRerunnable(existing)) notRerun.push({ key: item.key, job: existing.id, status: existing.status, reason: NOT_REPORTED });
       if (await offer(host, slot.source, item, existing)) created++;
     }

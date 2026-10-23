@@ -1,5 +1,6 @@
 // The resource graph's model (issue #560, design.md "Machine resources over time"): a machine's lines — CPU, memory,
-// a WSL machine's memory held and host memory (issue #868), swap, disk, its lanes in use, memory pressure and CPU throttle (issue #2499), one colour each — drawn by the usage graph (charts/usage-history.tsx) on the
+// a WSL machine's memory held and host memory (issue #868), swap, disk, its lanes in use, memory pressure and CPU throttle (issue #2499),
+// the hopper's own disk use and the caches (issue #2494), one colour each — drawn by the usage graph (charts/usage-history.tsx) on the
 // Machines view; every machine's lines at once on the Usage page, one colour per machine and a dash per resource,
 // swap and lanes hidden until shown; a machine row's CPU sparkline; and the resource facts a machine card says now.
 // One machine's graph overlays the usage that limits it and marks its lane changes on its lanes in use (issue #688).
@@ -11,21 +12,22 @@ import { ACCOUNT_COLORS, graphLines, type GraphLine, type GraphMark, type LineDa
 
 export const RESOURCE_NAMES: Readonly<Record<MachineResource, string>> = {
   cpu: 'CPU', memory: 'memory', held: 'memory held', host: 'host memory', swap: 'swap', disk: 'disk', lanes: 'lanes in use',
-  pressure: 'memory pressure', throttle: 'CPU throttle',
+  pressure: 'memory pressure', throttle: 'CPU throttle', hopper: 'hopper\'s disk', caches: 'caches',
 };
 /** Memory held (a WSL VM's, issue #868) is memory's colour, dashed; host memory (Windows') the brand's. */
 const RESOURCE_COLORS: Readonly<Record<MachineResource, string>> = {
   cpu: 'var(--busy)', memory: 'var(--ok)', held: 'var(--ok)', host: 'var(--brand)', swap: 'var(--question)', disk: 'var(--warn)', lanes: 'var(--operator)',
-  pressure: 'var(--bad)', throttle: 'var(--busy)',
+  pressure: 'var(--bad)', throttle: 'var(--busy)', hopper: 'var(--brand)', caches: 'var(--question)',
 };
+/** The hopper's disk and the caches (issue #2494) are dashed: parts of the disk line. */
+const DASHED_ON_MACHINE: ReadonlySet<MachineResource> = new Set(['held', 'lanes', 'hopper', 'caches']);
 /** Memory pressure and CPU throttle (issue #2499) are dotted: the signals admission reads, not a share used. */
-const DASHED_ON_MACHINE: ReadonlySet<MachineResource> = new Set(['held', 'lanes']);
 const DOTTED_ON_MACHINE: ReadonlySet<MachineResource> = new Set(['pressure', 'throttle']);
 /** On the Usage page, where colour is the machine's: CPU solid, memory and host memory dashed, disk dotted (swap, memory held and lanes, hidden at first, likewise). */
 const RESOURCE_DASH: Readonly<Record<MachineResource, LineDash>> = {
-  cpu: 'solid', memory: 'dashed', held: 'dotted', host: 'dashed', swap: 'dotted', disk: 'dotted', lanes: 'dashed', pressure: 'dotted', throttle: 'dotted',
+  cpu: 'solid', memory: 'dashed', held: 'dotted', host: 'dashed', swap: 'dotted', disk: 'dotted', lanes: 'dashed', pressure: 'dotted', throttle: 'dotted', hopper: 'dashed', caches: 'dotted',
 };
-const HIDDEN_ON_USAGE: ReadonlySet<MachineResource> = new Set(['swap', 'held', 'lanes', 'pressure', 'throttle']);
+const HIDDEN_ON_USAGE: ReadonlySet<MachineResource> = new Set(['swap', 'held', 'lanes', 'pressure', 'throttle', 'hopper', 'caches']);
 
 /** A resource line as the usage graph draws one: its points are shares, 0..1, as a usage window's are. */
 const asUsage = (s: ResourceSeries, account: string, window?: string): UsageSeries =>

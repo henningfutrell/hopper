@@ -122,4 +122,10 @@ describe('a machine row', () => {
   it('memory pressure and CPU throttle are named lines', () => {
     expect(machineLines([series('a', 'pressure', 0.2), series('a', 'throttle', 0.5)]).map((l) => l.label)).toEqual(['memory pressure', 'CPU throttle']);
   });
+
+  // Issue #2494: the hopper's own disk use and the caches, each a share of the disk.
+  it('the hopper\'s disk and the caches are named lines, hidden at first on the Usage page', () => {
+    expect(machineLines([series('a', 'hopper', 0.2), series('a', 'caches', 0.1)]).map((l) => l.label)).toEqual(['hopper\'s disk', 'caches']);
+    expect(allMachineLines([series('a', 'hopper', 0.2), series('a', 'caches', 0.1)], (id) => id).map((l) => l.shownByDefault)).toEqual([false, false]);
+  });
 });
