@@ -65,9 +65,13 @@ export function pinOf(job: Job): string | undefined {
 
 /**
  * A machine whose disk is low takes no new job (issue #410): a job resuming there returns to the pane it
- * holds. Low is judged by the machine's own thresholds (src/machines/disk.ts).
+ * holds. One whose disk is critical takes no job at all (issue #2494): a job resuming there waits too. Both are judged by
+ * the machine's own thresholds (src/machines/disk.ts).
  */
-export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.low === true && job.pendingAnswer === undefined;
+export const diskHolds = (m: MachineSnapshot, job: Job): boolean => m.disk?.critical === true || (m.disk?.low === true && job.pendingAnswer === undefined);
+
+/** How a disk that holds jobs is named: low, or critical (issue #2494). */
+export const diskWord = (m: MachineSnapshot): string => (m.disk?.critical ? 'critical' : 'low');
 
 /**
  * A sandbox box whose template is not approved takes no new job (issue #602): the job waits for a machine that can
@@ -139,7 +143,7 @@ export function nativeHold(job: Job, machines: MachineSnapshot[], unavailable: E
   if (credentialHolds(pinned, job, credentialHeld?.includes(pinned.id) ?? false)) return `pinned machine ${pin} ${notReady(pinned)}`;
   if (herdrHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.herdrProblem}`;
   if (templateHolds(pinned, job)) return `pinned machine ${pin}: ${pinned.template!.waiting}`;
-  if (diskHolds(pinned, job)) return `pinned machine ${pin} disk low (${freeOf(pinned)}): ${NO_NEW_JOB}`;
+  if (diskHolds(pinned, job)) return `pinned machine ${pin} disk ${diskWord(pinned)} (${freeOf(pinned)}): ${NO_NEW_JOB}`;
   const out = signedOutFor(pin, job, signedOut);
   if (out) return `pinned machine ${pin}: ${out.service} signed out (usage source ${out.source}): ${SIGN_IN}`;
   return undefined;
@@ -158,7 +162,7 @@ function reachedHold(job: Job, reached: MachineSnapshot[], signedOut?: readonly 
   const working = reaching.filter((m) => !herdrHolds(m, job));
   if (working.every((m) => templateHolds(m, job))) return `${working.map((m) => `${m.id}: ${m.template!.waiting}`).join('; ')}: ${NO_NEW_JOB}`;
   const usable = working.filter((m) => !templateHolds(m, job));
-  if (usable.every((m) => diskHolds(m, job))) return `disk low on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
+  if (usable.every((m) => diskHolds(m, job))) return `disk ${usable.every((m) => m.disk?.critical) ? 'critical' : 'low'} on ${usable.map((m) => `${m.id} (${freeOf(m)})`).join(', ')}: ${NO_NEW_JOB}`;
   const roomy = usable.filter((m) => !diskHolds(m, job));
   const out = roomy.map((m) => signedOutFor(m.id, job, signedOut));
   if (out.every((t) => t !== undefined)) {

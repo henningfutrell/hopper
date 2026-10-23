@@ -76,7 +76,7 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
   if (m.drained) return `drained: ${NO_NEW_JOB}`;
   if (homeless(m)) return 'its home is not known yet: no job is placed there';
   if (m.template?.waiting) return `${m.template.waiting}: ${NO_NEW_JOB}`;
-  if (m.disk?.low) return `disk low: ${NO_NEW_JOB}`;
+  if (m.disk?.low) return `disk ${m.disk.critical ? 'critical' : 'low'}: ${NO_NEW_JOB}`;
   const out = signedOutEvery(m.id, m.executors, s.signedOut);
   if (out) return `${out.service} signed out: ${SIGN_IN}; ${NO_NEW_JOB}`;
   const gated = s.gate?.gated.find((g) => g.machineId === m.id);

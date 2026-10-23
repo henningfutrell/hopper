@@ -253,8 +253,11 @@ export type MachineEditOutcome =
 /** A machine's disk (issue #401): bytes free and in all, and whether it is low by the machine's thresholds. */
 export type DiskReading = NonNullable<MachineSnapshot['disk']>;
 
-/** A machine's thresholds for a low disk (issue #410): below this many GiB free, or below this share free; absent, 5 GiB and 10%. */
-export interface DiskThresholds { belowGiB?: number; belowPercent?: number }
+/**
+ * A machine's thresholds for a low disk (issue #410): below this many GiB free, or below this share free; absent, 5 GiB and 10%.
+ * Critical (issue #2494) below `criticalBelowGiB` or `criticalBelowPercent`; absent, 1 GiB and 2%.
+ */
+export interface DiskThresholds { belowGiB?: number; belowPercent?: number; criticalBelowGiB?: number; criticalBelowPercent?: number }
 
 /** The statuses a job ends in (`TERMINAL_STATUSES`), each with its own retention (issue #2494). */
 export type EndStatus = 'finished' | 'failed' | 'cancelled' | 'rejected';
