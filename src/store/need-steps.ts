@@ -45,7 +45,9 @@ export function createNeedStepRepository(c: StoreContext): NeedStepRepository {
       });
     },
     inputs: (id) => bytes("SELECT encode(inputs, 'base64') AS b FROM need_steps WHERE id = ?", id),
-    appendLog(id, text) {
+    appendLog(id, given) {
+      // Postgres keeps no NUL in text (22021): a step's output with NUL bytes keeps the rest (issue #2690).
+      const text = given.replaceAll('\0', '');
       // Cut once at the most: the note that it is cut is the last of it.
       c.db.run(`UPDATE need_steps SET log = CASE WHEN length(log) + length(?::text) > ?::int THEN log || ?::text ELSE log || ?::text END
         WHERE id = ? AND right(log, ?::int) <> ?::text`, text, NEED_STEP_LOG_MAX, CUT, text, id, CUT.length, CUT);

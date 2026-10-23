@@ -15,6 +15,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import type { WindowsStepHost } from '../domain/ports.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import { STEP_OUTPUTS_MAX_BYTES, STEP_RUNS_MAX, stepRequestOf, type StepResult, type WindowsHost, type WindowsStep, type WindowsStepRepository } from '../domain/windows-steps.ts';
+import { keptLog, withLostLog } from './step-log.ts';
 
 /** How long a step's result and outputs are kept for the job to fetch. */
 export const STEP_KEEP_MS = 60 * 60 * 1000;
@@ -26,6 +27,11 @@ const ID = /^[a-f0-9-]{36}$/;
 
 /** The problem of a step that took its host on a hopper that stopped: it is not run again (issue #1611), unless it was asked with rerun (issue #2117). */
 export const STEP_INTERRUPTED = 'the hopper stopped while the step ran, and it is not run again: it may have had its effect. Look at what it changed on the host before you run it again. A step that is safe to run again (one that only reads) asks for that with --rerun';
+/**
+ * The problem of a step asked with rerun that a hopper ended with no stop, as a crash does (issue #2690): its output may be
+ * what ended the hopper, so it is not run again, which would end the next hopper too.
+ */
+export const STEP_HOPPER_ENDED = 'the hopper ended while the step ran, with no stop, and the step is not run again, though it was asked with --rerun: the step may be what ended the hopper. Look at its log, and at what it changed on the host, before you run it again';
 /** What the log of a step asked with rerun says when it runs again after a stop. */
 export const STEP_RERUN_NOTE = 'the hopper stopped while the step ran; it runs again, as --rerun allows';
 
@@ -92,7 +98,7 @@ export interface WindowsStepLedger {
 /** The Windows steps of a hopper that keeps none (a runtime made with no ledger): no step is ever kept. */
 export const NO_WINDOWS_STEPS: WindowsStepRepository = {
   add: (step) => step, get: () => undefined, sagaIs: () => {}, inputs: () => undefined, appendLog: () => {},
-  log: (_id, from) => ({ text: '', next: from }), end: () => false, outputs: () => undefined, leaseHost: () => false, runAgain: () => {}, releaseHost: () => {}, sweep: () => {},
+  log: (_id, from) => ({ text: '', next: from }), end: () => false, outputs: () => undefined, leaseHost: () => false, runAgain: () => {}, stopped: () => {}, releaseHost: () => {}, sweep: () => {},
 };
 
 export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
@@ -153,7 +159,8 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     const inputs = s.inputsBytes > 0 ? o.steps.inputs(s.id) : undefined;
     if (inputs) writeFileSync(join(dir, 'inputs.tar'), inputs, { mode: 0o600 });
-    const masked = maskSecrets(Object.values(secrets), (chunk) => { o.steps.appendLog(s.id, chunk); });
+    const kept = keptLog((chunk) => o.steps.appendLog(s.id, chunk), (why) => o.log(`hopper: the log of step ${s.id} is not kept from here: ${why}`));
+    const masked = maskSecrets(Object.values(secrets), kept.write);
     // The step stops at its timeout, when its saga is aborted or its hopper stops, or when its job is no longer at work.
     const stop = new AbortController();
     let why: string | undefined;
@@ -181,14 +188,14 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
       clearTimeout(timer);
       clearInterval(watch);
       signal.removeEventListener('abort', onAbort);
-      // The log's last chunk is not worth the step's result.
-      try { masked.end(); } catch (e) { o.log(`hopper: the log of step ${s.id} lost its end: ${(e as Error).message}`); }
+      masked.end();
       for (const k of Object.keys(secrets)) delete secrets[k];
       rmSync(dir, { recursive: true, force: true });
     }
     // Its saga aborted, or its hopper stopping, keeps none: the compensation ends it, or the next try says it was cut short.
     if (signal.aborted) return;
     if (why) result = { ...result, problem: why };
+    result = withLostLog(result, kept.lost());
     end(s, result, Math.round((now().getTime() - started) / 1000), outputs);
   };
 
@@ -212,6 +219,7 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
   const again = async (s: WindowsStep): Promise<boolean> => {
     const run = (s.runs ?? 1) + 1, host = hostOf(s.host);
     if (!s.rerun || run > STEP_RUNS_MAX || !host) { finish(s, { exit: 125, problem: STEP_INTERRUPTED }, 0); return false; }
+    if (!s.stopped) { finish(s, { exit: 125, problem: STEP_HOPPER_ENDED }, 0); return false; }
     if (!o.atWork(s.jobId)) { finish(s, { exit: 125, problem: `cancelled: job ${s.jobId} is not at work` }, 0); return false; }
     // Rejects when the host cannot be reached: the saga tries again.
     await o.host.sweep(host);
@@ -262,6 +270,9 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
       const outside = host ? notGiven(host, s.secrets) : `the hopper has no Windows host ${s.host} any more`;
       const refused = (no: string) => { refuse({ id: s.jobId }, 403, no, s.host); end(s, { exit: 125, problem: no }, 0); };
       if (!host || outside) { refused(outside!); return; }
+      // From here the step may run on its host: a stop that cuts it short says so, so the next try tells it from a crash.
+      const stopped = () => { try { o.steps.stopped(s.id); } catch (e) { o.log(`hopper: step ${s.id}: its stop was not kept: ${(e as Error).message}`); } };
+      signal.addEventListener('abort', stopped, { once: true });
       try {
         // Read now, for this try only: no secret is kept in the database or between tries.
         const secrets: Record<string, string> = {};
@@ -277,6 +288,8 @@ export function createWindowsSteps(o: WindowsStepsOptions): WindowsSteps {
         if (signal.aborted || endedHere.has(s.id)) throw e;
         o.log(`hopper: step ${s.id} on ${s.host}: ${(e as Error).message}`);
         end(s, { exit: 125, problem: `the hopper could not run the step: ${(e as Error).message}` }, 0);
+      } finally {
+        signal.removeEventListener('abort', stopped);
       }
     },
 
