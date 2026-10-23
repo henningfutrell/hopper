@@ -129,12 +129,12 @@ export function cleanupLeftoversOf(open: readonly LedgerEntry[], jobOf: (id: str
 export const GONE_REASON = 'not found on the machine';
 
 /**
- * The reconciler's closures on machine `machineId` (issue #2504 part 3): each open entry (`live` or `failed`) there of an
- * ended job whose thing the machine's survey no longer found, closed `reaped` with `GONE_REASON`. A scratch dir only in a
+ * The reconciler's closures on machine `machineId` (issue #2504 parts 3, 8): each entry not yet `reaped` there (`live`,
+ * `failed` or `kept`) of an ended job whose thing the machine's survey no longer found, closed `reaped` with `GONE_REASON`. A scratch dir only in a
  * work tree the survey looked in (`found.roots`), and a container runtime with its scratch dir; a job worktree only when the
  * survey also lists job worktrees; a scope that no longer runs. A job that has not ended, and a job the store does not know, is not judged.
  */
-export function goneClosures(open: readonly LedgerEntry[], found: Survey, machineId: string, jobOf: (id: string) => Pick<Job, 'status'> | undefined): { entry: LedgerEntry; state: 'reaped'; reason: string }[] {
+export function goneClosures(entries: readonly LedgerEntry[], found: Survey, machineId: string, jobOf: (id: string) => Pick<Job, 'status'> | undefined): { entry: LedgerEntry; state: 'reaped'; reason: string }[] {
   const roots = new Set(found.roots ?? []);
   const dirs = new Set(found.scratch.map((d) => d.path)), trees = found.trees && new Set(found.trees.map((t) => t.path));
   const scratchGone = (dir: string): boolean => roots.has(scratchParts(dir)?.workTree ?? '') && !dirs.has(dir);
@@ -144,7 +144,7 @@ export function goneClosures(open: readonly LedgerEntry[], found: Survey, machin
     if (e.kind === 'container_runtime') return scratchGone(e.locator.slice(0, e.locator.lastIndexOf('/')));
     return trees !== undefined && roots.has(worktreeParts(e.locator)?.workTree ?? '') && !trees.has(e.locator);
   };
-  return open.filter((e) => e.machineId === machineId && (e.state === 'live' || e.state === 'failed') && gone(e)).filter((e) => {
+  return entries.filter((e) => e.machineId === machineId && e.state !== 'reaped' && gone(e)).filter((e) => {
     const job = jobOf(e.jobId);
     return job !== undefined && TERMINAL_STATUSES.includes(job.status);
   }).map((entry) => ({ entry, state: 'reaped' as const, reason: GONE_REASON }));
@@ -180,15 +180,15 @@ export function unledgeredEntriesOf(found: Survey, ledgered: ReadonlySet<string>
 }
 
 /**
- * The work trees the open entries (`live` or `failed`) on machine `machineId` are in (issue #2504 part 7), sorted: the sweep
- * surveys them beside the work trees the job list names, so a thing that only an older job left is found, reaped, or closed
- * gone. A scope has no work tree.
+ * The work trees the entries not yet `reaped` (`live`, `failed` or `kept`) on machine `machineId` are in (issue #2504 parts 7,
+ * 8), sorted: the sweep surveys them beside the work trees the job list names, so a thing that only an older job left — kept
+ * work too — is found, reaped, or closed gone. A scope has no work tree.
  */
-export function ledgerRootsOf(open: readonly LedgerEntry[], machineId: string): string[] {
+export function ledgerRootsOf(entries: readonly LedgerEntry[], machineId: string): string[] {
   const rootOf = (e: LedgerEntry): string | undefined => (e.kind === 'scratch_dir' ? scratchParts(e.locator)?.workTree
     : e.kind === 'container_runtime' ? scratchParts(e.locator.slice(0, e.locator.lastIndexOf('/')))?.workTree
       : e.kind === 'job_worktree' ? worktreeParts(e.locator)?.workTree : undefined);
-  const roots = open.filter((e) => e.machineId === machineId && (e.state === 'live' || e.state === 'failed')).map(rootOf);
+  const roots = entries.filter((e) => e.machineId === machineId && e.state !== 'reaped').map(rootOf);
   return [...new Set(roots.filter((r): r is string => r !== undefined))].sort();
 }
 

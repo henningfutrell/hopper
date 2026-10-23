@@ -78,4 +78,13 @@ describe('the sweep and the resource ledger (issue #2504)', () => {
     expect(r.surveyed[0]).toEqual(['/old', '/v', '/w']);
     expect(r.ledger[0]).toMatchObject({ state: 'reaped', reason: 'not found on the machine' });
   });
+
+  it('surveys the work tree of kept work no job in the job list used, and reaps its entry once it is gone (part 8)', async () => {
+    const r = rig({ found: { ...none, roots: ['/k', '/v', '/w'], scratch: [{ jobId: 'done', path: '/k/.worktrees/@scratch/done', ageMs: 1 * HOUR }], trees: [] }, ledger: [
+      entry('old', 'scratch_dir', '/k/.worktrees/@scratch/old', 'kept'), entry('done', 'scratch_dir', '/k/.worktrees/@scratch/done', 'kept'),
+    ] });
+    await r.sweep.run(true);
+    expect(r.surveyed[0]).toEqual(['/k', '/v', '/w']);
+    expect(r.ledger.map((e) => [e.jobId, e.state, e.reason])).toEqual([['old', 'reaped', 'not found on the machine'], ['done', 'kept', undefined]]);
+  });
 });

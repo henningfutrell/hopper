@@ -1,0 +1,1 @@
+- Work kept on a machine for an older job is checked again, so the job's cleanup shows as done once someone removes that work.
