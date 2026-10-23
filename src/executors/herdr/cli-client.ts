@@ -189,6 +189,12 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
       const r = await read(['pane', 'list']);
       return ((r.panes ?? []) as HerdrListedPane[]).map(paneOf);
     },
+    async tabLabel(paneId) {
+      const pane = ((await read(['pane', 'list'])).panes as HerdrListedPane[] | undefined)?.find((p) => p.pane_id === paneId);
+      if (!pane) return null;
+      const tabs = (await read(['tab', 'list', '--workspace', pane.workspace_id])).tabs as { tab_id: string; label?: string }[] | undefined;
+      return tabs?.find((t) => t.tab_id === pane.tab_id)?.label ?? '';
+    },
     async closePane(paneId) { await run(['pane', 'close', paneId]); },
     reap: (jobId, scratch, keep, discard) => shell.reap(jobId, scratch, keep, discard),
     survey: (roots) => shell.survey(roots),

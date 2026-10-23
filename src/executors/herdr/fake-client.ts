@@ -164,11 +164,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       return id;
     },
 
-    async ensureWorkspace(label, cwd) {
-      record('ensureWorkspace', label, cwd);
-      workspaceId ??= 'w1';
-      return workspaceId;
-    },
+    async ensureWorkspace(label, cwd) { record('ensureWorkspace', label, cwd); workspaceId ??= 'w1'; return workspaceId; },
     async createTab(args) {
       record('createTab', args);
       n++;
@@ -313,6 +309,7 @@ export function createFakeHerdrClient(o: FakeHerdrOptions = {}): FakeHerdrClient
       record('listPanes');
       return listedPanes(panes.values());
     },
+    async tabLabel(paneId) { record('tabLabel', paneId); const p = panes.get(paneId); return p && !p.closed ? p.label ?? '' : null; },
     async closePane(paneId) {
       record('closePane', paneId);
       const p = livePane(paneId);

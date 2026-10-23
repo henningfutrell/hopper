@@ -5,6 +5,7 @@ import type { LaneId } from '../../domain/types.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
 import type { Interrupt, Sleep } from './monitor.ts';
 import { samePane, timeoutLiveness, type HeldPane, type Scratch, type Where } from './panes.ts';
+import { labelNamesJob } from './pane-key.ts';
 import { jobScratchOf } from './start.ts';
 
 /** How long Claude has to exit by itself before the reap stops it with the job's other processes. */
@@ -20,6 +21,17 @@ export interface PaneEndDeps {
   lanes: Map<LaneId, HeldPane>;
   /** When each running job's pane output last changed (issue #630): at a timeout, its liveness. */
   outputAt: Map<string, number>;
+}
+
+/**
+ * Whether the pane is still the job's own (issue #2676): its agent runs in it, or its tab's label names the job (the pane
+ * key, issue #1569). Not when no pane has its id, or the pane is another job's: a pane id is herdr's, and a herdr that
+ * started again gives the next job's pane the id again. Rejects when herdr is not reached.
+ */
+export async function ownPane(herdr: HerdrClient, pane: HeldPane): Promise<boolean> {
+  if ((await herdr.getAgent(pane.agentName))?.paneId === pane.paneId) return true;
+  const label = await herdr.tabLabel(pane.paneId);
+  return label !== null && labelNamesJob(label, pane.jobId);
 }
 
 export function paneEnds(o: PaneEndDeps) {
@@ -41,18 +53,26 @@ export function paneEnds(o: PaneEndDeps) {
    * esc, ctrl+c twice, the reap, close. Never rejects: the pane may already be gone. Answers why the
    * pane may still be open — its herdr not reached, or the close refused — or undefined once it is
    * closed or gone (issue #371). `scratch` `none`: the reap does not look at the scratch dir (a parked job's, issue
-   * #501); `keep`: it says what is there and keeps it (a timed-out job's, issue #630).
+   * #501); `keep`: it says what is there and keeps it (a timed-out job's, issue #630). A pane that is no longer the job's
+   * (issue #2676: its id names another job's pane after its herdr started again) gets no key and stays open; the reap,
+   * which acts by the job's id, runs all the same.
    */
   async function exitAndClose(pane: HeldPane, scratch: Scratch = 'remove'): Promise<string | undefined> {
     const close = async (herdr: HerdrClient): Promise<string | undefined> => {
-      await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
-      await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
+      // Not known whose it is (its herdr not reached): no key and no close, but the reap; it is tried again.
+      const own = await ownPane(herdr, pane).catch((e: unknown) => e as Error);
+      if (own === true) {
+        await herdr.sendKeys(pane.paneId, ['esc']).catch(() => {});
+        await herdr.sendKeys(pane.paneId, ['ctrl+c', 'ctrl+c']).catch(() => {});
+      }
       const said = await reap(herdr, pane, scratch).catch(() => undefined);
       if (said && scratch !== 'none') reaped.set(pane.jobId, said);
+      if (own instanceof Error) return `herdr: ${own.message}`;
+      if (!own) return undefined;
       return herdr.closePane(pane.paneId).then(() => undefined, (e: unknown) => (e instanceof HerdrError && e.code === 'pane_not_found' ? undefined : `herdr: ${(e as Error).message}`));
     };
     const open = await Promise.resolve().then(() => close(herdrOn(pane))).catch((e: unknown) => `herdr: ${(e as Error).message}`);
-    for (const [lane, held] of lanes) if (samePane(held, pane)) lanes.delete(lane);
+    for (const [lane, held] of lanes) if (samePane(held, pane) && held.jobId === pane.jobId) lanes.delete(lane);
     return open;
   }
 
