@@ -44,6 +44,17 @@ describe('a machine\'s badges and alert', () => {
     expect(machineHasAlert(desk({ resources: { ...resources, node: 'v26.12.1', nodeFloor: undefined } } as unknown as Partial<MachineView>), NOW)).toBe(false);
   });
 
+  // Issue #2622: one burst of builds on a machine whose jobs no memory limit holds can take the whole host.
+  it('a machine whose jobs no memory limit holds has a no memory limit warning and an alert', () => {
+    const resources = { cores: 2, memTotalBytes: 8, memAvailableBytes: 4, jobMemoryLimit: 'none' };
+    const m = desk({ resources } as unknown as Partial<MachineView>);
+    expect(machineBadges(m, NOW)).toEqual([{ status: 'no memory limit', tone: 'warn' }, { status: 'online' }]);
+    expect(machineHasAlert(m, NOW)).toBe(true);
+    for (const held of ['scope', 'machine']) {
+      expect(machineHasAlert(desk({ resources: { ...resources, jobMemoryLimit: held } } as unknown as Partial<MachineView>), NOW)).toBe(false);
+    }
+  });
+
   it('a work tree problem is an alert with no badge', () => {
     expect(machineHasAlert(desk({ workTreeProblem: 'no work tree' }), NOW)).toBe(true);
   });
