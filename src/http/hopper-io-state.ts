@@ -32,7 +32,6 @@ export function createHopperIoStateSource(o: {
       const lanes: HopperIoStateInputs['lanes'][number][] = [];
       const queue = { waiting: [] as unknown[], running: [] as unknown[], locked: [] as unknown[] };
       const questions: HopperIoStateInputs['questions'][number][] = [];
-      const parked: HopperIoStateInputs['parked'][number][] = [];
       const keys = new Map<string, string>();
       let review = false;
       for (const user of o.tenants.list()) {
@@ -51,7 +50,6 @@ export function createHopperIoStateSource(o: {
         queue.waiting.push(...q.waiting);
         queue.running.push(...q.running);
         queue.locked.push(...q.locked);
-        parked.push(...q.parked);
         // One gate for the instance: `review` while any user reviews new jobs, since then jobs can wait on a person.
         if (q.gate.mode === 'review') review = true;
         questions.push(...t.store.questions.list({ status: ['open'] }));
@@ -65,7 +63,6 @@ export function createHopperIoStateSource(o: {
         lanes,
         queue: { ...queue, gate: { mode: review ? 'review' : 'auto-accept', autoAcceptPerHour: null } },
         questions,
-        parked,
         machineKey: (place) => keys.get(place)!,
         executorPlugin: (plugin) => plugin || undefined,
       }));

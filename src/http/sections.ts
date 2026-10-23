@@ -1,7 +1,7 @@
 // GET /api/sections (issue #543, design.md "Sections"): every section type in nav order, with what is open in it, how
 // many of those wait on a person, and how many of those are high priority (#535), and the event types it emits. A
-// section's open rule is its own, and stays where the section is: an open question at the human tier, its job not parked
-// on it; a pending login; an open problem or hand-off, or work not pushed (issue #1010); a review item open or being revised, its job not
+// section's open rule is its own, and stays where the section is: an open question at the human tier, a parked job's
+// too (issue #2634: it still blocks its job); a pending login; an open problem or hand-off, or work not pushed (issue #1010); a review item open or being revised, its job not
 // parked on it (issue #2167), waiting on a person at the human stage; a parked job, waiting on a person to pick it up (issue #565).
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { UserStore } from '../domain/ports.ts';
@@ -22,9 +22,8 @@ function count(store: UserStore, kind: SectionKind): Counts {
     return { open: open.length, waiting: waiting.length, high: high(waiting.map((p) => p.jobId)) };
   }
   if (kind === 'questions') {
-    // A parked job's question is in Parked, with its job (issue #565).
-    const parkedOn = new Set(store.jobs.list({ status: ['parked'] }).map((j) => j.questionId));
-    const open = store.questions.list({ status: ['open'] }).filter((q) => !parkedOn.has(q.id));
+    // A parked job's question counts too (issue #2634): it still blocks its job, and most waits park by themselves.
+    const open = store.questions.list({ status: ['open'] });
     const waiting = open.filter((q) => q.tier === 'human');
     return { open: open.length, waiting: waiting.length, high: high(waiting.map((q) => q.jobId)) };
   }

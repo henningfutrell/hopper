@@ -19,7 +19,6 @@ const inputs = (over: Partial<HopperIoStateInputs> = {}): HopperIoStateInputs =>
   lanes: [],
   queue: { waiting: [], running: [], locked: [], gate: { mode: 'auto-accept', autoAcceptPerHour: null } },
   questions: [],
-  parked: [],
   machineKey: key,
   executorPlugin: (name) => name,
   ...over,
@@ -35,14 +34,13 @@ describe('the hopper.io state snapshot (issue #466)', () => {
         { id: 'q3', jobId: 'j3', status: 'answered', tier: 'human' },
         { id: 'q4', jobId: 'j4', status: 'open', tier: 'human' },
       ],
-      parked: [{ id: 'j4', status: 'parked', questionId: 'q4' }],
     }));
     expect(s).toMatchObject({
       schema: 2,
       sentAt: at,
       instance: { version: '1f36076e', channel: 'dev' },
       queue: { waiting: 2, running: 1, locked: 1, gate: 'review' },
-      attention: { questionsAwaitingOwner: 1, jobsLocked: 1, machinesOffline: 0 },
+      attention: { questionsAwaitingOwner: 2, jobsLocked: 1, machinesOffline: 0 },
     });
   });
 

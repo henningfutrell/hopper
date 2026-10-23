@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-// Issue #565, rendered inside the whole app against a fake of the daemon's HTTP surface: a parked job's question leaves
-// Questions, its badge and Attention; the job is a compact row in Parked — issue title and number, machine, when it was
+// Issue #565, rendered inside the whole app against a fake of the daemon's HTTP surface: a parked job's question stays in
+// Questions, its badge and Attention (issue #2634: it still blocks its job); the job is a compact row in Parked — issue title and number, machine, when it was
 // parked, the question's first line, whether its agent session resumes — high priority first. Expanded, the full
 // question; Pick up re-queues it, Answer and pick up sends the answer and re-queues it in one step, and a viewer reads only.
 import { createElement } from 'react';
@@ -101,10 +101,10 @@ afterEach(async () => {
 });
 
 describe('a parked job\'s question', () => {
-  it('leaves Questions and its badge; Parked has its own count, marked for a high-priority job', async () => {
+  it('stays in Questions and its badge (issue #2634); Parked has its own count, marked for a high-priority job', async () => {
     await boot('admin', '#questions');
-    expect([...document.querySelectorAll('[data-question]')].map((c) => c.getAttribute('data-question'))).toEqual(['q-live']);
-    expect(navBadge('#questions')!.getAttribute('title')).toBe('1 question waits on you');
+    expect([...document.querySelectorAll('[data-question]')].map((c) => c.getAttribute('data-question'))).toEqual(['q-later', 'q-live', 'q-old']);
+    expect(navBadge('#questions')!.getAttribute('title')).toBe('3 questions wait on you; 1 high priority');
     // Issue #2374: Parked is a tab of Failures, whose entry sums it.
     const badge = navBadge('#failures')!;
     expect(badge.textContent).toBe('2');
@@ -112,11 +112,9 @@ describe('a parked job\'s question', () => {
     expect(badge.getAttribute('title')).toBe('2 parked jobs wait to be picked up; 1 high priority');
   });
 
-  it('leaves Attention', async () => {
+  it('stays in Attention (issue #2634)', async () => {
     await boot('admin', '#dashboard');
-    expect(document.querySelector('[data-notice="question:q-live"]')).not.toBeNull();
-    expect(document.querySelector('[data-notice="question:q-later"]')).toBeNull();
-    expect(document.querySelector('[data-notice="question:q-old"]')).toBeNull();
+    for (const id of ['q-live', 'q-later', 'q-old']) expect(document.querySelector(`[data-notice="question:${id}"]`), id).not.toBeNull();
   });
 });
 
