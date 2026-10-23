@@ -47,6 +47,42 @@ describe('resources an ssh target prints', () => {
     expect(readResources(printed)).not.toHaveProperty('memPressure');
   });
 
+  it('its tightest cgroup memory limit on its path (issue #2499 part 10): the limit is its total, the kernel\'s memory kept apart', () => {
+    // A seat's container (its cgroup namespace root) limits 4 GiB; a slice above its session limits 6 GiB; "max" is no limit.
+    const cg = [
+      `hopper-res cg / ${4 * GIB} ${3 * GIB} ${GIB / 2}`,
+      `hopper-res cg /user.slice ${6 * GIB} ${2 * GIB} 0`,
+      'hopper-res cg /user.slice/user-1000.slice/session-3.scope max 1000 0',
+      'hopper-res 8',
+    ].join('\n');
+    expect(readResources(printed.replace('hopper-res 8', cg))).toEqual({
+      cores: 8, cpuBusyFrac: 300 / 800, load: [0.52, 0.61, 0.7],
+      memTotalBytes: 4 * GIB, memAvailableBytes: 1.5 * GIB, container: true,
+      kernelMemTotalBytes: 16 * GIB, kernelMemAvailableBytes: 10 * GIB,
+    });
+  });
+
+  it('under a cgroup limit, that cgroup\'s memory pressure, not the kernel\'s (issue #2499 part 10)', () => {
+    const cg = [
+      `hopper-res cg /seat ${4 * GIB} ${GIB}`,
+      'hopper-res cgp /seat some avg10=41.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res cgp /seat full avg10=9.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res cgp /other some avg10=99.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res cgp /other full avg10=99.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res some avg10=2.00 avg60=1.00 avg300=0.00 total=1',
+      'hopper-res full avg10=0.00 avg60=0.00 avg300=0.00 total=1',
+      'hopper-res 8',
+    ].join('\n');
+    expect(readResources(printed.replace('hopper-res 8', cg))).toMatchObject({ memTotalBytes: 4 * GIB, memAvailableBytes: 3 * GIB, memPressure: { someAvg10: 41, fullAvg10: 9 } });
+  });
+
+  it('a cgroup line that is not whole, or a limit over the kernel\'s memory, is no limit (issue #2499 part 10)', () => {
+    const bad = ['hopper-res cg /a 1234', `hopper-res cg /b ${4 * GIB} x`, `hopper-res cg /c ${32 * GIB} ${GIB}`, 'hopper-res 8'].join('\n');
+    const r = readResources(printed.replace('hopper-res 8', bad))!;
+    expect(r.memTotalBytes).toBe(16 * GIB);
+    expect(r).not.toHaveProperty('container');
+  });
+
   it('no resource lines (a machine with no /proc): none', () => {
     expect(readResources('/home/far\nhopper-disk 1 1\nhopper-work-tree-ok')).toBeUndefined();
   });
