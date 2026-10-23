@@ -5,11 +5,14 @@
 // A cleanup that could not reach the job's machine is deferred (issue #371): recorded on the job, tried
 // again on every tick until it goes through, and meanwhile a waiting job of the same item is held. A cleanup the job's own
 // route cannot do (issue #2490: its ssh name no longer resolves) reaps through the machine as it is reached now.
+// With a retention set for the status the job ended in on its machine (issue #2494), the reap keeps its scratch dir: the
+// sweep removes it once the retention is over.
 import { jobScratchOf } from '../domain/job-layout.ts';
 import type { MachineShell, Reaped } from '../domain/ports.ts';
 import { keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job, type MachineSnapshot } from '../domain/types.ts';
 import { EngineError } from './errors.ts';
 import { closeLedger } from './resource-ledger.ts';
+import { retainsAtEnd } from '../domain/retention.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
 export type Cleanup = (jobId: string) => Promise<void>;
@@ -53,13 +56,21 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
    * its processes stopped, its scratch dir removed unless it holds work not pushed (kept when it timed out, issue #630).
    * Rejects with its own route's error when the machine is not reached this way either.
    */
-  async function reapThroughMachine(job: Job, error: unknown): Promise<Reaped> {
+  async function reapThroughMachine(job: Job, error: unknown, keep: boolean): Promise<Reaped> {
     const cwd = (job.executorState as { cwd?: unknown } | undefined)?.cwd;
     const id = machineRanOn(job);
     const m = typeof cwd === 'string' && cwd.startsWith('/') && id ? (await c.machines.list().catch(() => [])).find((x) => x.id === id) : undefined;
     const shell = m && !m.containerImage ? shellOf(m) : undefined;
     if (!shell || typeof cwd !== 'string') throw error;
-    try { return await shell.reap(job.id, jobScratchOf(cwd, job.id), job.liveness !== undefined); } catch { throw error; }
+    try { return await shell.reap(job.id, jobScratchOf(cwd, job.id), job.liveness !== undefined || keep); } catch { throw error; }
+  }
+
+  /** Whether the job's machine keeps its work past its end (issue #2494); machines that cannot be read keep none, as before. */
+  async function retainedAtEnd(job: Job): Promise<boolean> {
+    const id = machineRanOn(job);
+    if (!id) return false;
+    const machines = await Promise.resolve().then(() => c.machines.list()).catch(() => []);
+    return retainsAtEnd(machines.find((m) => m.id === id)?.sweep, job.status);
   }
 
   const run: Cleanup = async (jobId) => {
@@ -74,7 +85,9 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
     }
     running.add(jobId);
     try {
-      const said = await executor.cleanup(job).catch((e: unknown) => reapThroughMachine(job, e));
+      // A retention set for the status it ended in, on its machine (issue #2494): the reap keeps its scratch dir for the sweep.
+      const keepScratch = await retainedAtEnd(job);
+      const said = await executor.cleanup(job, { keepScratch }).catch((e: unknown) => reapThroughMachine(job, e, keepScratch));
       if (c.stopping()) return;
       // Work the hopper pushed for the job (issue #2087) is not work not pushed, whatever its remote branches say: the
       // sweep removes it.

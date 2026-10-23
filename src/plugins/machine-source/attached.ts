@@ -4,7 +4,7 @@
 // reaches it through the machine-source context's `target`, never on its own.
 import type { z as Z } from 'zod';
 import type { AttachedMachine } from '../../domain/types.ts';
-import type { DiskThresholds, SweepSettings } from '../../domain/machines.ts'; import type { MemoryFloor } from '../../domain/memory-floor.ts';
+import type { DiskThresholds, EndStatus, SweepSettings } from '../../domain/machines.ts'; import type { MemoryFloor } from '../../domain/memory-floor.ts';
 import type { UsageLimitPair } from '../../domain/usage.ts';
 import type { MachineSource, MachineSourceContext } from '../sdk.ts';
 
@@ -107,6 +107,18 @@ export const diskLowOf = (o: { diskLowBelowGiB?: number; diskLowBelowPercent?: n
     ...(o.diskLowBelowPercent !== undefined ? { belowPercent: o.diskLowBelowPercent } : {}),
   });
 
+/** The retention option of each status a job ends in (issue #2494), by the status. */
+const RETAIN_OPTIONS = { finished: 'retainFinishedHours', failed: 'retainFailedHours', cancelled: 'retainCancelledHours', rejected: 'retainRejectedHours' } as const;
+type RetainOptions = { [K in (typeof RETAIN_OPTIONS)[EndStatus]]?: number };
+
+/** The retention per job status (issue #2494): how long an ended job's work stays here, from its end. */
+const retainOption = (z: typeof Z, status: EndStatus) => z.number().min(0).optional()
+  .meta({ description: `a job that ended ${status}: the reap at its end keeps its scratch dir and worktrees, and the sweep removes them this many hours after its end (absent: removed at its end, else by the scratch age); work not pushed is never removed` });
+const retainShape = (z: typeof Z) => ({
+  retainFinishedHours: retainOption(z, 'finished'), retainFailedHours: retainOption(z, 'failed'),
+  retainCancelledHours: retainOption(z, 'cancelled'), retainRejectedHours: retainOption(z, 'rejected'),
+});
+
 /**
  * How the sweep treats a machine (issue #410): how often it is swept for what ended jobs left, and how old an
  * ended job's scratch dir gets before the sweep reaps it. Plain options, read at every sweep. Not on a
@@ -117,14 +129,20 @@ export const sweepShape = (z: typeof Z) => ({
     .meta({ description: 'the sweep: every this many minutes (default 10), what jobs that are no longer live left here is stopped, and their old scratch dirs removed' }),
   scratchMaxAgeHours: z.number().positive().optional()
     .meta({ description: 'the sweep removes an ended job\'s scratch dir here once it is this many hours old (default 24); work not pushed is never removed' }),
+  ...retainShape(z),
 });
 
-/** The sweep settings the options set; undefined when neither is. */
-export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: number }): SweepSettings | undefined =>
-  (o.reapEveryMinutes === undefined && o.scratchMaxAgeHours === undefined ? undefined : {
+/** The sweep settings the options set; undefined when none is. */
+export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: number } & RetainOptions): SweepSettings | undefined => {
+  const retainHours: Partial<Record<EndStatus, number>> = {};
+  for (const [status, key] of Object.entries(RETAIN_OPTIONS) as [EndStatus, keyof RetainOptions][]) if (o[key] !== undefined) retainHours[status] = o[key];
+  const retains = Object.keys(retainHours).length > 0;
+  return (o.reapEveryMinutes === undefined && o.scratchMaxAgeHours === undefined && !retains ? undefined : {
     ...(o.reapEveryMinutes !== undefined ? { everyMinutes: o.reapEveryMinutes } : {}),
     ...(o.scratchMaxAgeHours !== undefined ? { scratchMaxAgeHours: o.scratchMaxAgeHours } : {}),
+    ...(retains ? { retainHours } : {}),
   });
+};
 
 /** The options every attached machine has; `executors` defaults to what its connection runs. */
 export function attachedShape(z: typeof Z, executors: readonly string[]) {
@@ -143,6 +161,7 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
 export interface AttachedOptions {
   label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number;
+  retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number;
 }
 
 /** The plain fields of an attached machine named `name`. */

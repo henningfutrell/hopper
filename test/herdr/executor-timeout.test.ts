@@ -32,4 +32,14 @@ describe('herdr-claude executor: a timeout', () => {
     expect(herdr.reaps).toHaveLength(2);
     expect(herdr.reaps.every((r) => r.keep === true)).toBe(true);
   });
+
+  it('a retention set for the status the job ended in (issue #2494): cleanup keeps the scratch dir; none set, it removes it', async () => {
+    for (const keepScratch of [true, false]) {
+      const { herdr, executor } = setup({ turns: [{ output: ['● Done', '  HOPPER_DONE'] }] });
+      const { ctx, saved } = contextFor(jobWith({ prompt: 'go' }));
+      await executor.run(ctx);
+      await executor.cleanup!({ ...ctx.job, status: 'failed', executorState: saved.at(-1) }, { keepScratch });
+      expect(herdr.reaps.at(-1)).toEqual({ jobId: JOB_ID, scratch: SCRATCH, ...(keepScratch ? { keep: true } : {}) });
+    }
+  });
 });

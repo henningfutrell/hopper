@@ -39,7 +39,7 @@ describe('the cleanup at a job\'s end and the retention per job status (issue #2
   });
 
   it('none set, set for another status, or set to 0: the reap removes it as before', async () => {
-    for (const retainHours of [undefined, { finished: 24 }, { failed: 0 }]) {
+    for (const retainHours of [undefined, { finished: 24 }, { failed: 0 }] as (Record<string, number> | undefined)[]) {
       const t = setup(retainHours ? { retainHours } : {});
       await t.cleanups.run('j');
       expect(t.asked).toEqual([{ keepScratch: false }]);

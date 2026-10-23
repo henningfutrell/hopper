@@ -4,14 +4,14 @@ import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import type { Survey } from '../../src/domain/ports.ts';
 import { planSweep, STUCK_RETRY_MS } from '../../src/engine/sweep.ts';
-import { HOUR, job, none, rig } from './sweep-rig.ts';
+import { day, HOUR, job, none, rig } from './sweep-rig.ts';
 
 describe('what the sweep reaps (issue #410)', () => {
   const jobs = new Map([
     ['run', job('run', 'running')], ['wait', job('wait', 'waiting_answer')], ['claim', job('claim', 'claimed')], ['op', job('op', 'operator_led')],
     ['done', job('done', 'finished')], ['fail', job('fail', 'failed')], ['gone', job('gone', 'cancelled')], ['queued', job('queued', 'queued')],
   ]);
-  const plan = (found: Partial<Survey>, kept: string[] = []) => planSweep({ ...none, ...found }, (id) => jobs.get(id), new Set(kept), 24 * HOUR);
+  const plan = (found: Partial<Survey>, kept: string[] = []) => planSweep({ ...none, ...found }, (id) => jobs.get(id), new Set(kept), day);
 
   it('stops the scope and processes of a job that is not live; never a live job\'s, never a job it does not know', () => {
     expect(plan({ scopes: ['done', 'run', 'stranger'], processes: ['fail', 'wait', 'claim', 'op', 'queued', 'other-hopper'] }))
@@ -36,8 +36,8 @@ describe('what the sweep reaps (issue #410)', () => {
   it('a parked job (issue #501): what still runs of it is stopped, its scratch dir — its worktree — is never removed, whatever its age', () => {
     const parked = new Map([['park', job('park', 'parked')]]);
     const scratch = [{ jobId: 'park', path: '/w/.worktrees/@scratch/park', ageMs: 999 * HOUR }];
-    expect(planSweep({ ...none, scopes: ['park'], scratch }, (id) => parked.get(id), new Set(['park']), 24 * HOUR)).toEqual([{ jobId: 'park' }]);
-    expect(planSweep({ ...none, scratch }, (id) => parked.get(id), new Set(), 24 * HOUR)).toEqual([]);
+    expect(planSweep({ ...none, scopes: ['park'], scratch }, (id) => parked.get(id), new Set(['park']), day)).toEqual([{ jobId: 'park' }]);
+    expect(planSweep({ ...none, scratch }, (id) => parked.get(id), new Set(), day)).toEqual([]);
   });
 
   it('a job worktree in .worktrees (issue #1188), or of the layout before: its ended job is reaped by its scratch dir, even once that is gone; never a job it does not know', () => {
@@ -57,7 +57,7 @@ describe('what the sweep reaps (issue #410)', () => {
 
   it('a job with a container or a volume left (issue #1120): reaped once it ended, whatever its age; never a parked or live job\'s, never a job it does not know', () => {
     const parked = new Map([...jobs, ['park', job('park', 'parked')]]);
-    expect(planSweep({ ...none, containers: ['done', 'gone', 'run', 'queued', 'park', 'stranger'] }, (id) => parked.get(id), new Set(), 24 * HOUR))
+    expect(planSweep({ ...none, containers: ['done', 'gone', 'run', 'queued', 'park', 'stranger'] }, (id) => parked.get(id), new Set(), day))
       .toEqual([{ jobId: 'done' }, { jobId: 'gone' }]);
     expect(plan({ containers: ['done'], scratch: [{ jobId: 'done', path: '/w/.worktrees/@scratch/done', ageMs: 30 * HOUR }] }))
       .toEqual([{ jobId: 'done', scratch: '/w/.worktrees/@scratch/done' }]);

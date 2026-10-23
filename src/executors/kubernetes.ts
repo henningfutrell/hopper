@@ -95,10 +95,10 @@ export function createKubernetesExecutor(name: string, inner: Executor, pods: Jo
     ...(inner.park ? { park: (job: Job) => inner.park!(job) } : {}),
     ...(inner.checkpoint ? { checkpoint: (job: Job) => inner.checkpoint!(job) } : {}),
 
-    async cleanup(job) {
+    async cleanup(job, o) {
       // The pane's close and the reap need the pod; a pod that is gone left nothing to close or reap.
       const alive = await pods.alive(job.id);
-      const reaped = alive ? await inner.cleanup?.(job) : undefined;
+      const reaped = alive ? await inner.cleanup?.(job, o) : undefined;
       await pods.remove(job.id);
       return reaped ?? undefined;
     },

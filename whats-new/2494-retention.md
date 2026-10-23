@@ -1,0 +1,1 @@
+- A machine can now keep the work of jobs that ended for a time you choose, for each way a job ends: finished, failed, cancelled or rejected. Then it removes the work by itself. Work not pushed is still never removed.

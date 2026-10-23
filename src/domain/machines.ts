@@ -256,11 +256,15 @@ export type DiskReading = NonNullable<MachineSnapshot['disk']>;
 /** A machine's thresholds for a low disk (issue #410): below this many GiB free, or below this share free; absent, 5 GiB and 10%. */
 export interface DiskThresholds { belowGiB?: number; belowPercent?: number }
 
+/** The statuses a job ends in (`TERMINAL_STATUSES`), each with its own retention (issue #2494). */
+export type EndStatus = 'finished' | 'failed' | 'cancelled' | 'rejected';
+
 /**
  * How the sweep treats a machine (issue #410): it is swept every `everyMinutes` (absent, 10), and an ended
- * job's scratch dir there is reaped once it is `scratchMaxAgeHours` old (absent, 24).
+ * job's scratch dir there is reaped once it is `scratchMaxAgeHours` old (absent, 24). `retainHours` (issue #2494): for a
+ * status named, the job's work stays this many hours from its end instead (`src/domain/retention.ts`).
  */
-export interface SweepSettings { everyMinutes?: number; scratchMaxAgeHours?: number }
+export interface SweepSettings { everyMinutes?: number; scratchMaxAgeHours?: number; retainHours?: Partial<Record<EndStatus, number>> }
 
 /** A job's side of its machine's link (issue #752, design.md "Link-lost hold"). */
 export interface JobMachineLink {
