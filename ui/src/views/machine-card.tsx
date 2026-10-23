@@ -12,7 +12,7 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { Button } from '@/components/ui/button';
 import { useNow } from '@/hooks/use-now';
 import { clientReleaseText, clientUpdateLine, diskText, herdrText, kindOf, ownedHerdrText, offNetwork, reservedText, templateText, workTreeText, workTreesText, type MachineKind } from '@/model/machines';
-import { machineBadges, nodeText } from '@/model/machine-list';
+import { allocFailureBurst, machineBadges, nodeText } from '@/model/machine-list';
 import { jobsUseText, resourcesText } from '@/model/machine-history';
 import { cachesText, cleanupLeftoversText, hopperDiskText, jobsDiskText, storageText } from '@/model/hopper-disk';
 import { windowsLinkText } from '@/model/windows-link';
@@ -125,6 +125,9 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       )}
       {m.resources?.jobMemoryLimit === 'none' && (
         <p role="alert" className="text-sm text-warn">No memory limit: its jobs run in no systemd scope and under no cgroup memory limit, so one burst of builds there can take all of its host's memory. Give it a memory limit (for example a container's <code>--memory</code>), or run a systemd user manager there.</p>
+      )}
+      {allocFailureBurst(m.resources) && (
+        <p role="alert" className="text-sm text-warn">Large memory allocations fail: its kernel logged {m.resources?.memAllocFailures?.count} page allocation failures of order 4 or more in the last 10 minutes. Its memory is full and fragmented. On a WSL host, wsl.exe and the link to Windows can hang next. Drain it, or stop builds there, until they stop.</p>
       )}
       {m.herdrProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>

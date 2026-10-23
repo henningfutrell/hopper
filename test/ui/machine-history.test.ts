@@ -119,6 +119,13 @@ describe('a machine row', () => {
     });
   });
 
+  // Issue #2622 part 6: the kernel's large page allocation failures in the last 10 minutes.
+  it('says the large page allocation failures of the last 10 minutes', () => {
+    const r = { cores: 4, memTotalBytes: 4 * GIB, memAvailableBytes: 1 * GIB, memAllocFailures: { count: 12, maxOrder: 7 } };
+    expect(resourcesText(r)!.memory).toBe('3.0 GB used of 4.0 GB (75%) · 12 large allocation failures (up to order 7) in 10 min');
+    expect(resourcesText({ ...r, memAllocFailures: { count: 1, maxOrder: 4 } })!.memory).toBe('3.0 GB used of 4.0 GB (75%) · 1 large allocation failure (order 4) in 10 min');
+  });
+
   it('memory pressure and CPU throttle are named lines', () => {
     expect(machineLines([series('a', 'pressure', 0.2), series('a', 'throttle', 0.5)]).map((l) => l.label)).toEqual(['memory pressure', 'CPU throttle']);
   });

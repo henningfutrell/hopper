@@ -8,6 +8,12 @@ import type { MachineView } from './wire.ts';
 
 export type MachinesMode = 'cards' | 'list';
 
+/**
+ * Issue #2622 part 6: a burst of large page allocation failures, as the allocation failure watch counts one
+ * (ALLOC_FAILURE_BURST, src/machines/alloc-failure-watch.ts: the UI imports only types of src/).
+ */
+export const allocFailureBurst = (r: ResourceReading | undefined): boolean => (r?.memAllocFailures?.count ?? 0) >= 3;
+
 /** The view mode as browser storage has it: list only when it says list. */
 export const parseMachinesMode = (raw: string | null): MachinesMode => (raw === 'list' ? 'list' : 'cards');
 
@@ -33,6 +39,7 @@ export function machineBadges(m: MachineView, now: number): MachineBadge[] {
     ...warn(m.resources?.windowsLink?.ok === false, 'Windows link broken'),
     ...warn(m.resources?.nodeFloor, 'Node unpatched'),
     ...warn(m.resources?.jobMemoryLimit === 'none', 'no memory limit'),
+    ...warn(allocFailureBurst(m.resources), 'allocation failures'),
     { status: m.online ? 'online' : 'offline' },
   ];
 }
