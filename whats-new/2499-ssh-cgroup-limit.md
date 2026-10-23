@@ -1,0 +1,1 @@
+- A machine reached over ssh inside a memory limit now shows that limit as its memory, and the hopper gives it jobs by that limit, not by the memory of the whole computer.
