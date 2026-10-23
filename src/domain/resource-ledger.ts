@@ -1,5 +1,5 @@
 // A job's resource ledger (issue #2504, design.md "The resource ledger"): each thing the hopper made for a job on a machine —
-// its scratch dir, its job worktree, its job scope —, recorded once the job's executor says it made it, and closed by the
+// its scratch dir, its job worktree, its job scope, its own container runtime —, recorded once the job's executor says it made it, and closed by the
 // job's cleanup or by the sweep as each reap says: reaped, kept (work not pushed), or failed with why. A job's **cleanup
 // status** is read from its entries and its cleanup record. Pure: no I/O, no clock — `at` is passed in.
 import type { BomPart, BomStatus } from './job-bom.ts';
@@ -8,7 +8,7 @@ import type { Reaped, Survey } from './machine-shell.ts';
 import { TERMINAL_STATUSES, type Job } from './types.ts';
 
 /** What a ledger entry is. */
-export const LEDGER_KINDS = ['scratch_dir', 'job_worktree', 'job_scope'] as const;
+export const LEDGER_KINDS = ['scratch_dir', 'job_worktree', 'job_scope', 'container_runtime'] as const;
 export type LedgerKind = typeof LEDGER_KINDS[number];
 
 /** Where a ledger entry stands: still there, removed, kept for work not pushed, or a removal that failed. */
@@ -50,15 +50,19 @@ export interface ResourceLedgerRepository {
 export const CLEANUP_STATUSES = ['none', 'in_use', 'pending', 'in_progress', 'done', 'kept_work', 'failed'] as const;
 export type CleanupStatus = typeof CLEANUP_STATUSES[number];
 
-/** The entries an executor's saved state names (`cwd`, `jobWorktree`, `scope`), on machine `machineId`. */
+/**
+ * The entries an executor's saved state names (`cwd`, `jobWorktree`, `scope`, `containerRuntime`: the job's own container
+ * runtime's dir in its scratch dir, issue #1295, with its containers, volumes and storage), on machine `machineId`.
+ */
 export function ledgerEntriesOf(jobId: string, machineId: string, state: unknown, at: string): NewLedgerEntry[] {
-  const s = (state ?? {}) as { cwd?: unknown; jobWorktree?: unknown; scope?: unknown };
+  const s = (state ?? {}) as { cwd?: unknown; jobWorktree?: unknown; scope?: unknown; containerRuntime?: unknown };
   const path = (v: unknown): v is string => typeof v === 'string' && v.startsWith('/');
   const out: NewLedgerEntry[] = [];
   const add = (kind: LedgerKind, locator: string): void => { out.push({ jobId, machineId, kind, locator, createdAt: at }); };
   if (path(s.cwd)) add('scratch_dir', jobScratchOf(s.cwd, jobId));
   if (path(s.jobWorktree)) add('job_worktree', s.jobWorktree);
   if (typeof s.scope === 'string' && s.scope) add('job_scope', s.scope);
+  if (path(s.containerRuntime)) add('container_runtime', s.containerRuntime);
   return out;
 }
 
@@ -66,7 +70,8 @@ const within = (path: string, dir: string): boolean => path === dir || path.star
 
 /**
  * What a reap says of each live or kept entry: a dir it could not remove failed; with work kept, the scratch dir and the job
- * worktree are kept (the reap keeps them together); else each is reaped. A scope is always stopped. A reap that did not look
+ * worktree are kept (the reap keeps them together), but not the container runtime, which the reap resets all the same;
+ * else each is reaped. A scope is always stopped. A reap that did not look
  * at the scratch dir (`scratch` false) judges the scope only. A reaped entry is not judged again; a failed one a later reap
  * removed is reaped.
  */
@@ -75,7 +80,7 @@ export function reapClosures(entries: readonly LedgerEntry[], said: Reaped, scra
     if (entry.kind === 'job_scope') return { entry, state: 'reaped' as const };
     const left = said.left?.find((p) => within(p, entry.locator) || within(entry.locator, p));
     if (left) return { entry, state: 'failed' as const, reason: `${left} is still there` };
-    return { entry, state: said.kept.length > 0 ? 'kept' as const : 'reaped' as const };
+    return { entry, state: said.kept.length > 0 && entry.kind !== 'container_runtime' ? 'kept' as const : 'reaped' as const };
   }).filter((c) => c.state !== c.entry.state || c.reason !== c.entry.reason);
 }
 
@@ -109,15 +114,17 @@ export const GONE_REASON = 'not found on the machine';
 /**
  * The reconciler's closures on machine `machineId` (issue #2504 part 3): each open entry (`live` or `failed`) there of an
  * ended job whose thing the machine's survey no longer found, closed `reaped` with `GONE_REASON`. A scratch dir only in a
- * work tree the survey looked in (`found.roots`); a job worktree only when the survey also lists job worktrees; a scope
- * that no longer runs. A job that has not ended, and a job the store does not know, is not judged.
+ * work tree the survey looked in (`found.roots`), and a container runtime with its scratch dir; a job worktree only when the
+ * survey also lists job worktrees; a scope that no longer runs. A job that has not ended, and a job the store does not know, is not judged.
  */
 export function goneClosures(open: readonly LedgerEntry[], found: Survey, machineId: string, jobOf: (id: string) => Pick<Job, 'status'> | undefined): { entry: LedgerEntry; state: 'reaped'; reason: string }[] {
   const roots = new Set(found.roots ?? []);
   const dirs = new Set(found.scratch.map((d) => d.path)), trees = found.trees && new Set(found.trees.map((t) => t.path));
+  const scratchGone = (dir: string): boolean => roots.has(scratchParts(dir)?.workTree ?? '') && !dirs.has(dir);
   const gone = (e: LedgerEntry): boolean => {
     if (e.kind === 'job_scope') return !found.scopes.includes(e.jobId);
-    if (e.kind === 'scratch_dir') return roots.has(scratchParts(e.locator)?.workTree ?? '') && !dirs.has(e.locator);
+    if (e.kind === 'scratch_dir') return scratchGone(e.locator);
+    if (e.kind === 'container_runtime') return scratchGone(e.locator.slice(0, e.locator.lastIndexOf('/')));
     return trees !== undefined && roots.has(worktreeParts(e.locator)?.workTree ?? '') && !trees.has(e.locator);
   };
   return open.filter((e) => e.machineId === machineId && (e.state === 'live' || e.state === 'failed') && gone(e)).filter((e) => {
@@ -148,7 +155,7 @@ export function cleanupStatusOf(job: Pick<Job, 'status' | 'cleanupDue' | 'cleanu
   return entries.some((e) => e.state === 'kept') ? 'kept_work' : 'done';
 }
 
-const KIND_WORDS: Record<LedgerKind, string> = { scratch_dir: 'Scratch dir', job_worktree: 'Job worktree', job_scope: 'Job scope' };
+const KIND_WORDS: Record<LedgerKind, string> = { scratch_dir: 'Scratch dir', job_worktree: 'Job worktree', job_scope: 'Job scope', container_runtime: 'Container runtime' };
 const STATE_WORDS: Record<LedgerState, string> = { live: 'still there', reaped: 'removed', kept: 'kept: it holds work not pushed', failed: 'not removed' };
 const CLEANUP_PART: Record<Exclude<CleanupStatus, 'none'>, { status: BomStatus; label: string }> = {
   in_use: { status: 'running', label: 'Cleanup: the job still uses what it has' },

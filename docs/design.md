@@ -33332,3 +33332,29 @@ measures no size per job dir).
 `test/engine/sweep-ledger.test.ts` (an entry removed by hand is reaped; kept work gone); `test/ui/hopper-disk.test.ts` (the
 card's text); `test/integration/resource-ledger.test.ts` (real database: `GET /api/machines` counts the leftover on its
 machine after the grace period).
+
+### Part 4: the job's container runtime as an entry (2026-10-22)
+
+The containers, volumes and storage a job makes in its own container runtime (issue #1295) were not in the ledger. They are
+the largest part of what a job leaves, and the storage can hold files of the job's user namespace that a plain `rm` cannot
+remove. The reap already resets that runtime (`podman system reset`, then `podman unshare rm` of its storage); the ledger
+did not say so.
+
+- **The entry.** Kind `container_runtime`, locator `<scratch dir>/containers`: the runtime's dir, with its storage, its
+  config and its guards. The herdr executor saves it in the job's state (`containerRuntime`) once the runtime is set up
+  (`src/executors/herdr/start-isolation.ts`), and the next `saveState` records it as the other entries. A machine with no
+  podman gives the job no runtime and no entry.
+- **Closed.** As the scratch dir's entries (`reapClosures`), but work kept does not keep it: the reap resets the runtime
+  whatever the scratch dir holds. A dir in it the reap names as still there (`left`) fails it, with that path. A reap that
+  did not look at the scratch dir does not judge it.
+- **Gone.** The reconciler closes it `reaped` when its scratch dir is gone from a work tree the survey looked in
+  (`goneClosures`).
+- Shown in the parts list as "Container runtime on <machine>", and in `job.cleanup_leftover` as any other entry.
+
+**Left for later parts** of issue #2504: processes, agent sessions, herdr panes and build daemons as entries; the cleanup as
+a persisted work item per entry with backoff, on each machine's own transport; the reconciler for things the ledger does
+not name and for machines no longer known; leftover bytes on Machines.
+
+**Verification (part 4).** `test/domain/resource-ledger.test.ts` (the entry from a state; closed with work kept; failed
+while its storage stays; gone with its scratch dir); `test/herdr/executor-runtime.test.ts` (saved once set up, none with no
+podman); `test/engine/sweep-ledger.test.ts` (the sweep closes it with the scratch dir, not with a scope-only reap).

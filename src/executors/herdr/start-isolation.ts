@@ -3,7 +3,7 @@
 
 import type { ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import { tail } from './monitor.ts';
-import { GUARDS_MARK, RUNTIME_MARK, guardsCommand, guardsOutcome, runtimeOutcome, setupCommand } from '../../client/job-runtime.ts';
+import { GUARDS_MARK, RUNTIME_MARK, RUNTIME_SUBDIR, guardsCommand, guardsOutcome, runtimeOutcome, setupCommand } from '../../client/job-runtime.ts';
 import { SANDBOX_MARK, sandboxCommand, sandboxOutcome } from '../../client/job-sandbox.ts';
 import { jobScratchOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen } from './pane-wait.ts';
@@ -21,7 +21,8 @@ const SANDBOX_WAIT_MS = 30000;
  * the job's scope, so the runtime's socket runs in the scope: its runtime dir, its storage in the scratch dir, its socket,
  * put in the shell's environment, with podman and docker on its PATH guarded. A machine with no podman (or no runtime dir
  * of the user's) gives the job none, the host's socket closed all the same. A setup that failed fails the job: it would
- * run next to the host's runtime. Null when done, else the failure.
+ * run next to the host's runtime. A runtime set up is saved in the job's state (`containerRuntime`), for its resource ledger
+ * (issue #2504). Null when done, else the failure.
  */
 export async function enterRuntime(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | StartTimedOut | null> {
   const scratch = jobScratchOf(s.cwd, ctx.job.id);
@@ -34,7 +35,11 @@ export async function enterRuntime(d: StartDeps, ctx: ExecutionContext, s: PaneS
   await d.herdr.runInPane(s.paneId, setupCommand(ctx.job.id, scratch, true));
   const { found, screen } = await awaitOnScreen(d, ctx, s.paneId, RUNTIME_MARK, runtimeOutcome, RUNTIME_WAIT_MS);
   if (ctx.signal.aborted) return null;
-  if (found === 'own') ctx.progress('container runtime: the job\'s own (podman), apart from the host\'s');
+  if (found === 'own') {
+    ctx.progress('container runtime: the job\'s own (podman), apart from the host\'s');
+    s.containerRuntime = `${scratch}/${RUNTIME_SUBDIR}`;
+    ctx.saveState({ ...s });
+  }
   else if (found === 'none') ctx.progress('container runtime: none for the job here (no podman, or no runtime dir of the user\'s); the host\'s is closed to it');
   else if (found === 'failed') return { kind: 'failed', error: `the job's own container runtime could not be set up on ${ctx.machine.id}: ${tail(screen, 10)}` };
   else return { startTimedOut: `pane ${s.paneId} never set up the job's container runtime within ${RUNTIME_WAIT_MS} ms: ${tail(screen, 10)}` };

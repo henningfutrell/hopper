@@ -90,6 +90,8 @@ export interface PaneState {
   jobWorktree?: string;
   /** The checkout of the job's repository its worktree was made of, when `cwd` is not the job's repository (issues #361, #1103). */
   checkout?: string;
+  /** The job's own container runtime's dir in its scratch dir (issue #1295), when it got one: its resource ledger names it (issue #2504). */
+  containerRuntime?: string;
   /** The systemd user scope the pane's shell runs in (issue #410). Absent: the machine has none; the reap goes by HOPPER_JOB_ID. */
   scope?: string;
   /** The job worktree's node_modules links to dependencies shared with the repository's other jobs (issue #410). */

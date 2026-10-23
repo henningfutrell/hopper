@@ -1,0 +1,1 @@
+- A job's page now also shows the containers and storage the job made on its machine, and whether the hopper removed them when the job ended.
