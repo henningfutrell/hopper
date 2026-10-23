@@ -8804,3 +8804,50 @@ Version 1 (`docs/schemas/push_requirements.evaluated.v1.json`). A running job ev
   ]
 }
 ```
+
+## `delivery_settings.changed`
+
+Version 1 (`docs/schemas/delivery_settings.changed.v1.json`). An admin changed the delivery settings (issue #2554 part 3): per repository (`owner/repo`, lowercased), its promotion set `schedule` — the weekly `cutoffs` (ISO weekday, `HH:MM`) in its `timeZone`, the minutes from a cutoff to the end of the test gate and from there to production, its `epoch` (set 1 is the first cutoff after it) and what `expedite` may do — and its delivery `gates`: each step a person ends, with its `owner`. `from` and `to` are the settings whole; `by` who changed them. A delivery forecast reads them at each request.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "repos": {}
+  },
+  "to": {
+    "repos": {
+      "octo/identity": {
+        "schedule": {
+          "timeZone": "America/Chicago",
+          "cutoffs": [
+            {
+              "weekday": 2,
+              "time": "14:00"
+            },
+            {
+              "weekday": 4,
+              "time": "14:00"
+            }
+          ],
+          "testGateAfterMinutes": 120,
+          "productionAfterMinutes": 1440,
+          "epoch": "2026-10-01T00:00:00.000Z",
+          "expedite": "out_of_cadence"
+        },
+        "gates": {
+          "test_gate": {
+            "owner": "release-owner"
+          }
+        }
+      }
+    }
+  },
+  "by": "admin"
+}
+```

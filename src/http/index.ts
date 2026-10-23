@@ -85,7 +85,7 @@ import { directJobReadRoutes } from './ui/direct-jobs.ts';
 import { searchReadRoutes } from './search.ts';
 import { githubWatchReadRoutes } from './ui/github-watches.ts'; import { pendingApprovalReadRoutes } from './ui/pending-approvals.ts';
 import { componentWatcherReadRoutes } from './ui/component-watchers.ts';
-import { landingBatchReadRoutes } from './ui/landing-batches.ts';
+import { landingBatchReadRoutes } from './ui/landing-batches.ts'; import { deliverySettingsReadRoutes } from './ui/delivery-settings.ts';
 import { infraPlanReadRoutes } from './ui/infra-plans.ts';
 import { webhookRoutes } from './webhooks.ts';
 import { instrumentHttp } from '../telemetry/http.ts'; import { telemetrySummary } from '../telemetry/summary.ts';
@@ -236,7 +236,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   directJobReadRoutes(app, tenant); // Direct jobs (issue #901)
   searchReadRoutes(app, tenant); // Search (issue #945)
   githubWatchReadRoutes(app, tenant); pendingApprovalReadRoutes(app, tenant); // GitHub watches (issue #427), pending approvals (issue #2088)
-  landingBatchReadRoutes(app, tenant); // Landing batches (issue #1073)
+  landingBatchReadRoutes(app, tenant); deliverySettingsReadRoutes(app, tenant); // Landing batches (issue #1073), delivery settings (issue #2554)
   infraPlanReadRoutes(app, tenant); // Infra (issue #870)
   sourceRoutes(app, tenant);
   accountRoutes(app, tenant);

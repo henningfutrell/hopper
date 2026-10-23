@@ -128,6 +128,7 @@ export interface WebhooksView {
 }
 
 export type { GitHubCallKind, HourlyCalls, RateBucket, RateLimiterSettings, RateLimiterView } from '../../../src/domain/github-rate-limit.ts';
+export type { DeliveryGates, DeliveryRepo, DeliverySettings, DeliverySettingsView } from '../../../src/domain/delivery-settings.ts';
 export type { DeliverySecretView, GitHubDeliveriesView } from '../../../src/domain/github-deliveries.ts';
 export type { AfterAnswerTiming, TimingSpread } from '../../../src/domain/sources.ts';
 export type { CredentialMeta, RemoteAccessChange, RemoteAccessLinks, RemoteAccessProvider, RemoteAccessState, RemoteAccessStatus, RemoteAccessView } from '../../../src/domain/remote-access.ts';

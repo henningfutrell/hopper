@@ -57,3 +57,18 @@ export function promotionSetOf(s: PromotionSetSchedule, at: string): PromotionSe
   const iso = (ms: number) => new Date(ms).toISOString();
   return { set, cutoffAt: iso(cutoff), testGateAt: iso(testGate), productionAt: iso(testGate + s.productionAfterMinutes * 60_000) };
 }
+
+/** The most sets a lookup by number counts: about twenty years of two cutoffs a week. */
+export const MAX_SET = 2000;
+
+/** Set `n` of the schedule, and when it opens: at the cutoff of the set before it (set 1: at the epoch). */
+export function promotionSetNumbered(s: PromotionSetSchedule, n: number): { set: PromotionSet; opensAt: string } | undefined {
+  if (!Number.isInteger(n) || n < 1 || n > MAX_SET) return undefined;
+  let opens = Date.parse(s.epoch);
+  let cutoff = nextCutoff(s, opens);
+  for (let i = 1; i < n && cutoff !== undefined; i++) [opens, cutoff] = [cutoff, nextCutoff(s, cutoff)];
+  if (cutoff === undefined) return undefined;
+  const testGate = cutoff + s.testGateAfterMinutes * 60_000;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  return { set: { set: n, cutoffAt: iso(cutoff), testGateAt: iso(testGate), productionAt: iso(testGate + s.productionAfterMinutes * 60_000) }, opensAt: iso(opens) };
+}
