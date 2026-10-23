@@ -1030,7 +1030,11 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   A dir the reap could not remove (issue #1452) is never said removed. The reap makes a read-only dir in it (a Go
   module cache), and a dir its owner cannot read (a container's overlay `work/work`, mode 200, issue #2490), readable,
   writable and searchable (`chmod -R u+rwX`) and removes it again, and resets the job's container storage in it through the job's runtime
-  dir, which it makes again when a reboot removed it. What is still there it names (`hopper-left <path>`): the sweep
+  dir, which it makes again when a reboot removed it. A scratch dir still there after that holds files of the job's user
+  namespace (issue #2685: a test database's data dir, a storage's layers, owned by sub-UIDs): the reap removes it with
+  `podman unshare rm -rf`, the job's own scratch dir only and never a link, whether the job's runtime dir is there or not.
+  Under no-new-privileges (the client's service unit sets it) newuidmap cannot set its caps, so podman cannot make that
+  namespace: the reap then runs the same removal through the user's systemd (`systemd-run --user --wait`). What is still there it names (`hopper-left <path>`): the sweep
   logs that once while it stays, records no `job.work_removed`, and a discard of it fails with the path. The sweep
   reaps that job again only once `STUCK_RETRY_MS` (6 hours) passed (issue #1613): each pass would only fail the same way,
   and the reset of its container storage is slow. A scope or a process of the job is stopped at each pass all the same.

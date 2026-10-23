@@ -124,7 +124,14 @@ const REAP_SCRIPT = [
   'rm -rf "$n/credentials" "$o/credentials";',
   // Removes $1, a dir of the job's: a read-only dir in it (a Go module cache, issue #1452), or one its owner cannot read (an
   // overlay work dir, issue #2490), made readable, writable and searchable first when a plain remove left it.
-  'gone() { [ -e "$1" ] && [ ! -L "$1" ] || return 0; rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+rwX "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; };',
+  // The job's scratch dir, when that leaves it: removed in the user's own user namespace (issue #2685), as files of the job's
+  // (a test database's data dir, a storage's layers) belong to its sub-UIDs, whether the job's runtime dir is there or not.
+  // Under no-new-privileges (the client's service) podman cannot make that namespace, so it runs in the user's systemd.
+  'gone() { [ -e "$1" ] && [ ! -L "$1" ] || return 0; rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+rwX "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null;',
+  '  [ -e "$1" ] && { [ "$1" = "$n" ] || [ "$1" = "$o" ]; } && pp=$(command -v podman 2>/dev/null) || return 0; nt=; command -v timeout >/dev/null 2>&1 && nt="timeout 300";',
+  '  $nt env -u CONTAINER_HOST -u CONTAINER_CONNECTION ${h:+"XDG_RUNTIME_DIR=$h"} "$pp" unshare rm -rf -- "$1" >/dev/null 2>&1; [ -e "$1" ] || return 0;',
+  '  grep -q "^NoNewPrivs:[[:space:]]*1" /proc/self/status 2>/dev/null && command -v systemd-run >/dev/null 2>&1'
+    + ' && $nt systemd-run --user --quiet --wait --collect env -u CONTAINER_HOST -u CONTAINER_CONNECTION "$pp" unshare rm -rf -- "$1" >/dev/null 2>&1; };',
   'dirs() { for d in "$n" "$o"; do [ -d "$d" ] && [ ! -L "$d" ] && printf "%s\\n" "$d"; done; };',
   `trees() { for t in "$w"/${LAYOUT.worktrees}/*/"$id" "$w"/${LAYOUT.oldWorktrees}/*-"$id"; do case $t in "$w"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };`,
   // The disk the job's scratch dir and worktrees hold (issue #2498 part 4), read before the reap removes or keeps them: one
