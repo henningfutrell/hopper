@@ -1084,7 +1084,7 @@ Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used
 
 ## `job.cleanup_leftover`
 
-Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Failures lists the job as stuck work (`cleanup_leftover`) while an entry stays. An entry on a retired machine (no machine source lists it, the plugins config does not name it) is then closed `retired` in the ledger (part 12), and the job leaves Failures.
+Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Machines counts it while an entry stays, and the cleanup worker tries again (it is no stuck work on Failures, issue #2684). An entry on a retired machine (no machine source lists it, the plugins config does not name it) is then closed `retired` in the ledger (part 12), and the leftover ends.
 
 | field | type | required |
 |---|---|---|
@@ -1291,7 +1291,7 @@ Version 1 (`docs/schemas/job.waited_items_ended.v1.json`). Every item a job's ow
 
 ## `job.wait_overdue`
 
-Version 1 (`docs/schemas/job.wait_overdue.v1.json`). A job's own wait passed the deadline of its wait check (issue #1694): a day after it began, four hours for a wait on its own command. Once per wait. The job stays on its wait and is listed as stuck on its own wait for a person; the hopper checks it each hour after. `deadline`: the deadline; `result`: what the last check found.
+Version 1 (`docs/schemas/job.wait_overdue.v1.json`). A job's own wait passed the deadline of its wait check (issue #1694): a day after it began, four hours for a wait on its own command. Once per wait. The job stays on its wait, and the hopper checks it each hour after. It is stuck work for a person (Failures, `own_wait`) only when its wait broke (issue #2684): its check cannot test its condition (`brokenAt`), or it was woken for the same items once already. `deadline`: the deadline; `result`: what the last check found.
 
 | field | type | required |
 |---|---|---|
@@ -5744,7 +5744,7 @@ Version 1 (`docs/schemas/vault.run_card_opened.v1.json`). A new **run card** (is
 
 ## `vault.sandbox_approved`
 
-Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before, or `Jev` when Jev's sandbox check (issue #655 part 13, the decision point `sandbox-request` active) allowed a run one of those would approve. It starts no box (issue #1349): the job's box steps then run, each in a sandbox of its own, burned after it. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before, or `the approval of job <id>, which it runs again` when a person approved the same run for the job this one runs again (issue #2639 part 2), or `Jev` when Jev's sandbox check (issue #655 part 13, the decision point `sandbox-request` active) allowed a run one of those would approve. It starts no box (issue #1349): the job's box steps then run, each in a sandbox of its own, burned after it. On the job's timeline.
 
 | field | type | required |
 |---|---|---|

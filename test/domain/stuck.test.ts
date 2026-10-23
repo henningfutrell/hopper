@@ -1,6 +1,7 @@
 // Stuck work (issue #1010): every item that waits on a person — an open hand-off, a failure, work not pushed, a pull
-// request the hopper gave up on, a parked job, a job stuck on its own wait — in exactly one stuck cause, counted, with
-// one bulk action when the hopper takes it for each of them, else what a person does. Pure.
+// request the hopper gave up on, a job whose own wait broke — in exactly one stuck cause, counted, with one bulk action
+// when the hopper takes it for each of them, else what a person does. A parked job, a job that only still waits, and an
+// ended job's cleanup leftover are no stuck work (issues #2414, #2684). Pure.
 import { describe, expect, it } from 'vitest';
 import type { Allowed, FailureRecordView, HandoffResolutionAction, HandoffView, Job, KeptWorkView, PullRequestCard } from '../../src/domain/types.ts';
 import { stuckOf } from '../../src/domain/stuck.ts';
@@ -22,7 +23,7 @@ const kept = (jobId: string, push: Allowed, handoffId?: string): KeptWorkView =>
 const card = (jobId: string, over: Partial<PullRequestCard>): PullRequestCard => ({ jobId, repo: 'o/r', state: 'open', ...over }) as PullRequestCard;
 const job = (id: string, over: Partial<Job>): Job => ({ id, status: 'parked', ...over }) as Job;
 
-const empty = { handoffs: [], recent: [], keptWork: [], pullRequests: [], jobs: [], prOpen: [], leftovers: [] };
+const empty = { handoffs: [], recent: [], keptWork: [], pullRequests: [], jobs: [], prOpen: [] };
 
 describe('stuck work by cause (issue #1010)', () => {
   it('nothing stuck: no cause', () => {
@@ -95,6 +96,21 @@ describe('stuck work by cause (issue #1010)', () => {
     expect(stuckOf({ ...empty, jobs: [job('j1', {})] })).toEqual([]);
   });
 
+  it('a job that only still waits is no stuck work, also past its deadline or with its agent ended; one whose wait broke is (issue #2684)', () => {
+    const wait = (check: object, over: Partial<Job> = {}) => job('j', { status: 'waiting_on', wait: { for: 'x', since: 's', on: { kind: 'item', number: 9 }, check: check as never }, ...over });
+    const still = [
+      { ...wait({ overdueAt: 't' }), id: 'overdue' },
+      { ...wait({ overdueAt: 't' }, { waitReleased: { at: 't', machineId: 'm' } }), id: 'released' },
+      { ...wait({ brokenAt: 't' }), id: 'broken-in-time' },
+    ];
+    expect(stuckOf({ ...empty, jobs: still })).toEqual([]);
+    const broke = [
+      { ...wait({ overdueAt: 't', brokenAt: 't' }, { waitReleased: { at: 't', machineId: 'm' } }), id: 'unreadable' },
+      { ...wait({ overdueAt: 't', repeat: true }), id: 'woken-before' },
+    ];
+    expect(stuckOf({ ...empty, jobs: [...still, ...broke] }).map((c) => [c.cause, c.ids])).toEqual([['own_wait', ['unreadable', 'woken-before']]]);
+  });
+
   it('a legacy job waiting on nothing recorded (issue #1245): stuck work with that reason, and Resume all', () => {
     const causes = stuckOf({
       ...empty,
@@ -137,10 +153,4 @@ describe('stuck work by cause (issue #1010)', () => {
     expect(causes.map((c) => c.cause)).toEqual(['retry', 'own_wait']);
   });
 
-  it('lists ended jobs whose cleanup left something, with what a person does (issue #2504)', () => {
-    const causes = stuckOf({ ...empty, leftovers: ['j1', 'j2'] });
-    expect(causes.map((c) => [c.cause, c.ids])).toEqual([['cleanup_leftover', ['j1', 'j2']]]);
-    expect(causes[0]).toMatchObject({ what: 'Ended jobs whose cleanup left something on a machine' });
-    expect(causes[0]?.act).toBeUndefined();
-  });
 });

@@ -41,6 +41,11 @@ export interface WaitCheck {
   result?: string;
   /** When it passed its deadline: once, and a person was told. */
   overdueAt?: string;
+  /**
+   * Issue #2684: since when its checks could not test its condition (a read failed, or the job's source reads none); gone
+   * once a check tests it. Overdue with it, the wait broke: stuck work. Overdue without it, the job only still waits.
+   */
+  brokenAt?: string;
   /** The hopper woke the job for this condition at its wait before: met again, it is no wake but overdue. */
   repeat?: true;
   /** The time the job named on its `check:` line (part 2): at it, the wait ends, whatever its condition says. */
@@ -50,8 +55,8 @@ export interface WaitCheck {
 /** What a job named on its `check:` line: its next check-in (`in 20m`, `every 5m`), or a time to wake it at (`after 2h`, `at <ISO time>`). */
 export type CheckAsk = { inMs: number } | { at: string };
 
-/** What a check found: met, with what the job is told; or not met, with why. */
-export type CheckOutcome = { met: true; note: string; told?: string } | { met: false; result: string };
+/** What a check found: met, with what the job is told; or not met, with why, and `broken` when it could not test its condition. */
+export type CheckOutcome = { met: true; note: string; told?: string } | { met: false; result: string; broken?: true };
 
 export const FIRST_CHECK_MS = 60_000;
 export const MAX_EVERY_MS = 30 * 60_000;
@@ -170,8 +175,11 @@ export function newCheck(job: Pick<Job, 'id' | 'status' | 'wait' | 'source'>, no
   };
 }
 
-/** The check after one not met at `nowMs`: tried again later, the time between doubling. `overdue`: it passed its deadline now. */
-export function afterCheck(check: WaitCheck, result: string, nowMs: number, overdueNow = false): { check: WaitCheck; overdue: boolean } {
+/**
+ * The check after one not met at `nowMs`: tried again later, the time between doubling. `overdue`: it passed its deadline now.
+ * `broken`: this check could not test its condition (`brokenAt`, kept from the first such check).
+ */
+export function afterCheck(check: WaitCheck, result: string, nowMs: number, overdueNow = false, broken = false): { check: WaitCheck; overdue: boolean } {
   const past = overdueNow || nowMs >= Date.parse(check.deadline);
   const overdue = past && !check.overdueAt;
   const cap = check.condition.kind === 'command_exited' ? COMMAND_MAX_EVERY_MS : MAX_EVERY_MS;
@@ -181,9 +189,10 @@ export function afterCheck(check: WaitCheck, result: string, nowMs: number, over
   const wake = check.wakeAt ? Date.parse(check.wakeAt) : c.kind === 'time_passed' || c.kind === 'recheck' ? Date.parse(c.at) : undefined;
   // A recheck has nothing to test before its time.
   const nextMs = wake !== undefined && wake > nowMs ? (c.kind === 'recheck' ? wake : Math.min(nowMs + wait, wake)) : nowMs + wait;
+  const { brokenAt, ...rest } = check;
   const next: WaitCheck = {
-    ...check, attempts: check.attempts + 1, checkedAt: iso(nowMs), result, nextCheckAt: iso(nextMs), everyMs,
-    ...(overdue ? { overdueAt: iso(nowMs) } : {}),
+    ...rest, attempts: check.attempts + 1, checkedAt: iso(nowMs), result, nextCheckAt: iso(nextMs), everyMs,
+    ...(overdue ? { overdueAt: iso(nowMs) } : {}), ...(broken ? { brokenAt: brokenAt ?? iso(nowMs) } : {}),
   };
   return { check: next, overdue };
 }
