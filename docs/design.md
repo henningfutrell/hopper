@@ -27310,6 +27310,28 @@ cancel or park it.
 Tests: `test/decider/drained.test.ts` (placement, holds, the idle reason), `test/integration/machine-drain.test.ts` (the route,
 the events, a restart, the CLI), `test/ui/machine-drain.test.ts` (the card).
 
+**A drain's reason and end** (issue #2499, 2026-10-22). A seat sat drained for about 30 hours, with free lanes, while 31
+jobs were queued: the drain said neither why nor until when, and nothing told a person.
+- **A drain names its reason** (`reason`, 1 to 300 characters) and the hours until it ends by itself (`hours`, 1 to 720,
+  default `DRAIN_DEFAULT_HOURS` 24). A drain with no reason is a 400 (`hopper machine drain <machine> --reason TEXT
+  [--hours N]`; on the card, Drain stays off until a reason is typed). Kept as `reason` and `until` with who, the way and
+  when, and on `machine.drained`. A drain of a drained machine changes nothing: to change its reason or end, undrain it and
+  drain it again.
+- **It ends by itself** (`src/domain/machines.ts` `drainEnds`, `withDrains`): a machine is listed drained only before
+  `until`, so the decider places jobs there again at once. A drain kept before this has no `until`, and ends a day after it
+  began: no migration of the setting, which keeps its shape. The **drain watch** (`src/machines/drain-watch.ts`, at each
+  record of the resource recorder) then ends it in the settings (`MachineDrains.expire`), records `machine.drain_expired`
+  with who drained it, when, why and its end, and asks for a Decision.
+- **A drained machine idle with a backlog is told.** The drain watch tells `machine.drained_idle` once when a drained machine
+  stays online, with a free lane under its lane cap, while a queued job it runs the executor of waits, for
+  `DRAINED_IDLE_AFTER_MS` (10 minutes): its free lanes, the jobs queued, and its drain. Its stretch ends when one of these
+  stops; a new stretch is told again. Kept in memory: after a restart a machine still idle is told again. The queued jobs
+  are read only while a drained machine has a free lane. Webhooks and the Grok Bot routine take it.
+- **Shown.** The card says why it is drained and when it ends by itself.
+
+Tests: `test/domain/machine-drain-expiry.test.ts`, `test/machines/drain-watch.test.ts`, `test/integration/machine-drain.test.ts`
+(the reason, the hours, the CLI), `test/ui/machine-drain.test.ts` (the dialog and the card), `test/plugins/grokbot-intake.test.ts`.
+
 ## More than one GitHub account (issue #1448, part 1, 2026-10-16)
 
 Follow-up of issue #1380, which named it as later work: a user attaches a second GitHub source, for example a work account

@@ -1,0 +1,1 @@
+- A machine you drain now needs a reason and ends its drain by itself after the hours you choose (a day when you choose none). When a drained machine sits idle while jobs wait, you are told.

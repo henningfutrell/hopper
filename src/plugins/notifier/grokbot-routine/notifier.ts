@@ -63,7 +63,7 @@ function wanted(e: DomainEvent): boolean {
   if (e.type === 'infra.plan_recorded' || e.type === 'infra.plan_approved') return true;
   if (e.type === 'machine.memory_low' || e.type === 'machine.memory_recovered') return true;
   if (e.type === 'machine.disk_over_budget' || e.type === 'machine.disk_within_budget') return true;
-  if (e.type === 'machine.offline' || e.type === 'machine.back_online') return true;
+  if (e.type === 'machine.offline' || e.type === 'machine.back_online' || e.type === 'machine.drained_idle') return true;
   // An apply (issue #870 part 4): a credential minted for a plan; its renewal is the same apply going on.
   if (e.type === 'vault.minted') return typeof e.data.plan === 'string' && e.data.renewal !== true;
   return e.type === 'question.escalated_to_human';
