@@ -6,10 +6,11 @@
 //   Scenario: a change run end to end has a ledger row with predicted and actual times for every step
 //   Scenario: the accuracy report is the mean absolute error of the ends, per step and per repository
 //   Scenario: a row with no prediction or no actual end is not counted
+//   Scenario: the error over time, per day or per week of the actual end in the owner's time zone (part 7)
 import { describe, expect, it } from 'vitest';
 import { deliveryForecast } from '../../src/domain/delivery-forecast.ts';
 import { DELIVERY_STEPS } from '../../src/domain/delivery-steps.ts';
-import { deliveryLedger, forecastAccuracy, type DeliveryLedgerRow, type StepActual } from '../../src/domain/forecast-accuracy.ts';
+import { accuracyOverTime, deliveryLedger, forecastAccuracy, type DeliveryLedgerRow, type StepActual } from '../../src/domain/forecast-accuracy.ts';
 
 const MIN = 60_000;
 const ten = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((m) => m * MIN);
@@ -85,5 +86,40 @@ describe('forecastAccuracy', () => {
         { repo: 'b/two', step: 'pr_checks', samples: 1, meanAbsErrorMs: 10 * MIN },
       ],
     });
+  });
+});
+
+describe('accuracyOverTime (part 7)', () => {
+  const row = (step: DeliveryLedgerRow['step'], predictedEnd: string | undefined, actualEnd: string | undefined): DeliveryLedgerRow =>
+    ({ repo: 'a/one', key: `job:${actualEnd}`, step, predictedEnd, actualEnd });
+  // Chicago is UTC-5 in October: 04:00 UTC on the 23rd is 23:00 on the 22nd there.
+  const rows = [
+    row('coding', at('10:00', 22), at('10:10', 22)),
+    row('coding', at('04:00', 23), at('04:20', 23)),
+    row('pr_checks', at('15:00', 23), at('15:04', 23)),
+    row('coding', at('12:00', 26), at('12:06', 26)),
+    row('coding', undefined, at('12:00', 26)),
+  ];
+  it('per day of the actual end in the time zone, then per step', () => {
+    expect(accuracyOverTime(rows, 'day', 'America/Chicago')).toEqual({
+      period: 'day', timeZone: 'America/Chicago',
+      points: [
+        { start: '2026-10-22', step: 'coding', samples: 2, meanAbsErrorMs: 15 * MIN },
+        { start: '2026-10-23', step: 'pr_checks', samples: 1, meanAbsErrorMs: 4 * MIN },
+        { start: '2026-10-26', step: 'coding', samples: 1, meanAbsErrorMs: 6 * MIN },
+      ],
+    });
+    expect(accuracyOverTime(rows, 'day', 'UTC').points.map((p) => p.start)).toEqual(['2026-10-22', '2026-10-23', '2026-10-23', '2026-10-26']);
+  });
+  it('per week, from its Monday', () => {
+    // 2026-10-22 is a Thursday: its week starts on Monday the 19th; the 26th is the next Monday.
+    expect(accuracyOverTime(rows, 'week', 'America/Chicago').points).toEqual([
+      { start: '2026-10-19', step: 'coding', samples: 2, meanAbsErrorMs: 15 * MIN },
+      { start: '2026-10-19', step: 'pr_checks', samples: 1, meanAbsErrorMs: 4 * MIN },
+      { start: '2026-10-26', step: 'coding', samples: 1, meanAbsErrorMs: 6 * MIN },
+    ]);
+  });
+  it('the same rows give the same output', () => {
+    expect(accuracyOverTime([...rows].reverse(), 'week', 'UTC')).toEqual(accuracyOverTime(rows, 'week', 'UTC'));
   });
 });

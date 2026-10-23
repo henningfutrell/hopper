@@ -47,4 +47,34 @@ describe('a job of the item made while the pass ran (issue #2570)', () => {
     await sync.syncNow();
     expect(world.jobs.size).toBe(3);
   });
+
+  it('stamped before the pass, committed and reported while it ran: the pass makes no job of the item (issue #2617)', async () => {
+    const world = createWorld();
+    const source = createFakeSource();
+    let racing = false;
+    source.discover = async () => {
+      source.discovers++;
+      if (racing) {
+        // The other hopper's transaction stamped its job before this pass began and committed it after; its end is reported now.
+        racing = false;
+        const stamped = new Date(world.clock.now().getTime() - 1).toISOString();
+        world.clock.advance(1_000);
+        world.jobs.set('other', job('other', stamped, { status: 'failed', finishedAt: stamped, updatedAt: world.clock.now().toISOString() }));
+      }
+      return [item(KEY)];
+    };
+    const sync = createSourceSync({ sources: [source], host: world.host, clock: world.clock, pollMs: () => 60_000 });
+    stop = () => sync.stop();
+    world.jobs.set('old', job('old', '2026-10-01T10:00:00Z', { status: 'running' }));
+    sync.start();
+    await sync.syncNow();
+    world.jobs.set('old', job('old', '2026-10-01T10:00:00Z'));
+    racing = true;
+    world.clock.advance(1_000);
+    await sync.syncNow();
+    expect([...world.jobs.keys()]).toEqual(['old', 'other']);
+    world.clock.advance(1_000);
+    await sync.syncNow();
+    expect(world.jobs.size).toBe(3);
+  });
 });

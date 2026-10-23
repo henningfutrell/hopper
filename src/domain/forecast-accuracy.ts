@@ -1,8 +1,9 @@
 // Forecast accuracy (issue #2554, design.md "Delivery forecasts"): the **delivery ledger** of a change — for each step,
 // its predicted start and end (from a forecast) and its actual ones — and the mean absolute error of the predicted ends,
-// per step and per repository, so the forecast can be measured and tuned. Pure.
+// per step and per repository, and over time (part 7), so the forecast can be measured and tuned. Pure.
 import { DELIVERY_STEPS, type DeliveryStep } from './delivery-steps.ts';
 import type { DeliveryPath } from './delivery-forecast.ts';
+import { offsetMs } from './zoned-time.ts';
 
 /** When a step of a change actually started and ended. */
 export interface StepActual { step: DeliveryStep; start: string; end?: string }
@@ -32,6 +33,18 @@ export interface AccuracyReport {
   byStep: { step: DeliveryStep; samples: number; meanAbsErrorMs: number }[];
   byRepo: { repo: string; step: DeliveryStep; samples: number; meanAbsErrorMs: number }[];
 }
+
+/** The error over time (part 7): per day or per week (from its Monday) of the actual end, in a time zone, then per step. */
+export type AccuracyPeriod = 'day' | 'week';
+export interface AccuracyOverTime {
+  period: AccuracyPeriod;
+  timeZone: string;
+  /** `start`: the local date (YYYY-MM-DD) the period starts on. */
+  points: { start: string; step: DeliveryStep; samples: number; meanAbsErrorMs: number }[];
+}
+
+/** GET /api/delivery-ledger's answer. */
+export interface DeliveryLedgerView { rows: DeliveryLedgerRow[]; accuracy: AccuracyReport; overTime: AccuracyOverTime }
 
 /** One row per step a prediction or an actual names, in step order. */
 export function deliveryLedger(repo: string, key: string, predicted: DeliveryPath, actuals: readonly StepActual[]): DeliveryLedgerRow[] {
@@ -72,4 +85,32 @@ export function forecastAccuracy(rows: readonly DeliveryLedgerRow[]): AccuracyRe
       .sort((a, b) => a.repo!.localeCompare(b.repo!) || order(a.step) - order(b.step))
       .map(({ repo, step, samples, meanAbsErrorMs }) => ({ repo: repo!, step, samples, meanAbsErrorMs })),
   };
+}
+
+const DAY_MS = 86_400_000;
+
+/** The local date the period of `utcMs` starts on, in `tz`. */
+function periodStart(utcMs: number, period: AccuracyPeriod, tz: string): string {
+  const local = new Date(utcMs + offsetMs(utcMs, tz));
+  const back = period === 'week' ? (local.getUTCDay() + 6) % 7 : 0;
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - back * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** The mean absolute error of the predicted ends per period of the actual end and per step; rows as `forecastAccuracy` counts them. */
+export function accuracyOverTime(rows: readonly DeliveryLedgerRow[], period: AccuracyPeriod, timeZone: string): AccuracyOverTime {
+  const sums = new Map<string, { start: string; step: DeliveryStep; samples: number; total: number }>();
+  for (const r of rows) {
+    if (!r.predictedEnd || !r.actualEnd) continue;
+    const end = Date.parse(r.actualEnd);
+    const start = periodStart(end, period, timeZone);
+    const k = `${start}\u0000${r.step}`;
+    const s = sums.get(k) ?? { start, step: r.step, samples: 0, total: 0 };
+    s.samples++;
+    s.total += Math.abs(end - Date.parse(r.predictedEnd));
+    sums.set(k, s);
+  }
+  const order = (s: DeliveryStep) => DELIVERY_STEPS.indexOf(s);
+  const points = [...sums.values()].sort((a, b) => a.start.localeCompare(b.start) || order(a.step) - order(b.step))
+    .map(({ start, step, samples, total }) => ({ start, step, samples, meanAbsErrorMs: total / samples }));
+  return { period, timeZone, points };
 }
