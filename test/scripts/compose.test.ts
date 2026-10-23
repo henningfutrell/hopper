@@ -230,8 +230,7 @@ describe('the image is not a machine (issue #141)', () => {
     expect(dockerfile).toMatch(/HOPPER_LOCAL_MACHINE=false/);
     // herdr stays: the herdr-claude executor detects it before it runs jobs on attached machines.
     expect(dockerfile).toContain('https://herdr.dev/install.sh');
-    // Its one entrypoint is tini (issue #2623), which starts the daemon and nothing else.
-    expect(dockerfile.match(/^ENTRYPOINT .*$/gm)).toEqual(['ENTRYPOINT ["/usr/bin/tini", "-s", "--"]']);
+    expect(dockerfile).not.toMatch(/ENTRYPOINT/);
     expect(existsSync(join(ROOT, 'scripts', 'container-start.sh'))).toBe(false);
   });
 });
