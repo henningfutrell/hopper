@@ -1,0 +1,1 @@
+- Machines now show memory pressure and CPU throttle over time on the resource graph, and each machine card says when a process last ran out of memory.

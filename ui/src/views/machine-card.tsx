@@ -63,7 +63,7 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
   const [terminal, setTerminal] = useState(false);
   const admin = useCanAdmin();
   const operator = useHopper((s) => allows(s.user, 'operator'));
-  const res = resourcesText(m.resources);
+  const res = resourcesText(m.resources, now);
   const off = offNetwork(m);
   const actions = ctx.authed && !editing && kind.kind !== 'unknown' && (
     <>

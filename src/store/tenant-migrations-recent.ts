@@ -185,4 +185,8 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 95: Until when the reap at a job's end kept a resource ledger entry for a retention (issue #2504 part 5). A column with
   // no default: the build before runs on it, and names its columns when it writes.
   'ALTER TABLE job_resource_ledger ADD COLUMN retained_until TEXT',
+  // 96: Each machine sample's memory pressure and CPU throttle (issue #2499). Columns with no default: the build before runs
+  // on it, and names its columns when it writes.
+  `ALTER TABLE machine_samples ADD COLUMN mem_pressure DOUBLE PRECISION;
+   ALTER TABLE machine_samples ADD COLUMN cpu_throttled DOUBLE PRECISION`,
 ];

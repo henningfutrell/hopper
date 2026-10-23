@@ -1,6 +1,6 @@
 // The resource recorder (issue #560, design.md "Machine resources over time"): every minute it lists the user's
 // machines and keeps, for each one online with a reading, a machine sample — its CPU, memory and swap as its probe
-// last read them, its disk, its lanes in use, and the memory its jobs with no lane hold (issue #2499). A machine offline adds nothing, which the resource graph shows as
+// last read them, its disk, its lanes in use, the memory its jobs with no lane hold, its memory pressure and CPU throttle (issue #2499). A machine offline adds nothing, which the resource graph shows as
 // a gap. New samples are told to listeners (SSE `machine.recorded`). Every hour, and when the history retention
 // changes, samples past it are pruned: the same retention as the usage samples. Each record also shows the machines
 // to the memory alert (issue #868).
@@ -41,6 +41,8 @@ export function sampleOf(m: MachineSnapshot, lanes: readonly Lane[], at: string)
     ...(r?.vmHeldBytes !== undefined ? { vmHeldBytes: r.vmHeldBytes } : {}),
     ...(r?.hostMemFreeBytes !== undefined && r.hostMemTotalBytes !== undefined ? { hostMemFreeBytes: r.hostMemFreeBytes, hostMemTotalBytes: r.hostMemTotalBytes } : {}),
     ...(r?.jobMemoryBytes ? { waitingMemBytes: waitingMemory(r.jobMemoryBytes, m.id, lanes) } : {}),
+    ...(r?.memPressure ? { memPressureFrac: r.memPressure.someAvg10 / 100 } : {}),
+    ...(r?.cpuThrottledFrac !== undefined ? { cpuThrottledFrac: r.cpuThrottledFrac } : {}),
     lanesBusy: lanes.filter((l) => l.machineId === m.id && l.state !== 'idle').length,
     lanesMax: m.maxLanes,
   };

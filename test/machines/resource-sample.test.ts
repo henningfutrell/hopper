@@ -17,4 +17,12 @@ describe('a machine sample (issue #2499)', () => {
     const m = machine({ resources: { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 3 * GIB } });
     expect(sampleOf(m, [], AT)).not.toHaveProperty('waitingMemBytes');
   });
+
+  it('keeps its memory pressure (some, as a share) and its CPU throttle; not read, none', () => {
+    const m = machine({ resources: { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 3 * GIB, memPressure: { someAvg10: 23.5, fullAvg10: 4 }, cpuThrottledFrac: 0.62 } });
+    expect(sampleOf(m, [], AT)).toMatchObject({ memPressureFrac: 0.235, cpuThrottledFrac: 0.62 });
+    const none = sampleOf(machine({ resources: { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 3 * GIB } }), [], AT);
+    expect(none).not.toHaveProperty('memPressureFrac');
+    expect(none).not.toHaveProperty('cpuThrottledFrac');
+  });
 });
