@@ -1084,7 +1084,7 @@ Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used
 
 ## `job.cleanup_leftover`
 
-Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Failures lists the job as stuck work (`cleanup_leftover`) while an entry stays.
+Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Failures lists the job as stuck work (`cleanup_leftover`) while an entry stays. An entry on a retired machine (no machine source lists it, the plugins config does not name it) is then closed `retired` in the ledger (part 12), and the job leaves Failures.
 
 | field | type | required |
 |---|---|---|
@@ -3440,6 +3440,62 @@ Version 1 (`docs/schemas/machine.sweep_dry_run.v1.json`). The sweep ran in dry r
   "trim": {
     "aboveGiB": 10,
     "due": true
+  }
+}
+```
+
+## `machine.sweep_passed`
+
+Version 1 (`docs/schemas/machine.sweep_passed.v1.json`). One real pass of the sweep on a machine (`machineId`) removed something, kept work or could not remove a dir for the first time, or ran fstrim (issue #2494, design.md "Hopper's own disk use" → "Part 15"). `removed`: what it removed by `kind` — `scratch`, ended jobs' scratch dirs with their job worktrees; `job-storage`, containers and volumes labelled with a job; `storage`, the storage prune's containers, volumes and images; `caches`, the cache places cleared —, each with its `count` and its `bytes` where they were measured; `freedBytes`, the sum of those bytes. `kept`: each ended job whose work the reap kept, its repositories (`paths`) and why (`reasons`: `dirty`, `stash`, `unpushed`); `again`, an earlier pass kept it too. `left`: the dirs the reap could not remove. `trim`: the fstrim result, as `machine.disk_trim_ran` has it. A pass that only keeps the same work again records none; a dry run records `machine.sweep_dry_run` in its place.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `freedBytes` | number | yes |
+| `removed` | object[] | yes |
+| `kept` | object[] | yes |
+| `left` | object[] | no |
+| `trim` | object | no |
+
+```json
+{
+  "machineId": "seat-l1",
+  "freedBytes": 11400000000,
+  "removed": [
+    {
+      "kind": "scratch",
+      "count": 3,
+      "bytes": 2400000000
+    },
+    {
+      "kind": "job-storage",
+      "count": 2
+    },
+    {
+      "kind": "caches",
+      "count": 1,
+      "bytes": 9000000000
+    }
+  ],
+  "kept": [
+    {
+      "jobId": "a7e90b12",
+      "paths": [
+        "/home/seat/work/.worktrees/@scratch/a7e90b12/app"
+      ],
+      "reasons": {
+        "/home/seat/work/.worktrees/@scratch/a7e90b12/app": [
+          "stash",
+          "unpushed"
+        ]
+      }
+    }
+  ],
+  "trim": {
+    "mount": "/",
+    "outcome": "trimmed",
+    "trimmedBytes": 14500000000,
+    "hostCompaction": true
   }
 }
 ```
@@ -7268,7 +7324,7 @@ Version 1 (`docs/schemas/component_watchers.settings_changed.v1.json`). An admin
 
 ## `direct_job.submitted`
 
-Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a direct job (issue #901): `id` the direct job, `by` who and `via` the way (`ui`, `api` for an API token, `cli`), its routing `labels`, the `authorizations` they gave it, and `repo` when its work may open a pull request there. Its job is queued in the same transaction (`job.queued`, source `direct`). Never its title or brief: those stay on the record.
+Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a direct job (issue #901): `id` the direct job, `by` who and `via` the way (`ui`, `api` for an API token, `cli`), its routing `labels`, the `authorizations` they gave it, and `repo` when its work may open a pull request there, and `pushRequirements` the ids of its own push requirements when it has some (issue #2555 part 3). Its job is queued in the same transaction (`job.queued`, source `direct`). Never its title or brief: those stay on the record.
 
 | field | type | required |
 |---|---|---|
@@ -7278,6 +7334,7 @@ Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a di
 | `labels` | string[] | yes |
 | `authorizations` | string[] | yes |
 | `repo` | string | no |
+| `pushRequirements` | string[] | no |
 
 ```json
 {
@@ -7289,6 +7346,9 @@ Version 1 (`docs/schemas/direct_job.submitted.v1.json`). A person submitted a di
   ],
   "authorizations": [
     "keycloak:otp-reset"
+  ],
+  "pushRequirements": [
+    "kotlin-coverage"
   ]
 }
 ```
@@ -8802,5 +8862,112 @@ Version 1 (`docs/schemas/push_requirements.evaluated.v1.json`). A running job ev
       "reason": "no changed files match `**/*.sql`"
     }
   ]
+}
+```
+
+## `delivery_settings.changed`
+
+Version 1 (`docs/schemas/delivery_settings.changed.v1.json`). An admin changed the delivery settings (issue #2554 part 3): per repository (`owner/repo`, lowercased), its promotion set `schedule` — the weekly `cutoffs` (ISO weekday, `HH:MM`) in its `timeZone`, the minutes from a cutoff to the end of the test gate and from there to production, its `epoch` (set 1 is the first cutoff after it) and what `expedite` may do — and its delivery `gates`: each step a person ends, with its `owner`. `from` and `to` are the settings whole; `by` who changed them. A delivery forecast reads them at each request.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "repos": {}
+  },
+  "to": {
+    "repos": {
+      "octo/identity": {
+        "schedule": {
+          "timeZone": "America/Chicago",
+          "cutoffs": [
+            {
+              "weekday": 2,
+              "time": "14:00"
+            },
+            {
+              "weekday": 4,
+              "time": "14:00"
+            }
+          ],
+          "testGateAfterMinutes": 120,
+          "productionAfterMinutes": 1440,
+          "epoch": "2026-10-01T00:00:00.000Z",
+          "expedite": "out_of_cadence"
+        },
+        "gates": {
+          "test_gate": {
+            "owner": "release-owner"
+          }
+        }
+      }
+    }
+  },
+  "by": "admin"
+}
+```
+
+## `push_requirements.defaults_changed`
+
+Version 1 (`docs/schemas/push_requirements.defaults_changed.v1.json`). An admin changed the hopper's default push requirements (issue #2555), on Settings → Push requirements: the requirements that apply to every repository's push, below its own file's. `from` and `to`: the ids of the requirements before and after; `by`, who. They apply to the next evaluation and the next push.
+
+| field | type | required |
+|---|---|---|
+| `from` | string[] | yes |
+| `to` | string[] | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": [],
+  "to": [
+    "workflows"
+  ],
+  "by": "owner"
+}
+```
+
+## `delivery_expedite.changed`
+
+Version 1 (`docs/schemas/delivery_expedite.changed.v1.json`). A person turned the expedite flag of one change on or off (issue #2554 part 4): exactly one of `job` (a job id), `issue` (`owner/name#N`, lowercased) or `pullRequest` (its URL); `expedite` on or off; `by` who. A change is expedited when the newest flag that names its job, its issue or its pull request is on; its delivery forecast then shows the expedited path beside the normal one. It changes no job and no promotion: the forecast only.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | no |
+| `issue` | string | no |
+| `pullRequest` | string | no |
+| `expedite` | boolean | yes |
+| `by` | string | yes |
+
+```json
+{
+  "issue": "octo/identity#436",
+  "expedite": true,
+  "by": "release-owner"
+}
+```
+
+## `delivery_gate.cleared`
+
+Version 1 (`docs/schemas/delivery_gate.cleared.v1.json`). A person cleared a delivery gate of one promotion set (issue #2554 part 5): `repo` (`owner/repo`, lowercased), the `set` number and the gated `step` (`promotion_set`, `test_gate` or `production`) — the test gate's sign-off, a production approval —; `by` who. Each change of that set goes on past the gate from this time, not before the step starts; a cleared production gate delivers it. The first clearance of a gate counts. It changes no job and promotes nothing: the hopper records the act.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `set` | integer | yes |
+| `step` | `queued` \| `coding` \| `pr_checks` \| `landing` \| `landing_checks` \| `promotion_set` \| `test_gate` \| `production` | yes |
+| `by` | string | yes |
+
+```json
+{
+  "repo": "octo/identity",
+  "set": 7,
+  "step": "test_gate",
+  "by": "release-owner"
 }
 ```

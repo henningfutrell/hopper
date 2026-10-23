@@ -36,7 +36,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/domain/` | the store's own failure, which a caller tells from a fault of its data (`store-error.ts`, issue #1961); the delivery forecast of a change, its step estimates, promotion sets and delivery ledger (`delivery-steps.ts`, `promotion-sets.ts`, `delivery-forecast.ts`, `forecast-accuracy.ts`, issue #2554), wall-clock time in a time zone (`zoned-time.ts`); the event loop given back between a long timer loop's items (`yield-loop.ts`, issue #2392); how long the event loop was held since a moment, one reading per process that the watchdog gives (`loop-held.ts`, issue #2427); types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `token-usage.ts` the token ledger — a session's token use, its estimated cost, the rollups (pure, issue #2302); `token-waste.ts` its waste signals and tokens per merged pull request (pure, issue #2302 part 4); `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
+| `src/domain/` | the store's own failure, which a caller tells from a fault of its data (`store-error.ts`, issue #1961); the delivery forecast of a change, its step estimates, promotion sets, delivery settings, the expedite flag and delivery ledger (`delivery-steps.ts`, `promotion-sets.ts`, `delivery-forecast.ts`, `delivery-settings.ts`, `delivery-expedite.ts`, `forecast-accuracy.ts`, issue #2554), wall-clock time in a time zone (`zoned-time.ts`); the event loop given back between a long timer loop's items (`yield-loop.ts`, issue #2392); how long the event loop was held since a moment, one reading per process that the watchdog gives (`loop-held.ts`, issue #2427); types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `token-usage.ts` the token ledger — a session's token use, its estimated cost, the rollups (pure, issue #2302); `token-waste.ts` its waste signals and tokens per merged pull request (pure, issue #2302 part 4); `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211); the memory floor (`memory-floor.ts`, issue #2291) and the memory pause (`memory-pause.ts`); the holds a machine's own problems make and their reasons, and the machines held off for reach that a hold or wait names (`machine-holds.ts`, issue #2427) | everything but `domain/` |
 | `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `wait-check-leases.ts` (tenant 74) the wait checks' leases (issue #1694); `token-ledger.ts` (tenant 89) the token ledger (issue #2302; tenant 90 its failed test runs); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's container-target commands, each in a command box through the sandbox module (`command-boxes.ts`, issue #865), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), what a quarantine takes back — the job's steps and its item's vault grant (`quarantine.ts`, issue #655 part 6), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
@@ -24707,6 +24707,21 @@ sweep would remove before it removed it.
   scratch dir there (as a retention does), so the sweep lists it. A person's discard still runs, and the measure, the
   budget's events and the leftovers listing go on as before. `sweepDryRun: false` wins over a default dry run.
 
+**Part 15: the record of each cleanup pass** (issue #2494, `src/engine/sweep-pass.ts`). Each part of the sweep recorded
+its own event, but no one event said what one pass did on a machine.
+- **One event for each real pass.** The sweep tallies what a pass did on a machine and records it as one
+  `machine.sweep_passed` event: what it removed by kind — `scratch` (ended jobs' scratch dirs with their job worktrees),
+  `job-storage` (the containers and volumes labelled with a job), `storage` (the storage prune), `caches` (the cache
+  caps) —, each with its count and its bytes where they were measured (the reap's own measure, else the pass's survey,
+  part 11; a job's containers and volumes have none); `freedBytes`, the sum; the work the reaps kept, with why
+  (`dirty`, `stash`, `unpushed`), `again` when an earlier pass kept it too; the dirs the reaps could not remove; and
+  the fstrim result (part 9).
+- **Only with news.** A pass records the event when it removed something, kept work or could not remove a dir for the
+  first time, or ran fstrim. A pass that only keeps the same work again records none, so a machine with old kept work
+  does not record one every interval. A dry run records `machine.sweep_dry_run` in its place (part 14).
+- **On any machine.** The pass runs through the machine's own connection, as every part does: an e2e test runs one on a
+  client target, through its signed `/survey` and `/reap`.
+
 The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
 know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
@@ -24734,7 +24749,9 @@ with a fake pkill), `test/domain/cache-caps.test.ts`, `test/engine/sweep-caches.
 `test/machines/disk-defaults.test.ts`, `test/integration/disk-defaults.test.ts` (the setting through the daemon, and a machine with
 it applied), `test/ui/hopper-disk.test.ts` (the form). Part 14: `test/domain/sweep-dry-run.test.ts`, `test/engine/sweep-dry-run.test.ts`
 (nothing removed, the event once while it stays the same; a machine's own budget), `test/engine/cleanup-retention.test.ts` (the
-scratch dir kept at a job's end), `test/plugins/sweep-options.test.ts`.
+scratch dir kept at a job's end), `test/plugins/sweep-options.test.ts`. Part 15: `test/engine/sweep-pass.test.ts`,
+`test/integration/sweep-pass-remote.test.ts` (one pass on a client target, through the daemon: a clean job's dirs removed with
+their bytes, unpushed work kept with why).
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 
@@ -33782,6 +33799,138 @@ persisted work item per entry with backoff, on each machine's own transport; ent
 **Verification (part 10).** `test/domain/resource-ledger-bytes.test.ts` (the sum per entry kind, each part once; the jobs not
 measured; no bytes without a measure); `test/ui/hopper-disk.test.ts` (the card's text).
 
+### Part 11: the agent session as an entry (2026-10-23)
+
+The issue asks that a job's agent (Claude) sessions are in the ledger, so that none stays live once the job ended (issue
+#2335 ends a parked or waiting job's session). The executor already reports the session its agent runs in once the agent is
+up (`agentSession`, issue #501); the ledger did not record it.
+
+- **The kind** `agent_session`, locator the session id (`agentSessionEntryOf`, `src/domain/resource-ledger.ts`). Recorded in
+  the same transaction as the job's `agentSession`, on the machine the job runs on (`recordAgentSession`,
+  `src/engine/resource-ledger.ts`, from `src/engine/job-run.ts`). A fresh session at a re-queue is a second entry; the
+  same session resumed is the same entry.
+- **Closed by a reap** (`reapClosures`). The agent runs in the job's scope and carries `HOPPER_JOB_ID`, so the reap stops it
+  as it stops the processes: every reap closes it `reaped`, also one that did not look at the scratch dir, and a retention
+  does not keep it (`retainedEntriesOf`).
+- **Closed gone** (`goneClosures`) once the survey finds neither a process nor a scope of the job on its machine.
+- **Not recorded by the reconciler.** The survey lists no agent session, so `unledgeredEntriesOf` records none.
+- **Only the running session.** The session's own data (Claude's transcript) is not this entry: a checkpoint and a resume
+  elsewhere read it (issue #921). The reap does with it what it did before.
+
+**Left for later parts** of issue #2504: herdr panes and build daemons as entries; the cleanup as a persisted work item per
+entry with backoff, on each machine's own transport; entries on machines no longer known.
+
+**Verification (part 11).** `test/domain/resource-ledger-kinds.test.ts` (the entry; `reapClosures`, `retainedEntriesOf`,
+`goneClosures`, `ledgerRootsOf`, `unledgeredEntriesOf`); `test/integration/resource-ledger.test.ts` (real database: the
+session the executor reports is recorded, reaped by the cleanup at the end also with work kept, and on the parts list).
+
+### Part 12: entries on a retired machine (2026-10-23)
+
+An entry on a machine that left the hopper — a lane pod or a job pod that ended, a sandbox box, an ssh target a person
+removed — stayed `live` or `failed` for good: no sweep surveys a machine that is not listed, so no reap or reconciler ever
+judged it, and the job stayed a cleanup leftover on Failures with nothing a person could do about it.
+
+- **Retired.** A machine is retired as issue #919 says (glossary "Retired machine"): no machine source lists it, and the
+  plugins config does not name it. A machine still configured is not retired, also when it is offline or its instance did
+  not build. While the plugins config has an error, no machine is retired and nothing is judged.
+- **When.** The leftover check, with each sweep pass, first tells each cleanup leftover as before (`job.cleanup_leftover`,
+  after the grace period). Then each told entry on a retired machine (`retiredClosures`, `src/domain/resource-ledger.ts`,
+  pure; `src/engine/cleanup-leftovers.ts`) is closed in the new state `retired`, with the reason "its machine <id> is
+  retired: it is no longer configured, so no reap reaches it", and logged. So the leftover is told once, never silently
+  ignored, and then leaves Failures and the leftover counts; the entry stays as the record.
+- **Not final.** As `kept` and `failed`, a `retired` entry is judged again by a reap and by the reconciler on a machine of
+  that name, should one come back: it becomes `reaped` (or `failed`, `kept`) as the reap says.
+- **Cleanup status** `machine_retired` ("Cleanup: its machine is retired, so what it holds there was not removed"), after
+  `failed` and the live states, before `kept_work`. The entry's part says "not removed: its machine is retired", with the
+  reason.
+- Persisted state: the `state` column is text, so no migration. A build before this one reads a `retired` entry as closed.
+
+**Left for later parts** of issue #2504: herdr panes as entries; the cleanup as a persisted work item per entry with
+backoff, on each machine's own transport.
+
+**Verification (part 12).** `test/domain/resource-ledger-retired.test.ts` (`retiredClosures`: a machine neither listed nor
+configured, one configured but not listed, a plugins config with an error; a `retired` entry is no leftover, is judged
+again by `reapClosures` and `goneClosures`; the cleanup status and the parts); `test/engine/cleanup-leftovers.test.ts` (the
+check tells the leftover, then closes it retired; nothing on a listed or configured machine, nor with a config error);
+`test/integration/resource-ledger.test.ts` (real database: a `retired` entry is kept, is not open, is not on Failures, shows
+on the parts list, and a later reap closes it `reaped`).
+
+### Part 13: the herdr pane as an entry (2026-10-23)
+
+The issue asks that no herdr pane of a job stays once the job ended (issue #2335 ends a parked or waiting job's pane). The
+executor already saves the pane the job works in (`paneId`); the ledger did not record it, so a pane the cleanup could not
+close was no cleanup leftover.
+
+- **The kind** `herdr_pane`, locator the pane id, on the machine the job runs on. Recorded from the executor's saved state, as
+  the other entries (`ledgerEntriesOf`). A job that goes on in a new pane (a restart, a resume, a move) records the new pane
+  as a second entry.
+- **Closed only by the cleanup at the job's end** (`paneClosures`, `src/domain/resource-ledger.ts`, pure; `closeLedger` in
+  `src/engine/resource-ledger.ts`, from `src/engine/cleanup.ts`). The pane is closed by the job's executor, never by a reap
+  of the machine, so no reap closes this entry (`reapClosures` leaves it out), and a retention does not keep it.
+  - The executor's own cleanup went through: each of the job's pane entries is `reaped`. The executor closed the pane it
+    works in, or found it gone; each pane the job worked in before was closed when the job left it (a park, a restart in a
+    new pane, the end of a pane left on another machine, issue #1569).
+  - Only the reap through the machine went through (issue #2490): `failed`, with the reason "the cleanup did not reach its
+    herdr, so the pane may still be open". It is a cleanup leftover after the grace period. When the machine is retired,
+    part 12 closes it.
+  - The cleanup is deferred: the entry stays `live`. A person who marks the deferred cleanup done (they closed it by hand)
+    closes it `reaped`, with the reason "a person marked the cleanup done: closed by hand".
+- **Not judged by the reconciler.** The survey lists no pane, so `goneClosures` and `unledgeredEntriesOf` do not judge one, and
+  a pane has no work tree (`ledgerRootsOf`).
+- Shown in the parts list as "Herdr pane on <machine>", and in `job.cleanup_leftover` as any other entry. No migration: the
+  kind column is text. A build before this one reads the entry as any other.
+
+**Left for later parts** of issue #2504: the cleanup as a persisted work item per entry with backoff, on each machine's own
+transport (today the cleanup record, its deferral and the sweep's passes retry the job's cleanup as a whole). Part 14 does it.
+
+**Verification (part 13).** `test/domain/resource-ledger-panes.test.ts` (the entry from a state; no reap closes it; the
+closures of `paneClosures`; no retention; the reconciler does not judge it; the parts list); `test/engine/cleanup-panes.test.ts`
+(reaped through the executor, failed through the machine, live while deferred and reaped when a person marks it cleaned up);
+`test/integration/resource-ledger.test.ts` (real database: the pane the executor saves is recorded, and the cleanup at the
+end reaps it in each end state).
+
+### Part 14: the maids — a cleanup item per entry, with backoff (2026-10-23)
+
+Before this part, the cleanup record, its deferral and the sweep's passes retried a job's cleanup as a whole: an entry the
+cleanup at the job's end left `failed` (a dir it could not remove, a machine it reached only through another route) waited
+for the sweep's reap a day later, and a deferral was tried again on every tick.
+
+- **A cleanup item** is a ledger entry still `live` or `failed` of an ended job whose own cleanup is over (no `cleanupDue`,
+  no `cleanupDeferred`: that cleanup judges the entries first), past its retention (`retainedUntil`) and its next attempt
+  (`maidWorkOf`, `src/domain/maids.ts`, pure). Never a herdr pane: only the job's executor closes one (part 13). A job the
+  store does not know is not judged.
+- **The maids** (`createMaids`, `src/engine/maids.ts`) run with each sweep check, on the sweep lease's holder, once the
+  sweep's pass ends, never beside it: two reaps of one job's dirs at once would race, and the pass would not record what it
+  freed. One pass at a time; a sweep check while the pass and the maids run waits for them. For each job and machine with an item due, one reap there through the machine's own
+  shell (this machine, ssh, a client target: the first executor there that gives one, as the sweep), given the job's scratch
+  dir as its entries name it (`maidScratchOf`: the scratch dir, the container runtime's dir, or the job worktree's work tree).
+  The reap is the one the job's cleanup and the sweep use: it stops the scope and the processes, removes the job's
+  containers and volumes and its own container runtime through podman (`podman system reset`, then `podman unshare rm` of what is left of its root-owned storage), then the
+  scratch dir and the job's worktrees, unless they hold work not pushed.
+- **As the reap says** (`reapClosures`): each entry it removed is `reaped`; one it kept for work not pushed is `kept`, with
+  `job.work_kept`, and never tried again (the kept-work guard). An entry it did not close — still there, or not looked at
+  because no entry names the scratch dir — is an **attempt**: `failed` with why, one attempt more, tried again after a
+  backoff (`repo.tried`). So is each item when the reap fails (`the reap on <machine> failed: <error>`), the machine is
+  offline, or no executor reaches it.
+- **Backoff** (`maidRetryMs`): 1 minute after the first attempt, doubled after each one, 1 hour at most. It goes on while
+  the entry is open: the leftover check tells it once the grace period passed (part 2), and part 12 closes it once its
+  machine is retired.
+- **Durable.** The attempts and the next attempt are on the entry (tenant migration 98: `attempts INTEGER NOT NULL DEFAULT
+  0`, `next_attempt_at TEXT`), so a hopper that stops between attempts goes on from them at its next start. **No double
+  free**: the reap removes only what is still there and a missing dir is no error, and a `reaped` entry is never judged
+  again (`close` leaves it).
+- **Not on a dry run** (issue #2494): the maids skip a machine whose sweep is on a dry run, as the sweep removes nothing
+  there. A machine no source lists is skipped too: the leftover check tells it, and part 12 closes it.
+- The entry's part in the parts list adds "the maids tried it <n> times, next at <time>" while it is open. A build before this
+  one runs on the migrated store: it names its columns when it writes, and reads no new column.
+
+**Verification (part 14).** `test/domain/maids.test.ts` (which entries are due, by job and machine; a job not ended, its own
+cleanup due or deferred, a closed entry, a herdr pane, a retention and a next attempt not due are left; the backoff; the
+scratch dir from each kind); `test/engine/maids.test.ts` (real database: a transport failure, then a new hopper on the same
+database after the backoff completes the cleanup, and a later pass reaps nothing; an entry still left is tried again with a
+longer wait; work not pushed is kept and flagged and never tried again; an offline machine is an attempt; a dry run and a
+job whose own cleanup is due are left).
+
 ## Push requirements (issue #2555, 2026-10-22)
 
 **The problem.** Jobs pushed without the repository's CI gates run first. In one repository, 8 of 9 red pull request runs
@@ -33856,15 +34005,40 @@ repository passed, the push goes on; it failed, the push is refused with the req
 evaluation of the commit, the commit's tree is read in the user's mirror, in the push's quarantine
 (`src/git-mirror/push-requirements-at.ts`): no requirements file, the push goes on, as before; one, the push is refused,
 as git's own refusal: `octo/tools has push requirements, and 4f1c2a9e8b7d has no passing evaluation: run sh
-"$HOPPER_REQUIREMENTS" check in the work tree at that commit, fix what fails, and push again`. A new commit (an amend, a
-rebase) needs a new evaluation. Git cannot say (no credential, git failing): the push goes on, as with the shrink guard —
+"$HOPPER_REQUIREMENTS" check in the work tree at that commit, fix what fails, and push again`. With no requirements file,
+the **default push requirements** (below) are planned against the files the commit changes from where it leaves the base,
+read in the same quarantine (`git merge-base`, `git diff --name-only --no-renames`, as the client lists them), with the
+job's kind of work and labels: one applies, the push is refused the same way, naming it (`the hopper's default push
+requirements apply to 4f1c2a9e8b7d (workflows), …`); none applies, the push goes on with no evaluation. A new commit (an
+amend, a rebase) needs a new evaluation. Git cannot say (no credential, git failing): the push goes on, as with the shrink guard —
 a net, not a gate a broken mirror may close on every push. A branch deleted is not judged.
 
 **Trust.** The job runs its checks and reports their exit codes: a job that lies passes its own gate. The gate is for a
 job that works as asked, to catch in a minute what CI catches in fifteen; CI still runs every gate on the pull request.
 
-**Left for later parts.** The hopper's default requirements (a user's setting, edited in the UI) and the job's override
-(from its item or a direct job), which the levels above already take; the evaluation summarized on the pull request; the
+**The default push requirements** (part 2, `pushRequirementDefaults`, a user setting; none by default). An admin edits them
+on Settings → Push requirements (`ui/src/views/push-requirements.tsx`): the same shape as a requirements file, as JSON, as
+every setting of the hopper is (no YAML in its own config); `GET /api/push-requirements`, `POST /ui/api/push-requirements`
+(admin; refused with the file's own reasons when it cannot be read), recorded as `push_requirements.defaults_changed` (the
+ids before and after, and who) when they change. `POST /job/requirements` puts them below the commit's own
+(`effectiveRequirements`, level `default`), so a repository's requirement of the same id replaces one whole, a stricter or a
+looser threshold alike. Read at each evaluation and each push: a change applies without a restart. Not taken: a push with
+no evaluation refused whenever defaults are set. A default that never applies to a repository would then cost every job
+of it a run of `check` before each push; the gate plans the defaults itself, as the route does, and asks only where one
+applies.
+
+**The job's push requirements** (part 3, level `job`). A direct job's submitter sets them with the submission:
+`pushRequirements` on `POST /ui/api/direct-jobs` (a list, as a requirements file's `requirements`; refused 400 with the
+file's own reason, and nothing kept), `hopper job submit --push-requirements <file>` (a file in the shape of
+`.hopper/requirements.yaml`, read before the call), or the JSON field of the Run a job form. They are kept on the direct
+job's record (`pushRequirementOverride`), so Run again keeps them; `direct_job.submitted` records their ids only, as the
+defaults' event does. `POST /job/requirements` puts them above every other level, and the gate plans them with the
+defaults when the commit holds no requirements file: one applies, the push is refused, naming `the job's own push
+requirements`. The job's prompt names them and the command to run. A job of an issue has none: an issue's text is not a
+person's setting, and a requirement from it could loosen a repository's gate. Not taken: a field on the job's spec. The
+record already holds what the submitter chose, and a re-run reads it again.
+
+**Left for later parts.** The evaluation summarized on the pull request; the
 count of CI runs that failed on a check a requirement that applied should have caught here, and the billed minutes saved.
 
 **Verification.** `test/domain/push-requirements.test.ts` (the file read and refused; every condition and `all`, `any`,
@@ -33874,7 +34048,15 @@ threshold missed, a measure not printed, checks not run); `test/integration/push
 fake GitHub's git, the real client: the dry run lists exactly the plan and records nothing; a push with no evaluation is
 refused and nothing changes on GitHub; a check under its threshold fails with its output, and the push is still refused;
 after the fix the evaluation passes, is recorded with its command, thresholds and measured values, and the push goes
-through; changes not committed are refused; a repository with no requirements file takes a push with no evaluation).
+through; changes not committed are refused; a repository with no requirements file takes a push with no evaluation; part
+2: the defaults are an admin's setting, refused when they cannot be read and recorded when they change; a repository with
+no requirements file gets them, so a push one applies to is refused until its evaluation passes, at level `default`; a
+push they all skip goes on with no evaluation; a repository's requirement of the same id replaces a default with its
+looser threshold; part 3: a direct job's own requirement replaces the repository's, with a looser and a stricter
+threshold, at level `job`; it applies at the push in a repository with no requirements file; a submission whose
+requirements cannot be read is refused and nothing is kept); `test/ui/push-requirements.test.ts` (the panel's summary
+and the check of the JSON it sends); `test/ui/direct-jobs.test.ts`, `test/cli/direct-submit.test.ts`,
+`test/direct-jobs/item.test.ts` (the form's field, the CLI's file, the prompt line).
 
 ## Delivery forecasts (issue #2554 part 1, 2026-10-22)
 
@@ -33945,3 +34127,83 @@ the database; a promotion set lookup; the UI in the owner's time zone; accuracy 
 Verification: `test/domain/delivery-history.test.ts` (each step from its events, the batch run's merges, the history per
 repository), `test/integration/delivery-forecast.test.ts` (the shape of the answer for a job, an issue and a pull request,
 the order of the ends, 400, 404, 409), `test/cli/forecast.test.ts`.
+
+**Part 3 (2026-10-23): the delivery settings and the promotion set lookup.** The **delivery settings**
+(`src/domain/delivery-settings.ts`, the settings key `deliverySettings`) hold per repository (`owner/repo`, lowercased)
+its promotion set `schedule` and its delivery `gates` (each step a person ends, with its `owner`). An admin edits them
+in Settings → Delivery, as one JSON object (`GET /api/delivery-settings`, `POST /ui/api/delivery-settings`, each
+repository whole or `null`, `delivery_settings.changed`); the daemon checks the time zone with `Intl`, the cutoffs, the
+minutes and the gate steps. `GET /api/delivery-forecast` reads them at each request: the scheduled steps get their times
+and sets, and the gates their owners. `scheduledPlace` (`delivery-forecast.ts`) moves a change through the scheduled
+steps by the clock: a step with no gate ends at its scheduled end; a step with a gate holds the change until a person
+ends it, so the change shows `wait` with the owner and, past the step's end, `slipping` with `human_gate`. Past the end
+of production with no gate, the change is delivered: `deliveredAt` and no `forecast`. `?set=N&repo=owner/name` (and
+`hopper forecast --set N --repo owner/name`) answers that promotion set (`promotionSetNumbered`, at most `MAX_SET`): its
+cutoff, test gate and production times, when it opened, its own step from its opening, and the changes of the window in
+it (their landing checks ended before its cutoff) or `expected` in it by their p50 path.
+
+Decisions: the hopper sees no sign-off of a gate yet, so a gated step holds the change until a later part records the
+person's act; an ungated scheduled step is taken to end on time, because the schedule is the commitment. A change is in
+a set from the end of its landing checks, as part 1 says; before that, its set is its p50 path's. The settings are
+edited as JSON in the UI, with no form per field: one maintainer, and the daemon checks each value.
+
+Left: a person's act that ends a delivery gate (and the events of the test gate and production); the expedite flag on a
+job, an issue or a pull request; the delivery ledger in the database; the times in the owner's time zone in the UI;
+accuracy over time.
+
+Verification: `test/domain/delivery-schedule.test.ts` (a set by its number, the scheduled place with and without a
+gate, delivered, the settings patch), `test/integration/delivery-settings.test.ts` (save and read back through the
+daemon, the event, 400 and 403, scheduled times and the gate's owner in a forecast, a held change waiting and slipping,
+a delivered change, a set by its number with its change, 400 and 404), `test/ui/delivery-settings.test.ts`,
+`test/cli/forecast.test.ts`.
+
+**Part 4 (2026-10-23): the expedite flag.** A person flags one change as expedited, or not: `POST
+/ui/api/delivery-expedite` (operator) names exactly one of `job`, `issue` (`owner/name#N`, lowercased) or `pr`, and
+`expedite` on or off; `hopper forecast --job|--issue|--pr … --expedite on|off`. Each change of a flag records
+`delivery_expedite.changed`; the same flag again on that target records nothing. `expediteOf`
+(`src/domain/delivery-expedite.ts`) reads a track's flag: the newest flag that names its job, its issue or its pull
+request, so a flag on an issue covers each job of it, and an off on the job overrides an older on of its issue. `GET
+/api/delivery-forecast` reads every flag (not bound to the window) at each request: an expedited change has `expedited`
+`{ by, at }` and `forecast.expedited`, the path part 1 computes beside the normal one (with the schedule's `expedite:
+out_of_cadence`, the `promotion_set` step ends at once; never later than the normal path); a promotion set lists it with
+`expedited: true`.
+
+Decisions: the flag changes the forecast only — no job's priority, no queue and no promotion. The hopper promotes
+nothing itself, so it shows the fastest path the schedule allows and leaves the promotion to the person; a priority lane
+for its job is the job's priority, which a person already sets. The change's place stays the normal schedule's until
+the events of the test gate and production are recorded. The route does not check that a job id names a job: a flag is
+a mark that a later job can match, and a wrong one changes no forecast.
+
+Left: a person's act that ends a delivery gate (and the events of the test gate and production); the delivery ledger in
+the database; the times in the owner's time zone in the UI; accuracy over time.
+
+Verification: `test/domain/delivery-expedite.test.ts` (each target, the newest flag, another change's flag),
+`test/integration/delivery-expedite.test.ts` (the expedited path beside the normal one, out of cadence and never later,
+the set lookup, once only, off through another target, 400 and 403), `test/cli/forecast.test.ts`.
+
+**Part 5 (2026-10-23): a person clears a delivery gate.** A **gate clearance** is the person's act that ends a delivery
+gate — the test gate's sign-off, a production approval — for one promotion set of a repository: `POST
+/ui/api/delivery-gate` (operator) names `repo`, `set` and the gated `step` (`promotion_set`, `test_gate` or
+`production`), recorded as `delivery_gate.cleared`; `hopper forecast --set N --repo owner/name --clear <step>`. The first
+clearance of a gate counts: the same again records nothing and answers the first. 404: no promotion set schedule or no
+such set; 409: the step has no delivery gate. `gateClearancesOf` (`src/domain/delivery-gates.ts`) reads them for one set;
+`scheduledPlace` takes them: a cleared gate ends its step at the clearance, not before the step starts, so the change
+goes on to the next step from then, and a cleared production gate delivers it (`deliveredAt`). `GET
+/api/delivery-forecast` reads every clearance at each request (not bound to the window), for the set a change is in (from
+the end of its landing checks) and for a promotion set looked up by its number.
+
+Decisions: a clearance names a promotion set, not one change, because a set goes through the test gate and to production
+as one; a change expedited out of cadence keeps its normal set's place, as part 4 says. The clearance is the event of the
+test gate and of production: the hopper records the act and promotes nothing, and an ungated scheduled step still ends on
+time. The operator role clears a gate, and the clearance records who: the gate's `owner` is a name in the settings, not a
+user the daemon can check. A clearance before the step starts ends the step when it starts, so a person may sign off
+early. The forecast's path still shows a later gated step with its scheduled time and owner until the change reaches it.
+A clearance cannot be taken back: a later part can add that if it is needed.
+
+Left: the delivery ledger in the database; the times in the owner's time zone in the UI, with the gate clearance there;
+accuracy over time.
+
+Verification: `test/domain/delivery-gates.test.ts` (the first clearance per step, another repository or set, a clearance
+ending its step, before the step starts, before the cutoff, production delivered, an ungated step),
+`test/integration/delivery-gates.test.ts` (a cleared test gate moves a change and its set to production, a cleared
+production gate delivers it, once only, 400, 403, 404 and 409), `test/cli/forecast.test.ts`.

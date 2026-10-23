@@ -11,7 +11,7 @@ import { jobScratchOf } from '../domain/job-layout.ts';
 import type { MachineShell, Reaped } from '../domain/ports.ts';
 import { keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job, type MachineSnapshot } from '../domain/types.ts';
 import { EngineError } from './errors.ts';
-import { closeLedger, retainLedger } from './resource-ledger.ts';
+import { closeLedger, closePanesByHand, retainLedger } from './resource-ledger.ts';
 import { retainedUntilOf, retainsAtEnd } from '../domain/retention.ts';
 import type { SweepSettings } from '../domain/machines.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -90,7 +90,9 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
       const sweep = await sweepOf(job), keepScratch = sweep?.dryRun === true || retainsAtEnd(sweep, job.status);
       // Until when that reap, or a timed-out job's, keeps it (issue #2504 part 5): its ledger entries stay open until then.
       const retainedUntil = retainedUntilOf(sweep, job, c.clock.now().getTime());
-      const said = await executor.cleanup(job, { keepScratch }).catch((e: unknown) => reapThroughMachine(job, e, keepScratch));
+      // Only the job's executor closes its pane (issue #2504 part 13): a reap through the machine does not.
+      let panes: 'closed' | 'not_reached' = 'closed';
+      const said = await executor.cleanup(job, { keepScratch }).catch((e: unknown) => { panes = 'not_reached'; return reapThroughMachine(job, e, keepScratch); });
       if (c.stopping()) return;
       // Work the hopper pushed for the job (issue #2087) is not work not pushed, whatever its remote branches say: the
       // sweep removes it.
@@ -111,7 +113,7 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
         if (reaped?.used) c.store.events.append({ type: 'job.resources_used', jobId, ...(machineId ? { machineId } : {}), data: reaped.used });
         // Its resource ledger (issue #2504) closed as the reap said: reaped, kept with the work, or failed with why.
         // A reap that kept the scratch dir for a time (part 5) closes the scope only; the sweep judges the rest after.
-        if (said) closeLedger(c.store, jobId, said, nowIso(c), retainedUntil === undefined);
+        if (said) closeLedger(c.store, jobId, said, nowIso(c), retainedUntil === undefined, panes);
         if (said && retainedUntil) retainLedger(c.store, jobId, retainedUntil);
         // Work an earlier end kept, pushed by the job that went on with it (issue #1010): no longer kept.
         const before = reaped && reaped.kept.length === 0 ? keptWorkOf(c.store.events.recent(1, [...WORK_EVENTS], jobId))[0] : undefined;
@@ -176,6 +178,7 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
       deferred.delete(jobId);
       const next = c.store.tx(() => {
         const marked = c.store.jobs.update(jobId, { cleanupDeferred: undefined, cleanupDue: undefined });
+        closePanesByHand(c.store, jobId, nowIso(c));
         c.store.events.append({ type: 'job.cleaned_up', jobId, data: { deferredAt: was.at, by: 'user' } });
         return marked;
       });

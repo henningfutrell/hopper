@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "set": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "step": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "coding",
+        "pr_checks",
+        "landing",
+        "landing_checks",
+        "promotion_set",
+        "test_gate",
+        "production"
+      ]
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "repo",
+    "set",
+    "step",
+    "by"
+  ],
+  "additionalProperties": false
+}

@@ -44,13 +44,14 @@
 // The trim (issue #2494, sweep-trim.ts): then, on a machine with `sweep.trimAboveGiB`, fstrim once the cleanups freed that much.
 // The dry run (issue #2494, sweep-dry-run.ts): on a machine with `sweep.dryRun`, a pass reaps, prunes, clears and trims
 // nothing, and records what it would remove. A machine's `sweep.budgetGiB` is its disk budget, in place of the user's.
+// The pass's record (issue #2494, sweep-pass.ts): each real pass that removed, newly kept or trimmed records machine.sweep_passed.
 import type { ActingPerson, Discarding, DiskBudget, DiskMeasure, HopperDisk, Job, KeptWork, MachineLeftovers, MachineSnapshot, SweepSettings } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
 import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, jobDiskOf, overBudgetTold, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
 import { jobScratchOf, scratchParts, worktreeJobOf as treeJob, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
-import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger, sweptRoots } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts'; import { createCaches } from './sweep-caches.ts'; import { createDryRun } from './sweep-dry-run.ts'; import { budgetOf } from '../domain/sweep-dry-run.ts';
+import { createLeftovers } from './sweep-leftovers.ts'; import { closeLedger, reconcileLedger, sweptRoots } from './resource-ledger.ts'; import { createPrune } from './sweep-prune.ts'; import { createTrim, freedBetween } from './sweep-trim.ts'; import { createCaches } from './sweep-caches.ts'; import { createDryRun } from './sweep-dry-run.ts'; import { passTally, type PassTally } from './sweep-pass.ts'; import { budgetOf } from '../domain/sweep-dry-run.ts';
 import { createSweepDue, SWEEP_EVERY_MINUTES } from './sweep-due.ts';
 import { retentionOver } from '../domain/retention.ts';
 /** How often the engine looks for a machine whose sweep is due. */
@@ -276,17 +277,19 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
     const running = new Set([...found.scopes, ...found.processes]);
     const now = c.clock.now().getTime(), over = (job: Job, ageMs: number): boolean => m.disk?.low === true || pressed?.over === true || retentionOver(m.sweep, job, ageMs, now);
     const plan = planSweep(found, jobOf, kept, over), dry = m.sweep?.dryRun === true; if (dry) dryRun.pass(m, found, plan, kept);
-    const removed = dry ? 0 : await reapPlan(m, shell, plan, jobOf, kept, running);
+    const tally = passTally(c, m, found), removed = dry ? 0 : await reapPlan(m, shell, plan, jobOf, kept, running, tally);
     if (c.stopping()) return;
     // What the reaps freed, measured again (for the budget, or the trim); a survey that fails then keeps the first measure.
     const after = (pressed?.over || m.sweep?.trimAboveGiB) && removed > 0 ? await shell.survey(roots).catch(() => found) : found;
     measure(m, after, budget);
     if (c.stopping()) return;
-    await leftovers.list(m, shell, found.roots ?? [], jobOf); if (!c.stopping() && !dry) await trim.pass(m, shell, freedBetween(found, after) + await prune.pass(m, shell, found) + await caches.pass(m, shell, found));
+    await leftovers.list(m, shell, found.roots ?? [], jobOf); if (c.stopping() || dry) return;
+    const pruned = await prune.pass(m, shell, found), cleared = await caches.pass(m, shell, found); tally.add('storage', pruned); tally.add('caches', cleared);
+    tally.trimmed(await trim.pass(m, shell, freedBetween(found, after) + pruned.bytes + cleared.bytes)); tally.record();
   }
 
-  /** The reaps of one pass on the machine; how many scratch dirs they removed. */
-  async function reapPlan(m: MachineSnapshot, shell: MachineShell, plan: SweepReap[], jobOf: (id: string) => Job | undefined, kept: ReadonlySet<string>, running: ReadonlySet<string>): Promise<number> {
+  /** The reaps of one pass on the machine, each told to the pass's `tally`; how many scratch dirs they removed. */
+  async function reapPlan(m: MachineSnapshot, shell: MachineShell, plan: SweepReap[], jobOf: (id: string) => Job | undefined, kept: ReadonlySet<string>, running: ReadonlySet<string>, tally: PassTally): Promise<number> {
     let removed = 0;
     for (const r of plan) {
       if (c.stopping()) return removed;
@@ -305,7 +308,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
         log(`hopper: the sweep could not reap job ${r.jobId} on ${m.id}: ${(e as Error).message}`);
         continue;
       }
-      recordRemoved(r.jobId, m, said, r.scratch !== undefined);
+      recordRemoved(r.jobId, m, said, r.scratch !== undefined); tally.reaped(r.jobId, r.scratch !== undefined, said, said.left?.length ? stuck.has(where) : kept.has(r.jobId));
       // A dir the reap could not remove is still there (issue #1452): never said removed, and told once while it stays.
       if (said.left?.length) {
         if (!stuck.has(where)) log(`hopper: the sweep could not remove job ${r.jobId}'s scratch dir on ${m.id}: ${said.left.join(', ')} is still there`);

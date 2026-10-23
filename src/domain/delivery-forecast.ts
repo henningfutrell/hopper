@@ -142,3 +142,22 @@ export function deliveryForecast(f: ForecastInput): DeliveryForecast {
   if (f.expedite) out.expedited = pathOf(f, true).path;
   return out;
 }
+
+/**
+ * Where a change in a scheduled step is at `now` (issue #2554 part 3): a scheduled step with no delivery gate ends at its
+ * scheduled end, so past it the change is in the next step since then; a gated step holds the change until a person ends
+ * it: its gate clearance (part 5, `cleared`: when, per step), and not before the step starts. Past the end of production,
+ * the change is delivered. Any other step, or no schedule: the step as it is.
+ */
+export function scheduledPlace(s: PromotionSetSchedule | undefined, current: ForecastInput['current'], gates: ForecastInput['gates'], now: string, cleared: Partial<Record<DeliveryStep, string>> = {}): ForecastInput['current'] | { deliveredAt: string } {
+  if (!s || !SCHEDULED_STEPS.includes(current.step)) return current;
+  const at = Date.parse(now);
+  let start = Date.parse(current.since);
+  for (const step of SCHEDULED_STEPS.slice(SCHEDULED_STEPS.indexOf(current.step))) {
+    const clearedAt = gates[step] ? cleared[step] : undefined;
+    const end = clearedAt === undefined ? scheduledEnd(step, start, s, false) : Math.max(start, Date.parse(clearedAt));
+    if (end === undefined || at < end || (gates[step] && clearedAt === undefined)) return step === current.step ? current : { step, since: iso(start) };
+    start = end;
+  }
+  return { deliveredAt: iso(start) };
+}

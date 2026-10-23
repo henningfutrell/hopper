@@ -21,7 +21,7 @@ export const EVENT_TYPES = [
   'research.revision_requested', 'research.accepted', 'research.cancelled',
   'machine.discovered', 'machine.discovery_failed', 'machine.radius_grew', 'machine.actor_mismatch', 'blast_radius.settings_changed', 'job.gate_passed',
   'machine.memory_low', 'machine.memory_recovered', 'machine.windows_link_broken', 'machine.windows_link_restored', 'machine.offline', 'machine.back_online',
-  'machine.disk_over_budget', 'machine.disk_within_budget', 'machine.disk_low', 'machine.disk_ok', 'machine.storage_pruned', 'machine.disk_trim_ran', 'machine.caches_cleared', 'machine.sweep_dry_run', 'machine.leftover_kept', 'machine.leftover_removed', 'machine.drained', 'machine.undrained', 'machine.drain_expired', 'machine.drained_idle', 'machine.sandbox_host_set',
+  'machine.disk_over_budget', 'machine.disk_within_budget', 'machine.disk_low', 'machine.disk_ok', 'machine.storage_pruned', 'machine.disk_trim_ran', 'machine.caches_cleared', 'machine.sweep_dry_run', 'machine.sweep_passed', 'machine.leftover_kept', 'machine.leftover_removed', 'machine.drained', 'machine.undrained', 'machine.drain_expired', 'machine.drained_idle', 'machine.sandbox_host_set',
   'minor_decision.picked', 'minor_decision.compared', 'minor_decision.overridden', 'minor_decision.settings_changed',
   'job.phase_changed', 'job.forked', 'job.fork_resolved', 'phase_shifts.settings_changed',
   'question.corrected', 'auto_answer.settings_changed', 'auto_park.settings_changed', 'token_budget.settings_changed', 'preemption.settings_changed', 'library_skill.saved', 'library_skill.removed', 'library_skill.refreshed', 'work_skills.changed', 'job.work_skill_chosen', 'job.conditional_skills_chosen', 'job.preempted', 'job.memory_paused', 'job.wait_released', 'github_rate_limiter.settings_changed', 'remote_access.changed', 'allowed_hosts.changed', 'telemetry.changed', 'source_email_match.changed', 'cloud_link.linked', 'cloud_link.unlinked', 'cloud_link.registration_code_minted', 'cloud_link.registered', 'cloud_link.unregistered', 'cloud_link.message_refused', 'cloud_link.connected', 'cloud_link.disconnected', 'cloud_link.connection_refused', 'cloud_link.revoked', 'cloud_link.message_dropped', 'display_name.changed',
@@ -48,7 +48,7 @@ export const EVENT_TYPES = [
   'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed', 'landing_batch.back_merge_issue_filed',
   'landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed', 'landing_batch.canary_promoted', 'landing_batch.stuck', 'landing_batch.restarted',
   'hopper.event_loop_stalled',
-  'push_requirements.evaluated',
+  'push_requirements.evaluated', 'delivery_settings.changed', 'push_requirements.defaults_changed', 'delivery_expedite.changed', 'delivery_gate.cleared',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
 
@@ -78,7 +78,7 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'research.revision_requested': 1, 'research.accepted': 1, 'research.cancelled': 1,
   'machine.discovered': 1, 'machine.discovery_failed': 1, 'machine.radius_grew': 1, 'machine.actor_mismatch': 1, 'blast_radius.settings_changed': 1, 'job.gate_passed': 1,
   'machine.memory_low': 1, 'machine.memory_recovered': 1, 'machine.windows_link_broken': 1, 'machine.windows_link_restored': 1, 'machine.offline': 1, 'machine.back_online': 1,
-  'machine.disk_over_budget': 1, 'machine.disk_within_budget': 1, 'machine.disk_low': 1, 'machine.disk_ok': 1, 'machine.storage_pruned': 1, 'machine.disk_trim_ran': 1, 'machine.caches_cleared': 1, 'machine.sweep_dry_run': 1, 'machine.leftover_kept': 1, 'machine.leftover_removed': 1, 'machine.drained': 1, 'machine.undrained': 1, 'machine.drain_expired': 1, 'machine.drained_idle': 1, 'machine.sandbox_host_set': 1,
+  'machine.disk_over_budget': 1, 'machine.disk_within_budget': 1, 'machine.disk_low': 1, 'machine.disk_ok': 1, 'machine.storage_pruned': 1, 'machine.disk_trim_ran': 1, 'machine.caches_cleared': 1, 'machine.sweep_dry_run': 1, 'machine.sweep_passed': 1, 'machine.leftover_kept': 1, 'machine.leftover_removed': 1, 'machine.drained': 1, 'machine.undrained': 1, 'machine.drain_expired': 1, 'machine.drained_idle': 1, 'machine.sandbox_host_set': 1,
   'minor_decision.picked': 1, 'minor_decision.compared': 1, 'minor_decision.overridden': 1, 'minor_decision.settings_changed': 1,
   'job.phase_changed': 1, 'job.forked': 1, 'job.fork_resolved': 1, 'phase_shifts.settings_changed': 1,
   'question.corrected': 1, 'auto_answer.settings_changed': 1, 'auto_park.settings_changed': 1, 'token_budget.settings_changed': 1, 'preemption.settings_changed': 1, 'library_skill.saved': 1, 'library_skill.removed': 1, 'library_skill.refreshed': 1, 'work_skills.changed': 1, 'job.work_skill_chosen': 1, 'job.conditional_skills_chosen': 1, 'job.preempted': 1, 'job.memory_paused': 1, 'job.wait_released': 1, 'github_rate_limiter.settings_changed': 1, 'remote_access.changed': 2, 'allowed_hosts.changed': 1, 'telemetry.changed': 1, 'source_email_match.changed': 1, 'cloud_link.linked': 1, 'cloud_link.unlinked': 1, 'cloud_link.registration_code_minted': 1, 'cloud_link.registered': 1, 'cloud_link.unregistered': 1, 'cloud_link.message_refused': 1, 'cloud_link.connected': 1, 'cloud_link.disconnected': 1, 'cloud_link.connection_refused': 1, 'cloud_link.revoked': 1, 'cloud_link.message_dropped': 1, 'display_name.changed': 1,
@@ -105,5 +105,5 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'landing_batch.back_merge_opened': 1, 'landing_batch.back_merged': 1, 'landing_batch.back_merge_failed': 1, 'landing_batch.back_merge_issue_filed': 1,
   'landing_batch.canary_started': 1, 'landing_batch.canary_held': 1, 'landing_batch.canary_issue_filed': 1, 'landing_batch.canary_promoted': 1, 'landing_batch.stuck': 1, 'landing_batch.restarted': 1,
   'hopper.event_loop_stalled': 1,
-  'push_requirements.evaluated': 1,
+  'push_requirements.evaluated': 1, 'delivery_settings.changed': 1, 'push_requirements.defaults_changed': 1, 'delivery_expedite.changed': 1, 'delivery_gate.cleared': 1,
 };

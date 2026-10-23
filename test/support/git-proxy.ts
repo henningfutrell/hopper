@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { Executor, MachineShell } from '../../src/domain/ports.ts';
-import type { DiscoveryFacts, DomainEvent } from '../../src/domain/types.ts';
+import type { DiscoveryFacts, DomainEvent, Job } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { createFakeGitHub } from './fake-forges.ts';
 import { connectGitHub } from './github-account.ts';
@@ -95,8 +95,9 @@ export async function start() {
 export type Started = Awaited<ReturnType<typeof start>>;
 
 /** A job of the user's own repository `repo`, running: its variables, and git as it runs on its machine. */
-export async function running(t: Started, repo = 'octo/tools') {
-  const job = await t.app.pull({}, { executor: 'holder', repo }, ADMIN_ID);
+/** A job at work on the holder executor: `made`, else one pulled for `repo`. */
+export async function running(t: Started, repo = 'octo/tools', made?: Job) {
+  const job = made ?? await t.app.pull({}, { executor: 'holder', repo }, ADMIN_ID);
   const env = await waitFor(async () => t.held.get(job.id)?.env, { what: `job ${job.id} to run` });
   const home = mkdtempSync(join(tmpdir(), 'hopper-git-home-'));
   cleanups.push(() => rmSync(home, { recursive: true, force: true }));

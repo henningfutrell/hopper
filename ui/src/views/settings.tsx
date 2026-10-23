@@ -1,11 +1,11 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165) with this hopper's display name (issue #465)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
-// risk rules), the decider (issue #550; named Decider in issue #661), the token budget (issue #2302), preemption (issue #1525), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the intake's trusted actors (issue #652), yolo mode (issue #579), landing batches (issue #1073), the host link base (issue #712), the GitHub rate limit (issue #436), the GitHub webhook (issue #1079), remote access (issue #880), the allowed hosts (issue #1024), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
+// risk rules), the decider (issue #550; named Decider in issue #661), the token budget (issue #2302), preemption (issue #1525), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the intake's trusted actors (issue #652), yolo mode (issue #579), landing batches (issue #1073), the delivery settings (issue #2554), the host link base (issue #712), the GitHub rate limit (issue #436), the GitHub webhook (issue #1079), remote access (issue #880), the allowed hosts (issue #1024), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
 // sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one. Settings holds configuration only
 // (issue #897): the question history moved to Questions (#questions/history) and Your reports to its own view (#reports); their old hashes open them.
 // The sections' links are a left sub-nav in six groups that fold (issues #2353, #2373), and a jump list on a narrow screen.
-import { Activity, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, Cloud, Coins, Container, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Info, KeyRound, Layers, Link, ListChecks, MessagesSquare, MonitorCog, Network, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, type LucideIcon, UserCheck, Webhook, Zap } from 'lucide-react';
+import { Activity, CalendarClock, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Cloud, Coins, Container, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Info, KeyRound, Layers, Link, ListChecks, MessagesSquare, MonitorCog, Network, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, type LucideIcon, UserCheck, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -21,6 +21,7 @@ import { GitHubDeliveries } from '@/views/github-deliveries';
 import { Contribution } from '@/views/contribution';
 import { DisplayName } from '@/views/display-name';
 import { ShrinkGuard } from '@/views/shrink-guard';
+import { PushRequirements } from '@/views/push-requirements';
 import { GitHubWatches } from '@/views/github-watches';
 import { ComponentWatchers } from '@/views/component-watchers';
 import { JobRules } from '@/views/job-rules';
@@ -38,11 +39,11 @@ import { WindowsHosts } from '@/views/windows-hosts';
 import { PodmanHosts } from '@/views/podman-hosts';
 import { Clusters } from '@/views/clusters';
 import { YoloMode } from '@/views/yolo-mode';
-import { LandingBatches } from '@/views/landing-batches';
+import { LandingBatches } from '@/views/landing-batches'; import { DeliverySettings } from '@/views/delivery-settings';
 import { IntakeActors } from '@/views/intake-actors';
 import { CloudLink } from '@/views/cloud-link';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'preemption', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'podman-hosts', 'intake', 'yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'webhooks', 'clusters', 'sign-in'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'preemption', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'podman-hosts', 'intake', 'yolo-mode', 'landing-batches', 'delivery', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'push-requirements', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'webhooks', 'clusters', 'sign-in'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -58,7 +59,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'podman-hosts': { label: 'Podman hosts', icon: Container, view: PodmanHosts },
   intake: { label: 'Intake', icon: UserCheck, view: IntakeActors },
   'yolo-mode': { label: 'Yolo mode', icon: Zap, view: YoloMode },
-  'landing-batches': { label: 'Landing batches', icon: Layers, view: LandingBatches },
+  'landing-batches': { label: 'Landing batches', icon: Layers, view: LandingBatches }, delivery: { label: 'Delivery', icon: CalendarClock, view: DeliverySettings },
   'github-rate-limit': { label: 'GitHub rate limit', icon: Gauge, view: GitHubRateLimiter },
   'github-webhook': { label: 'GitHub webhook', icon: GitPullRequestArrow, view: GitHubDeliveries },
   'remote-access': { label: 'Remote access', icon: Globe, view: RemoteAccess },
@@ -68,6 +69,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'cloud-link': { label: 'hopper.io', icon: Cloud, view: CloudLink },
   contribution: { label: 'Contribution', icon: GitFork, view: Contribution },
   'shrink-guard': { label: 'Shrink guard', icon: FileWarning, view: ShrinkGuard },
+  'push-requirements': { label: 'Push requirements', icon: ClipboardCheck, view: PushRequirements },
   'github-watches': { label: 'GitHub watches', icon: Eye, view: GitHubWatches },
   'component-watchers': { label: 'Component watchers', icon: Radar, view: ComponentWatchers },
   artifacts: { label: 'Artifacts', icon: FolderOpen, view: ArtifactSettings },
@@ -86,7 +88,7 @@ function Version() {
 const GROUPS = [
   { id: 'jobs', label: 'Jobs and agents', sections: ['token-budget', 'preemption', 'job-rules', 'routing', 'windows-hosts', 'podman-hosts', 'clusters', 'artifacts'] },
   { id: 'intake', label: 'Intake', sections: ['intake', 'questions', 'decider', 'thread-ask', 'tldr'] },
-  { id: 'github', label: 'GitHub', sections: ['yolo-mode', 'landing-batches', 'github-rate-limit', 'github-webhook', 'contribution', 'shrink-guard', 'github-watches', 'component-watchers'] },
+  { id: 'github', label: 'GitHub', sections: ['yolo-mode', 'landing-batches', 'delivery', 'github-rate-limit', 'github-webhook', 'contribution', 'shrink-guard', 'push-requirements', 'github-watches', 'component-watchers'] },
   { id: 'security', label: 'Security and access', sections: ['sign-in', 'allowed-hosts', 'remote-access'] },
   { id: 'integrations', label: 'Integrations', sections: ['webhooks', 'cloud-link', 'telemetry'] },
   { id: 'system', label: 'System', sections: ['version', 'version-history', 'host-link'] },
