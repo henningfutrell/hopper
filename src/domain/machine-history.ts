@@ -51,6 +51,12 @@ export interface ResourceReading {
    * Absent: not read (no PSI, Windows, macOS, an older client).
    */
   memPressure?: MemoryPressure;
+  /**
+   * Issue #2499: when its meter last saw a process killed for memory (an **OOM kill**): the count `oom_kill` of the limited
+   * cgroup's `memory.events`, else of `/proc/vmstat`, grew since the read before. Absent: not seen (none since the meter
+   * started, an ssh target, Windows, macOS, an older client).
+   */
+  memOomKillAt?: string;
 }
 
 /** A memory pressure reading (issue #2499): the share of the last 10 s, 0..100, that some task and every task waited on memory. */

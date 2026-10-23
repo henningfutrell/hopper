@@ -6,9 +6,10 @@
 // not, so no waiting job holds memory. Issue #2499: the memory a job's scope still holds with no lane is in the reading, and the
 // wait names it. Machines whose readings name one kernel are a host pool: a job also needs room in that kernel's memory,
 // less what every machine of the pool keeps, over the kernel's own floor. A machine whose tasks wait on memory (its memory
-// pressure at or above MEMORY_PRESSURE_PERCENT) takes no new job. Pure: the clock is `at`.
+// pressure at or above MEMORY_PRESSURE_PERCENT) takes no new job, nor one that saw an OOM kill less than MEMORY_OOM_KILL_MS
+// ago. Pure: the clock is `at`.
 import {
-  MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_PAUSE_EVERY_MS, MEMORY_PRESSURE_PERCENT, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT, WAIT_RELEASE_AFTER_MS,
+  MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_OOM_KILL_MS, MEMORY_PAUSE_EVERY_MS, MEMORY_PRESSURE_PERCENT, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT, WAIT_RELEASE_AFTER_MS,
   type ExpectedCost, type Job, type JobId, type Lane, type MachineSnapshot, type MemoryPausePlan, type ResourceReading,
   type WaitReleasePlan, type WaitSession,
 } from '../domain/types.ts';
@@ -20,8 +21,12 @@ const gib = (bytes: number): string => `${Math.round((bytes / GIB) * 10) / 10} G
  * A machine's memory as one Decision counts it: what it has, its floor, a job's need, and what is kept and for how many jobs.
  * `waitingBytes` (issue #2499): of what it has in use, what its job scopes hold for `waiting` jobs with no lane in use there.
  * `pressure` (issue #2499): its memory pressure, the share of the last 10 s some task waited on memory, in percent.
+ * `oomKillMs` (issue #2499): how long ago it saw an OOM kill, when that is less than MEMORY_OOM_KILL_MS.
  */
-export interface MemoryRoom { availableBytes: number; floorBytes: number; perJobBytes: number; keptBytes: number; kept: number; waitingBytes: number; waiting: number; pool?: HostPool; pressure?: number }
+export interface MemoryRoom {
+  availableBytes: number; floorBytes: number; perJobBytes: number; keptBytes: number; kept: number; waitingBytes: number; waiting: number;
+  pool?: HostPool; pressure?: number; oomKillMs?: number;
+}
 
 /**
  * Issue #2499: the memory of one kernel that the machines of a host pool share, one object for all of them: its memory
@@ -34,15 +39,17 @@ const availableOf = (r: ResourceReading): number =>
   (r.wsl && r.hostMemFreeBytes !== undefined ? Math.min(r.memAvailableBytes, r.hostMemFreeBytes) : r.memAvailableBytes);
 
 /** The machine's memory, floor and need for a job; undefined when it has no memory reading or its floor is 0 (off). */
-function floorOf(m: MachineSnapshot): Omit<MemoryRoom, 'keptBytes' | 'kept' | 'waitingBytes' | 'waiting'> | undefined {
+function floorOf(m: MachineSnapshot, at: number): Omit<MemoryRoom, 'keptBytes' | 'kept' | 'waitingBytes' | 'waiting'> | undefined {
   const r = m.resources;
   if (!r || r.memTotalBytes <= 0) return undefined;
   const own = m.memoryFloor?.floorGiB;
   const floorBytes = own !== undefined ? own * GIB : Math.max(MEMORY_FLOOR_MIN_GIB * GIB, (r.memTotalBytes * MEMORY_FLOOR_PERCENT) / 100);
   if (floorBytes <= 0) return undefined;
+  const killMs = r.memOomKillAt !== undefined ? at - Date.parse(r.memOomKillAt) : undefined;
   return {
     availableBytes: availableOf(r), floorBytes, perJobBytes: (m.memoryFloor?.perJobGiB ?? MEMORY_PER_JOB_GIB) * GIB,
     ...(r.memPressure ? { pressure: r.memPressure.someAvg10 } : {}),
+    ...(killMs !== undefined && killMs >= 0 && killMs < MEMORY_OOM_KILL_MS ? { oomKillMs: killMs } : {}),
   };
 }
 
@@ -51,10 +58,10 @@ const lately = (j: Job, at: number): boolean => j.status === 'claimed' || (j.sta
 
 /** The machine's memory room at the start of a Decision: each job on its lanes that started lately keeps a job's memory. */
 export function memoryRoom(m: MachineSnapshot, lanes: readonly Lane[], running: readonly Job[], atIso: string): MemoryRoom | undefined {
-  const f = floorOf(m);
+  const at = Date.parse(atIso);
+  const f = floorOf(m, at);
   if (!f) return undefined;
   const here = new Set(lanes.filter((l) => l.machineId === m.id).map((l) => l.id));
-  const at = Date.parse(atIso);
   const kept = running.filter((j) => j.laneId !== undefined && here.has(j.laneId) && lately(j, at)).length;
   const onLane = new Set(lanes.flatMap((l) => (l.machineId === m.id && l.state !== 'idle' && l.jobId !== undefined ? [l.jobId] : [])));
   const waiting = Object.entries(m.resources?.jobMemoryBytes ?? {}).filter(([id, bytes]) => !onLane.has(id) && bytes > 0);
@@ -100,20 +107,22 @@ const poolAdmits = (room: MemoryRoom, cost: ExpectedCost | undefined): boolean =
   !room.pool || room.pool.availableBytes - room.pool.keptBytes - needOf(room, cost) >= room.pool.floorBytes;
 
 const pressed = (room: MemoryRoom): boolean => room.pressure !== undefined && room.pressure >= MEMORY_PRESSURE_PERCENT;
+/** Issue #2499: under memory pressure, or an OOM kill lately: the machine takes no new job, whatever memory it reads. */
+const stalled = (room: MemoryRoom): boolean => pressed(room) || room.oomKillMs !== undefined;
 
-/** Whether a new job fits the machine's memory room, and its host pool's, with no memory pressure. No room counted (no reading, floor off): it fits. */
+/** Whether a new job fits the machine's memory room, and its host pool's, with no memory pressure or OOM kill lately. No room counted (no reading, floor off): it fits. */
 export const memoryAdmits = (room: MemoryRoom | undefined, cost?: ExpectedCost): boolean =>
-  !room || (ownAdmits(room, cost) && !pressed(room) && poolAdmits(room, cost));
+  !room || (ownAdmits(room, cost) && !stalled(room) && poolAdmits(room, cost));
 
 /**
  * Issue #2499: the memory a machine has for new jobs now, over its floor: its own, or its host pool's when that is lower,
- * less what is kept for jobs started lately; none under memory pressure. It shrinks as this Decision places jobs there.
+ * less what is kept for jobs started lately; none under memory pressure or after an OOM kill lately. It shrinks as this Decision places jobs there.
  */
 function headroomOf(room: MemoryRoom): { bytes: number; floorBytes: number } {
   const own = room.availableBytes - room.keptBytes - room.floorBytes;
   const pool = room.pool ? room.pool.availableBytes - room.pool.keptBytes - room.pool.floorBytes : Infinity;
   const floorBytes = pool < own ? room.pool!.floorBytes : room.floorBytes;
-  return { bytes: pressed(room) ? 0 : Math.max(0, Math.min(own, pool)), floorBytes };
+  return { bytes: stalled(room) ? 0 : Math.max(0, Math.min(own, pool)), floorBytes };
 }
 
 export const memoryHeadroom = (room: MemoryRoom): number => headroomOf(room).bytes;
@@ -147,6 +156,9 @@ const hostOf = (id: string, pool: HostPool): string => {
 
 /** What a machine's memory room, or else its host pool's, holds against a new job's need; `of`: the machine, for its host. */
 export function memoryShort(r: MemoryRoom, cost: ExpectedCost | undefined, of?: string): string {
+  if (ownAdmits(r, cost) && r.oomKillMs !== undefined) {
+    return `its memory killed a process ${Math.round(r.oomKillMs / 60_000)} min ago (out of memory), and a new job starts only ${MEMORY_OOM_KILL_MS / 60_000} min after`;
+  }
   if (ownAdmits(r, cost) && pressed(r)) {
     return `its memory is under pressure: its tasks waited on memory ${Math.round(r.pressure!)}% of the last 10 s, and a new job starts only below ${MEMORY_PRESSURE_PERCENT}%`;
   }
@@ -180,7 +192,7 @@ export function memoryPauses(
   const at = Date.parse(atIso);
   const plans: MemoryPausePlan[] = [];
   for (const m of machines) {
-    const f = floorOf(m);
+    const f = floorOf(m, at);
     if (!f || !m.online || f.availableBytes >= f.floorBytes) continue;
     const recent = (iso: string | undefined): boolean => iso !== undefined && at - Date.parse(iso) < MEMORY_PAUSE_EVERY_MS;
     if (recent(pausedAt[m.id]) || [...running, ...waiting].some((j) => j.memoryPaused?.machineId === m.id && recent(j.memoryPaused.at))) continue;

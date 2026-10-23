@@ -13118,6 +13118,15 @@ never a hold, read from a machine reading taken before the burst took its memory
   no new job and no job back, whatever its memory available: `waiting for memory: a's memory is under pressure: its tasks
   waited on memory 35% of the last 10 s, and a new job starts only below 20%`. A floor of 0 turns this check off too. It
   pauses nothing: the memory pause still reads the memory available only.
+- **OOM kills** (issue #2499). A seat at its cgroup limit has processes killed for memory, and once a kill frees memory its
+  reading shows memory available again. Each reading says its **last OOM kill** (`memOomKillAt`): when its meter last saw
+  the count `oom_kill` grow, in `memory.events` of the cgroup whose limit it reads (that cgroup and every cgroup under it),
+  else in `/proc/vmstat`. A count is a counter, so the meter compares it with its read before: its first read, and a read
+  of another cgroup, see no kill. A machine whose last OOM kill is less than 10 minutes old (`MEMORY_OOM_KILL_MS`) takes
+  no new job and no job back, and has no memory room: `waiting for memory: a's memory killed a process 3 min ago (out of
+  memory), and a new job starts only 10 min after`. A floor of 0 turns this check off too. An ssh target's probe keeps no
+  count from one read to the next, so it says none. `memory.events` `max` (the limit was hit and memory reclaimed) is not
+  read: a cgroup full of page cache hits it in normal work, and the memory pressure already says when the reclaim stalls tasks.
 - **Placement by memory room** (issue #2499, `better` in `src/decider/assign.ts`). A machine's lane cap is a count of jobs,
   and 9 lanes of 2 GiB each did not fit a 14 GiB VM. So of the machines a job may go to, after placement pressure, the one
   with the most **real room** goes first: its lane room, only as far as its **memory room** holds jobs (its memory over its

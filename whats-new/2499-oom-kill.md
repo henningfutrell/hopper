@@ -1,0 +1,1 @@
+- A machine where a program was just stopped because memory ran out now takes no new job for ten minutes, and a job that waits says why.

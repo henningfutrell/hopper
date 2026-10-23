@@ -14,6 +14,11 @@ export const MEMORY_FLOOR_MIN_GIB = 1;
  * its tasks already wait on memory, as a seat near its cgroup limit does while it still reads memory available.
  */
 export const MEMORY_PRESSURE_PERCENT = 20;
+/**
+ * Issue #2499: a machine that saw an OOM kill (a process killed for memory) less than this ago takes no new job: it is at
+ * its memory limit, though its reading may show memory available again once the kill freed it.
+ */
+export const MEMORY_OOM_KILL_MS = 10 * 60_000;
 /** The default memory a new job needs, in GiB: room for an agent and a JVM build. */
 export const MEMORY_PER_JOB_GIB = 2;
 /** A job that started (or resumed) less than this ago has not taken its memory yet: it still reserves a job's memory. */
