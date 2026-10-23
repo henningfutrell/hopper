@@ -100,7 +100,10 @@ export function resourcesText(r: ResourceReading | undefined, now = Date.now()):
   const host = r.hostMemFreeBytes !== undefined && r.hostMemTotalBytes !== undefined ? ` · Windows ${gb(r.hostMemFreeBytes)} free of ${gb(r.hostMemTotalBytes)}` : '';
   const pressure = r.memPressure ? ` · pressure ${Math.round(r.memPressure.someAvg10)}%` : '';
   const kill = r.memOomKillAt ? ` · last OOM kill ${ago(r.memOomKillAt, now)}` : '';
-  return { cpu, memory: `${gb(used)} used of ${gb(r.memTotalBytes)} (${share}${r.container ? ', container limit' : ''})${swap}${held}${host}${pressure}${kill}` };
+  // Issue #2622 part 6: the kernel's large page allocation failures (order 4 or more) in the last 10 minutes.
+  const f = r.memAllocFailures;
+  const fails = f ? ` · ${f.count} large allocation failure${f.count === 1 ? '' : 's'} (${f.count === 1 ? '' : 'up to '}order ${f.maxOrder}) in 10 min` : '';
+  return { cpu, memory: `${gb(used)} used of ${gb(r.memTotalBytes)} (${share}${r.container ? ', container limit' : ''})${swap}${held}${host}${pressure}${kill}${fails}` };
 }
 
 /** What the hopper's jobs use on a machine now (issue #2498), all its job scopes together; null when none was read. */

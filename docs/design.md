@@ -13571,8 +13571,11 @@ memory. Nothing gated the build itself. Now a **heavy step** asks first.
   `src/decider/memory-floor.ts`), beside the `some avg10` at 20% of issue #2499. The readings carry `someAvg60`: the client's
   meter and an ssh target's probe parse it from the same PSI line.
 
-Not built yet: Windows' held memory and guest allocation-failure bursts as signals, a job limit sized by the host pool's
-lanes, the slots on the Machines page.
+- **Host signals** (part 6). Windows' own free memory was already in admission (issue #868: a WSL machine's memory
+  available is at most Windows' free memory, `src/decider/memory-floor.ts`), and in the heavy-step host. Guest
+  allocation-failure bursts are a machine alert now: "The allocation failure watch" below.
+
+Not built yet: a job limit sized by the host pool's lanes, the slots on the Machines page.
 
 Tests: `test/decider/heavy-steps.test.ts` (which commands are heavy; the host; 4 builds at once on a 14 GiB VM run 2 and
 available stays over the floor; the ramp; the first step; an 8 GiB machine), `test/engine/heavy-gate.test.ts` (slots,
@@ -15399,6 +15402,25 @@ told. Kept in memory, as the memory alert: after a restart of the hopper a machi
 and notifiers take it (the Grok Bot notifier posts both). Nothing is configured: a machine a person keeps offline is told
 once, then not again until it was online. The service starts each **joined container** again itself (`docs/deploy.md`
 "The user service"); the watch is for one it cannot start, or a machine that is no joined container.
+
+**The allocation failure watch** (issue #2622 part 6). A WSL VM whose memory is full and fragmented fails the large
+allocations hv_sock needs to set up a channel (`page allocation failure: order:7 ... vmbus_alloc_ring ... hvs_probe`), and
+`wsl.exe` and interop hang next (`UtilAcceptVsock: accept4 failed 110`). On one host 251 of them came in four hours before
+a 30-minute stall. The meter reads the kernel log (`src/client/kernel-log.ts`): `/dev/kmsg`, non-blocking, from where it
+read before (the whole buffer at its first read), and keeps each page allocation failure of order 4 or more
+(`ALLOC_FAILURE_MIN_ORDER`) with its time since boot. An ssh target's probe prints its uptime and each failure `dmesg` holds
+(`af <s> <order>`). The reading says those of the last 10 minutes by `/proc/uptime`, and the highest order of them
+(`ResourceReading.memAllocFailures`). A kernel log it may not read (`kernel.dmesg_restrict`) says none. At each record the
+**allocation failure watch** (`src/machines/alloc-failure-watch.ts`) is shown every machine. A **burst**, 3 failures or more
+in the 10 minutes (`ALLOC_FAILURE_BURST`), is told once, `machine.allocation_failures` (`machineId`, `label`, `count`,
+`maxOrder`, `since`), and once more when the 10 minutes have none, `machine.allocation_failures_ended`. A machine offline
+or with no reading keeps what was told. Kept in memory, as the offline watch. On the Machines page a burst is the warning
+badge `allocation failures` with a line that says what to do (drain it, or stop builds there), and the memory line says
+the count. It holds no job: the memory floor and the heavy-step shed act on the memory that is short; the burst says that
+`wsl.exe` may hang next. Tests: `test/client/kernel-log.test.ts` (the kernel log over a fake root: the window, small orders,
+none to read), `test/adapters/machine-resources.test.ts` (the probe's lines, a client's checked),
+`test/machines/alloc-failure-watch.test.ts` (told once, ended, offline, the UI's same burst), `test/ui/machine-list.test.ts`
+and `test/ui/machine-history.test.ts`.
 
 **Not built yet** (the issue's second step): soft and hard CPU and memory thresholds per machine, a machine taking
 fewer new lanes above soft and no new job above hard (like the disk hold), off by default until the graphs have shown

@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MachineSnapshot, ResourceReading } from '../../src/domain/types.ts';
 import { ALLOC_FAILURE_BURST, createAllocFailureWatch, type AllocFailureEvent } from '../../src/machines/alloc-failure-watch.ts';
+import { allocFailureBurst } from '../../ui/src/model/machine-list.ts';
 
 const GIB = 1024 ** 3;
 const at = (min: number) => new Date(Date.parse('2026-10-23T10:00:00.000Z') + min * 60_000).toISOString();
@@ -52,5 +53,11 @@ describe('the allocation failure watch', () => {
     g.observe([], at(5));
     g.observe([machine(reading())], at(6));
     expect(w.told.map((e) => e.type)).toEqual(['machine.allocation_failures', 'machine.allocation_failures']);
+  });
+
+  it('the Machines page warns at the same burst (it imports no code of src/)', () => {
+    expect(allocFailureBurst(reading(ALLOC_FAILURE_BURST))).toBe(true);
+    expect(allocFailureBurst(reading(ALLOC_FAILURE_BURST - 1))).toBe(false);
+    expect(allocFailureBurst(reading())).toBe(false);
   });
 });

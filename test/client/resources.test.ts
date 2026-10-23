@@ -162,33 +162,6 @@ describe('a machine\'s resources', () => {
     expect(seat.read()).toMatchObject({ memTotalBytes: 4 * GIB, memOomKillAt: new Date(1_030_000).toISOString() });
   });
 
-  // Issue #2622 part 6: a WSL guest full of fragmented memory fails the large allocations hv_sock needs (order:7), and
-  // wsl.exe hangs next. The meter reads the kernel log (/dev/kmsg, each record's time since boot) and says the page
-  // allocation failures of order 4 or more in the last 10 minutes, by /proc/uptime; smaller orders and older ones are not counted.
-  it('says the large page allocation failures the kernel logged in the last 10 minutes', () => {
-    const fail = (seq: number, s: number, order: number) => `4,${seq},${s * 1e6},-;kworker/u16:2: page allocation failure: order:${order}, mode:0xcc0(GFP_KERNEL), nodemask=(null)\n SUBSYSTEM=vmbus\n`;
-    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
-    put('proc/uptime', '1000.00 4000.00\n');
-    put('dev/kmsg', [fail(1, 300, 7), '6,2,400000000,-;eth0: link up\n', fail(3, 700, 7), fail(4, 800, 2), fail(5, 900, 4)].join(''));
-    const m = meter();
-    expect(m.read().memAllocFailures).toEqual({ count: 2, maxOrder: 7 });
-    writeFileSync(join(root, 'dev/kmsg'), fail(6, 950, 5), { flag: 'a' });
-    m.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
-    expect(m.read().memAllocFailures).toEqual({ count: 3, maxOrder: 7 });
-    put('proc/uptime', '1400.00 4000.00\n');
-    m.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
-    expect(m.read().memAllocFailures).toEqual({ count: 2, maxOrder: 5 });
-    put('proc/uptime', '1600.00 4000.00\n');
-    m.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
-    expect(m.read()).not.toHaveProperty('memAllocFailures');
-  });
-
-  it('no kernel log it may read: no allocation failures', () => {
-    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
-    put('proc/uptime', '1000.00 4000.00\n');
-    expect(meter().read()).not.toHaveProperty('memAllocFailures');
-  });
-
   it('no pressure file (an older kernel, PSI off): no memory pressure', () => {
     put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
     expect(meter().read()).not.toHaveProperty('memPressure');

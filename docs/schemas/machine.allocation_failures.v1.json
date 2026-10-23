@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "since": {
+      "type": "string"
+    },
+    "count": {
+      "type": "number"
+    },
+    "maxOrder": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "machineId",
+    "label",
+    "since",
+    "count",
+    "maxOrder"
+  ],
+  "additionalProperties": false
+}

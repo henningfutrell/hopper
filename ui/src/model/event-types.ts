@@ -28,7 +28,7 @@ const ALL: Record<EventType, true> = {
   'research.asked': true, 'research.submitted': true, 'research.escalated': true, 'research.escalated_to_human': true, 'research.reviewed': true,
   'research.revision_requested': true, 'research.accepted': true, 'research.cancelled': true,
   'machine.discovered': true, 'machine.discovery_failed': true, 'machine.radius_grew': true, 'machine.actor_mismatch': true, 'blast_radius.settings_changed': true, 'job.gate_passed': true,
-  'hopper.event_loop_stalled': true, 'machine.memory_low': true, 'machine.memory_recovered': true, 'machine.windows_link_broken': true, 'machine.windows_link_restored': true, 'machine.offline': true, 'machine.back_online': true,
+  'hopper.event_loop_stalled': true, 'machine.memory_low': true, 'machine.memory_recovered': true, 'machine.windows_link_broken': true, 'machine.windows_link_restored': true, 'machine.offline': true, 'machine.back_online': true, 'machine.allocation_failures': true, 'machine.allocation_failures_ended': true,
   'machine.disk_over_budget': true, 'machine.disk_within_budget': true, 'machine.disk_low': true, 'machine.disk_ok': true, 'machine.storage_pruned': true, 'machine.disk_trim_ran': true, 'machine.caches_cleared': true, 'machine.sweep_dry_run': true, 'machine.sweep_passed': true, 'machine.leftover_kept': true, 'machine.leftover_removed': true, 'machine.drained': true, 'machine.undrained': true, 'machine.drain_expired': true, 'machine.drained_idle': true, 'machine.sandbox_host_set': true,
   'minor_decision.picked': true, 'minor_decision.compared': true, 'minor_decision.overridden': true, 'minor_decision.settings_changed': true,
   'job.phase_changed': true, 'job.forked': true, 'job.fork_resolved': true, 'phase_shifts.settings_changed': true,
