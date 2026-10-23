@@ -171,6 +171,25 @@ export function pressureOf(t: string | undefined): { someAvg10: number; fullAvg1
   return some !== undefined && full !== undefined ? { someAvg10: some, fullAvg10: full } : undefined;
 }
 
+/** An OOM kill count (issue #2499): `oom_kill` of one cgroup's `memory.events`, or of the kernel's. */
+export interface OomCount { of: string; count: number }
+
+/**
+ * Issue #2499: when an OOM kill count was last seen to grow, over the counts read one after the other. The first count, and
+ * one of another cgroup, has no count before it; a read with none keeps the last.
+ */
+export function oomWatch(): (seen: OomCount | undefined, at: number) => number | undefined {
+  let last: OomCount | undefined;
+  let killAt: number | undefined;
+  return (seen, at) => {
+    if (seen) {
+      if (last?.of === seen.of && seen.count > last.count) killAt = at;
+      last = seen;
+    }
+    return killAt;
+  };
+}
+
 /** A meter: each call reads the machine now. Keeps the last CPU times, so each read's CPU busy is over the time between. */
 export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceReading {
   const root = d.root ?? '/';
@@ -186,10 +205,9 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const node = d.node ?? process.version;
   const nodeFloor = nodeFloorOf(node);
   let host: { at: number; reading: HostMemory } | undefined;
-  let kills: { of: string; count: number } | undefined;
+  const kills = oomWatch();
   let periods = new Map<string, { periods: number; throttled: number }>();
   let throttledFrac: number | undefined;
-  let killAt: number | undefined;
   let hostAskedAt: number | undefined;
   let hostAsking = false;
   /** Each job scope's CPU time at the read before, for its cores busy since. */
@@ -277,10 +295,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const oomKillAt = (limitedDir: string | undefined, at: number): Pick<ResourceReading, 'memOomKillAt'> => {
     const of = limitedDir !== undefined ? cgroup(join(limitedDir, 'memory.events')) : join(root, 'proc/vmstat');
     const count = fields(text(of)).get('oom_kill');
-    if (count !== undefined) {
-      if (kills?.of === of && count > kills.count) killAt = at;
-      kills = { of, count };
-    }
+    const killAt = kills(count !== undefined ? { of, count } : undefined, at);
     return killAt !== undefined ? { memOomKillAt: new Date(killAt).toISOString() } : {};
   };
 
