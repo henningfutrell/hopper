@@ -13,6 +13,8 @@ import { CHECKPOINT_TIMEOUT_MS, checkpointArgv, readCheckpoint } from '../client
 import { LEFTOVER_REMOVE_TIMEOUT_MS, LEFTOVERS_TIMEOUT_MS, leftoverRemoveArgv, leftoversArgv, readLeftoverRemoval, readLeftovers } from '../client/leftovers.ts';
 import { PRUNE_TIMEOUT_MS, pruneArgv, readPrune } from '../client/prune.ts';
 import { readTrim, TRIM_TIMEOUT_MS, trimArgv } from '../client/trim.ts';
+import { CACHES_TIMEOUT_MS, cachesArgv, readCaches } from '../client/caches.ts';
+import type { CappedKind } from '../domain/cache-caps.ts';
 import { readDiscovery } from '../blast-radius/read.ts';
 import { clientScript, type ClientAnswer, type ClientTransport } from './client.ts';
 import { scrubbedEnv, userProcessEnv } from './env.ts';
@@ -23,7 +25,7 @@ const TIMEOUT_MS = 60000;
 
 type Call = { reap: { jobId: string; scratch?: string; keep?: boolean; discard?: boolean } } | { survey: { roots: string[] } }
   | { credential: { jobId: string; dir: string; file: string; content: string; make: boolean } } | { discover: true } | { reach: { url: string } }
-  | { checkpoint: { jobId: string; worktree: string; session: string } } | { leftovers: { roots: string[] } } | { leftoverRemove: { path: string } } | { prune: { days: number; containers: string[] } } | { trim: true };
+  | { checkpoint: { jobId: string; worktree: string; session: string } } | { leftovers: { roots: string[] } } | { leftoverRemove: { path: string } } | { prune: { days: number; containers: string[] } } | { trim: true } | { caches: { kinds: CappedKind[] } };
 
 function shellOver(where: string, run: (call: Call) => Promise<ClientAnswer>): MachineShell {
   const unfinished = (what: string, r: ClientAnswer): Error =>
@@ -86,6 +88,12 @@ function shellOver(where: string, run: (call: Call) => Promise<ClientAnswer>): M
       if (!said) throw unfinished('trim', r);
       return said;
     },
+    async clearCaches(kinds) {
+      const r = await run({ caches: { kinds } });
+      const said = readCaches(r.stdout);
+      if (!said) throw unfinished('cache clear', r);
+      return said;
+    },
     async keepCredential(jobId, dir, file, content, make = false) {
       const r = await run({ credential: { jobId, dir, file, content, make } });
       if (!r.stdout.split('\n').some((l) => l.trimEnd() === CREDENTIAL_KEPT)) throw unfinished('credential write', r);
@@ -97,11 +105,11 @@ const argvOf = (call: Call): string[] => ('reap' in call ? reapArgv(call.reap.jo
   : 'survey' in call ? surveyArgv(call.survey.roots) : 'discover' in call ? discoverArgv() : 'reach' in call ? reachArgv(call.reach.url)
     : 'checkpoint' in call ? checkpointArgv(call.checkpoint.jobId, call.checkpoint.worktree, call.checkpoint.session)
     : 'leftovers' in call ? leftoversArgv(call.leftovers.roots) : 'leftoverRemove' in call ? leftoverRemoveArgv(call.leftoverRemove.path)
-    : 'prune' in call ? pruneArgv(call.prune.days, call.prune.containers) : 'trim' in call ? trimArgv()
+    : 'prune' in call ? pruneArgv(call.prune.days, call.prune.containers) : 'trim' in call ? trimArgv() : 'caches' in call ? cachesArgv(call.caches.kinds)
     : credentialArgv(call.credential.jobId, call.credential.dir, call.credential.file, call.credential.make));
 /** A discovery asks each tool with a timeout of its own, so it may take longer than the other scripts. */
 const timeoutOf = (call: Call): number => ('discover' in call ? DISCOVER_TIMEOUT_MS : 'reach' in call ? REACH_TIMEOUT_MS : 'checkpoint' in call ? CHECKPOINT_TIMEOUT_MS : 'reap' in call ? REAP_TIMEOUT_MS : 'survey' in call ? SURVEY_TIMEOUT_MS
-  : 'leftovers' in call ? LEFTOVERS_TIMEOUT_MS : 'leftoverRemove' in call ? LEFTOVER_REMOVE_TIMEOUT_MS : 'prune' in call ? PRUNE_TIMEOUT_MS : 'trim' in call ? TRIM_TIMEOUT_MS : TIMEOUT_MS);
+  : 'leftovers' in call ? LEFTOVERS_TIMEOUT_MS : 'leftoverRemove' in call ? LEFTOVER_REMOVE_TIMEOUT_MS : 'prune' in call ? PRUNE_TIMEOUT_MS : 'trim' in call ? TRIM_TIMEOUT_MS : 'caches' in call ? CACHES_TIMEOUT_MS : TIMEOUT_MS);
 /** What the call's script reads on stdin: a credential's content, never an argument. */
 const inputOf = (call: Call): string => ('credential' in call ? call.credential.content : '');
 
@@ -140,5 +148,5 @@ export const clientShell = (t: ClientTransport): MachineShell =>
     : 'survey' in call ? clientScript(t, '/survey', call.survey) : 'discover' in call ? clientScript(t, '/discover', {}) : 'reach' in call ? clientScript(t, '/reach', call.reach)
       : 'checkpoint' in call ? clientScript(t, '/checkpoint', call.checkpoint)
       : 'leftovers' in call ? clientScript(t, '/leftovers', call.leftovers) : 'leftoverRemove' in call ? clientScript(t, '/leftover-remove', call.leftoverRemove)
-      : 'prune' in call ? clientScript(t, '/prune', call.prune) : 'trim' in call ? clientScript(t, '/trim', {})
+      : 'prune' in call ? clientScript(t, '/prune', call.prune) : 'trim' in call ? clientScript(t, '/trim', {}) : 'caches' in call ? clientScript(t, '/caches', call.caches)
       : clientScript(t, '/credential', call.credential)));

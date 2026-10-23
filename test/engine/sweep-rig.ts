@@ -7,6 +7,7 @@ import type { LedgerEntry } from '../../src/domain/resource-ledger.ts';
 import type { DiskMeasure } from '../../src/domain/hopper-disk.ts';
 import type { Pruned } from '../../src/domain/storage-prune.ts';
 import type { Trimmed } from '../../src/domain/disk-trim.ts';
+import type { CappedKind, Cleared } from '../../src/domain/cache-caps.ts';
 
 export const HOUR = 3600_000;
 export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
@@ -17,7 +18,7 @@ export const none: Survey = { scopes: [], processes: [], scratch: [] };
 export const day = (_job: Job, ageMs: number): boolean => ageMs >= 24 * HOUR;
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[]; measures?: Map<string, DiskMeasure>; told?: { type: string; machineId: string; data: unknown }[]; pruned?: Pruned | 'old client'; trimmed?: Trimmed | 'old client' } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[]; measures?: Map<string, DiskMeasure>; told?: { type: string; machineId: string; data: unknown }[]; pruned?: Pruned | 'old client'; trimmed?: Trimmed | 'old client'; cleared?: (kinds: CappedKind[]) => Cleared | 'old client' } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -42,7 +43,15 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
   const prunes: { days: number; containers: string[] }[] = [];
   // The trims asked (issue #2494); `trimmed` what each one says.
   let trims = 0;
+  // The cache clears asked (issue #2494), by their kinds; `cleared` what each one says, by default each kind's places in `found`.
+  const clears: CappedKind[][] = [];
   const shell: MachineShell = {
+    async clearCaches(kinds) {
+      clears.push(kinds);
+      const said = o.cleared?.(kinds) ?? { removed: (o.found?.caches ?? []).flatMap((c) => (kinds.includes(c.kind as CappedKind) ? [{ kind: c.kind as CappedKind, path: c.path }] : [])) };
+      if (said === 'old client') throw new Error('client m runs an older client release: /caches not found');
+      return said;
+    },
     async trim() {
       trims += 1;
       if (o.trimmed === 'old client') throw new Error('client m runs an older client release: /trim not found');
@@ -119,5 +128,5 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       },
     } as never,
   }, (l) => logs.push(l));
-  return { sweep, jobs, ledger, measures, surveyed, reaps, events, logs, listings, removals, prunes, trims: () => trims, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
+  return { sweep, jobs, ledger, measures, surveyed, reaps, events, logs, listings, removals, prunes, clears, trims: () => trims, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
 }

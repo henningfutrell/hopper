@@ -1,0 +1,1 @@
+- A machine can now keep the tools' download caches (such as Gradle, Go, npm and NuGet) under a size you choose. When a cache grows past it, or the disk gets low, the hopper empties it while no job runs there.
