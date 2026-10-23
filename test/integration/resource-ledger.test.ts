@@ -1,4 +1,4 @@
-// A job's resource ledger (issue #2504): what its executor saved that it made — its scratch dir, job worktree and job scope —
+// A job's resource ledger (issue #2504): what its executor saved that it made — its scratch dir, job worktree, job scope and herdr pane —
 // is recorded on its machine as it runs, and the cleanup at its end closes each entry as the reap says: reaped, kept with
 // work not pushed, or failed with why. The parts list shows the cleanup status and each entry. Real database and HTTP server.
 import { afterEach, describe, expect, it } from 'vitest';
@@ -51,8 +51,8 @@ async function ended(said: (jobId: string) => Reaped, end: 'cancelled' | 'finish
   source.remove(job.source!.key);
   if (end === 'cancelled') {
     await app.waitForStatus(job.id, 'running');
-    await waitFor(() => !session || app!.user().store.resourceLedger.forJob(job.id).length === 4);
-    expect(app.user().store.resourceLedger.forJob(job.id).map((e) => [e.state, e.machineId])).toEqual((session ? [1, 2, 3, 4] : [1, 2, 3]).map(() => ['live', 'local']));
+    await waitFor(() => !session || app!.user().store.resourceLedger.forJob(job.id).length === 5);
+    expect(app.user().store.resourceLedger.forJob(job.id).map((e) => [e.state, e.machineId])).toEqual((session ? [1, 2, 3, 4, 5] : [1, 2, 3, 4]).map(() => ['live', 'local']));
     expect((await app.ui(`/ui/api/jobs/${job.id}/cancel`, {}, { token: await app.login() })).status).toBe(200);
   }
   await app.waitForStatus(job.id, end);
@@ -66,18 +66,19 @@ describe('the resource ledger (issue #2504)', () => {
   it.each(['cancelled', 'finished', 'failed'] as const)('records what the job made while it runs, and the cleanup when it ends %s reaps every entry', async (end) => {
     const { a, job } = await ended(() => ({ kept: [] }), end);
     expect(states(a, job.id)).toEqual([
+      ['herdr_pane', 'p1', 'reaped'],
       ['job_scope', `hopper-job-${job.id}.scope`, 'reaped'],
       ['job_worktree', `/w/.worktrees/app/${job.id}`, 'reaped'],
       ['scratch_dir', `/w/.worktrees/@scratch/${job.id}`, 'reaped'],
     ]);
     const bom = (await a.api<JobBom>('GET', `/api/jobs/${job.id}/bom`)).body;
-    expect(bom.parts.find((p) => p.id === 'cleanup')).toMatchObject({ group: 'machines', status: 'done', label: 'Cleanup: done', detail: '3 of 3 closed' });
+    expect(bom.parts.find((p) => p.id === 'cleanup')).toMatchObject({ group: 'machines', status: 'done', label: 'Cleanup: done', detail: '4 of 4 closed' });
     expect(bom.parts.find((p) => p.id === `resource:scratch_dir:/w/.worktrees/@scratch/${job.id}`)).toMatchObject({ group: 'machines', kind: 'scratch_dir', status: 'recorded' });
   });
 
   it('keeps the scratch dir and the job worktree with work not pushed, and stops the scope', async () => {
     const { a, job } = await ended((id) => ({ kept: [`/w/.worktrees/app/${id}`] }));
-    expect(states(a, job.id).map(([kind, , state]) => [kind, state])).toEqual([['job_scope', 'reaped'], ['job_worktree', 'kept'], ['scratch_dir', 'kept']]);
+    expect(states(a, job.id).map(([kind, , state]) => [kind, state])).toEqual([['herdr_pane', 'reaped'], ['job_scope', 'reaped'], ['job_worktree', 'kept'], ['scratch_dir', 'kept']]);
     const bom = (await a.api<JobBom>('GET', `/api/jobs/${job.id}/bom`)).body;
     expect(bom.parts.find((p) => p.id === 'cleanup')).toMatchObject({ status: 'open', label: 'Cleanup: done, work not pushed kept' });
   });
@@ -87,7 +88,7 @@ describe('the resource ledger (issue #2504)', () => {
     const scratch = a.user().store.resourceLedger.forJob(job.id).find((e) => e.kind === 'scratch_dir');
     expect(scratch).toMatchObject({ state: 'failed', reason: `/w/.worktrees/@scratch/${job.id}/containers is still there` });
     const bom = (await a.api<JobBom>('GET', `/api/jobs/${job.id}/bom`)).body;
-    expect(bom.parts.find((p) => p.id === 'cleanup')).toMatchObject({ status: 'failed', detail: '3 of 3 closed, 1 failed' });
+    expect(bom.parts.find((p) => p.id === 'cleanup')).toMatchObject({ status: 'failed', detail: '4 of 4 closed, 1 failed' });
     expect(bom.parts.find((p) => p.kind === 'scratch_dir')?.status).toBe('failed');
   });
 
