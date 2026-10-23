@@ -76,6 +76,16 @@ describe('sweep settings (issue #410)', () => {
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', reapEveryMinutes: 1.5 } }))).not.toBe('accepted');
     expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', scratchMaxAgeHours: 0 } }))).not.toBe('accepted');
   });
+
+  it('the retention per job status (issue #2494) rides on the sweep settings; 0 is allowed, a negative is refused', () => {
+    for (const id of ['local', 'ssh', 'client']) {
+      const props = optionsJsonSchema(BUILTIN_PLUGINS.find((p) => p.id === id)!).properties as Record<string, unknown>;
+      for (const k of ['retainFinishedHours', 'retainFailedHours', 'retainCancelledHours', 'retainRejectedHours']) expect(props).toHaveProperty(k);
+    }
+    expect(targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', retainFailedHours: 48, retainFinishedHours: 0 } }))
+      .toMatchObject({ sweep: { retainHours: { failed: 48, finished: 0 } } });
+    expect(why(() => targetOf({ name: 'laptop', plugin: 'ssh', options: { ssh: 'laptop', retainCancelledHours: -1 } }))).not.toBe('accepted');
+  });
 });
 
 describe('targetOf: an instance as the attached machine it names', () => {
