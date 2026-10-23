@@ -27,7 +27,7 @@ import { builtinInstances } from './builtin-instances.ts';
 import { buildNotifier, notifierStatus, runNotifierAction, startNotifier, stopNotifiers } from './notifier-slot.ts';
 import { NO_SOURCE_CONTEXT, applyJobSourceSpecs, applyMachineSpecs, applyUsageSpecs, applyVaultBackendSpecs, configuredBackend, followSpecs, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
 import { targetOf } from './machine-source/targets.ts';
-import { createTargetPool } from '../machines/index.ts';
+import { createTargetPool } from '../machines/index.ts'; import { withDiskDefaults } from '../machines/disk-defaults.ts';
 import { buildQueueSorter, createLiveQueueSorter, type LiveQueueSorter } from './queue-sorter-slot.ts';
 import { buildLevel, levelStatus, type BuiltLevel } from './level-slot.ts';
 import { buildRouter, createLiveRouter, detectRouter, safeDetect, type BuiltRouter, type LiveRouter, type SlotDeps } from './router-slot.ts';
@@ -186,7 +186,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
 
   /** The machines as last listed (the engine lists them every tick): whether a level's machine is online, for Settings (issue #482). */
   let lastListed: MachineSnapshot[] | undefined;
-  const liveMachines: MachineSource = { list: async () => (lastListed = (await Promise.all((machines.built ?? []).map((b) => b.instance?.list() ?? []))).flat()) };
+  const liveMachines: MachineSource = { list: async () => { const listed = (await Promise.all((machines.built ?? []).map((b) => b.instance?.list() ?? []))).flat(), d = o.diskDefaults?.(); return (lastListed = d ? listed.map((m) => withDiskDefaults(m, d)) : listed); } }; // the disk defaults (issue #2494)
   /** The attached machines the configured instances name, those whose options are valid. */
   const targets = (): AttachedMachine[] => (configured?.machines ?? []).flatMap((spec) => {
     try { return targetOf(spec) ?? []; } catch { return []; }

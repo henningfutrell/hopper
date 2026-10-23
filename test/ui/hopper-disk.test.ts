@@ -1,6 +1,7 @@
 // The hopper's own disk use on a Machines card, and the disk budget an admin sets (issue #1120): the model, pure.
 import { describe, expect, it } from 'vitest';
 import { budgetBody, budgetDraft, cachesText, cleanupLeftoversText, hopperDiskText, jobsDiskText, storageText } from '../../ui/src/model/hopper-disk.ts';
+import { diskDefaultsBody, diskDefaultsDraft } from '../../ui/src/model/disk-defaults.ts';
 
 const GB = 1e9;
 const at = '2026-10-14T10:00:00.000Z';
@@ -70,5 +71,25 @@ describe('jobsDiskText (issue #2494)', () => {
   it('says nothing when no job was measured', () => {
     expect(jobsDiskText(undefined)).toBeUndefined();
     expect(jobsDiskText([])).toBeUndefined();
+  });
+});
+
+describe('the disk defaults form', () => {
+  it('sends only the fields filled, in the API\'s shape; none filled clears them', () => {
+    expect(diskDefaultsBody({})).toEqual({ defaults: null });
+    expect(diskDefaultsBody({ diskLowBelowPercent: ' 15 ', retainFailedHours: '48', pruneAfterDays: '7', cacheCapNpmGiB: '5', trimAboveGiB: '' })).toEqual({
+      defaults: { diskLow: { belowPercent: 15 }, sweep: { retainHours: { failed: 48 }, pruneAfterDays: 7, cacheCapsGiB: { npm: 5 } } },
+    });
+  });
+
+  it('refuses a field that is not a number', () => {
+    expect(diskDefaultsBody({ pruneAfterDays: 'weekly' })).toBe('Days before the storage prune must be a number, or empty for no default');
+  });
+
+  it('fills the form from the defaults set, each field empty that has none', () => {
+    const d = { diskLow: { criticalBelowGiB: 2 }, sweep: { everyMinutes: 30, retainHours: { cancelled: 0 }, cacheCapsGiB: { go: 10 } } };
+    expect(diskDefaultsDraft(d)).toEqual({ diskCriticalBelowGiB: '2', reapEveryMinutes: '30', retainCancelledHours: '0', cacheCapGoGiB: '10' });
+    expect(diskDefaultsDraft(null)).toEqual({});
+    expect(diskDefaultsBody(diskDefaultsDraft(d))).toEqual({ defaults: d });
   });
 });

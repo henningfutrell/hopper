@@ -374,7 +374,7 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
    * The disk its home is on, as last read (issue #401); `low` by its thresholds, and then it takes no new job (issue #410).
    * `critical` (issue #2494) by its critical thresholds: it takes no job at all, a job back to its pane included. Absent: not read (a container target, a client older than this).
    */
-  disk?: { freeBytes: number; totalBytes: number; low: boolean; critical?: true };
+  disk?: { freeBytes: number; totalBytes: number; low: boolean; critical?: true }; diskThresholds?: import('./machines.ts').DiskThresholds; // diskThresholds: its own (issue #2494), the options it sets; the disk defaults fill in the rest (src/machines/disk-defaults.ts)
   /** Its CPU, memory and swap, as last read (issue #560): this machine at every list, an ssh target in its probe, a client target by its client. Absent: not read (a container target, a client older than this, offline). */
   resources?: ResourceReading;
   /**
@@ -556,7 +556,7 @@ export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, typ
 export type * from './routing.ts';
 export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, SignedOutTool, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, UsageThrottle, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
 export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettings } from './header-badges.ts';
-export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts';
+export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts'; export * from './disk-defaults.ts'; export type { CacheCaps, CappedKind } from './cache-caps.ts'; export type { DiskThresholds, EndStatus, SweepSettings } from './machines.ts';
 export * from './stack-resources.ts'; export * from './telemetry-summary.ts';
 export * from './lane-tuning.ts'; export type { GraphNode, LinkKind, NodeKind, SourceView, TopologyGraph, TopologyLink } from './topology.ts';
 export type { CleanupDue, DeciderPolicy, ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView }; export type { AutoApproveRule, IntakeAutoApproval } from './intake-auto-approve.ts'; export type { DeclineChoice, IntakeDeclineDefaults } from './intake-decline.ts'; export type { IntakeStrictness, Strictness } from './intake-strictness.ts'; export type { SandboxStrictness, SandboxStrictnessLevel } from './sandbox-strictness.ts';

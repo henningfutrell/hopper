@@ -16,7 +16,7 @@ import type { MachineDrains } from './machines.ts';
 import type { SandboxHost } from './sandbox-host.ts';
 import type { CloudLinkSettings, CloudRegistrationCode } from './cloud-link.ts';
 import type { TelemetrySettings } from './telemetry-settings.ts';
-import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
+import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { DiskDefaults } from './disk-defaults.ts'; import type { HeaderBadgeSettings } from './header-badges.ts';
 import type {
   AutoAnswerSettings, PreemptionSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
   PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, ShrinkGuardSettings, LandingBatchSettings,
@@ -54,6 +54,9 @@ export interface UserSettingsRepository {
   /** The disk budget (issue #1120); absent: none, or never set. */
   getDiskBudget(): DiskBudget | undefined;
   setDiskBudget(budget: DiskBudget | null): void;
+  /** The disk defaults (issue #2494): what every machine takes where its own options are silent; absent: none, or never set. */
+  getDiskDefaults(): DiskDefaults | undefined;
+  setDiskDefaults(defaults: DiskDefaults | null): void;
   /** The usage limits the user set (issue #522); absent: never set, the defaults apply. */
   getUsageLimits(): UsageLimitPair | undefined;
   setUsageLimits(limits: UsageLimitPair): void;
