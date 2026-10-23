@@ -1,1 +1,0 @@
-- When a job runs again after a failure, it keeps the sandbox approvals a person gave the earlier job, so nobody has to approve the same access twice.

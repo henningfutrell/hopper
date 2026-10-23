@@ -69,12 +69,6 @@ export const NO_PERSON: readonly string[] = ['the read policy', SKIP_TEMPLATE_AP
  */
 export const templateApprovalBy = (person: string): string => `the template's approval by ${person}`;
 
-/**
- * Who approves a rerun's run of a template that a person approved for the job it runs again (issue #2639 part 2): that
- * approval, which names the person on that job's timeline.
- */
-export const carriedApprovalBy = (jobId: string): string => `the approval of job ${jobId}, which it runs again`;
-
 /** Sandbox YOLO: both toggles on. Nobody has to do anything. */
 export const sandboxYolo = (a: SandboxApprovals): boolean => a.skipTemplateApproval && a.skipSandboxApproval;
 

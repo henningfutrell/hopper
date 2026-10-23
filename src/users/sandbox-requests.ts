@@ -3,7 +3,6 @@
 // approval (issue #1001). Approved, the job's box steps run, each in a sandbox of its own (issue #1349). Issue #1471: a
 // job's requests are kept from before it starts — the sandboxes its prompt names are asked for then — until it ends.
 import { jobBrake } from '../domain/intake-strictness.ts';
-import { earlierRuns } from '../domain/rerun-chain.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
 import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
 import { DEFAULT_SANDBOX_STRICTNESS } from '../domain/sandbox-strictness.ts';
@@ -103,8 +102,6 @@ export function userSandboxRequests(o: {
     strictness: () => store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, // issue #655 part 8, brake 2
     jobTitle: (id) => { const j = store.jobs.get(id); return j?.source?.title ?? j?.spec.goal; },
     jobUrl: (id) => store.jobs.get(id)?.source?.url,
-    // Issue #2639 part 2: a person's approval of a run carries to the jobs that run its job again.
-    earlier: (id) => earlierRuns(id, (x) => store.jobs.get(x)),
     // Issue #1001: a person's remembered write approvals, and the read policy for the reads beside them.
     remembered: () => liveWrites(store.settings.getRememberedWrites(), rememberHoursOf(store.settings.getSandboxApprovals()), o.clock.now()),
     policy: () => store.settings.getReadPolicy(),
