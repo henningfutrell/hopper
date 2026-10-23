@@ -29,10 +29,13 @@ LABEL org.opencontainers.image.title=hopper
 # installer. No gh: GitHub is read through the signed-in user's connected account (issue #359), and jobs
 # run on attached machines.
 # tinyproxy (issue #849): the compose service `egress` runs the hopper's image with it, the allowlisting proxy of the
-# read-only boxes; the daemon never runs it. /run/hopper-egress: where the hopper and that service share the allowlist,
+# read-only boxes; the daemon never runs it.
+# tini (issue #2623): the container's PID 1, which waits on every orphan. A child's child that outlives it (ssh's
+# connection master, git's detached gc, an agent CLI's helper) is given to PID 1 when its parent ends; Node waits only on
+# the children it started itself, so with the daemon as PID 1 each one stayed a zombie for the daemon's life. /run/hopper-egress: where the hopper and that service share the allowlist,
 # the node user's, so the volume mounted there is too.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml python3-pip tinyproxy \
+ && apt-get install -y --no-install-recommends ca-certificates curl git openssh-client python3 python3-yaml python3-pip tini tinyproxy \
  && rm -rf /var/lib/apt/lists/* \
  && install -d -o node -g node /run/hopper-egress
 # typesafe-sdk: Jev through TypeSafe, for the decider calls and the gate router's Jev gates. Used only once a
@@ -91,10 +94,15 @@ ENV NODE_ENV=production \
     HOPPER_LOCAL_MACHINE=false \
     HOPPER_PORT=4790 \
     HOPPER_HEALTH_PORT=4791 \
-    HOPPER_WORK_DIR=/tmp/hopper
+    HOPPER_WORK_DIR=/tmp/hopper \
+    HOPPER_RESTART=exit
 EXPOSE 4790
 # Loopback inside the container, on the daemon's port: a local request, no session needed. The health port (4791,
 # loopback in the container, not published) answers while the event loop is held, and says how long (issue #1383).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD node -e "fetch('http://127.0.0.1:' + (process.env.HOPPER_PORT || 4790) + '/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+# tini first (issue #2623), as a subreaper (-s) too, so it also takes the orphans under a runtime's own init (--init). It
+# passes each signal to the daemon and exits with its code. The daemon is not PID 1, so the image says how it restarts
+# after an update (HOPPER_RESTART=exit above): the container's restart policy starts it again.
+ENTRYPOINT ["/usr/bin/tini", "-s", "--"]
 CMD ["node", "src/main.ts"]
