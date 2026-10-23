@@ -22,6 +22,14 @@ describe('the sweep and the resource ledger (issue #2504)', () => {
     expect(r.ledger[0]).toMatchObject({ state: 'failed', reason: '/w/.worktrees/@scratch/done is still there' });
   });
 
+  it('closes the job\'s container runtime with its scratch dir, and leaves it live when the reap stopped only the scope (part 4)', async () => {
+    const runtime = '/w/.worktrees/@scratch/done/containers';
+    const r = rig({ found: { ...none, scratch: [{ jobId: 'done', path: '/w/.worktrees/@scratch/done', ageMs: 25 * HOUR }], scopes: ['old'] },
+      ledger: [entry('done', 'container_runtime', runtime), entry('old', 'container_runtime', '/w/.worktrees/@scratch/old/containers')] });
+    await r.sweep.run(true);
+    expect(r.ledger.map((e) => [e.jobId, e.kind, e.state])).toEqual([['done', 'container_runtime', 'reaped'], ['old', 'container_runtime', 'live']]);
+  });
+
   it('closes only the scope when the reap did not look at the scratch dir', async () => {
     const r = rig({ found: { ...none, scopes: ['old'] }, ledger: [entry('old', 'scratch_dir', '/w/.worktrees/@scratch/old'), entry('old', 'job_scope', 'hopper-job-old.scope')] });
     await r.sweep.run(true);
