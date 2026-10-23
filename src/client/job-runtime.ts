@@ -90,6 +90,8 @@ const GUARD = [
   `if [ "$k" -gt 0 ] && [ -n "$jid" ]; then i=0; for a in "$@"; do i=$((i+1)); shift; set -- "$@" "$a"; [ "$i" -eq "$k" ] && set -- "$@" --label "${JOB_LABEL}=$jid"; done; fi;`,
   'r=; o=$IFS; IFS=:; for p in $PATH; do [ -n "$p" ] && [ -x "$p/$n" ] && ! [ "$p/$n" -ef "$0" ] && { r=$p/$n; break; }; done; IFS=$o;',
   '[ -n "$r" ] || { printf "hopper: %s: not found\\n" "$n" >&2; exit 127; };',
+  // An image build is a heavy step (issue #2622 part 3): it runs through the job's gate, as the heavy shims' commands do.
+  'case $w in build|buildx) [ -z "${HOPPER_HEAVY_HELD:-}" ] && [ -r "${HOPPER_HEAVY:-}" ] && exec sh "$HOPPER_HEAVY" "$r" "$@";; esac;',
   'exec "$r" "$@"',
 ].map((l) => l.trim()).join(' ');
 
@@ -108,12 +110,14 @@ const SYSTEMD_RUN = [
   'exec "$r" "$@"',
 ].map((l) => l.trim()).join(' ');
 
-// $1 the job's scratch dir, $2 the guard: the guards podman and docker written in its containers dir. Prints written or
-// failed. A step of its own, typed before the setup (issue #2234): with the guard in it, the setup did not fit a terminal line.
+// $1 the job's scratch dir, $2 the guard: the guards podman and docker written in its containers dir; $3 a heavy step's
+// shim and $4 the names it is written as, beside them (issue #2622 part 3), when given. Prints written or failed. A step of
+// its own, typed before the setup (issue #2234): with the guard in it, the setup did not fit a terminal line.
 const GUARDS_SCRIPT = [
   'c=$1/' + RUNTIME_SUBDIR + ';',
   `mkdir -p "$c/bin" || { echo failed; exit 0; };`,
   'for n in podman docker; do { printf "#!/bin/sh\\n%s\\n" "$2" > "$c/bin/$n" && chmod 755 "$c/bin/$n"; } || { echo failed; exit 0; }; done;',
+  'if [ -n "$3" ]; then for n in $4; do { printf "#!/bin/sh\\n%s\\n" "$3" > "$c/bin/$n" && chmod 755 "$c/bin/$n"; } || { echo failed; exit 0; }; done; fi;',
   'echo written',
 ].map((l) => l.trim()).join(' ');
 
@@ -179,9 +183,13 @@ export const runtimeEnvOf = (scratch: string): string => `${scratch}/${RUNTIME_S
  * so the command's own echo never reads as it. The first of the two steps a pane's shell is given (issue #2234): each one
  * fits a terminal line.
  */
-export function guardsCommand(scratch: string): string {
-  return `o=$(sh -c ${shq(GUARDS_SCRIPT)} hopper-guards ${shq(scratch)} ${shq(GUARD)}); printf 'hopper-guards-%s\\n' "\${o:-failed}"`;
+export function guardsCommand(scratch: string, heavy?: HeavyShims): string {
+  const shims = heavy ? ` ${shq(heavy.shim)} ${shq(heavy.names.join(' '))}` : '';
+  return `o=$(sh -c ${shq(GUARDS_SCRIPT)} hopper-guards ${shq(scratch)} ${shq(GUARD)}${shims}); printf 'hopper-guards-%s\\n' "\${o:-failed}"`;
 }
+
+/** A heavy step's shim and the command names it is written as (issue #2622 part 3, src/domain/heavy-steps.ts `HEAVY_SHIMS`). */
+export interface HeavyShims { shim: string; names: readonly string[] }
 
 /**
  * The command that sets the job's runtime up and puts it in the shell's environment, then prints its outcome as two words,
@@ -195,8 +203,8 @@ export function setupCommand(jobId: string, scratch: string, service: boolean): 
 }
 
 /** Both steps in one, for a shell that runs a script rather than lines typed into a terminal (a print-agent turn). */
-export const runtimeCommand = (jobId: string, scratch: string, service: boolean): string =>
-  `${guardsCommand(scratch)} >/dev/null; ${setupCommand(jobId, scratch, service)}`;
+export const runtimeCommand = (jobId: string, scratch: string, service: boolean, heavy?: HeavyShims): string =>
+  `${guardsCommand(scratch, heavy)} >/dev/null; ${setupCommand(jobId, scratch, service)}`;
 
 /** The argv that runs both steps outside a shell's own environment, for a test. */
 export const runtimeSetupArgv = (jobId: string, scratch: string, service: boolean): string[] =>

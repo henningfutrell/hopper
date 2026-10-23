@@ -87,7 +87,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   work, answers its branch's base, which of the requirements of its commit apply, and judges and records the job's own
   evaluation of them (`push_requirements.evaluated`, never a check's output); the checks run on the job's machine, never on the
   hopper's. The git proxy takes a push of a commit that holds a requirements file only after a passing evaluation of it; it
-  changes no job, question, webhook or setting. A running job's
+  changes no job, question, webhook or setting. A running job's heavy steps (issue #2622,
+  `docs/design.md` "The heavy-step gate"): `POST /job/heavy`, with the job's proxy token, only while it is at work, takes,
+  renews and lets go a slot of its host's memory for a heavy step, kept in memory; it changes and records nothing. A running job's
   park (issue #2167, `docs/design.md` "Parking a proposal or a research report"): `GET`/`POST /job/park`, with the job's proxy token, only
   while it is at work, lists its user's open proposals and research reports, and parks one whose job waits on it or picks up one a job
   parked — never a running job, never itself, never an item a person parked —, kept as `job <its id>`, `via` `job`; it decides no item and

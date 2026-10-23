@@ -25,6 +25,7 @@ import type { ConnectedAccounts, PluginsView, QuestionService, ReviewServices, S
 import type { Identity, SessionKind, UiRole, User } from '../domain/types.ts';
 import type { Access } from '../authz/service.ts';
 import type { Engine } from '../engine/index.ts';
+import type { HeavyGate } from '../engine/heavy-gate.ts';
 import type { Failures } from '../failures/index.ts';
 import type { Logins, SignIns } from '../logins/index.ts';
 import type { JobTerminal } from '../engine/terminal.ts';
@@ -122,6 +123,8 @@ export interface TenantParts {
   search: UserSearch;
   /** The boxes the user's jobs ask for (issue #991). */
   sandboxRequests: SandboxRequests;
+  /** The heavy-step gate (issue #2622 part 3): the slots of the hosts' memory the user's jobs' heavy steps run in. */
+  heavyGate: HeavyGate;
 }
 
 /** The users and their running parts. */

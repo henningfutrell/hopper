@@ -26,6 +26,7 @@ import { shellQuote, type SshAuth } from './ssh.ts';
 import { hideCodes } from '../logins/recognise.ts';
 import { watchRunOutput } from '../logins/run-output.ts';
 import { lastTaskCount } from '../domain/task-count.ts';
+import { HEAVY_SHIMS } from '../domain/heavy-steps.ts';
 
 /** The answer's tail kept for whoever answers a question. */
 const OUTPUT_CAP = 16000;
@@ -104,7 +105,7 @@ export function turnCommand(jobId: string, run: string, limits?: JobLimits): str
  */
 export function isolatedTurn(jobId: string, scratch: string, run: string): string {
   const fail = (what: string): string => `{ printf '%s\\n' ${shellQuote(`hopper: the job ${what} could not be set up`)} >&2; exit 125; }`;
-  return `{ ${runtimeCommand(jobId, scratch, false)}; } >/dev/null 2>&1; [ -r ${shellQuote(runtimeEnvOf(scratch))} ] || ${fail('container runtime')}; `
+  return `{ ${runtimeCommand(jobId, scratch, false, HEAVY_SHIMS)}; } >/dev/null 2>&1; [ -r ${shellQuote(runtimeEnvOf(scratch))} ] || ${fail('container runtime')}; `
     + `case $( { ${sandboxCommand(scratch)}; } 2>/dev/null) in *hopper-sandbox-on) w=${shellQuote(`${scratch}/${SANDBOX_SUBDIR}/run`)};; *hopper-sandbox-none) w=;; *) ${fail('sandbox')};; esac; `
     + `${turnServiceCommand(jobId, scratch)} \${w:+"$w"} ${run}; r=$?; [ -n "$sp" ] && { kill "$sp"; wait "$sp"; } 2>/dev/null; exit $r`;
 }
