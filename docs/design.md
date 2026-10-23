@@ -13137,6 +13137,8 @@ never a hold, read from a machine reading taken before the burst took its memory
   `b: memory for 5 more jobs (10.6 GiB over its floor of 1.4 GiB)`. A machine with free lanes, a waiting job and no memory
   room says so on its lane plan: `memory holds no more job: 3 GiB available, and a new job needs 2 GiB over its floor of
   1.4 GiB`. The lane cap itself stays as configured: a lane cap below its busy lanes would drain them.
+  The lane recommendation ("Lane tuning") is never more than the jobs the machine's memory holds in all (its **memory
+  lanes**), so an admin who applies it gets a lane cap that the memory holds.
 - **The memory pause** (step 7c, `memoryPauses`). An online machine whose memory available is below the floor itself
   pauses the running job that started there last: its executor parks (`parkingExecutors`, now an input of every
   Decision, whatever the preemption setting), it has an agent session, and no preemption names it. One per machine every
@@ -17090,7 +17092,15 @@ the usage limits the decider uses (`policyOf`).
 Below the soft limit by more than 10% (`free`), the recommendation is the headroom. Within 10% of the soft limit
 (`near`), past it (`soft`) or at the hard limit (`hard`), it is never more than the configured lanes: the decider's
 lane cap already scales the lanes down from there, so the recommendation adds none, and high-priority work keeps its
-lanes (issue #535). Then it is kept within the machine's bounds. Auto-tune off, the machine offline, or no headroom yet
+lanes (issue #535). It is never more than the machine's **memory lanes** (issue #2499, `memoryLaneCaps` in
+`src/decider/memory-floor.ts`): its memory total less its memory floor ("The memory floor"), divided by a job's memory;
+on a host pool, the lower of that and the kernel's memory less the pool's floor and a job's memory for each configured
+lane of the pool's other machines. 9 lanes of 2 GiB each did not fit a 14 GiB VM, and a lane count that history showed
+free of pressure said nothing of it. The reason then ends `; its memory holds 3 jobs: 8 GiB less its floor of 1 GiB, at
+2 GiB a job: no more than 3 lanes`, or `; its host (shared with b) holds 4 jobs: 14 GiB less its floor of 1.4 GiB and
+4 GiB for the 2 lanes of b, at 2 GiB a job: …`. It reads the memory total, not the memory available, so the
+recommendation does not move with each reading; a machine with no memory reading, or a floor of 0, has none. Then it is
+kept within the machine's bounds. Auto-tune off, the machine offline, or no headroom yet
 (not enough history): the configured lanes, confidence 0. **Confidence** is the samples the headroom stands on per hour
 (60 samples: 1).
 

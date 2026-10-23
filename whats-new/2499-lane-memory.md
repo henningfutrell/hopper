@@ -1,0 +1,1 @@
+- The recommended lanes for a machine are now never more than its memory can hold, also when machines share one host.
