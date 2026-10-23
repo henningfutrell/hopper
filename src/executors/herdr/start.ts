@@ -19,6 +19,7 @@ import { scopeUnitOf } from '../../client/reap.ts';
 import { enterRuntime, enterSandbox } from './start-isolation.ts';
 import { restoreCheckpoint } from './restore.ts';
 import { windowsShellOf } from './windows-shell.ts';
+import { buildDefaultsEnv } from '../../domain/build-defaults.ts';
 import { jobScratchOf, worktreesOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
 import { seedClaudeConfig, settleStartup } from './startup.ts';
@@ -189,12 +190,8 @@ export const jobTmpOf = (jobId: string): string => `/tmp/hopper-${jobId}`;
  */
 export const JOB_TOOL_ENV: Readonly<Record<string, string>> = { CHECKPOINT_DISABLE: '1' };
 
-/** Gradle's daemon idle timeout in a job (issue #2489): 5 minutes, not Gradle's 3 hours, so it ends soon after its build. */
-export const GRADLE_IDLE_OPT = '-Dorg.gradle.daemon.idletimeout=300000';
-
-/** JOB_TOOL_ENV and GRADLE_OPTS: the payload's own GRADLE_OPTS (`env`), then Gradle's idle timeout, which wins. */
-export const jobToolEnv = (env: Readonly<Record<string, string>> = {}): Record<string, string> =>
-  ({ ...JOB_TOOL_ENV, GRADLE_OPTS: env.GRADLE_OPTS ? `${env.GRADLE_OPTS} ${GRADLE_IDLE_OPT}` : GRADLE_IDLE_OPT });
+/** JOB_TOOL_ENV and the build defaults (issue #2622, src/domain/build-defaults.ts) with Gradle's idle timeout (issue #2489). */
+export const jobToolEnv = (env: Readonly<Record<string, string>> = {}): Record<string, string> => ({ ...JOB_TOOL_ENV, ...buildDefaultsEnv(env) });
 
 /** Points the job's temp link at its scratch dir; fails when the link there is not that. */
 export const linkTmpCommand = (scratch: string, jobId: string): string => {
@@ -233,7 +230,7 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
     // which takes longer than its two minutes.
     // Unattended (issue #533), Claude never updates itself in a job's pane, so no update notice stands in its way.
     // JOB_TOOL_ENV (issue #1502): terraform's version check off, so it writes nothing into the machine's home; Gradle's
-    // daemon idles 5 minutes at most (issue #2489).
+    // daemon idles 5 minutes at most (issue #2489); Gradle, Kotlin and Maven get capped build defaults (issue #2622).
     env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', ...jobToolEnv(env), ...(d.unattended ? { DISABLE_AUTOUPDATER: '1' } : {}) },
   });
   const state: PaneState = {
