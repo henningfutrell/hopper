@@ -24,7 +24,8 @@
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
 // runs. A partly done item whose merged part made every declared part done (`lastPartMerged`, part 35) carries `hopper:done`:
 // the follow put it on with that merge. The follow is that of the job that recorded the merge, also an older job's (part 37). An item that needs a person carries
-// none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
+// `hopper:needs-decision` while its job waits on a person's decision — a question, a proposal or a research report, parked by
+// itself there or not (issue #2693) —, and none while it waits on a pick-up of its parked job: no report wrote one.
 // A hand-off (`HANDOFF_WAIT`) carries `hopper:failed` once its job's failure was reported as failed (`failureReported`), as a
 // failed item does: its job failed, and the hand-off waits on a person; before, the labels decide. A request card (waiting for
 // approval) carries none: it has no job yet, and no report wrote one. An end label a person puts on a card by hand is their
@@ -42,9 +43,9 @@
 // carries then is not certain. Every other state is not judged.
 // Pure: no I/O, no clock.
 import { RECONCILE_GRACE_MS, type BlockedCause } from '../../domain/item-lifecycle.ts';
-import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
+import { DECISION_WAITS, HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
 import { DELIBERATE_CANCELS, type Job } from '../../domain/types.ts';
-import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED } from './labels.ts';
+import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_NEEDS_DECISION, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED } from './labels.ts';
 
 /** The end labels an item's state allows, and the one to add when none of them is on (absent: none is needed). */
 export interface WantedLabels { allowed: readonly string[]; add?: string }
@@ -132,6 +133,7 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
     case 'partly_done': return item.eventState !== 'partly_done' ? undefined : facts.partsLeft ? { allowed: [] } : facts.lastPartMerged ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
     case 'needs_you':
       if (item.waitingOn === HANDOFF_WAIT) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
+      if (DECISION_WAITS.includes(item.waitingOn ?? '')) return { allowed: [LABEL_NEEDS_DECISION], add: LABEL_NEEDS_DECISION };
       return item.waitingOn !== undefined ? { allowed: [] } : undefined;
     case 'dropped': {
       if (item.eventState !== 'dropped') return undefined;
@@ -263,7 +265,8 @@ export const driftWords = (item: LabelledItem, d: LabelDrift): string =>
  */
 export function labelTakenOff(item: LabelledItem, before: readonly string[], now: readonly string[], facts: LabelFacts = {}): string | undefined {
   const want = labelsFor(item, facts);
-  if (want?.add === undefined || now.some((l) => want.allowed.includes(l))) return undefined;
+  // The decision label (issue #2693) says only what the job waits on: taken off, it asks for nothing.
+  if (want?.add === undefined || want.add === LABEL_NEEDS_DECISION || now.some((l) => want.allowed.includes(l))) return undefined;
   return before.find((l) => want.allowed.includes(l));
 }
 

@@ -139,12 +139,12 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelsFor({ state: 'partly_done', eventState: 'failed' }, { lastPartMerged: true })).toBeUndefined();
   });
 
-  it('needs you (issue #1892): no end label while its job waits on a person; a hand-off is not judged', () => {
-    expect(labelsFor({ state: 'needs_you', waitingOn: 'a question' })).toEqual({ allowed: [] });
+  it('needs you (issue #1892): no end label while its job waits on a pick up; the decision label on a decision (issue #2693); a hand-off is not judged', () => {
+    expect(labelsFor({ state: 'needs_you', waitingOn: 'a question' })).toEqual({ allowed: ['hopper:needs-decision'], add: 'hopper:needs-decision' });
     expect(labelsFor({ state: 'needs_you', waitingOn: 'a person to pick up the parked job' })).toEqual({ allowed: [] });
     expect(labelsFor({ state: 'needs_you', waitingOn: HANDOFF_WAIT })).toBeUndefined();
     expect(labelsFor({ state: 'needs_you' })).toBeUndefined();
-    expect(labelDrift({ state: 'needs_you', waitingOn: 'a research report' }, ['hopper', 'hopper:claimed', 'hopper:pr-ready'])).toEqual({ remove: ['hopper:pr-ready'], add: [] });
+    expect(labelDrift({ state: 'needs_you', waitingOn: 'a research report' }, ['hopper', 'hopper:claimed', 'hopper:pr-ready'])).toEqual({ remove: ['hopper:pr-ready'], add: ['hopper:needs-decision'] });
     expect(labelTakenOff({ state: 'needs_you', waitingOn: 'a question' }, ['hopper', 'hopper:pr-ready'], ['hopper'])).toBeUndefined();
   });
 

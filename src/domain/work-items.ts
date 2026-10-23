@@ -30,6 +30,8 @@ export type WorkItemState = typeof WORK_ITEM_STATES[number];
 
 /** What an item handed to a person on its failure waits on: Needs a person's count. */
 export const HANDOFF_WAIT = 'a hand-off';
+/** What an item waits on while its job waits on a person's decision (issue #2693): its question, proposal or research report. */
+export const DECISION_WAITS: readonly string[] = ['a question', 'a proposal', 'a research report'];
 /** What an item whose job the hopper parked to move it off its machine waits on (issue #1892): the move's pick up. */
 export const MOVE_WAIT = 'a move to another machine';
 
@@ -299,7 +301,8 @@ export function applyEvent(item: WorkItem | undefined, event: Pick<DomainEvent, 
     case 'job.unparked':
       return d.to === 'waiting_answer' ? move('needs_you', { waitingOn: 'a question' }) : move('queued', { waitingOn: undefined });
     // Parked to move it off its machine (issue #1892): no person holds it; the move picks it up elsewhere.
-    case 'job.parked': return typeof d.move === 'string' ? move('queued', { waitingOn: MOVE_WAIT }) : move('needs_you', { waitingOn: 'a person to pick up the parked job' });
+    // Parked by itself at a person (issue #2693): it still waits on the decision.
+    case 'job.parked': return typeof d.move === 'string' ? move('queued', { waitingOn: MOVE_WAIT }) : move('needs_you', { waitingOn: d.auto === true && DECISION_WAITS.includes(base.waitingOn ?? '') ? base.waitingOn : 'a person to pick up the parked job' });
     case 'job.waiting': {
       const what = typeof d.for === 'string' ? d.for : 'something outside';
       return d.ownCommand === true ? move('working', { waitingOn: what }) : move('waiting_outside', { waitingOn: what });
