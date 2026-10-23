@@ -12,11 +12,12 @@ const entry = (kind: LedgerEntry['kind'], locator: string, over: Partial<LedgerE
   ({ jobId: 'j1', machineId: 'm1', kind, locator, createdAt: AT, state: 'live', ...over });
 
 describe('ledgerEntriesOf', () => {
-  it('names the scratch dir of the work tree, the job worktree and the job scope', () => {
+  it('names the scratch dir of the work tree, the job worktree, the job scope and the herdr pane (part 13)', () => {
     expect(ledgerEntriesOf('j1', 'm1', { cwd: '/w', jobWorktree: TREE, scope: 'hopper-job-j1.scope', paneId: 'p' }, AT)).toEqual([
       { jobId: 'j1', machineId: 'm1', kind: 'scratch_dir', locator: SCRATCH, createdAt: AT },
       { jobId: 'j1', machineId: 'm1', kind: 'job_worktree', locator: TREE, createdAt: AT },
       { jobId: 'j1', machineId: 'm1', kind: 'job_scope', locator: 'hopper-job-j1.scope', createdAt: AT },
+      { jobId: 'j1', machineId: 'm1', kind: 'herdr_pane', locator: 'p', createdAt: AT },
     ]);
   });
 

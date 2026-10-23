@@ -1,5 +1,5 @@
 // A job's resource ledger (issue #2504, design.md "The resource ledger"): each thing the hopper made for a job on a machine —
-// its scratch dir, its job worktree, its job scope, its own container runtime, its processes and its labelled containers, its agent's session —, recorded once the job's executor says it made it, and closed by the
+// its scratch dir, its job worktree, its job scope, its own container runtime, its processes and its labelled containers, its agent's session, its herdr pane —, recorded once the job's executor says it made it, and closed by the
 // job's cleanup or by the sweep as each reap says: reaped, kept (work not pushed), or failed with why. A job's **cleanup
 // status** is read from its entries and its cleanup record. Pure: no I/O, no clock — `at` is passed in.
 import type { BomPart, BomStatus } from './job-bom.ts';
@@ -11,7 +11,7 @@ import type { Reaped, Survey } from './machine-shell.ts';
 import { TERMINAL_STATUSES, type Job } from './types.ts';
 
 /** What a ledger entry is. */
-export const LEDGER_KINDS = ['scratch_dir', 'job_worktree', 'job_scope', 'container_runtime', 'job_processes', 'job_containers', 'agent_session'] as const;
+export const LEDGER_KINDS = ['scratch_dir', 'job_worktree', 'job_scope', 'container_runtime', 'job_processes', 'job_containers', 'agent_session', 'herdr_pane'] as const;
 export type LedgerKind = typeof LEDGER_KINDS[number];
 
 /**
@@ -65,10 +65,11 @@ export type CleanupStatus = typeof CLEANUP_STATUSES[number];
 
 /**
  * The entries an executor's saved state names (`cwd`, `jobWorktree`, `scope`, `containerRuntime`: the job's own container
- * runtime's dir in its scratch dir, issue #1295, with its containers, volumes and storage), on machine `machineId`.
+ * runtime's dir in its scratch dir, issue #1295, with its containers, volumes and storage; `paneId`: its herdr pane, issue
+ * #2504 part 13), on machine `machineId`.
  */
 export function ledgerEntriesOf(jobId: string, machineId: string, state: unknown, at: string): NewLedgerEntry[] {
-  const s = (state ?? {}) as { cwd?: unknown; jobWorktree?: unknown; scope?: unknown; containerRuntime?: unknown };
+  const s = (state ?? {}) as { cwd?: unknown; jobWorktree?: unknown; scope?: unknown; containerRuntime?: unknown; paneId?: unknown };
   const path = (v: unknown): v is string => typeof v === 'string' && v.startsWith('/');
   const out: NewLedgerEntry[] = [];
   const add = (kind: LedgerKind, locator: string): void => { out.push({ jobId, machineId, kind, locator, createdAt: at }); };
@@ -76,6 +77,7 @@ export function ledgerEntriesOf(jobId: string, machineId: string, state: unknown
   if (path(s.jobWorktree)) add('job_worktree', s.jobWorktree);
   if (typeof s.scope === 'string' && s.scope) add('job_scope', s.scope);
   if (path(s.containerRuntime)) add('container_runtime', s.containerRuntime);
+  if (typeof s.paneId === 'string' && s.paneId) add('herdr_pane', s.paneId);
   return out;
 }
 
@@ -92,6 +94,24 @@ export const agentSessionEntryOf = (jobId: string, machineId: string, session: s
 /** The kinds a reap always stops, whatever it does with the scratch dir: the scope, the processes and the agent (part 11) among them. */
 const stopped = (kind: LedgerKind): boolean => kind === 'job_scope' || kind === 'job_processes' || kind === 'agent_session';
 
+/**
+ * Why a herdr pane entry (issue #2504 part 13) failed: the cleanup reaped through the machine (issue #2490), not through the
+ * job's executor, which alone closes its pane.
+ */
+export const PANE_NOT_REACHED = 'the cleanup did not reach its herdr, so the pane may still be open';
+/** Why a herdr pane entry was closed when a person marked the job's deferred cleanup done: they closed it by hand. */
+export const PANE_CLOSED_BY_HAND = 'a person marked the cleanup done: closed by hand';
+
+/**
+ * The closures of the job's herdr pane entries (part 13) not yet `reaped`: `closed` by the cleanup through the job's executor
+ * — it closed the pane, and each pane the job had before was closed when the job left it —, `not_reached` when the cleanup
+ * reaped only through the machine, or closed `by_hand` as a person said. No reap closes one: the sweep closes no pane.
+ */
+export function paneClosures(entries: readonly LedgerEntry[], how: 'closed' | 'not_reached' | 'by_hand'): { entry: LedgerEntry; state: 'reaped' | 'failed'; reason?: string }[] {
+  const to = how === 'not_reached' ? { state: 'failed' as const, reason: PANE_NOT_REACHED } : { state: 'reaped' as const, ...(how === 'by_hand' ? { reason: PANE_CLOSED_BY_HAND } : {}) };
+  return entries.filter((e) => e.kind === 'herdr_pane' && e.state !== 'reaped' && (e.state !== to.state || e.reason !== to.reason)).map((entry) => ({ entry, ...to }));
+}
+
 const within = (path: string, dir: string): boolean => path === dir || path.startsWith(`${dir}/`);
 
 /**
@@ -99,10 +119,10 @@ const within = (path: string, dir: string): boolean => path === dir || path.star
  * worktree are kept (the reap keeps them together), but not the container runtime and the containers, which the reap
  * removes all the same; else each is reaped. A scope and the processes are always stopped. A reap that did not look
  * at the scratch dir (`scratch` false) judges those only: the containers wait for the survey (part 9). A reaped entry is not judged again; a failed one a later reap
- * removed is reaped.
+ * removed is reaped. A herdr pane is not judged: no reap closes it (`paneClosures`).
  */
 export function reapClosures(entries: readonly LedgerEntry[], said: Reaped, scratch = true): { entry: LedgerEntry; state: Exclude<LedgerState, 'live'>; reason?: string }[] {
-  return entries.filter((e) => e.state !== 'reaped' && (scratch || stopped(e.kind))).map((entry) => {
+  return entries.filter((e) => e.state !== 'reaped' && e.kind !== 'herdr_pane' && (scratch || stopped(e.kind))).map((entry) => {
     if (stopped(entry.kind)) return { entry, state: 'reaped' as const };
     const left = said.left?.find((p) => within(p, entry.locator) || within(entry.locator, p));
     if (left) return { entry, state: 'failed' as const, reason: `${left} is still there` };
@@ -112,10 +132,10 @@ export function reapClosures(entries: readonly LedgerEntry[], said: Reaped, scra
 
 /**
  * The entries a reap that kept the scratch dir for a retention (issue #2504 part 5) leaves open: each `live` or `failed` one
- * but the scope, the processes and the agent session, which the reap stops all the same. The sweep judges them once the retention is over.
+ * but the scope, the processes and the agent session, which the reap stops all the same, and the herdr pane, which the cleanup closes. The sweep judges them once the retention is over.
  */
 export function retainedEntriesOf(entries: readonly LedgerEntry[]): LedgerEntry[] {
-  return entries.filter((e) => !stopped(e.kind) && (e.state === 'live' || e.state === 'failed'));
+  return entries.filter((e) => !stopped(e.kind) && e.kind !== 'herdr_pane' && (e.state === 'live' || e.state === 'failed'));
 }
 
 /** How long after a job ended an entry may stay `live` or `failed` before it is a **cleanup leftover** (issue #2504). */
@@ -166,7 +186,7 @@ export const GONE_REASON = 'not found on the machine';
  * `failed` or `kept`) of an ended job whose thing the machine's survey no longer found, closed `reaped` with `GONE_REASON`. A scratch dir only in a
  * work tree the survey looked in (`found.roots`), and a container runtime with its scratch dir; a job worktree only when the
  * survey also lists job worktrees; a scope that no longer runs; processes the survey no longer finds; containers when the survey
- * lists containers and names none of the job's (part 9); an agent session once neither a process nor a scope of the job runs (part 11). A job that has not ended, and a job the store does not know, is not judged.
+ * lists containers and names none of the job's (part 9); an agent session once neither a process nor a scope of the job runs (part 11); never a herdr pane, which the survey does not list (part 13). A job that has not ended, and a job the store does not know, is not judged.
  */
 export function goneClosures(entries: readonly LedgerEntry[], found: Survey, machineId: string, jobOf: (id: string) => Pick<Job, 'status'> | undefined): { entry: LedgerEntry; state: 'reaped'; reason: string }[] {
   const roots = new Set(found.roots ?? []);
@@ -179,6 +199,7 @@ export function goneClosures(entries: readonly LedgerEntry[], found: Survey, mac
     if (e.kind === 'job_containers') return found.containers !== undefined && !found.containers.includes(e.jobId);
     if (e.kind === 'scratch_dir') return scratchGone(e.locator);
     if (e.kind === 'container_runtime') return scratchGone(e.locator.slice(0, e.locator.lastIndexOf('/')));
+    if (e.kind === 'herdr_pane') return false;
     return trees !== undefined && roots.has(worktreeParts(e.locator)?.workTree ?? '') && !trees.has(e.locator);
   };
   return entries.filter((e) => e.machineId === machineId && e.state !== 'reaped' && gone(e)).filter((e) => {
@@ -274,7 +295,7 @@ export function cleanupStatusOf(job: Pick<Job, 'status' | 'cleanupDue' | 'cleanu
   return entries.some((e) => e.state === 'kept') ? 'kept_work' : 'done';
 }
 
-const KIND_WORDS: Record<LedgerKind, string> = { scratch_dir: 'Scratch dir', job_worktree: 'Job worktree', job_scope: 'Job scope', container_runtime: 'Container runtime', job_processes: 'Job processes', job_containers: 'Job containers', agent_session: 'Agent session' };
+const KIND_WORDS: Record<LedgerKind, string> = { scratch_dir: 'Scratch dir', job_worktree: 'Job worktree', job_scope: 'Job scope', container_runtime: 'Container runtime', job_processes: 'Job processes', job_containers: 'Job containers', agent_session: 'Agent session', herdr_pane: 'Herdr pane' };
 const STATE_WORDS: Record<LedgerState, string> = { live: 'still there', reaped: 'removed', kept: 'kept: it holds work not pushed', failed: 'not removed', retired: 'not removed: its machine is retired' };
 const CLEANUP_PART: Record<Exclude<CleanupStatus, 'none'>, { status: BomStatus; label: string }> = {
   in_use: { status: 'running', label: 'Cleanup: the job still uses what it has' },

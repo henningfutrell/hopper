@@ -25,7 +25,8 @@
               "container_runtime",
               "job_processes",
               "job_containers",
-              "agent_session"
+              "agent_session",
+              "herdr_pane"
             ]
           },
           "locator": {
