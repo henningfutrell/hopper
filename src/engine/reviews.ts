@@ -5,13 +5,14 @@
 // re-queued, told to write that next, in the same session. A job that was not asked for the item — its agent wrote it
 // because its own item asked for it within the work — is told it was accepted and, where the type goes on (research:
 // issue #538, open decision D2), goes on in the same session: with the rest of its work, or it ends done, by its own outcome. Otherwise, accepted or
-// rejected, the job ends `finished` with every decision it reached as its result. An accepted proposal's selected paths
+// rejected, the job ends `finished` with every decision it reached as its result — but a job of an issue whose item is
+// rejected (issue #2693) made no pull request, so it goes back to the issue's work in the same session, told the outcome. An accepted proposal's selected paths
 // (issue #651) each continue as a follow-on job (follow-ons.ts), named in that result. The handlers run inside the
 // review service's tx.
 import type { ExecutionReport } from '../domain/ports.ts';
 import { raisedBy } from '../domain/raised-by.ts';
 import {
-  asksOfSpec, REVIEW_KINDS, REVIEW_SECTIONS, reviewDocument, sourceItemOf, type EventType,
+  asksOfSpec, phaseOf, REVIEW_KINDS, REVIEW_SECTIONS, reviewDocument, sourceItemOf, type EventType,
   type Job, type Lane, type LaneId, type MachineSnapshot, type ReviewItem, type ReviewKind, type ReviewVersion,
 } from '../domain/types.ts';
 import { cleanupDue, type Cleanup } from './cleanup.ts';
@@ -103,6 +104,15 @@ const goOnBrief = (p: ReviewItem): string => {
   return `[hopper ${p.kind}] Your ${REVIEW_SECTIONS[p.kind].noun} was accepted.${notes}\nGo on with what else your item asks, in this session. If it asks for nothing more, end your message with a line containing only HOPPER_DONE.`;
 };
 
+/** What a job of an issue is told when its item was rejected (issue #2693): the issue's work goes on, with the outcome. */
+const rejectedBrief = (p: ReviewItem): string => {
+  const notes = p.signOff?.notes ? ` Its notes: ${p.signOff.notes}` : '';
+  return `[hopper ${p.kind}] Your ${REVIEW_SECTIONS[p.kind].noun} was rejected.${notes}\nGo back to the work of the issue, in this session, in a way that answers the rejection, and open its pull request. When you need a decision from a person first, ask it as a question. When the issue needs no code change, close it as completed. When the job is completely finished, end your message with a line containing only HOPPER_DONE.`;
+};
+
+/** Whether the job works an issue of a forge (issue #2693): a job of no issue has no pull request to wait on. */
+const ofIssue = (job: Job): boolean => job.source?.repo !== undefined && job.source.number !== undefined;
+
 /** Ends a job that does not wait on its item (issue #1659: rejected while it writes the next version), as a cancel does. */
 type EndJob = (jobId: string, reason: string) => unknown;
 
@@ -136,6 +146,11 @@ export function createReviewHandlers(c: EngineContext, cleanup: Cleanup, endJob:
       // A phase a question switched the job to (issue #548): the person picked what it does next; `end` ends it here.
       const switched = job.shift?.to === p.kind;
       if (switched && afterSwitch(c, job, p, requeue, moveOnBrief)) return;
+      // Rejected, on an issue (issue #2693): no pull request came of it, so the job goes back to the issue's work.
+      if (p.status === 'rejected' && !switched && !job.forkOf && ofIssue(job)) {
+        const back = phaseOf(job) !== 'work' ? store.jobs.update(job.id, { phase: 'work' }) : job;
+        return requeue(back, rejectedBrief(p), `${REVIEW_SECTIONS[p.kind].noun} rejected: back to the issue's work`);
+      }
       const next = p.status === 'accepted' && !switched ? nextAsk(job, p.kind) : undefined;
       if (next) return requeue(job, moveOnBrief(p, next), `${REVIEW_SECTIONS[p.kind].noun} accepted: on to the ${REVIEW_SECTIONS[next].noun}`);
       // Not asked for it: the item was part of the job's own work, which goes on where its type says so (issue #538).
