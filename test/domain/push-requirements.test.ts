@@ -2,7 +2,7 @@
 // — a condition, the checks to run, their pass criteria —, evaluated against a job's diff and context before each push.
 import { describe, expect, it } from 'vitest';
 import {
-  conditionHolds, effectiveRequirements, judgeEvaluation, parseRequirements, planPush, requirementsFileDir,
+  conditionHolds, effectiveRequirements, judgeEvaluation, parseRequirements, planPush, readRequirements, requirementsFileDir,
   type PushContext, type PushRequirement, type RequirementCondition, type RequirementsAt,
 } from '../../src/domain/push-requirements.ts';
 
@@ -44,6 +44,13 @@ describe('a requirements file', () => {
     expect(problem(JSON.stringify({ requirements: [{ id: 'a', when: { colour: ['red'] }, checks: [{ name: 'x', run: 'true' }] }] }))).toBeDefined();
     expect(problem(JSON.stringify({ requirements: [{ id: 'a', checks: [{ name: 'x', run: 'true' }] }, { id: 'a', checks: [{ name: 'y', run: 'true' }] }] }))).toMatch(/twice/);
     expect(problem(JSON.stringify({ requirements: [{ id: 'a', checks: [{ name: 'x', run: 'true', thresholds: { lines: { min: 'high' } } }] }] }))).toBeDefined();
+  });
+
+  it('reads the hopper\'s defaults, a value in the same shape as a file, by the same rules', () => {
+    expect(readRequirements({ requirements: [migrations] })).toEqual({ ok: true, requirements: [migrations] });
+    expect(readRequirements({ requirements: [] })).toEqual({ ok: true, requirements: [] });
+    expect(readRequirements([migrations])).toMatchObject({ ok: false });
+    expect(readRequirements({ requirements: [migrations, migrations] })).toEqual({ ok: false, problem: 'the id migrations is named twice' });
   });
 
   it('is the root one, or one of a folder, whose requirements are path-scoped', () => {

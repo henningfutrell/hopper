@@ -10,6 +10,10 @@
 //     And once the fix passes, the evaluation is recorded on the job, and the push goes through
 //   Scenario: a repository with no requirements file
 //     Then a push goes through with no evaluation
+//   Scenario: the hopper's default requirements (Settings → Push requirements), an admin's setting
+//     Then a repository with no requirements file gets them: a push they apply to needs a passing evaluation
+//     And a push they all skip goes through with no evaluation
+//     And a repository's requirement of the same id replaces the default, with its looser threshold
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -32,8 +36,19 @@ const REQUIREMENTS = [
   '        run: "false"',
 ].join('\n');
 
-async function jobOnBranch(t: Started) {
-  await seedCommit(t, 'octo/tools', 'dev', { '.hopper/requirements.yaml': REQUIREMENTS });
+const KOTLIN_DEFAULT = {
+  id: 'kotlin-coverage', when: { paths: ['src/**/*.kt'] },
+  checks: [{ name: 'changed-files coverage', run: 'cat coverage.txt', thresholds: { changedLines: { min: 80 } } }],
+};
+const WORKFLOWS_DEFAULT = { id: 'workflows', when: { workflows: true }, checks: [{ name: 'actionlint', run: 'false' }] };
+
+async function setDefaults(t: Started, requirements: unknown[]) {
+  const token = await t.app.login();
+  expect(await t.app.ui('/ui/api/push-requirements', { requirements }, { token })).toMatchObject({ status: 200, body: { requirements } });
+}
+
+async function jobOnBranch(t: Started, file: string | null = REQUIREMENTS) {
+  if (file !== null) await seedCommit(t, 'octo/tools', 'dev', { '.hopper/requirements.yaml': file });
   const r = await running(t);
   expect((await r.git(['clone', '--quiet', `${t.github.url}/octo/tools.git`, 'tools'])).code).toBe(0);
   const work = join(r.home, 'tools');
@@ -136,4 +151,65 @@ describe('push requirements (issue #2555)', () => {
     await r.git(['commit', '--quiet', '-m', 'Add B'], work);
     expect(await r.git(['push', '--quiet', 'origin', 'HEAD:refs/heads/issue-7'], work)).toMatchObject({ code: 0 });
   });
+
+  it('the default requirements are an admin\'s setting: none at first, refused when they cannot be read, recorded when they change', async () => {
+    const t = await start();
+    expect((await t.app.api('GET', '/api/push-requirements')).body).toEqual({ requirements: [] });
+    expect((await t.app.ui('/ui/api/push-requirements', { requirements: [KOTLIN_DEFAULT] })).status).toBe(403);
+    const token = await t.app.login();
+    const noChecks = await t.app.ui<string>('/ui/api/push-requirements', { requirements: [{ id: 'x', checks: [] }] }, { token });
+    expect(noChecks.status).toBe(400);
+    expect(JSON.stringify(noChecks.body)).toContain('a requirement names at least one check');
+    expect(JSON.stringify((await t.app.ui('/ui/api/push-requirements', { requirements: [KOTLIN_DEFAULT, KOTLIN_DEFAULT] }, { token })).body)).toContain('the id kotlin-coverage is named twice');
+    expect((await t.app.ui('/ui/api/push-requirements', { requirements: [] }, { token })).status).toBe(200);
+    expect(eventsOf(t.app, 'push_requirements.defaults_changed')).toEqual([]);
+
+    await setDefaults(t, [KOTLIN_DEFAULT]);
+    await setDefaults(t, [KOTLIN_DEFAULT]);
+    expect((await t.app.api('GET', '/api/push-requirements')).body).toEqual({ requirements: [KOTLIN_DEFAULT] });
+    expect(eventsOf(t.app, 'push_requirements.defaults_changed')).toEqual([expect.objectContaining({ data: expect.objectContaining({ from: [], to: ['kotlin-coverage'] }) })]);
+  });
+
+  it('a repository with no requirements file gets the defaults: a push they apply to needs a passing evaluation', async () => {
+    const t = await start();
+    await setDefaults(t, [KOTLIN_DEFAULT, WORKFLOWS_DEFAULT]);
+    const r = await jobOnBranch(t, null);
+    const dry = await r.requirements('dry-run', '--json');
+    expect(JSON.parse(dry.stdout.slice(dry.stdout.indexOf('{')))).toEqual({
+      matched: [{ id: 'kotlin-coverage', level: 'default', why: 'changed files match `src/**/*.kt`: src/a/B.kt', checks: KOTLIN_DEFAULT.checks }],
+      skipped: [{ id: 'workflows', level: 'default', reason: 'no workflow file changed' }],
+    });
+
+    const unchecked = await r.push();
+    expect(unchecked.code).not.toBe(0);
+    expect(unchecked.stderr).toContain('the hopper\'s default push requirements apply to');
+    expect(unchecked.stderr).toContain('(kotlin-coverage)');
+    expect((await r.requirements('check')).stdout).toContain('failed  kotlin-coverage (default)');
+
+    writeFileSync(join(r.work, 'coverage.txt'), 'hopper-measure changedLines=80\n');
+    await r.git(['commit', '--quiet', '-am', 'Cover B'], r.work);
+    expect(await r.requirements('check')).toMatchObject({ code: 0 });
+    expect(await r.push()).toMatchObject({ code: 0 });
+  }, 60_000);
+
+  it('a push the defaults all skip goes through with no evaluation', async () => {
+    const t = await start();
+    await setDefaults(t, [KOTLIN_DEFAULT, WORKFLOWS_DEFAULT]);
+    const r = await running(t);
+    expect((await r.git(['clone', '--quiet', `${t.github.url}/octo/tools.git`, 'tools'])).code).toBe(0);
+    const work = join(r.home, 'tools');
+    writeFileSync(join(work, 'README.md'), 'more\n');
+    await r.git(['commit', '--quiet', '-am', 'Readme'], work);
+    expect(await r.git(['push', '--quiet', 'origin', 'HEAD:refs/heads/issue-7'], work)).toMatchObject({ code: 0 });
+  }, 30_000);
+
+  it('a repository\'s requirement of the same id replaces the default: a looser threshold', async () => {
+    const t = await start();
+    await setDefaults(t, [KOTLIN_DEFAULT]);
+    const r = await jobOnBranch(t, REQUIREMENTS.replace('min: 80', 'min: 60'));
+    const checked = await r.requirements('check');
+    expect(checked.stdout).toContain('passed  kotlin-coverage (repo)');
+    expect(checked.code).toBe(0);
+    expect(await r.push()).toMatchObject({ code: 0 });
+  }, 60_000);
 });
