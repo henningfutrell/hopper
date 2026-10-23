@@ -14,9 +14,9 @@ const JOB = 'job-1452-abcdef';
 let root: string;
 let scratch: string;
 
-const reap = (): string => {
+const reap = (env?: NodeJS.ProcessEnv): string => {
   const [file, ...args] = reapArgv(JOB, scratch);
-  return execFileSync(file!, args, { encoding: 'utf8', timeout: 30000 });
+  return execFileSync(file!, args, { encoding: 'utf8', timeout: 30000, ...(env ? { env } : {}) });
 };
 
 beforeEach(() => {
@@ -52,12 +52,16 @@ describe.skipIf(process.getuid?.() === 0)('a scratch dir that resists its remova
     expect(existsSync(scratch)).toBe(false);
   });
 
+  // A podman that cannot make the user namespace (issue #2685): there, the namespace's root would remove the dir.
   it('names what it could not remove, so nobody is told it is removed', () => {
     const area = join(root, 'work', '.worktrees', '@scratch');
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'podman'), '#!/bin/sh\nexit 125\n', { mode: 0o755 });
     writeFileSync(join(scratch, 'tmp.txt'), 'x');
     chmodSync(area, 0o555);
     try {
-      expect(withoutUse(readReap(reap()))).toEqual({ kept: [], left: [scratch] });
+      expect(withoutUse(readReap(reap({ ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` })))).toEqual({ kept: [], left: [scratch] });
       expect(existsSync(scratch)).toBe(true);
     } finally {
       chmodSync(area, 0o755);
