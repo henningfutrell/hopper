@@ -175,6 +175,7 @@
         "machine.storage_pruned",
         "machine.disk_trim_ran",
         "machine.caches_cleared",
+        "machine.sweep_dry_run",
         "machine.leftover_kept",
         "machine.leftover_removed",
         "machine.drained",

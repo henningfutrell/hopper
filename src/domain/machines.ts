@@ -277,6 +277,10 @@ export interface SweepSettings {
   trimAboveGiB?: number;
   /** The cap of each kind of cache in GiB (issue #2494, src/engine/sweep-caches.ts); a kind with none is never cleared. */
   cacheCapsGiB?: import('./cache-caps.ts').CacheCaps;
+  /** Its own disk budget in GiB (issue #2494, src/domain/sweep-dry-run.ts `budgetOf`); absent: the user's disk budget. */
+  budgetGiB?: number;
+  /** The dry run (issue #2494, src/domain/sweep-dry-run.ts): the sweep removes nothing there and says what it would remove. */
+  dryRun?: boolean;
 }
 
 /** A job's side of its machine's link (issue #752, design.md "Link-lost hold"). */

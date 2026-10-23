@@ -86,8 +86,8 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
     }
     running.add(jobId);
     try {
-      // A retention set for the status it ended in, on its machine (issue #2494): the reap keeps its scratch dir for the sweep.
-      const sweep = await sweepOf(job), keepScratch = retainsAtEnd(sweep, job.status);
+      // A retention set for the status it ended in, on its machine (issue #2494), or its dry run: the reap keeps its scratch dir for the sweep.
+      const sweep = await sweepOf(job), keepScratch = sweep?.dryRun === true || retainsAtEnd(sweep, job.status);
       // Until when that reap, or a timed-out job's, keeps it (issue #2504 part 5): its ledger entries stay open until then.
       const retainedUntil = retainedUntilOf(sweep, job, c.clock.now().getTime());
       const said = await executor.cleanup(job, { keepScratch }).catch((e: unknown) => reapThroughMachine(job, e, keepScratch));

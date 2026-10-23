@@ -30,7 +30,7 @@ export function DiskDefaultsPanel() {
     <Panel title="Disk defaults" icon={SlidersHorizontal} bodyClassName="space-y-2">
       <p className="text-xs text-muted-foreground">
         What every machine takes when its own machine options do not set it: when its disk is low or critical, how often the sweep runs, how long an
-        ended job's work stays, the storage prune, the trim and the cache caps. A machine's own option always wins. Empty: no default.
+        ended job's work stays, the storage prune, the trim, the cache caps and the dry run. A machine's own option always wins. Empty: no default.
       </p>
       {defaults === undefined ? <Empty>loading</Empty> : (
         <form className="space-y-3 text-sm" onSubmit={(e) => { e.preventDefault(); if (typeof body !== 'string') void save(body); }}>
@@ -41,8 +41,11 @@ export function DiskDefaultsPanel() {
                 {DISK_DEFAULT_FIELDS.filter((f) => f.group === group).map((f) => (
                   <label key={f.name} htmlFor={`disk-default-${f.name}`} className="flex items-center justify-between gap-2">
                     <span>{f.label}</span>
-                    <Input id={`disk-default-${f.name}`} type="number" min={0} step="any" inputMode="decimal" className="h-8 w-24" value={draft[f.name] ?? ''}
-                      disabled={!canSet} placeholder="none" onChange={(e) => setDraft({ ...draft, [f.name]: e.target.value })} />
+                    {f.flag
+                      ? <input id={`disk-default-${f.name}`} type="checkbox" className="h-4 w-4" checked={draft[f.name] === 'on'} disabled={!canSet}
+                          onChange={(e) => setDraft({ ...draft, [f.name]: e.target.checked ? 'on' : '' })} />
+                      : <Input id={`disk-default-${f.name}`} type="number" min={0} step="any" inputMode="decimal" className="h-8 w-24" value={draft[f.name] ?? ''}
+                          disabled={!canSet} placeholder="none" onChange={(e) => setDraft({ ...draft, [f.name]: e.target.value })} />}
                   </label>
                 ))}
               </div>

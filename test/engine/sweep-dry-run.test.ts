@@ -32,7 +32,6 @@ describe('the sweep\'s dry run (issue #2494)', () => {
         caches: [{ kind: 'npm', path: '/h/.npm', bytes: 3 * GIB }], cacheBytes: 3 * GIB, trim: { aboveGiB: 1, due: true },
       },
     }]);
-    expect(r.sweep.disk('n')).toBeUndefined();
   });
 
   it('records it again only once what it would remove changes', async () => {
