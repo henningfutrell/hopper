@@ -44,6 +44,11 @@ const stallTitle = (s: NonNullable<Health['eventLoopStall']>): string =>
   + `${s.processes ? ` It started ${s.processes.count} process${s.processes.count > 1 ? 'es' : ''} (${s.processes.programs.map((p) => p.what).join(', ')}).` : ''}`
   + `${s.held?.[0]?.frames[0] ? ` It ran ${s.held[0].frames[0]}.` : ''} Its log says more.`;
 
+/** What the stray child processes are (issue #2623): how many, which programs, and the fix. */
+const strayTitle = (s: NonNullable<Health['strayChildren']>): string =>
+  `The hopper holds ${s.zombies} ended and ${s.orphans} running child processes it did not start (${s.programs.join(', ')}).`
+  + ' It runs with no init to take them: start its container with an init (the image\'s own entrypoint, or --init).';
+
 const BADGE_ICONS: Record<HeaderBadge, typeof Activity> = {
   inFlight: Activity, lanes: Layers, waiting: Timer, waitingAnswer: MessageCircleQuestion, finished: CircleCheck, failed: CircleX,
 };
@@ -120,6 +125,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
             {health?.fallback && <StatusBadge status="fallback" tone="warn" />}
           </div>
           {health?.eventLoopStall && <StatusBadge status="stalled" tone="warn" title={stallTitle(health.eventLoopStall)} />}
+          {health?.strayChildren && <StatusBadge status="zombies" tone="warn" title={strayTitle(health.strayChildren)} />}
           <span className="num hidden text-muted-foreground sm:inline">up {health ? duration(health.uptimeS) : '…'}</span>
           <span data-slot="connection" className="flex items-center gap-1.5 text-muted-foreground">
             <Dot tone={conn === 'live' ? 'ok' : 'warn'} pulse={conn === 'live'} /><span className="hidden sm:inline">{conn}</span>
