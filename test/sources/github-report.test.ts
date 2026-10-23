@@ -29,7 +29,7 @@ describe('GitHub source report', () => {
     expect(gh.calls.filter((c) => c.method === 'ensureLabel')).toHaveLength(1);
   });
 
-  it('finished with the issue open and no pull request open: claimed → blocked, no comment, the follow looks again (issues #187, #579, #1891)', async () => {
+  it('finished with the issue open and no pull request open: the claim comes off and no label goes on, no comment, the follow looks again (issues #187, #579, #1891)', async () => {
     const { gh, source } = withIssue();
     const job = jobForIssue(1, {
       id: 'abcdef12-3456-7890-abcd-ef1234567890', status: 'finished', result: { summary: 'README added, mindless prose' },
@@ -38,11 +38,11 @@ describe('GitHub source report', () => {
     const claimed = await source.report({ kind: 'claimed', job });
     gh.calls.length = 0;
     const state = await source.report({ kind: 'finished', job });
-    // No open pull request: never hopper:pr-ready with none (issue #1891).
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:blocked']);
+    // No open pull request: never hopper:pr-ready with none (issue #1891), and no hopper:blocked (issue #2693).
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
     // No ready pull request closes it: one that references it, or one named for it on its branch, is looked for (issue #637).
-    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'referencingPullRequests', 'openPullRequests', 'removeLabels', 'ensureLabel', 'addLabels']);
+    expect(gh.calls.map((c) => c.method)).toEqual(['getIssue', 'openClosingPullRequests', 'referencingPullRequests', 'openPullRequests', 'removeLabels']);
     expect(gh.issue(REPO, 1).state).toBe('open');
     expect(state).toEqual({ ...claimed, follow: 'open' });
   });
@@ -166,7 +166,7 @@ describe('GitHub source report', () => {
     const state = await source.report({ kind: 'finished', job });
     await source.report({ kind: 'finished', job: { ...job, sourceState: { source: state } } });
     expect(gh.commentsOn(REPO, 1)).toEqual([]);
-    expect(gh.issue(REPO, 1).labels).toEqual(['hopper', 'hopper:blocked']);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
   });
 
   it('a huge result never reaches the issue', async () => {

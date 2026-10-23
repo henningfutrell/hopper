@@ -101,7 +101,7 @@ export function createItemReconciler(o: {
     const base = { source: src.source, repo: src.repo, key: c.key, act: 'mirror' as const, tag: `blocked:${c.cause}` };
     return [
       ...(remove.length ? [{ ...base, change: { op: 'remove_labels' as const, labels: remove } }] : []),
-      { ...base, change: { op: 'add_labels' as const, labels: add } },
+      ...(add.length ? [{ ...base, change: { op: 'add_labels' as const, labels: add } }] : []),
     ];
   }
 

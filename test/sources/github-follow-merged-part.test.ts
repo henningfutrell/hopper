@@ -28,13 +28,13 @@ describe('a part merged before the report (issue #1231)', () => {
     expect((await source.discover()).map((i) => i.number)).toEqual([1]);
   });
 
-  it('a pull request of several issues that only mentions the issue, merged after the job began (issue #1891): a merged part, hopper:blocked off', async () => {
+  it('a pull request of several issues that only mentions the issue, merged after the job began (issue #1891): a merged part', async () => {
     const { gh, source } = withIssue();
     const base = jobForIssue(1, { status: 'finished' });
-    // The job ended with no pull request: the report names none, and the issue is blocked on one.
+    // The job ended with no pull request: the report names none, and puts no hopper:blocked on (issue #2693).
     const state = await source.report({ kind: 'finished', job: base });
     expect(state).toEqual({ follow: 'open' });
-    expect(gh.issue(REPO, 1).labels).toContain('hopper:blocked');
+    expect(gh.issue(REPO, 1).labels).not.toContain('hopper:blocked');
     const pr = gh.openReferencingPullRequest(REPO, 1, { createdAt: AFTER, body: 'Fixes the parser. Closes #7. Refs #1.' });
     gh.mergePullRequest(pr.url, AFTER);
     const up = await source.follow!({ ...base, sourceState: { source: state } });

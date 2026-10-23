@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import { createFakeGitHub } from '../../src/sources/github/index.ts';
 import { memoryGitHubOutbox } from '../../src/sources/github/outbox.ts';
 import { memoryListings } from '../../src/sources/github/listing.ts';
-import { BLOCKED, BLOCKED_STALE, DONE_OPEN, FAILED, PARTLY_DONE, PR_CLOSED, PR_READY } from '../../src/sources/github/discover.ts';
+import { BLOCKED, BLOCKED_STALE, DONE_OPEN, FAILED, NO_PR, PARTLY_DONE, PR_CLOSED, PR_READY } from '../../src/sources/github/discover.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
 import { RECONCILE_GRACE_MS } from '../../src/domain/item-lifecycle.ts';
 import { REPO, jobForIssue } from './fixtures/github-support.ts';
@@ -38,7 +38,7 @@ describe('Intake reads the ledger (issue #1892)', () => {
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper'] });
     await source.discover();
     expect(reason(1)).toMatchObject({ reason: BLOCKED_STALE, action: 'wont_do' });
-    expect(reason(2)).toMatchObject({ reason: BLOCKED, action: 'wont_do' });
+    expect(reason(2)).toMatchObject({ reason: NO_PR, action: 'wont_do' });
     expect(reason(3)).toMatchObject({ reason: PR_CLOSED, action: 'wont_do' });
   });
 

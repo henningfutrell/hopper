@@ -2,7 +2,7 @@
 // harness (issue #1954): a hopper killed with SIGKILL while its mirror corrects the labels of items in states that
 // label-world.ts does not seed. #12 was dropped by a person's Close PR, and its issue carries a stale `hopper:pr-ready`: it gets
 // `hopper:pr-closed`. #13 was dropped by a person's Won't do on its block, and its issue carries a stale `hopper:pr-closed`: it
-// gets `hopper:rejected`. #14 is blocked: its job ended done with no pull request, and its issue carries a stale
+// gets `hopper:rejected`. #14 is blocked past its deadline with no move, and its issue carries a stale
 // `hopper:pr-ready`: it gets `hopper:blocked`. #15 is a hand-off whose job's failure was reported as failed, and its issue
 // carries a stale `hopper:pr-ready`: it gets `hopper:failed`. #16 failed, its failure reported and held on an open problem
 // (part 36), and its issue carries a stale `hopper:pr-ready`: it gets `hopper:failed`. #17 is partly done, one part merged and
@@ -35,7 +35,7 @@ interface StateCase { n: number; stale: string; wanted?: string; state: WorkItem
 export const STATE_CASES: readonly StateCase[] = [
   { n: 12, stale: 'hopper:pr-ready', wanted: 'hopper:pr-closed', state: 'dropped', mark: { closedByPerson: true } },
   { n: 13, stale: 'hopper:pr-closed', wanted: 'hopper:rejected', state: 'dropped', mark: { wontDo: true } },
-  { n: 14, stale: 'hopper:pr-ready', wanted: 'hopper:blocked', state: 'blocked', mark: { blockedCause: 'no_pr' } },
+  { n: 14, stale: 'hopper:pr-ready', wanted: 'hopper:blocked', state: 'blocked', mark: { blockedCause: 'stale' } },
   { n: 15, stale: 'hopper:pr-ready', wanted: 'hopper:failed', state: 'needs_you', mark: { waitingOn: HANDOFF_WAIT } },
   { n: 16, stale: 'hopper:pr-ready', wanted: 'hopper:failed', state: 'failed', mark: {} },
   { n: 17, stale: 'hopper:partly-done', state: 'partly_done', mark: { pullRequestState: 'merged' }, next: true },
@@ -117,17 +117,13 @@ export async function statesWorld(): Promise<StatesWorld> {
               append('job.pull_request_merged', { pullRequest, part: true });
               return job.id;
             }
-            if (c.n === 14) {
-              // Its job ended done with no pull request, and its report went out: blocked, a person is asked.
-              store.jobs.update(job.id, { status: 'finished', approved: true, attempts: 1, finishedAt: at, sourceState: { sync: { claimReported: true, finalReported: true } } });
-              append('job.finished', { result: 'nothing to change' });
-              return job.id;
-            }
             // Its job ended done and its report went out; it no longer follows its pull request, so no read of it is made.
             store.jobs.update(job.id, { status: 'finished', approved: true, attempts: 1, finishedAt: at, sourceState: { sync: { claimReported: true, finalReported: true }, source: { pullRequest, follow: 'tended' } } });
             append('job.finished', { result: 'pull request ready for review' });
             append('job.pull_request_followed', { pullRequest, part: false });
             if (c.n === 12) append('job.pull_request_closed', { pullRequest, part: false, person: 'owner', via: 'ui' });
+            // Past its deadline in PR open with no open pull request a job follows: the reconciler blocked it as stale.
+            if (c.n === 14) append('work_item.reconciled', { key, from: 'pr_open', cause: 'stale' }, undefined);
             if (c.n === 13) {
               // Closed without a merge on GitHub: blocked; then a person's Won't do on the block drops it.
               append('job.pull_request_closed', { pullRequest, part: false });

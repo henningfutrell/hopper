@@ -221,7 +221,7 @@ describe('a pull request the report could not name (issue #677)', () => {
     const base = jobForIssue(1, { status: 'finished' });
     const state = await source.report({ kind: 'finished', job: base });
     expect(state).toEqual({ follow: 'open' });
-    expect(gh.issue(REPO, 1).labels).toContain('hopper:blocked');
+    expect(gh.issue(REPO, 1).labels).not.toContain('hopper:blocked');
     const pr = gh.openPullRequest(REPO, 1, { createdAt: AFTER, isDraft: true });
     const up = await source.follow!({ ...base, sourceState: { source: state } });
     expect(up).toMatchObject({ outcome: 'open', pullRequest: pr.url, part: false, state: { pullRequest: pr.url, follow: 'open', seen: { draft: true } } });
