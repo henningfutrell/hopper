@@ -19,12 +19,12 @@ import type { NeedBox, NeedBoxIo, NeedBoxResult, RunningNeedBox } from '../../sr
 import { parseTargets, relayCommand, type BastionTarget } from '../../src/sandbox/bastion.ts';
 import { createBastions, type BastionsOptions } from '../../src/sandbox/bastions.ts';
 
-const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
-const APPROVED = ['uat/monitoring/svc/grafana:80', 'uat/monitoring/svc/prometheus-server:9090'];
-const TEMPLATE = { name: 'observe-uat', image: 'img', tools: ['kubectl'], profiles: [MONITORING], bastionTargets: APPROVED, pending: { bastionTargets: [] } } as unknown as TemplateView;
+const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } };
+const APPROVED = ['utility/monitoring/svc/grafana:80', 'utility/monitoring/svc/prometheus-server:9090'];
+const TEMPLATE = { name: 'observe-utility', image: 'img', tools: ['kubectl'], profiles: [MONITORING], bastionTargets: APPROVED, pending: { bastionTargets: [] } } as unknown as TemplateView;
 const JOB = { id: 'job-1', status: 'running' } as unknown as Job;
-const TARGETS = parseTargets('uat/monitoring/svc/prometheus-server:9090 uat/monitoring/svc/grafana:80') as BastionTarget[];
-const SERVER = { kind: 'kube' as const, server: 'https://uat.example:6443' };
+const TARGETS = parseTargets('utility/monitoring/svc/prometheus-server:9090 utility/monitoring/svc/grafana:80') as BastionTarget[];
+const SERVER = { kind: 'kube' as const, server: 'https://utility.example:6443' };
 
 const dirs: string[] = [];
 const ended: (() => Promise<void>)[] = [];
@@ -76,17 +76,17 @@ describe('a bastion (issue #2146)', () => {
     const { b, events, boxes, minted } = bastions();
     const r = await b.start(JOB, TEMPLATE, TARGETS);
     if ('no' in r) throw new Error(r.no);
-    expect(r).toMatchObject({ jobId: 'job-1', template: 'observe-uat', targets: [{ target: 'uat/monitoring/svc/prometheus-server:9090' }, { target: 'uat/monitoring/svc/grafana:80' }] });
+    expect(r).toMatchObject({ jobId: 'job-1', template: 'observe-utility', targets: [{ target: 'utility/monitoring/svc/prometheus-server:9090' }, { target: 'utility/monitoring/svc/grafana:80' }] });
     expect(minted()).toBe(1);
     await until(() => b.of('job-1')?.state === 'running');
     expect(b.of('job-1')?.targets.map((t) => t.local)).toEqual([20000, 20001]);
     const [{ box }] = boxes as [typeof boxes[number]];
     expect(box.name).toBe(r.box);
-    expect(box.files).toEqual({ secrets: { 'kube-uat-monitoring': 'token-1' } });
+    expect(box.files).toEqual({ secrets: { 'kube-utility-monitoring': 'token-1' } });
     expect(box.env.HOPPER_STEP_COMMAND).toContain('svc/prometheus-server');
     expect(box.env.HOPPER_STEP_KUBECONFIG).not.toContain('token-1');
     expect(events.map((e) => e.type)).toEqual(['bastion.started']);
-    expect(events[0]).toMatchObject({ jobId: 'job-1', data: { bastion: r.id, template: 'observe-uat', box: r.box, targets: ['uat/monitoring/svc/prometheus-server:9090', 'uat/monitoring/svc/grafana:80'] } });
+    expect(events[0]).toMatchObject({ jobId: 'job-1', data: { bastion: r.id, template: 'observe-utility', box: r.box, targets: ['utility/monitoring/svc/prometheus-server:9090', 'utility/monitoring/svc/grafana:80'] } });
     expect(b.of('job-1')?.log).toContain('forwarding 2 targets');
   });
 
@@ -111,7 +111,7 @@ describe('a bastion (issue #2146)', () => {
     const { b, boxes, released, events } = bastions({ mint: async () => ({ refused: 'Access denied it' }) });
     expect(await b.start(JOB, TEMPLATE, parseTargets('prod/monitoring/svc/grafana:80') as BastionTarget[])).toMatchObject({ status: 400 });
     const r = await b.start(JOB, TEMPLATE, TARGETS);
-    expect(r).toEqual({ status: 403, no: 'the vault minted no observe on namespace uat/monitoring: Access denied it' });
+    expect(r).toEqual({ status: 403, no: 'the vault minted no observe on namespace utility/monitoring: Access denied it' });
     expect(boxes).toHaveLength(0);
     expect(released).toHaveLength(1);
     expect(b.of('job-1')).toBeUndefined();
@@ -122,7 +122,7 @@ describe('a bastion (issue #2146)', () => {
     const { b, boxes, minted } = bastions({ renewMs: 30 });
     await b.start(JOB, TEMPLATE, TARGETS);
     await until(() => (boxes[0]?.renewed.length ?? 0) >= 2);
-    expect(boxes[0]!.renewed[0]).toEqual({ 'kube-uat-monitoring': 'token-2' });
+    expect(boxes[0]!.renewed[0]).toEqual({ 'kube-utility-monitoring': 'token-2' });
     expect(minted()).toBeGreaterThanOrEqual(3);
   });
 
@@ -133,9 +133,9 @@ describe('a bastion (issue #2146)', () => {
     });
     const r = await b.start(JOB, TEMPLATE, TARGETS);
     await until(() => b.of('job-1')?.state === 'ended');
-    expect(b.of('job-1')).toMatchObject({ ended: 'failed', problem: 'the vault minted no observe on namespace uat/monitoring: the job is not at work' });
+    expect(b.of('job-1')).toMatchObject({ ended: 'failed', problem: 'the vault minted no observe on namespace utility/monitoring: the job is not at work' });
     expect(released).toEqual([(r as { box: string }).box]);
-    expect(events.at(-1)).toMatchObject({ type: 'bastion.ended', data: { reason: 'failed', problem: 'the vault minted no observe on namespace uat/monitoring: the job is not at work' } });
+    expect(events.at(-1)).toMatchObject({ type: 'bastion.ended', data: { reason: 'failed', problem: 'the vault minted no observe on namespace utility/monitoring: the job is not at work' } });
   });
 
   it('ends when its TTL passes with no use; a use renews it', async () => {
@@ -213,7 +213,7 @@ describe('the relay to a bastion (issue #2146, part 2)', () => {
     const { b } = bastions({ pipe: p.pipe });
     await b.start(JOB, TEMPLATE, TARGETS);
     await until(() => b.of('job-1')?.state === 'running');
-    const r = await b.relay('job-1', 'uat/monitoring/svc/grafana:80');
+    const r = await b.relay('job-1', 'utility/monitoring/svc/grafana:80');
     expect('no' in r).toBe(false);
     expect(p.started).toEqual([relayCommand(20001)]);
     const echoed = new Promise((resolve) => (r as BoxPipe).once('data', (d: Buffer) => resolve(d.toString())));
@@ -224,13 +224,13 @@ describe('the relay to a bastion (issue #2146, part 2)', () => {
   it('says no for a job with no bastion, a target it does not forward to, and a bastion that is not running yet', async () => {
     const p = pipes();
     const { b } = bastions({ pipe: p.pipe });
-    expect(await b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toMatchObject({ status: 404, no: expect.stringMatching(/^this job has no bastion that runs/) });
+    expect(await b.relay('job-1', 'utility/monitoring/svc/grafana:80')).toMatchObject({ status: 404, no: expect.stringMatching(/^this job has no bastion that runs/) });
     await b.start(JOB, TEMPLATE, TARGETS);
     await until(() => b.of('job-1')?.state === 'running');
-    expect(await b.relay('job-1', 'uat/monitoring/svc/loki:3100')).toEqual({
-      status: 404, no: 'the job\'s bastion forwards to uat/monitoring/svc/prometheus-server:9090, uat/monitoring/svc/grafana:80; not to uat/monitoring/svc/loki:3100',
+    expect(await b.relay('job-1', 'utility/monitoring/svc/loki:3100')).toEqual({
+      status: 404, no: 'the job\'s bastion forwards to utility/monitoring/svc/prometheus-server:9090, utility/monitoring/svc/grafana:80; not to utility/monitoring/svc/loki:3100',
     });
-    expect(await b.relay('job-2', 'uat/monitoring/svc/grafana:80')).toMatchObject({ status: 404 });
+    expect(await b.relay('job-2', 'utility/monitoring/svc/grafana:80')).toMatchObject({ status: 404 });
     expect(p.started).toEqual([]);
   });
 
@@ -238,12 +238,12 @@ describe('the relay to a bastion (issue #2146, part 2)', () => {
     const none = bastions();
     await none.b.start(JOB, TEMPLATE, TARGETS);
     await until(() => none.b.of('job-1')?.state === 'running');
-    expect(await none.b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toMatchObject({ status: 503 });
+    expect(await none.b.relay('job-1', 'utility/monitoring/svc/grafana:80')).toMatchObject({ status: 503 });
     const failing = bastions({ pipe: async () => { throw new Error('podman refused to start a command in the box (500): oops'); } });
     await failing.b.start(JOB, TEMPLATE, TARGETS);
     await until(() => failing.b.of('job-1')?.state === 'running');
-    expect(await failing.b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toEqual({
-      status: 502, no: 'the relay did not reach uat/monitoring/svc/grafana:80 in the box: podman refused to start a command in the box (500): oops',
+    expect(await failing.b.relay('job-1', 'utility/monitoring/svc/grafana:80')).toEqual({
+      status: 502, no: 'the relay did not reach utility/monitoring/svc/grafana:80 in the box: podman refused to start a command in the box (500): oops',
     });
   });
 
@@ -252,7 +252,7 @@ describe('the relay to a bastion (issue #2146, part 2)', () => {
     const { b } = bastions({ pipe: p.pipe, ttlMs: 100 });
     await b.start(JOB, TEMPLATE, TARGETS);
     await until(() => b.of('job-1')?.state === 'running');
-    const r = await b.relay('job-1', 'uat/monitoring/svc/grafana:80') as BoxPipe;
+    const r = await b.relay('job-1', 'utility/monitoring/svc/grafana:80') as BoxPipe;
     await tick(250);
     expect(b.of('job-1')?.state).toBe('running');
     r.destroy();
@@ -267,24 +267,24 @@ describe('the relay to a bastion (issue #2146, part 2)', () => {
     const { b } = bastions({ pipe: p.pipe });
     await b.start(JOB, TEMPLATE, TARGETS);
     await until(() => b.of('job-1')?.state === 'running');
-    const r = await b.relay('job-1', 'uat/monitoring/svc/grafana:80') as BoxPipe;
+    const r = await b.relay('job-1', 'utility/monitoring/svc/grafana:80') as BoxPipe;
     b.stop('job-1', 'job');
     await until(() => b.of('job-1')?.state === 'ended');
     expect(r.destroyed).toBe(true);
-    expect(await b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toMatchObject({ status: 404 });
+    expect(await b.relay('job-1', 'utility/monitoring/svc/grafana:80')).toMatchObject({ status: 404 });
   });
 });
 
 describe('targets approved with the template, and Access for each connection (issue #2146, part 3)', () => {
   it('starts no bastion to a target the template does not name, or names but a person has not approved yet', async () => {
     const { b, boxes, minted } = bastions();
-    const loki = parseTargets('uat/monitoring/svc/loki:3100') as BastionTarget[];
+    const loki = parseTargets('utility/monitoring/svc/loki:3100') as BastionTarget[];
     expect(await b.start(JOB, TEMPLATE, loki)).toEqual({
-      status: 403, no: 'template observe-uat names no bastion target uat/monitoring/svc/loki:3100: ask for a template with --targets "uat/monitoring/svc/loki:3100"',
+      status: 403, no: 'template observe-utility names no bastion target utility/monitoring/svc/loki:3100: ask for a template with --targets "utility/monitoring/svc/loki:3100"',
     });
-    const waiting = { ...TEMPLATE, bastionTargets: [...APPROVED, 'uat/monitoring/svc/loki:3100'], pending: { bastionTargets: ['uat/monitoring/svc/loki:3100'] } } as unknown as TemplateView;
+    const waiting = { ...TEMPLATE, bastionTargets: [...APPROVED, 'utility/monitoring/svc/loki:3100'], pending: { bastionTargets: ['utility/monitoring/svc/loki:3100'] } } as unknown as TemplateView;
     expect(await b.start(JOB, waiting, loki)).toEqual({
-      status: 403, no: 'the bastion target uat/monitoring/svc/loki:3100 of template observe-uat waits for a person to approve it on Access requests',
+      status: 403, no: 'the bastion target utility/monitoring/svc/loki:3100 of template observe-utility waits for a person to approve it on Access requests',
     });
     expect(boxes).toEqual([]);
     expect(minted()).toBe(0);
@@ -298,30 +298,30 @@ describe('targets approved with the template, and Access for each connection (is
     const r = await b.start(JOB, TEMPLATE, TARGETS);
     if ('no' in r) throw new Error(r.no);
     await until(() => b.of('job-1')?.state === 'running');
-    const pipe = await b.relay('job-1', 'uat/monitoring/svc/grafana:80') as BoxPipe;
-    expect(asked).toEqual([{ jobId: 'job-1', template: 'observe-uat', target: 'uat/monitoring/svc/grafana:80' }]);
+    const pipe = await b.relay('job-1', 'utility/monitoring/svc/grafana:80') as BoxPipe;
+    expect(asked).toEqual([{ jobId: 'job-1', template: 'observe-utility', target: 'utility/monitoring/svc/grafana:80' }]);
     now += 1500;
     pipe.destroy();
     await until(() => events.some((e) => e.type === 'bastion.relayed'));
     expect(events.find((e) => e.type === 'bastion.relayed')).toEqual({
       type: 'bastion.relayed', jobId: 'job-1',
-      data: { bastion: r.id, target: 'uat/monitoring/svc/grafana:80', openedAt: '2026-10-20T12:00:00.000Z', ms: 1500 },
+      data: { bastion: r.id, target: 'utility/monitoring/svc/grafana:80', openedAt: '2026-10-20T12:00:00.000Z', ms: 1500 },
     });
   });
 
   it('refuses a connection Access denies, starts no command for it, and records the refusal', async () => {
     const p = pipes();
-    const { b, events } = bastions({ pipe: p.pipe, mayRelay: async () => ({ allowed: false, reason: 'job:u1/job-1 may not relay to uat/monitoring/svc/grafana:80' }) });
+    const { b, events } = bastions({ pipe: p.pipe, mayRelay: async () => ({ allowed: false, reason: 'job:u1/job-1 may not relay to utility/monitoring/svc/grafana:80' }) });
     const r = await b.start(JOB, TEMPLATE, TARGETS);
     if ('no' in r) throw new Error(r.no);
     await until(() => b.of('job-1')?.state === 'running');
-    expect(await b.relay('job-1', 'uat/monitoring/svc/grafana:80')).toEqual({
-      status: 403, no: 'Access denies the relay to uat/monitoring/svc/grafana:80: job:u1/job-1 may not relay to uat/monitoring/svc/grafana:80',
+    expect(await b.relay('job-1', 'utility/monitoring/svc/grafana:80')).toEqual({
+      status: 403, no: 'Access denies the relay to utility/monitoring/svc/grafana:80: job:u1/job-1 may not relay to utility/monitoring/svc/grafana:80',
     });
     expect(p.started).toEqual([]);
     expect(events.find((e) => e.type === 'bastion.relay_refused')).toEqual({
       type: 'bastion.relay_refused', jobId: 'job-1',
-      data: { bastion: r.id, target: 'uat/monitoring/svc/grafana:80', reason: 'job:u1/job-1 may not relay to uat/monitoring/svc/grafana:80' },
+      data: { bastion: r.id, target: 'utility/monitoring/svc/grafana:80', reason: 'job:u1/job-1 may not relay to utility/monitoring/svc/grafana:80' },
     });
   });
 });

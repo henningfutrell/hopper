@@ -32,7 +32,7 @@ export interface PlacedTarget extends BastionTarget { context: string }
 const KUBE_NAME = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/;
 const CLUSTER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/;
 const TARGET = /^([^/\s]+)\/([^/\s]+)\/([^/\s]+)\/([^/:\s]+):(\d{1,5})$/;
-const SAY = 'a target is <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>, for example uat/monitoring/svc/prometheus-server:9090';
+const SAY = 'a target is <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>, for example utility/monitoring/svc/prometheus-server:9090';
 
 export const targetText = (t: BastionTarget): string => `${t.cluster}/${t.namespace}/${t.kind}/${t.name}:${t.port}`;
 

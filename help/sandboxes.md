@@ -96,7 +96,7 @@ A box runs one command of a job, and Claude does not run in it. So no box starts
 A job that needs AWS, a cluster or another sandboxed target asks the hopper for a sandbox. You do not create the box.
 
 ```sh
-sh "$HOPPER_SKILL" sandbox --why "Create the report bucket in the UAT account" \
+sh "$HOPPER_SKILL" sandbox --why "Create the report bucket in the utility account" \
   --plan "aws s3 mb s3://report. To undo: aws s3 rb s3://report." \
   --needs "write/aws-account/123456789012" --wait
 ```
@@ -124,7 +124,7 @@ When you approve a template that a job asked for, the run of that job starts wit
 
 **Remembered write approvals.** When you approve a write, sync or apply on an asset, the hopper remembers that approval for that asset and access. A later template or sandbox run whose every change you approved before, with no vault secret and with reads that need no person, is approved with no person: `by: a remembered write approval`. So a repeat write ask on the same account or namespace runs with zero clicks. The same panel lists each remembered approval, with who gave it and when it ends. Select **Forget** to remove one: the next ask waits for a person again. Set how long an approval is remembered in **hours** (default 168, one week; 0 keeps it until you forget it).
 
-**The approval cards.** Each template and sandbox run card shows what the sandbox is for: a readable name made from the job's purpose (the `asked-<hash>` name stays beside it), **Why** in the job's words, the **Job** with its title and a link to its issue or pull request, the **Plan**, and each need in plain words. For an asset with a minting credential in the vault, the card shows that credential's name and scope next to the raw ID, for example `AWS_UAT2: gss-uat2 account`.
+**The approval cards.** Each template and sandbox run card shows what the sandbox is for: a readable name made from the job's purpose (the `asked-<hash>` name stays beside it), **Why** in the job's words, the **Job** with its title and a link to its issue or pull request, the **Plan**, and each need in plain words. For an asset with a minting credential in the vault, the card shows that credential's name and scope next to the raw ID, for example `AWS_UTILITY2: ledger-utility2 account`.
 
 Each approval a toggle gives is still an event, and it names the toggle: `by: skip template approval` on `vault.approved` and `template.profile_approved`, `by: skip sandbox approval` on `vault.sandbox_approved`. The job's timeline shows each one.
 

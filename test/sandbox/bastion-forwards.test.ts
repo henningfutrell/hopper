@@ -17,10 +17,10 @@ import { createBastions } from '../../src/sandbox/bastions.ts';
 import type { NeedBoxIo, NeedBoxResult } from '../../src/sandbox/need-box.ts';
 import { bastionText } from '../../src/skills/bastion-skill.ts';
 
-const PROM = 'uat/monitoring/svc/prometheus:9090';
-const GRAFANA = 'uat/monitoring/svc/grafana:80';
-const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
-const TEMPLATE = { name: 'observe-uat', image: 'img', tools: ['kubectl'], profiles: [MONITORING], bastionTargets: [PROM, GRAFANA], pending: { bastionTargets: [] } } as unknown as TemplateView;
+const PROM = 'utility/monitoring/svc/prometheus:9090';
+const GRAFANA = 'utility/monitoring/svc/grafana:80';
+const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } };
+const TEMPLATE = { name: 'observe-utility', image: 'img', tools: ['kubectl'], profiles: [MONITORING], bastionTargets: [PROM, GRAFANA], pending: { bastionTargets: [] } } as unknown as TemplateView;
 const JOB = { id: 'job-1', status: 'running' } as unknown as Job;
 const TARGETS = parseTargets(`${PROM} ${GRAFANA}`) as BastionTarget[];
 const FORBIDDEN = 'error: error upgrading connection: pods "prometheus-0" is forbidden: User "hopper-observe" cannot create resource "pods/portforward" in API group "" in the namespace "monitoring"';
@@ -92,7 +92,7 @@ function bastions() {
       await new Promise((r) => { i.signal.addEventListener('abort', r, { once: true }); });
       return { exit: 125, stopped: 'cancelled' };
     },
-    mint: async () => ({ minted: { kind: 'kube', token: 'token-1', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://uat.example:6443' } }),
+    mint: async () => ({ minted: { kind: 'kube', token: 'token-1', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://utility.example:6443' } }),
     release: async () => {}, mayRelay: async () => ({ allowed: true, reason: 'job:u1/job-1 may relay' }),
   });
   ended.push(() => b.stopAll());

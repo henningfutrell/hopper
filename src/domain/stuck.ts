@@ -1,7 +1,8 @@
 // Stuck work (issue #1010, design.md "Stuck work"): every item that waits on a person — an open hand-off, a failure, work
-// not pushed, a pull request the hopper gave up on, a job stuck on its own wait, an item left in PR open
-// with no pull request to wait on (issue #1231), a job on a wait that names nothing it waits on (issue #1245), a job on a wait whose agent session ended (issue #1779), a job that waits for memory while no job runs (issue #2303), an ended job whose cleanup left something (issue #2504) — in exactly one stuck cause, with its count, and one bulk action when the hopper takes it now for each item of the cause, else what a person
-// does. A parked job is no stuck work (issue #2414): it waits by design, in Parked only. The Failures view shows them first; `POST /ui/api/failures/stuck/:cause` runs a cause's bulk action. Pure.
+// not pushed, a pull request the hopper gave up on, a job whose own wait broke, an item left in PR open
+// with no pull request to wait on (issue #1231), a job on a wait that names nothing it waits on (issue #1245), a job on a wait whose agent session ended (issue #1779), a job that waits for memory while no job runs (issue #2303) — in exactly one stuck cause, with its count, and one bulk action when the hopper takes it now for each item of the cause, else what a person
+// does. A parked job is no stuck work (issue #2414): it waits by design, in Parked only. Nor is a job that only still waits,
+// also past its deadline, nor an ended job's cleanup leftover: the cleanup worker owns it, and Machines counts it (issue #2684). The Failures view shows them first; `POST /ui/api/failures/stuck/:cause` runs a cause's bulk action. Pure.
 // Re-exported from types.ts.
 import type { Allowed, FailureRecordView, HandoffResolutionAction, HandoffView } from './failures.ts';
 import type { KeptWorkView } from './kept-work.ts';
@@ -13,7 +14,7 @@ import { waitsOnNothing } from './wait-on.ts';
 /** The causes, bulk ones first, in the order the view shows them. */
 export const STUCK_CAUSES = [
   'continue', 'run_again', 'wont_do', 'retry', 'push', 'tend', 'wait_unnamed', 'stranded',
-  'memory_starved', 'done_by_hand', 'taken_soon', 'kept_work', 'cleanup_leftover', 'checks', 'tend_refused', 'own_wait', 'pr_open_stale',
+  'memory_starved', 'done_by_hand', 'taken_soon', 'kept_work', 'checks', 'tend_refused', 'own_wait', 'pr_open_stale',
 ] as const;
 export type StuckCauseId = typeof STUCK_CAUSES[number];
 
@@ -39,8 +40,6 @@ export interface StuckInputs {
   jobs: Job[];
   /** The jobs of the items blocked with no pull request to wait on, or with it closed without a merge (issues #1231, #1891, `blockedStuck`). */
   prOpen: string[];
-  /** The ended jobs with a cleanup leftover (issue #2504, `cleanupLeftoversOf`). */
-  leftovers: string[];
 }
 
 const TEXT: Record<StuckCauseId, { what: string; act?: string; todo?: string }> = {
@@ -56,10 +55,9 @@ const TEXT: Record<StuckCauseId, { what: string; act?: string; todo?: string }> 
   done_by_hand: { what: 'Failed jobs with a ready PR or work done by hand', todo: 'Review and merge the PR, or do the work. Then press Done on its card in Needs a person.' },
   taken_soon: { what: 'Failed jobs the hopper runs again soon', todo: 'Nothing to do now. Look again in a minute.' },
   kept_work: { what: 'Jobs with work not pushed that cannot go on', todo: 'Press Discard in Work not pushed, or run its item again. Do not push on its machine: it holds no GitHub credentials.' },
-  cleanup_leftover: { what: 'Ended jobs whose cleanup left something on a machine', todo: 'Open the job: its parts list names each thing still there, its machine and why. Bring the machine online, or remove the thing by hand there. The sweep tries again at each pass.' },
   checks: { what: 'Pull requests whose checks still fail', todo: 'Look at the failing checks on GitHub. Fix them, or close the PR.' },
   tend_refused: { what: 'Pull requests the hopper cannot tend', todo: 'Read why on its card in Pull requests, and remove the block.' },
-  own_wait: { what: 'Jobs stuck on their own wait, past its deadline', todo: 'End its wait or cancel it, on the job.' },
+  own_wait: { what: 'Jobs whose own wait broke, past its deadline', todo: 'Read its last check on the job. Then end its wait or cancel it.' },
   pr_open_stale: { what: 'Items blocked with no pull request to wait on, with their pull request closed without a merge, or past their deadline with no move', todo: 'Look at its issue and its pull request on GitHub. Then, on its row in Intake, press Run again when work is left, else press Won\'t do.' },
 };
 
@@ -76,6 +74,15 @@ function prCause(c: PullRequestCard): StuckCauseId | undefined {
   if (c.state !== 'open') return undefined;
   if (c.gaveUp) return c.waits === 'tend failed' ? 'tend' : 'checks';
   return c.queue && 'refused' in c.queue ? 'tend_refused' : undefined;
+}
+
+/**
+ * Whether a job's own wait broke (issue #2684): its command flagged stuck, or past its deadline with a check that cannot
+ * test its condition, or met before and not woken again. A wait past its deadline that its check still tests only waits.
+ */
+function waitBroke(j: Job): boolean {
+  const check = j.wait?.check;
+  return Boolean(j.wait?.stuckAt) || (check?.overdueAt !== undefined && (check.brokenAt !== undefined || check.repeat === true));
 }
 
 /** Every stuck item in one cause; the causes with an item, in `STUCK_CAUSES` order. */
@@ -101,9 +108,8 @@ export function stuckOf(i: StuckInputs): StuckCause[] {
     if (j.status === 'queued' && !running && j.waitReason?.startsWith(MEMORY_WAIT)) add('memory_starved', j.id);
     else if (waitsOnNothing(j)) add('wait_unnamed', j.id);
     else if (j.status === 'waiting_on' && j.wait?.strandedAt) add('stranded', j.id);
-    else if (j.status === 'waiting_on' && (j.wait?.stuckAt || j.wait?.check?.overdueAt)) add('own_wait', j.id);
+    else if (j.status === 'waiting_on' && waitBroke(j)) add('own_wait', j.id);
   }
   for (const id of i.prOpen) add('pr_open_stale', id);
-  for (const id of i.leftovers) add('cleanup_leftover', id);
   return STUCK_CAUSES.filter((c) => by.has(c)).map((cause) => ({ cause, ids: by.get(cause)!, ...TEXT[cause] }));
 }

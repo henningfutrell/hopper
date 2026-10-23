@@ -86,7 +86,7 @@ const readdir = (d: string): string[] => readdirSync(d).sort();
 describe('the apply wrapper (issue #870)', () => {
   it('the commands that change nothing go to the real binary as they were given', async () => {
     const w = setup();
-    const runs = [['version'], ['init', '-input=false'], ['plan', '-out=tf.plan'], ['plan', '-destroy', '-out', 'tf.plan'], ['show', '-json', 'tf.plan'], ['validate'], ['output'], ['state', 'list'], ['state', 'pull'], ['workspace', 'select', 'uat'], ['-chdir=stack', 'plan']];
+    const runs = [['version'], ['init', '-input=false'], ['plan', '-out=tf.plan'], ['plan', '-destroy', '-out', 'tf.plan'], ['show', '-json', 'tf.plan'], ['validate'], ['output'], ['state', 'list'], ['state', 'pull'], ['workspace', 'select', 'utility'], ['-chdir=stack', 'plan']];
     for (const args of runs) expect((await w.run(args)).code, args.join(' ')).toBe(0);
     // TF_CLI_ARGS cannot slip a flag past it.
     expect((await w.run(['plan'], { TF_CLI_ARGS: '-target=x' })).real.at(-1)).toBe('plan|unset');

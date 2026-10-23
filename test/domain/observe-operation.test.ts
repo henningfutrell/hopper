@@ -19,11 +19,11 @@ import { openInstanceStore, type InstanceStore } from '../../src/store/index.ts'
 import { createFakeAuthorizationServer } from '../support/fake-authorization-server.ts';
 import { testDatabaseUrl } from '../support/database.ts';
 
-const UAT = '111111111111';
-const CLUSTER = { kind: 'cluster', name: 'uat' } as const;
-const MONITORING = { kind: 'namespace', name: 'uat/monitoring' } as const;
+const UTILITY = '111111111111';
+const CLUSTER = { kind: 'cluster', name: 'utility' } as const;
+const MONITORING = { kind: 'namespace', name: 'utility/monitoring' } as const;
 const observe = (asset: OperationProfile['asset']): OperationProfile => ({ operation: 'observe', asset });
-const aws: VaultSecret = { id: 'id-m', name: 'MINTER_UAT', setBy: 'admin', createdAt: '2030-01-01T00:00:00Z', changedBy: 'admin', changedAt: '2030-01-01T00:00:00Z', mints: { kind: 'aws-account', name: UAT } };
+const aws: VaultSecret = { id: 'id-m', name: 'MINTER_UTILITY', setBy: 'admin', createdAt: '2030-01-01T00:00:00Z', changedBy: 'admin', changedAt: '2030-01-01T00:00:00Z', mints: { kind: 'aws-account', name: UTILITY } };
 
 describe('the observe operation (issue #2146)', () => {
   it('is an operation, and no change of its asset', () => {
@@ -39,13 +39,13 @@ describe('the observe operation (issue #2146)', () => {
   });
 
   it('mints nothing for an AWS role or an Argo CD app', () => {
-    expect(mintTarget('aws', observe({ kind: 'aws-role', name: `${UAT}/hopper-read` }))).toMatch(/^observe is minted for a cluster or a namespace only/);
-    expect(mintTarget('kube', observe({ kind: 'argocd-app', name: 'uat/web' }))).toMatch(/^an argocd-app takes sync only/);
+    expect(mintTarget('aws', observe({ kind: 'aws-role', name: `${UTILITY}/hopper-read` }))).toMatch(/^observe is minted for a cluster or a namespace only/);
+    expect(mintTarget('kube', observe({ kind: 'argocd-app', name: 'utility/web' }))).toMatch(/^an argocd-app takes sync only/);
   });
 
   it('finds a cluster in the AWS accounts as the role hopper-observe', () => {
     const target = mintTarget('kube', observe(MONITORING)) as MintTarget;
-    expect(mintSourceFor([aws], target, 'observe')).toEqual({ discover: { cluster: 'uat', role: 'hopper-observe', credentials: [{ name: 'MINTER_UAT', account: UAT }] } });
+    expect(mintSourceFor([aws], target, 'observe')).toEqual({ discover: { cluster: 'utility', role: 'hopper-observe', credentials: [{ name: 'MINTER_UTILITY', account: UTILITY }] } });
   });
 
   it('needs no plan, and infra applies off do not stop it', () => {
@@ -59,7 +59,7 @@ describe('the observe operation (issue #2146)', () => {
     expect(profileNeedsPerson(observe(CLUSTER))).toBe(true);
     const r = rateTemplate({ secrets: [], profiles: [observe(MONITORING)] }, [], DEFAULT_BLAST_RADIUS_SETTINGS.rules);
     expect(r.level).toBe('high');
-    expect(r.reasons).toEqual(['observe on namespace uat/monitoring: it port-forwards to the asset\'s pods; waits for an explicit approval']);
+    expect(r.reasons).toEqual(['observe on namespace utility/monitoring: it port-forwards to the asset\'s pods; waits for an explicit approval']);
   });
 });
 

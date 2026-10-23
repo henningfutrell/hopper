@@ -1,6 +1,6 @@
 // The leftover check (issue #2504, design.md "The resource ledger"): with each sweep pass, an ended job whose ledger still
 // holds an entry `live` or `failed` once the grace period after its end passed is a cleanup leftover, recorded once per job
-// as `job.cleanup_leftover` and never ignored: Failures lists it as stuck work while it stays. Then each told entry on a
+// as `job.cleanup_leftover` and never ignored: Machines counts it while it stays (it is no stuck work on Failures, issue #2684). Then each told entry on a
 // retired machine (issue #919), which no reap reaches, is closed `retired` (part 12): the record stays, the leftover ends.
 import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, retiredClosures } from '../domain/resource-ledger.ts';
 import type { EngineContext } from './context.ts';

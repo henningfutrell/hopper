@@ -5,7 +5,7 @@
 // egress host is approved only by a person: no policy or toggle approves it.
 // Issue #2146: a request may also name box tools beyond the ones its needs use (`--tools "jq promtool logcli"`): the
 // hopper's own pinned software, so a policy approves them as it approves the tools of the needs. Part 3: a request may
-// name bastion targets (`--targets "uat/monitoring/svc/grafana:80"`), each a target a bastion of the template may forward
+// name bastion targets (`--targets "utility/monitoring/svc/grafana:80"`), each a target a bastion of the template may forward
 // to; the template request checks that an observe of its needs reaches each.
 import { BOX_IMAGE, TEST_IMAGE } from '../sandbox/box-image.ts';
 import { toolSet, toolsProblem } from '../domain/sandboxes.ts';

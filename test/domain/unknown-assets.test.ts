@@ -14,14 +14,14 @@ const aws = (account: string, region: string, clusters: string[], ok = true): To
   key: `aws/${account}/${region}`, source: { kind: 'aws', account, region }, reporter: 'topology discovery', lastRead: { at: AT, ok },
   lastGood: { at: AT, links: [], nodes: clusters.map((name) => ({ id: `arn:aws:eks:${region}:${account}:cluster/${name}`, kind: 'cluster' as const, name, account, region })) },
 });
-const SOURCES = [aws('111111111111', 'us-east-1', ['staging-eks', 'control-plane-eks']), aws('222222222222', 'us-west-2', ['platform-cluster-eks', 'prod-eks'])];
+const SOURCES = [aws('111111111111', 'us-east-1', ['staging-eks', 'central-eks']), aws('222222222222', 'us-west-2', ['pipeline-eks', 'prod-eks'])];
 const needs = (s: string) => needsOf(s) as OperationProfile[];
 const facts = (o: Partial<Parameters<typeof unknownAssets>[1]> = {}) => ({ secrets: [], overrides: [], known: knownClusters(SOURCES), ...o });
 
 describe('known clusters', () => {
   it('are the EKS clusters of the AWS sources, each once, sorted', () => {
     const kube: TopologySource = { key: 'kubernetes/lab', source: { kind: 'kubernetes', cluster: 'lab' }, reporter: 'r', lastRead: { at: AT, ok: true }, lastGood: { at: AT, links: [], nodes: [{ id: 'lab', kind: 'cluster', name: 'lab' }] } };
-    expect(knownClusters([...SOURCES, aws('333333333333', 'eu-west-1', ['prod-eks']), kube])).toEqual(['control-plane-eks', 'platform-cluster-eks', 'prod-eks', 'staging-eks']);
+    expect(knownClusters([...SOURCES, aws('333333333333', 'eu-west-1', ['prod-eks']), kube])).toEqual(['central-eks', 'pipeline-eks', 'prod-eks', 'staging-eks']);
   });
 
   it('keep a source last good snapshot when its last read failed', () => {
@@ -31,12 +31,12 @@ describe('known clusters', () => {
 
 describe('an unknown asset (issue #2067)', () => {
   it('is a cluster need the topology does not list, with the known clusters nearest first', () => {
-    const u = unknownAssets(needs('read/cluster/stage read/namespace/plat-eks/default'), facts());
+    const u = unknownAssets(needs('read/cluster/stage read/namespace/pipe-eks/default'), facts());
     expect(u).toEqual([
-      { asset: { kind: 'cluster', name: 'stage' }, cluster: 'stage', known: ['staging-eks', 'prod-eks', 'control-plane-eks', 'platform-cluster-eks'] },
-      { asset: { kind: 'namespace', name: 'plat-eks/default' }, cluster: 'plat-eks', known: ['prod-eks', 'staging-eks', 'control-plane-eks', 'platform-cluster-eks'] },
+      { asset: { kind: 'cluster', name: 'stage' }, cluster: 'stage', known: ['staging-eks', 'prod-eks', 'central-eks', 'pipeline-eks'] },
+      { asset: { kind: 'namespace', name: 'pipe-eks/default' }, cluster: 'pipe-eks', known: ['prod-eks', 'pipeline-eks', 'staging-eks', 'central-eks'] },
     ]);
-    expect(unknownAssetText(u[0]!)).toBe('no cluster stage; known: staging-eks, prod-eks, control-plane-eks, platform-cluster-eks');
+    expect(unknownAssetText(u[0]!)).toBe('no cluster stage; known: staging-eks, prod-eks, central-eks, pipeline-eks');
   });
 
   it('is never a cluster the topology lists, nor an asset of another kind', () => {
@@ -44,7 +44,7 @@ describe('an unknown asset (issue #2067)', () => {
   });
 
   it('names the cluster of an Argo CD app', () => {
-    expect(unknownAssets(needs('sync/argocd-app/control/web'), facts({ known: ['control-plane-eks', 'controller-eks'] })).map((u) => u.cluster)).toEqual(['control']);
+    expect(unknownAssets(needs('sync/argocd-app/central/web'), facts({ known: ['central-eks', 'centralized-eks'] })).map((u) => u.cluster)).toEqual(['central']);
   });
 
   it('is never a cluster with a minting credential of its own or a cluster override', () => {
@@ -64,40 +64,40 @@ describe('an unknown asset (issue #2067)', () => {
 });
 
 describe('a short cluster name (issue #2168)', () => {
-  const uat = (known: string[]) => facts({ known });
+  const utility = (known: string[]) => facts({ known });
 
   it('resolves to the one known cluster it is a prefix of, and is no unknown asset', () => {
-    expect(matchCluster('uat', ['prod-eks', 'uat-eks'])).toEqual({ kind: 'short', to: 'uat-eks' });
-    expect(unknownAssets(needs('read/cluster/uat read/namespace/uat/web'), uat(['prod-eks', 'uat-eks']))).toEqual([]);
-    expect(shortClusters(needs('read/cluster/uat read/namespace/uat/web read/cluster/prod-eks'), uat(['prod-eks', 'uat-eks']))).toEqual([{ cluster: 'uat', to: 'uat-eks' }]);
+    expect(matchCluster('utility', ['prod-eks', 'utility-eks'])).toEqual({ kind: 'short', to: 'utility-eks' });
+    expect(unknownAssets(needs('read/cluster/utility read/namespace/utility/web'), utility(['prod-eks', 'utility-eks']))).toEqual([]);
+    expect(shortClusters(needs('read/cluster/utility read/namespace/utility/web read/cluster/prod-eks'), utility(['prod-eks', 'utility-eks']))).toEqual([{ cluster: 'utility', to: 'utility-eks' }]);
   });
 
   it('is ambiguous when it is the prefix of more than one, with the candidates, and is not guessed', () => {
-    expect(matchCluster('uat', ['uat-gke', 'uat-eks'])).toEqual({ kind: 'ambiguous', candidates: ['uat-eks', 'uat-gke'] });
-    const u = unknownAssets(needs('read/cluster/uat'), uat(['prod-eks', 'uat-eks', 'uat-gke']));
-    expect(u).toEqual([{ asset: { kind: 'cluster', name: 'uat' }, cluster: 'uat', known: ['uat-eks', 'uat-gke', 'prod-eks'], candidates: ['uat-eks', 'uat-gke'] }]);
-    expect(unknownAssetText(u[0]!)).toBe('cluster uat is ambiguous: uat-eks, uat-gke');
-    expect(shortClusters(needs('read/cluster/uat'), uat(['uat-eks', 'uat-gke']))).toEqual([]);
+    expect(matchCluster('utility', ['utility-gke', 'utility-eks'])).toEqual({ kind: 'ambiguous', candidates: ['utility-eks', 'utility-gke'] });
+    const u = unknownAssets(needs('read/cluster/utility'), utility(['prod-eks', 'utility-eks', 'utility-gke']));
+    expect(u).toEqual([{ asset: { kind: 'cluster', name: 'utility' }, cluster: 'utility', known: ['utility-eks', 'utility-gke', 'prod-eks'], candidates: ['utility-eks', 'utility-gke'] }]);
+    expect(unknownAssetText(u[0]!)).toBe('cluster utility is ambiguous: utility-eks, utility-gke');
+    expect(shortClusters(needs('read/cluster/utility'), utility(['utility-eks', 'utility-gke']))).toEqual([]);
   });
 
   it('with no match is an unknown asset with no candidates', () => {
-    expect(matchCluster('qa', ['uat-eks'])).toEqual({ kind: 'none' });
-    expect(unknownAssets(needs('read/cluster/qa'), uat(['uat-eks']))).toEqual([{ asset: { kind: 'cluster', name: 'qa' }, cluster: 'qa', known: ['uat-eks'] }]);
+    expect(matchCluster('qa', ['utility-eks'])).toEqual({ kind: 'none' });
+    expect(unknownAssets(needs('read/cluster/qa'), utility(['utility-eks']))).toEqual([{ asset: { kind: 'cluster', name: 'qa' }, cluster: 'qa', known: ['utility-eks'] }]);
   });
 
   it('a full name matches exactly, also when it is the prefix of another', () => {
-    expect(matchCluster('uat', ['uat', 'uat-eks'])).toEqual({ kind: 'exact' });
-    expect(shortClusters(needs('read/cluster/uat'), uat(['uat', 'uat-eks']))).toEqual([]);
+    expect(matchCluster('utility', ['utility', 'utility-eks'])).toEqual({ kind: 'exact' });
+    expect(shortClusters(needs('read/cluster/utility'), utility(['utility', 'utility-eks']))).toEqual([]);
   });
 
   it('a cluster renamed after the template was saved: one new name it is a prefix of resolves; another name is unknown', () => {
-    const saved = needs('read/cluster/uat-eks');
-    expect(unknownAssets(saved, uat(['uat-eks-2']))).toEqual([]);
-    expect(shortClusters(saved, uat(['uat-eks-2']))).toEqual([{ cluster: 'uat-eks', to: 'uat-eks-2' }]);
-    expect(unknownAssets(saved, uat(['acceptance-eks']))).toEqual([{ asset: { kind: 'cluster', name: 'uat-eks' }, cluster: 'uat-eks', known: ['acceptance-eks'] }]);
+    const saved = needs('read/cluster/utility-eks');
+    expect(unknownAssets(saved, utility(['utility-eks-2']))).toEqual([]);
+    expect(shortClusters(saved, utility(['utility-eks-2']))).toEqual([{ cluster: 'utility-eks', to: 'utility-eks-2' }]);
+    expect(unknownAssets(saved, utility(['acceptance-eks']))).toEqual([{ asset: { kind: 'cluster', name: 'utility-eks' }, cluster: 'utility-eks', known: ['acceptance-eks'] }]);
   });
 
   it('a cluster override (a configured alias) wins over a short name', () => {
-    expect(shortClusters(needs('read/cluster/uat'), facts({ known: ['uat-eks'], overrides: [{ name: 'uat', eksName: 'uat-gke' }] }))).toEqual([]);
+    expect(shortClusters(needs('read/cluster/utility'), facts({ known: ['utility-eks'], overrides: [{ name: 'utility', eksName: 'utility-gke' }] }))).toEqual([]);
   });
 });

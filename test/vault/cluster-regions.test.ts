@@ -16,7 +16,7 @@ import { recheckUnminted } from '../../src/vault/checks.ts';
 import { CHECK_UNMINTED_MS, dueForCheck } from '../../src/sandbox/check.ts';
 import { checkWait } from '../../src/domain/read-only-check.ts';
 
-const UAT = '111111111111';
+const UTILITY = '111111111111';
 const PROD = '222222222222';
 const SERVER = 'https://ABC.gr7.us-east-2.eks.amazonaws.com';
 
@@ -30,7 +30,7 @@ interface Fake { minter: CredentialMinter; described: string[]; listed: string[]
 
 /**
  * A minter whose accounts have the regions `regions` (an account not named: its regions cannot be listed), and the
- * cluster `uat-eks` in the regions `has` names, by account.
+ * cluster `utility-eks` in the regions `has` names, by account.
  */
 function fakeMinter(regions: Record<string, string[]>, has: Record<string, string[]>): Fake {
   const fake: Fake = { described: [], listed: [], minter: undefined as unknown as CredentialMinter };
@@ -62,46 +62,46 @@ const keys = JSON.stringify({ AccessKeyId: 'AKIA', SecretAccessKey: 'never-shown
 const fromHere = (f: Fake, secrets: VaultSecret[], values: Record<string, string> = {}) => mintHere({
   vault: { get: (n) => secrets.find((s) => s.name === n), list: () => secrets }, minter: f.minter, valueOf: async (s) => ({ value: values[s.name] ?? keys }),
 });
-const credentials = [{ name: 'MINTER_UAT', account: UAT }, { name: 'MINTER_PROD', account: PROD }];
-const discovery = { cluster: 'uat-eks', role: 'hopper-read', credentials };
-const two = [aws('MINTER_UAT', UAT), aws('MINTER_PROD', PROD)];
+const credentials = [{ name: 'MINTER_UTILITY', account: UTILITY }, { name: 'MINTER_PROD', account: PROD }];
+const discovery = { cluster: 'utility-eks', role: 'hopper-read', credentials };
+const two = [aws('MINTER_UTILITY', UTILITY), aws('MINTER_PROD', PROD)];
 
 describe('a discovery in every region (issue #1845)', () => {
   it('lists the regions of each account with its hopper-read session, and finds the cluster outside the credential\'s region', async () => {
-    const f = fakeMinter({ [UAT]: ['us-east-1', 'us-east-2'], [PROD]: ['us-east-1', 'us-east-2'] }, { [UAT]: ['us-east-2'] });
-    const made = await fromHere(f, two)(discovery, clusterTarget('uat-eks'), 'job-1');
-    expect(f.listed).toEqual([`${UAT} us-east-1`, `${PROD} us-east-1`]);
-    expect(f.described.sort()).toEqual([`${UAT} us-east-1 uat-eks`, `${UAT} us-east-2 uat-eks`, `${PROD} us-east-1 uat-eks`, `${PROD} us-east-2 uat-eks`]);
+    const f = fakeMinter({ [UTILITY]: ['us-east-1', 'us-east-2'], [PROD]: ['us-east-1', 'us-east-2'] }, { [UTILITY]: ['us-east-2'] });
+    const made = await fromHere(f, two)(discovery, clusterTarget('utility-eks'), 'job-1');
+    expect(f.listed).toEqual([`${UTILITY} us-east-1`, `${PROD} us-east-1`]);
+    expect(f.described.sort()).toEqual([`${UTILITY} us-east-1 utility-eks`, `${UTILITY} us-east-2 utility-eks`, `${PROD} us-east-1 utility-eks`, `${PROD} us-east-2 utility-eks`]);
     expect(made).toMatchObject({
-      credential: 'MINTER_UAT', account: UAT, region: 'us-east-2', roleArn: `arn:aws:iam::${UAT}:role/hopper-read`,
-      searched: [{ account: UAT, regions: ['us-east-1', 'us-east-2'] }, { account: PROD, regions: ['us-east-1', 'us-east-2'] }],
+      credential: 'MINTER_UTILITY', account: UTILITY, region: 'us-east-2', roleArn: `arn:aws:iam::${UTILITY}:role/hopper-read`,
+      searched: [{ account: UTILITY, regions: ['us-east-1', 'us-east-2'] }, { account: PROD, regions: ['us-east-1', 'us-east-2'] }],
     });
   });
 
   it('looks in the credential\'s region only when the account\'s regions cannot be listed, and says so', async () => {
     const f = fakeMinter({}, {});
-    const made = await fromHere(f, two)(discovery, clusterTarget('uat-eks'), 'job-1');
-    expect(f.described).toEqual([`${UAT} us-east-1 uat-eks`, `${PROD} us-east-1 uat-eks`]);
-    expect(made).toEqual({ refused: expect.stringContaining(`${UAT} in us-east-1 (its regions could not be listed: EC2 refused DescribeRegions: UnauthorizedOperation): none`) });
+    const made = await fromHere(f, two)(discovery, clusterTarget('utility-eks'), 'job-1');
+    expect(f.described).toEqual([`${UTILITY} us-east-1 utility-eks`, `${PROD} us-east-1 utility-eks`]);
+    expect(made).toEqual({ refused: expect.stringContaining(`${UTILITY} in us-east-1 (its regions could not be listed: EC2 refused DescribeRegions: UnauthorizedOperation): none`) });
   });
 
   it('looks in the override\'s region only, and lists no regions', async () => {
-    const f = fakeMinter({ [UAT]: ['us-east-1', 'us-east-2'] }, { [UAT]: ['eu-west-1'] });
-    const made = await fromHere(f, two)({ ...discovery, region: 'eu-west-1' }, clusterTarget('uat-eks'), 'job-1');
+    const f = fakeMinter({ [UTILITY]: ['us-east-1', 'us-east-2'] }, { [UTILITY]: ['eu-west-1'] });
+    const made = await fromHere(f, two)({ ...discovery, region: 'eu-west-1' }, clusterTarget('utility-eks'), 'job-1');
     expect(f.listed).toEqual([]);
-    expect(made).toMatchObject({ region: 'eu-west-1', account: UAT });
+    expect(made).toMatchObject({ region: 'eu-west-1', account: UTILITY });
   });
 
   it('picks no region of several in one account that have the cluster', async () => {
-    const f = fakeMinter({ [UAT]: ['us-east-1', 'us-east-2'], [PROD]: ['us-east-1'] }, { [UAT]: ['us-east-1', 'us-east-2'] });
-    const made = await fromHere(f, two)(discovery, clusterTarget('uat-eks'), 'job-1');
-    expect(made).toEqual({ refused: expect.stringMatching(/EKS has a cluster uat-eks in 2 places: 111111111111 in us-east-1 \(MINTER_UAT\), 111111111111 in us-east-2 \(MINTER_UAT\)/) });
+    const f = fakeMinter({ [UTILITY]: ['us-east-1', 'us-east-2'], [PROD]: ['us-east-1'] }, { [UTILITY]: ['us-east-1', 'us-east-2'] });
+    const made = await fromHere(f, two)(discovery, clusterTarget('utility-eks'), 'job-1');
+    expect(made).toEqual({ refused: expect.stringMatching(/EKS has a cluster utility-eks in 2 places: 111111111111 in us-east-1 \(MINTER_UTILITY\), 111111111111 in us-east-2 \(MINTER_UTILITY\)/) });
   });
 
   it('names every region it looked in when no account has the cluster', async () => {
-    const f = fakeMinter({ [UAT]: ['us-east-1', 'us-east-2'], [PROD]: ['us-east-1'] }, {});
-    const made = await fromHere(f, two)(discovery, clusterTarget('uat-eks'), 'job-1');
-    expect(made).toEqual({ refused: expect.stringContaining(`(${UAT} in us-east-1, us-east-2: none; ${PROD} in us-east-1: none)`) });
+    const f = fakeMinter({ [UTILITY]: ['us-east-1', 'us-east-2'], [PROD]: ['us-east-1'] }, {});
+    const made = await fromHere(f, two)(discovery, clusterTarget('utility-eks'), 'job-1');
+    expect(made).toEqual({ refused: expect.stringContaining(`(${UTILITY} in us-east-1, us-east-2: none; ${PROD} in us-east-1: none)`) });
   });
 });
 
@@ -111,40 +111,40 @@ const store = (secrets: VaultSecret[], events: { type: string; data: unknown }[]
 
 describe('a mint test of a cluster found in another region (issue #1845)', () => {
   it('names the account, the region, the role, the minting credential and the regions it searched', async () => {
-    const f = fakeMinter({ [UAT]: ['us-east-1', 'us-east-2'] }, { [UAT]: ['us-east-2'] });
-    const secrets = [aws('MINTER_UAT', UAT)];
-    const r = await createMintTest({ store: store(secrets) })('cluster/uat-eks', 'admin', fromHere(f, secrets));
+    const f = fakeMinter({ [UTILITY]: ['us-east-1', 'us-east-2'] }, { [UTILITY]: ['us-east-2'] });
+    const secrets = [aws('MINTER_UTILITY', UTILITY)];
+    const r = await createMintTest({ store: store(secrets) })('cluster/utility-eks', 'admin', fromHere(f, secrets));
     expect(r).toMatchObject({
       tested: {
-        kind: 'kube', credential: 'MINTER_UAT', account: UAT, region: 'us-east-2', roleArn: `arn:aws:iam::${UAT}:role/hopper-read`,
-        searched: [{ account: UAT, regions: ['us-east-1', 'us-east-2'] }],
+        kind: 'kube', credential: 'MINTER_UTILITY', account: UTILITY, region: 'us-east-2', roleArn: `arn:aws:iam::${UTILITY}:role/hopper-read`,
+        searched: [{ account: UTILITY, regions: ['us-east-1', 'us-east-2'] }],
       },
     });
   });
 });
 
 describe('an EKS minting credential whose kubeconfig is gone (issue #1845)', () => {
-  const stale = secret('eks-uat', { kind: 'cluster', name: 'uat-eks' });
-  const eksValue = JSON.stringify({ type: 'eks', roleArn: `arn:aws:iam::${UAT}:role/hopper-read`, kubeconfig: 'kube-config' });
-  const secrets = [aws('MINTER_UAT', UAT), stale];
+  const stale = secret('eks-utility', { kind: 'cluster', name: 'utility-eks' });
+  const eksValue = JSON.stringify({ type: 'eks', roleArn: `arn:aws:iam::${UTILITY}:role/hopper-read`, kubeconfig: 'kube-config' });
+  const secrets = [aws('MINTER_UTILITY', UTILITY), stale];
 
   it('gives way to discovery, and the mint test warns of it', async () => {
-    const f = fakeMinter({ [UAT]: ['us-east-1', 'us-east-2'] }, { [UAT]: ['us-east-2'] });
+    const f = fakeMinter({ [UTILITY]: ['us-east-1', 'us-east-2'] }, { [UTILITY]: ['us-east-2'] });
     const events: { type: string; data: unknown }[] = [];
-    const r = await createMintTest({ store: store(secrets, events) })('cluster/uat-eks', 'admin', fromHere(f, secrets, { 'eks-uat': eksValue }));
+    const r = await createMintTest({ store: store(secrets, events) })('cluster/utility-eks', 'admin', fromHere(f, secrets, { 'eks-utility': eksValue }));
     expect(r).toMatchObject({
       tested: {
-        credential: 'MINTER_UAT', account: UAT, region: 'us-east-2',
-        warning: 'the minting credential eks-uat: it names the kubeconfig kube-config, and the vault holds no secret of that name. The vault passed over it and found the cluster in the AWS accounts: fix or remove eks-uat on Vault',
+        credential: 'MINTER_UTILITY', account: UTILITY, region: 'us-east-2',
+        warning: 'the minting credential eks-utility: it names the kubeconfig kube-config, and the vault holds no secret of that name. The vault passed over it and found the cluster in the AWS accounts: fix or remove eks-utility on Vault',
       },
     });
-    expect(events).toEqual([{ type: 'vault.mint_tested', data: expect.objectContaining({ credential: 'MINTER_UAT' }) }]);
+    expect(events).toEqual([{ type: 'vault.mint_tested', data: expect.objectContaining({ credential: 'MINTER_UTILITY' }) }]);
   });
 
   it('says both reasons when discovery finds nothing either', async () => {
-    const f = fakeMinter({ [UAT]: ['us-east-1'] }, {});
-    const r = await createMintTest({ store: store(secrets) })('cluster/uat-eks', 'admin', fromHere(f, secrets, { 'eks-uat': eksValue }));
-    expect(r).toMatchObject({ code: 'failed', refused: expect.stringMatching(/^the mint test used eks-uat: the minting credential eks-uat: it names the kubeconfig kube-config, and the vault holds no secret of that name; passed over it: no minting credential mints for cluster uat-eks, and the vault found it in none/) });
+    const f = fakeMinter({ [UTILITY]: ['us-east-1'] }, {});
+    const r = await createMintTest({ store: store(secrets) })('cluster/utility-eks', 'admin', fromHere(f, secrets, { 'eks-utility': eksValue }));
+    expect(r).toMatchObject({ code: 'failed', refused: expect.stringMatching(/^the mint test used eks-utility: the minting credential eks-utility: it names the kubeconfig kube-config, and the vault holds no secret of that name; passed over it: no minting credential mints for cluster utility-eks, and the vault found it in none/) });
   });
 });
 
@@ -153,26 +153,26 @@ const IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
 const failed = (asset: Asset): Template => ({
   name: 'asked-0123456789ab', image: IMAGE, secrets: [], profiles: [{ operation: 'read', asset }], readOnly: true, savedBy: 'job j', savedAt: new Date(T0 - 1000).toISOString(),
   approval: { image: IMAGE, secrets: [], by: 'the read policy', at: new Date(T0).toISOString() },
-  check: { version: new Date(T0 - 1000).toISOString(), state: 'failed', at: new Date(T0).toISOString(), probes: [], unminted: [{ asset, reason: 'no minting credential mints for cluster uat-eks' }] },
+  check: { version: new Date(T0 - 1000).toISOString(), state: 'failed', at: new Date(T0).toISOString(), probes: [], unminted: [{ asset, reason: 'no minting credential mints for cluster utility-eks' }] },
 });
 
 describe('a check that failed as the vault minted nothing (issue #1845)', () => {
   it('runs again by itself CHECK_UNMINTED_MS after it failed, and says so', () => {
-    const t = failed({ kind: 'cluster', name: 'uat-eks' });
+    const t = failed({ kind: 'cluster', name: 'utility-eks' });
     expect(dueForCheck(t, new Date(T0 + CHECK_UNMINTED_MS - 1))).toBe(false);
     expect(dueForCheck(t, new Date(T0 + CHECK_UNMINTED_MS))).toBe(true);
     expect(checkWait(t)).toContain('The hopper runs it again in an hour');
   });
 
   it('runs again when a minting credential for an AWS account is set, for a cluster need: discovery may find it there', () => {
-    let templates = [failed({ kind: 'cluster', name: 'uat-eks' }), { ...failed({ kind: 'aws-role', name: `${PROD}/ReadOnly` }), name: 'asked-role' }];
+    let templates = [failed({ kind: 'cluster', name: 'utility-eks' }), { ...failed({ kind: 'aws-role', name: `${PROD}/ReadOnly` }), name: 'asked-role' }];
     const events: { type: string; data: unknown }[] = [];
     const s = {
       vault: { templates: () => templates, saveTemplate: (t: Template) => { templates = templates.map((x) => (x.name === t.name ? t : x)); } } as never,
       events: { append: (e: { type: string; data: unknown }) => { events.push(e); } } as never,
     };
-    recheckUnminted(s, { kind: 'aws-account', name: UAT }, 'MINTER_UAT');
-    expect(events).toEqual([{ type: 'template.check_requested', data: { template: 'asked-0123456789ab', by: 'minting credential MINTER_UAT' } }]);
+    recheckUnminted(s, { kind: 'aws-account', name: UTILITY }, 'MINTER_UTILITY');
+    expect(events).toEqual([{ type: 'template.check_requested', data: { template: 'asked-0123456789ab', by: 'minting credential MINTER_UTILITY' } }]);
     expect(templates.map((t) => t.check?.state)).toEqual([undefined, 'failed']);
   });
 });
@@ -206,8 +206,8 @@ describe('the EC2 regions adapter', () => {
   it('lists the account\'s enabled regions with the session, and keeps the answer for the account', async () => {
     const ec2 = await ec2Api();
     const minter = createCredentialMinter();
-    expect(await minter.awsRegions(session, { account: UAT, region: 'us-east-1', endpoint: ec2.url })).toEqual(['us-east-1', 'us-east-2']);
-    expect(await minter.awsRegions(session, { account: UAT, region: 'us-east-1', endpoint: ec2.url })).toEqual(['us-east-1', 'us-east-2']);
+    expect(await minter.awsRegions(session, { account: UTILITY, region: 'us-east-1', endpoint: ec2.url })).toEqual(['us-east-1', 'us-east-2']);
+    expect(await minter.awsRegions(session, { account: UTILITY, region: 'us-east-1', endpoint: ec2.url })).toEqual(['us-east-1', 'us-east-2']);
     expect(ec2.seen).toHaveLength(1);
     expect(ec2.seen[0]!.body).toContain('Action=DescribeRegions');
     expect(ec2.seen[0]!.authorization).toContain('Credential=ASIAMINTED/');

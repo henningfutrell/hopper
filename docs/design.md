@@ -1030,7 +1030,11 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   A dir the reap could not remove (issue #1452) is never said removed. The reap makes a read-only dir in it (a Go
   module cache), and a dir its owner cannot read (a container's overlay `work/work`, mode 200, issue #2490), readable,
   writable and searchable (`chmod -R u+rwX`) and removes it again, and resets the job's container storage in it through the job's runtime
-  dir, which it makes again when a reboot removed it. What is still there it names (`hopper-left <path>`): the sweep
+  dir, which it makes again when a reboot removed it. A scratch dir still there after that holds files of the job's user
+  namespace (issue #2685: a test database's data dir, a storage's layers, owned by sub-UIDs): the reap removes it with
+  `podman unshare rm -rf`, the job's own scratch dir only and never a link, whether the job's runtime dir is there or not.
+  Under no-new-privileges (the client's service unit sets it) newuidmap cannot set its caps, so podman cannot make that
+  namespace: the reap then runs the same removal through the user's systemd (`systemd-run --user --wait`). What is still there it names (`hopper-left <path>`): the sweep
   logs that once while it stays, records no `job.work_removed`, and a discard of it fails with the path. The sweep
   reaps that job again only once `STUCK_RETRY_MS` (6 hours) passed (issue #1613): each pass would only fail the same way,
   and the reset of its container storage is slow. A scope or a process of the job is stopped at each pass all the same.
@@ -11071,8 +11075,8 @@ check, one for that cluster drops it and the next pass passes), `test/skills/tem
 `test/sandbox/check-transient.test.ts`.
 
 **Unknown assets (issue #2067, 2026-10-19).** Reported from a real run: jobs asked for `read/cluster/staging`,
-`read/cluster/control-plane` and `read/cluster/platform`, while EKS names those clusters `staging-eks`,
-`control-plane-eks` and `platform-cluster-eks`. The templates were approved by the read policy, their checks marked
+`read/cluster/central` and `read/cluster/pipeline`, while EKS names those clusters `staging-eks`,
+`central-eks` and `pipeline-eks`. The templates were approved by the read policy, their checks marked
 every probe `not-run`, and the jobs waited for days on a name that never resolves, until a person ended each wait.
 - **What is unknown** (`unknownAssets`, `src/domain/unknown-assets.ts`, pure). A need on a cluster (`cluster/<name>`, or
   the cluster part of a `namespace` or an `argocd-app`) that **cluster discovery** would look for — no minting credential
@@ -11094,11 +11098,11 @@ Tests: `test/domain/unknown-assets.test.ts`, `test/skills/template-request-unkno
 `test/ui/unknown-assets.test.ts`, `test/integration/unknown-assets.test.ts` (the real daemon and the operator CLI).
 
 **Short cluster names (issue #2168, 2026-10-19).** Reported from an install: the Access requests badge showed 29 with no
-approval open. Templates named clusters by short names (`uat` for `uat-eks`), each an unknown asset, and the badge added
+approval open. Templates named clusters by short names (`utility` for `utility-eks`), each an unknown asset, and the badge added
 the unknown assets to the approvals.
 - **A short name resolves** (`matchCluster`, `src/domain/unknown-assets.ts`, pure). A need's cluster with no minting
   credential and no cluster override is matched against the clusters the topology lists: its full name first; else the
-  one cluster whose name it starts (`uat` → `uat-eks`); else, when it starts several, it is **ambiguous** — an unknown
+  one cluster whose name it starts (`utility` → `utility-eks`); else, when it starts several, it is **ambiguous** — an unknown
   asset with its `candidates`, never a guess; else no match. A cluster override (the configured alias) wins over it.
 - **Discovery finds it so.** `mintSourceFor` takes the clusters the topology lists (`readKnownClusters`, read at each
   mint, as the overrides are) and looks for a short name by the full name it resolves to; an ambiguous one is refused
@@ -11111,7 +11115,7 @@ the unknown assets to the approvals.
   requests for each candidate of an ambiguous one) saves the template through `save-template` with each need on that
   cluster renamed; a changed profile waits for approval again, as any edit of its needs does.
 - **Residual risk, stated.** A short name follows the topology: when a second cluster that it starts appears, it turns
-  ambiguous and its mints are refused until a person points the template at one. A read approved for `cluster/uat` reads
+  ambiguous and its mints are refused until a person points the template at one. A read approved for `cluster/utility` reads
   the cluster the topology resolves it to; **Point at** writes that name into the template, so the approval names it.
 
 Tests: `test/domain/unknown-assets.test.ts` (no match, ambiguous, a cluster renamed after the template was saved),
@@ -12873,9 +12877,8 @@ one press per cause where the hopper can move each item.
   open hand-off is then counted here, not with the hand-offs) else `kept_work`; an open pull request card (the Pull
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
   tend its source refused (`tend_refused`); a job on a wait that names nothing it waits on (`wait_unnamed`,
-  "waiting on nothing recorded", issue #1245); a job on a wait whose agent session ended (`stranded`, issue #1779); a job stuck on its own command wait (`own_wait`); an
-  item blocked with no pull request to wait on (`pr_open_stale`, issues #1231, #1891); an ended job with a cleanup leftover
-  (`cleanup_leftover`, issue #2504, "The resource ledger").
+  "waiting on nothing recorded", issue #1245); a job on a wait whose agent session ended (`stranded`, issue #1779); a job whose own wait broke (`own_wait`, issue #2684: below); an
+  item blocked with no pull request to wait on (`pr_open_stale`, issues #1231, #1891).
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
   `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed`, `stranded` (else 400;
@@ -12892,6 +12895,14 @@ one press per cause where the hopper can move each item.
   and it counts toward neither Failures' list nor its badge (`viewOf` reads no parked job for `stuckOf`; the Failures
   section counts open problems, open hand-offs and work not pushed). The `parked` cause had no bulk action, so nothing
   moved to Parked. Each workflow keeps one home (issue #896).
+- **No job that only still waits, and no cleanup leftover** (issue #2684). A job on its own wait whose agent the hopper
+  ended (a wait release, issue #2326) is parked off its machine by design; past its wait's deadline it only still waits.
+  Listed as `own_wait` for being overdue, such jobs filled Failures. Now a wait is stuck work only when it **broke**
+  (`waitBroke`): its own command was flagged stuck (`stuckAt`), or it is overdue and its check cannot test its condition
+  (`brokenAt`: a read of the items or the pull request failed, or the job's source reads none) or it was met before and the
+  hopper does not wake the job for it again (`repeat`). A wait with no check (`none`: an approval, a grant, a gated outside
+  event) only waits. An ended job's cleanup leftover is not job work for a person: the cleanup worker tries it again at
+  each sweep pass, Machines counts it, and the job's parts list names each entry ("The resource ledger").
 - **Direct jobs** (issue #901). A direct job has no issue, so nothing is assigned: the `direct` source gives its
   submission back (`JobSource.rerun`), and a failed direct job is in Stuck as any failure, by its hand-off or as `retry`,
   and its bulk action runs it again. Since issue #1068 the `direct` source follows a direct job's pull request
@@ -14032,7 +14043,7 @@ job rules are one text for every job of a user; what is true for one repository,
   (`GET /api/repo-job-rules`, `POST /ui/api/repo-job-rules`, admin, `src/http/ui/repo-job-rules.ts`).
   `hopper config set repo-job-rules` from the CLI.
 - **A job's own context** is its issue's text and the person's notes (issue #997): no record for it.
-- **Left of part 4.** A default read-only credential for every job (`cluster/uat-view`): AGENTS.md "The vault gives only to
+- **Left of part 4.** A default read-only credential for every job (`cluster/utility-view`): AGENTS.md "The vault gives only to
   a job a person granted it" does not allow it without a grant, so it waits for a person's decision. A repository's rules can
   tell its jobs to ask for that read through the skills (`hopper-skill`).
 
@@ -18859,14 +18870,14 @@ out ("Git through the hopper", residual risk).
 
 ### The standing read grant (issue #1472, 2026-10-16)
 
-Owner decision on issue #1472 (part 4, a default read-only `cluster/uat-view` for every job): **a per-user setting, off
+Owner decision on issue #1472 (part 4, a default read-only `cluster/utility-view` for every job): **a per-user setting, off
 by default**, that grants with no person only what is read-only. It reverses issue #652 option 1 ("a grant per job, asked
 when it is needed") for read-only grants only; every other grant is a person's, as above.
 
 **What it covers** (`readsOnlyInPolicy`, `src/domain/vault-grants.ts`): a template that has needs, every one a `read`
 the user's read policy holds ("Templates on request"), and no vault secret. A write, sync or apply, a read outside the
 policy, a vault secret, or no needs at all: not covered, and the job's ask becomes a grant ask for a person as before.
-`cluster/uat-view` is the first case: a template of `read cluster/uat` with `cluster/uat` in the read policy.
+`cluster/utility-view` is the first case: a template of `read cluster/utility` with `cluster/utility` in the read policy.
 
 **The grant** (`withVaultGrants`, `src/vault/grants.ts`). The gate checks a person's grant first. With none, and the
 toggle on, a box job whose box's template is covered passes, and `vault.granted { job, key, by: "standing read grant" }`
@@ -26245,7 +26256,7 @@ their own pane waited for ever once a host restart killed the pane, and one fail
   request merged or closed, a run `completed` is ended. Once every item a wait names ended, though before the wait began
   (but not for a wait on an outside event, issue #2219 below), `job.waited_items_ended { items }` is recorded and the engine wakes the job on it (`settledBy` gives `watched`, for that job
   only), `job.wait_ended { by: hopper, note }`. A read that fails is logged and asked again at the next sync.
-- **An item that does not exist** (issue #1691). A wait named `gss#330`, a repository that does not exist, and was read
+- **An item that does not exist** (issue #1691). A wait named `ledger#330`, a repository that does not exist, and was read
   again at every sync for a day, though every other item it named had closed. GitHub's answer that the repository, item or
   run does not exist (404, 410, GraphQL's "Could not resolve to …") is permanent, not a failed read: the item is
   `not_found`. A job one of whose items is `not_found` is woken at once, whatever its other items, with
@@ -30311,8 +30322,8 @@ after a restart, or another hopper on the same database, goes on from it:
 - **When.** The first check a minute after the wait began (`FIRST_CHECK_MS`); one not met is tried again later, the time
   between doubling to 30 minutes (5 minutes for its own command). A wait flagged stuck before is checked at once.
 - **Its deadline**: a day after the wait began, four hours for its own command. Past it, the wait is **overdue** once
-  (`overdueAt`, `job.wait_overdue { deadline, result }`), listed as stuck on its own wait for a person (Failures,
-  `own_wait`), and checked each hour after. A wait on its own command past its deadline is ended instead: the job is told to
+  (`overdueAt`, `job.wait_overdue { deadline, result }`), and checked each hour after; stuck work for a person (Failures,
+  `own_wait`) only when its wait broke (issue #2684, `brokenAt`, "Stuck work"). A wait on its own command past its deadline is ended instead: the job is told to
   look at its command.
 - **What the last check found** (`result`, `checkedAt`, `attempts`), shown on the job's card under On its own wait, with
   its condition and its next check.
@@ -33855,8 +33866,8 @@ ignored.
   lease, before the sweep: each leftover is recorded once per job as `job.cleanup_leftover` (its end, the grace period, and
   each entry: machine, kind, locator, state, reason) and logged. A job already told — in memory, or by its event after a
   restart — is not told again. A check that fails is logged and throws nothing.
-- **Failures.** The stuck cause `cleanup_leftover` ("Ended jobs whose cleanup left something on a machine") lists each such
-  job while it stays, with what a person does. It has no bulk action: the hopper already tries again at each sweep pass.
+- **Failures.** None since issue #2684: a cleanup leftover is the cleanup worker's, which tries again at each sweep pass,
+  and Machines counts it (part 3). The stuck cause `cleanup_leftover` is gone.
 
 **Left for later parts** of issue #2504: containers, volumes, processes, agent sessions, herdr panes and build daemons as
 entries; the cleanup as a persisted work item per entry with backoff, on each machine's own transport, and container storage
@@ -33865,7 +33876,7 @@ the job-list window and what was left before the ledger — and that closes an e
 by hand), which today stays a leftover; leftover counts and bytes on Machines.
 
 **Verification (part 2).** `test/domain/resource-ledger.test.ts` (`cleanupLeftoversOf`; a failed entry reaped later);
-`test/domain/stuck.test.ts` (the cause); `test/engine/cleanup-leftovers.test.ts` (told once, also after a restart; a check
+`test/engine/cleanup-leftovers.test.ts` (told once, also after a restart; a check
 that fails); `test/integration/resource-ledger.test.ts` (real database: Failures lists the job after the grace period, and
 not after a reap removes the entry).
 

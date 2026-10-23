@@ -19,46 +19,46 @@ import {
 import { createFakeContainerRuntime, type FakeContainerRuntime } from '../support/fake-container-runtime.ts';
 
 const observe = (kind: 'cluster' | 'namespace', name: string): OperationProfile => ({ operation: 'observe', asset: { kind, name } });
-const MONITORING = observe('namespace', 'uat/monitoring');
-const UAT = observe('cluster', 'uat');
+const MONITORING = observe('namespace', 'utility/monitoring');
+const UTILITY = observe('cluster', 'utility');
 const credential = (profile: OperationProfile, token: string): BastionCredential => ({
-  profile, minted: { kind: 'kube', token, expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://uat.example:6443', certificateAuthorityData: 'Q0E=' },
+  profile, minted: { kind: 'kube', token, expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://utility.example:6443', certificateAuthorityData: 'Q0E=' },
 });
 
 describe('a bastion\'s targets (issue #2146)', () => {
   it('reads each target as <cluster>/<namespace>/<kind>/<name>:<port>, the same one once', () => {
-    expect(parseTargets('uat/monitoring/svc/prometheus-server:9090  uat/monitoring/svc/grafana:80 uat/monitoring/svc/grafana:80')).toEqual([
-      { cluster: 'uat', namespace: 'monitoring', kind: 'svc', name: 'prometheus-server', port: 9090 },
-      { cluster: 'uat', namespace: 'monitoring', kind: 'svc', name: 'grafana', port: 80 },
+    expect(parseTargets('utility/monitoring/svc/prometheus-server:9090  utility/monitoring/svc/grafana:80 utility/monitoring/svc/grafana:80')).toEqual([
+      { cluster: 'utility', namespace: 'monitoring', kind: 'svc', name: 'prometheus-server', port: 9090 },
+      { cluster: 'utility', namespace: 'monitoring', kind: 'svc', name: 'grafana', port: 80 },
     ]);
     expect(parseTargets('identity-eks/identity/pod/identity-server-postgresql-0:5432')).toEqual([{ cluster: 'identity-eks', namespace: 'identity', kind: 'pod', name: 'identity-server-postgresql-0', port: 5432 }]);
   });
 
   it('refuses what it cannot read, and says what to write', () => {
     expect(parseTargets(undefined)).toMatch(/^name the targets with --targets: a target is <cluster>\/<namespace>\/<svc\|pod\|deploy>\/<name>:<port>/);
-    expect(parseTargets('uat/monitoring/svc/grafana')).toMatch(/^uat\/monitoring\/svc\/grafana: a target is/);
-    expect(parseTargets('uat/monitoring/secret/grafana:80')).toMatch(/forward to svc, pod, deploy only, not secret/);
-    expect(parseTargets('uat/monitoring/svc/grafana:70000')).toMatch(/the port is 1 to 65535/);
-    expect(parseTargets('uat/Monitoring/svc/grafana:80')).toMatch(/Monitoring is no namespace name/);
-    expect(parseTargets('uat/monitoring/svc/$(id):80')).toMatch(/is no Kubernetes name/);
-    const many = Array.from({ length: BASTION_TARGETS_MAX + 1 }, (_, i) => `uat/monitoring/svc/s${i}:80`).join(' ');
+    expect(parseTargets('utility/monitoring/svc/grafana')).toMatch(/^utility\/monitoring\/svc\/grafana: a target is/);
+    expect(parseTargets('utility/monitoring/secret/grafana:80')).toMatch(/forward to svc, pod, deploy only, not secret/);
+    expect(parseTargets('utility/monitoring/svc/grafana:70000')).toMatch(/the port is 1 to 65535/);
+    expect(parseTargets('utility/Monitoring/svc/grafana:80')).toMatch(/Monitoring is no namespace name/);
+    expect(parseTargets('utility/monitoring/svc/$(id):80')).toMatch(/is no Kubernetes name/);
+    const many = Array.from({ length: BASTION_TARGETS_MAX + 1 }, (_, i) => `utility/monitoring/svc/s${i}:80`).join(' ');
     expect(parseTargets(many)).toBe(`a bastion forwards to at most ${BASTION_TARGETS_MAX} targets, not ${BASTION_TARGETS_MAX + 1}`);
   });
 
   it('places each target on the observe of its namespace, else of its cluster, on a port of its own', () => {
-    const targets = parseTargets('uat/monitoring/svc/prometheus-server:9090 uat/logging/svc/loki:3100') as Exclude<ReturnType<typeof parseTargets>, string>;
-    const r = placeTargets(targets, [{ operation: 'read', asset: { kind: 'cluster', name: 'uat' } }, MONITORING, UAT]);
+    const targets = parseTargets('utility/monitoring/svc/prometheus-server:9090 utility/logging/svc/loki:3100') as Exclude<ReturnType<typeof parseTargets>, string>;
+    const r = placeTargets(targets, [{ operation: 'read', asset: { kind: 'cluster', name: 'utility' } }, MONITORING, UTILITY]);
     expect(r).toEqual({
       placed: [
-        { ...targets[0], context: 'uat-monitoring' },
-        { ...targets[1], context: 'uat' },
+        { ...targets[0], context: 'utility-monitoring' },
+        { ...targets[1], context: 'utility' },
       ],
-      observes: [MONITORING, UAT],
+      observes: [MONITORING, UTILITY],
     });
   });
 
   it('refuses a target no observe reaches: a read is not enough, and it says what to ask for', () => {
-    const targets = parseTargets('uat/monitoring/svc/grafana:80 prod/monitoring/svc/grafana:80') as Exclude<ReturnType<typeof parseTargets>, string>;
+    const targets = parseTargets('utility/monitoring/svc/grafana:80 prod/monitoring/svc/grafana:80') as Exclude<ReturnType<typeof parseTargets>, string>;
     expect(placeTargets(targets, [MONITORING, { operation: 'read', asset: { kind: 'cluster', name: 'prod' } }])).toBe(
       'the template has no observe on prod/monitoring: ask for a template with observe/namespace/prod/monitoring',
     );
@@ -67,21 +67,21 @@ describe('a bastion\'s targets (issue #2146)', () => {
 
 describe('a bastion\'s box (issue #2146)', () => {
   it('its kubeconfig reads each context\'s token from a file beside it, never inline', () => {
-    const config = JSON.parse(bastionKubeconfig([credential(MONITORING, 'first-token'), credential(UAT, 'cluster-token')]));
+    const config = JSON.parse(bastionKubeconfig([credential(MONITORING, 'first-token'), credential(UTILITY, 'cluster-token')]));
     expect(config).toMatchObject({
-      'current-context': 'uat-monitoring',
-      users: [{ name: 'uat-monitoring', user: { tokenFile: '../.hopper-need/secrets/kube-uat-monitoring' } }, { name: 'uat', user: { tokenFile: '../.hopper-need/secrets/kube-uat' } }],
-      clusters: [{ name: 'uat-monitoring', cluster: { server: 'https://uat.example:6443', 'certificate-authority-data': 'Q0E=' } }, { name: 'uat' }],
-      contexts: [{ name: 'uat-monitoring', context: { cluster: 'uat-monitoring', user: 'uat-monitoring' } }, { name: 'uat' }],
+      'current-context': 'utility-monitoring',
+      users: [{ name: 'utility-monitoring', user: { tokenFile: '../.hopper-need/secrets/kube-utility-monitoring' } }, { name: 'utility', user: { tokenFile: '../.hopper-need/secrets/kube-utility' } }],
+      clusters: [{ name: 'utility-monitoring', cluster: { server: 'https://utility.example:6443', 'certificate-authority-data': 'Q0E=' } }, { name: 'utility' }],
+      contexts: [{ name: 'utility-monitoring', context: { cluster: 'utility-monitoring', user: 'utility-monitoring' } }, { name: 'utility' }],
     });
     expect(JSON.stringify(config)).not.toContain('token"');
-    expect(bastionTokens([credential(MONITORING, 'first-token'), credential(UAT, 'cluster-token')])).toEqual({ 'kube-uat-monitoring': 'first-token', 'kube-uat': 'cluster-token' });
+    expect(bastionTokens([credential(MONITORING, 'first-token'), credential(UTILITY, 'cluster-token')])).toEqual({ 'kube-utility-monitoring': 'first-token', 'kube-utility': 'cluster-token' });
   });
 
   it('its command forwards each target on 127.0.0.1 with its context and namespace, again when a forward ends', () => {
-    const command = bastionCommand([{ cluster: 'uat', namespace: 'monitoring', kind: 'svc', name: 'grafana', port: 80, context: 'uat-monitoring' }]);
+    const command = bastionCommand([{ cluster: 'utility', namespace: 'monitoring', kind: 'svc', name: 'grafana', port: 80, context: 'utility-monitoring' }]);
     expect(command).toContain('kubectl --context "$1" --namespace "$2" port-forward --address 127.0.0.1 "$3" ":$4"');
-    expect(command).toContain('forward \'uat-monitoring\' \'monitoring\' \'svc/grafana\' 80 \'uat/monitoring/svc/grafana:80\' &');
+    expect(command).toContain('forward \'utility-monitoring\' \'monitoring\' \'svc/grafana\' 80 \'utility/monitoring/svc/grafana:80\' &');
     expect(command).toMatch(/sleep 2\n {2}done/);
   });
 
@@ -137,7 +137,7 @@ done
 
   it('forwards with the token in its file, reads a renewed token once it is copied in, and goes when it is stopped', async () => {
     const { r, home } = runtime();
-    const placed = [{ cluster: 'uat', namespace: 'monitoring', kind: 'svc' as const, name: 'grafana', port: 80, context: 'uat-monitoring' }];
+    const placed = [{ cluster: 'utility', namespace: 'monitoring', kind: 'svc' as const, name: 'grafana', port: 80, context: 'utility-monitoring' }];
     const creds = [credential(MONITORING, 'first-token')];
     const stop = new AbortController();
     let renew: SecretsRenewal | undefined;
@@ -151,7 +151,7 @@ done
     }, { log: (l) => lines.push(l), signal: stop.signal, pollMs: 10, running: (box) => { renew = box.renew; pipe = box.pipe; } });
     const log = join(home, 'kubectl.log');
     await until(() => existsSync(log) && readFileSync(log, 'utf8').includes('token=first-token'));
-    expect(readFileSync(log, 'utf8')).toContain('kubectl --context uat-monitoring --namespace monitoring port-forward --address 127.0.0.1 svc/grafana :80 token=first-token');
+    expect(readFileSync(log, 'utf8')).toContain('kubectl --context utility-monitoring --namespace monitoring port-forward --address 127.0.0.1 svc/grafana :80 token=first-token');
     // The kubeconfig in the box holds no token: only where its file is.
     expect(readFileSync(join(home, '.kube', 'config'), 'utf8')).not.toContain('first-token');
     expect(renew).toBeDefined();

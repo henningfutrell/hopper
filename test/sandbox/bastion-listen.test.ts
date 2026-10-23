@@ -19,11 +19,11 @@ import { createBastions, type BastionView } from '../../src/sandbox/bastions.ts'
 import type { NeedBoxIo, NeedBoxResult } from '../../src/sandbox/need-box.ts';
 import { bastionAsk, bastionText, type BastionFields } from '../../src/skills/bastion-skill.ts';
 
-const TEMPO = 'uat/monitoring/svc/tempo:3200';
-const PROM = 'uat/monitoring/svc/prometheus:9090';
-const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
+const TEMPO = 'utility/monitoring/svc/tempo:3200';
+const PROM = 'utility/monitoring/svc/prometheus:9090';
+const MONITORING: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } };
 const TEMPLATE = {
-  name: 'observe-uat', image: 'img', tools: ['kubectl'], profiles: [MONITORING], bastionTargets: [PROM, TEMPO],
+  name: 'observe-utility', image: 'img', tools: ['kubectl'], profiles: [MONITORING], bastionTargets: [PROM, TEMPO],
   approval: { by: 'a person', at: 'now' }, pending: { egress: [], profiles: [], bastionTargets: [] }, gives: [],
 } as unknown as TemplateView;
 const JOB = { id: 'job-1', status: 'running' } as unknown as Job;
@@ -61,7 +61,7 @@ function bastions(listenMs: number) {
       boxes.push({ io, gone: () => resolve({ exit: 125, stopped: 'cancelled' }) });
       io.running?.({ renew: async () => {}, pipe });
     }),
-    mint: async () => ({ minted: { kind: 'kube', token: 'token-1', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://uat.example:6443' } }),
+    mint: async () => ({ minted: { kind: 'kube', token: 'token-1', expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube', server: 'https://utility.example:6443' } }),
     release: async () => {}, mayRelay: async () => ({ allowed: true, reason: 'job:u1/job-1 may relay' }),
   });
   ended.push(async () => { const all = b.stopAll(); for (const x of boxes) x.gone(); await all; });
@@ -117,11 +117,11 @@ describe('the status, the read and the relay agree on the job\'s bastion (issue 
     const firstId = /^bastion (\S+) of template/.exec(first)![1]!;
     await until(() => b.of('job-1')?.state === 'running');
     say(0, `[${TEMPO}] Forwarding from 127.0.0.1:20000 -> 3200\n[${PROM}] Forwarding from 127.0.0.1:20001 -> 9090\n`);
-    expect((await ask({})).text).toContain(`bastion ${firstId} of template observe-uat is running`);
+    expect((await ask({})).text).toContain(`bastion ${firstId} of template observe-utility is running`);
     expect(await ask({ asset: 'read', targets: TEMPO, path: PATH })).toEqual({ status: 200, text: '["checkout"]' });
 
-    expect((await ask({ asset: 'stop' })).text).toMatch(new RegExp(`^stopped: bastion ${firstId} of template observe-uat ended`));
-    expect((await ask({})).text).toMatch(new RegExp(`^bastion ${firstId} of template observe-uat ended`));
+    expect((await ask({ asset: 'stop' })).text).toMatch(new RegExp(`^stopped: bastion ${firstId} of template observe-utility ended`));
+    expect((await ask({})).text).toMatch(new RegExp(`^bastion ${firstId} of template observe-utility ended`));
     expect(await ask({ asset: 'read', targets: TEMPO, path: PATH })).toMatchObject({ status: 404, text: expect.stringMatching(/^no: this job has no bastion that runs/) });
     expect(await b.relay('job-1', TEMPO)).toMatchObject({ status: 404, no: expect.stringMatching(/^this job has no bastion that runs/) });
 
@@ -131,7 +131,7 @@ describe('the status, the read and the relay agree on the job\'s bastion (issue 
     expect(secondId).not.toBe(firstId);
     await until(() => b.of('job-1')?.state === 'running');
     say(1, `[${TEMPO}] Forwarding from 127.0.0.1:20000 -> 3200\n`);
-    expect((await ask({ asset: 'status' })).text).toContain(`bastion ${secondId} of template observe-uat is running`);
+    expect((await ask({ asset: 'status' })).text).toContain(`bastion ${secondId} of template observe-utility is running`);
     expect(await ask({ asset: 'read', targets: TEMPO, path: PATH })).toEqual({ status: 200, text: '["checkout"]' });
     const pipe = await b.relay('job-1', TEMPO) as BoxPipe;
     expect('no' in pipe).toBe(false);

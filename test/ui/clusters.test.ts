@@ -7,7 +7,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const EXISTING = { name: 'uat-identity-edit', eksName: 'uat', writeRole: 'hopper-identity-edit' };
+const EXISTING = { name: 'utility-identity-edit', eksName: 'utility', writeRole: 'hopper-identity-edit' };
 
 interface Call { path: string; method: string; body?: Record<string, unknown> }
 
@@ -79,12 +79,12 @@ describe('Settings → Clusters (issue #1766)', () => {
     expect(panel()!.textContent).toContain('write: hopper-identity-edit');
     await click(button('Add a cluster override'));
     await type(field('name'), 'lab-view');
-    await type(field('eksName'), 'uat');
+    await type(field('eksName'), 'utility');
     await type(field('account'), ' 111111111111 ');
     await type(field('region'), 'eu-west-1');
     await click(button('Save'));
     await vi.waitFor(() => expect(saved(daemon)).toEqual({
-      version: 'v1', clusters: [EXISTING, { name: 'lab-view', eksName: 'uat', account: '111111111111', region: 'eu-west-1' }],
+      version: 'v1', clusters: [EXISTING, { name: 'lab-view', eksName: 'utility', account: '111111111111', region: 'eu-west-1' }],
     }));
     await vi.waitFor(() => expect(panel()!.querySelectorAll('[data-slot="cluster"]')).toHaveLength(2));
   });
@@ -95,7 +95,7 @@ describe('Settings → Clusters (issue #1766)', () => {
     expect(field('name').disabled).toBe(true);
     await type(field('eksName'), '');
     await click(button('Save'));
-    await vi.waitFor(() => expect(saved(daemon)).toEqual({ version: 'v1', clusters: [{ name: 'uat-identity-edit', writeRole: 'hopper-identity-edit' }] }));
+    await vi.waitFor(() => expect(saved(daemon)).toEqual({ version: 'v1', clusters: [{ name: 'utility-identity-edit', writeRole: 'hopper-identity-edit' }] }));
   });
 
   it('removes an override after a confirm', async () => {

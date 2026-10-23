@@ -50,8 +50,8 @@ function OverrideForm({ view, editing, onSaved, onCancel, save }: {
   return (
     <form data-slot="cluster-form" className="grid gap-3 rounded-md border p-3" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="cluster" hint={taken ? 'this cluster has an override' : 'the name templates and Access use: cluster/<name>'}>{input('name', 'uat-identity-edit')}</Field>
-        <Field label="name in EKS" hint="optional; when EKS names the cluster differently">{input('eksName', 'uat')}</Field>
+        <Field label="cluster" hint={taken ? 'this cluster has an override' : 'the name templates and Access use: cluster/<name>'}>{input('name', 'utility-identity-edit')}</Field>
+        <Field label="name in EKS" hint="optional; when EKS names the cluster differently">{input('eksName', 'utility')}</Field>
         <Field label="AWS account" hint="optional; the one account to look in (12 digits). It needs an aws-account minting credential.">{input('account', '111111111111')}</Field>
         <Field label="region" hint="optional; in place of the minting credential's region">{input('region', 'eu-west-1')}</Field>
         <Field label="write role" hint="optional; the IAM role a write signs in as, in the cluster's account. The cluster's access entry decides what it may do. Without it, only a read is found.">{input('writeRole', 'hopper-identity-edit')}</Field>

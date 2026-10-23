@@ -148,9 +148,9 @@ The hopper decides *whether* a job gets the credential. The role's IAM policy or
 From the command line, `--mints` sets **Mints for**. The value comes from standard input:
 
 ```sh
-hopper vault set AWS_UAT --mints aws-account/123456789012 < aws-credential.json
+hopper vault set AWS_UTILITY --mints aws-account/123456789012 < aws-credential.json
 hopper vault set LAB_KUBE --mints cluster/lab < kube-credential.json
-hopper vault set AWS_UAT --mints none < aws-credential.json   # a plain secret again
+hopper vault set AWS_UTILITY --mints none < aws-credential.json   # a plain secret again
 ```
 
 A `set` without `--mints` keeps what the secret mints for. A shared secret mints nothing: `--mints` with `--shared` is refused.

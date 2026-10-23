@@ -10,7 +10,7 @@ import { endedBeforeWait, endedNote, paneCarriesWait, watchedItems, watchedOf, w
 const NOT_FOUND_NOTE = (url: string) => `${url} cannot be read: no such repository or item, or the hopper has no access to it, so the wait never ends on it; check the owner and name you wrote`;
 const since = '2026-10-16T21:00:00.000Z';
 type W = Pick<Job, 'id' | 'status' | 'wait' | 'source'>;
-const waiting = (id: string, w: { for: string; until?: string; on?: WaitOn }, repo = 'acme/platform-workflows', number = 7): W =>
+const waiting = (id: string, w: { for: string; until?: string; on?: WaitOn }, repo = 'acme/infra-workflows', number = 7): W =>
   ({ id, status: 'waiting_on', source: { source: 'github', kind: 'github-account', key: `https://github.com/${repo}/issues/${number}`, repo, number }, wait: { ...w, since } });
 
 describe('what a wait watches (issue #1508)', () => {
@@ -42,7 +42,7 @@ describe('what a wait watches (issue #1508)', () => {
 
   it('"issue N" in the job\'s own repository; the job\'s own issue is left out (its close ends the job, issue #1460)', () => {
     expect(watchedOf(waiting('a', { for: 'the fix', until: 'issue 1250 is closed', on: { kind: 'outside', what: 'the fix' } }))).toEqual([
-      { kind: 'issue', repo: 'acme/platform-workflows', number: 1250 },
+      { kind: 'issue', repo: 'acme/infra-workflows', number: 1250 },
     ]);
     expect(watchedOf(waiting('b', { for: 'my issue', on: { kind: 'outside', what: 'until issue 7 is closed' } }))).toEqual([]);
   });
@@ -52,7 +52,7 @@ describe('what a wait watches (issue #1508)', () => {
       { kind: 'issue', repo: 'acme/identity', number: 3 },
     ]);
     expect(watchedOf(waiting('b', { for: 'the other issue', on: { kind: 'item', number: 12 } }))).toEqual([
-      { kind: 'issue', repo: 'acme/platform-workflows', number: 12 },
+      { kind: 'issue', repo: 'acme/infra-workflows', number: 12 },
     ]);
   });
 
@@ -64,7 +64,7 @@ describe('what a wait watches (issue #1508)', () => {
       { kind: 'run', repo: 'x/y', runId: 123456789 },
     ]);
     expect(watchedOf(waiting('c', { for: 'the deploy', on: { kind: 'outside', what: 'the workflow run 5551234 to finish' } }))).toEqual([
-      { kind: 'run', repo: 'acme/platform-workflows', runId: 5551234 },
+      { kind: 'run', repo: 'acme/infra-workflows', runId: 5551234 },
     ]);
     expect(watchedOf(waiting('d', { for: 'the deploy', on: { kind: 'outside', what: 'run 3 times' } }))).toEqual([]);
   });
@@ -99,8 +99,8 @@ describe('waking on what it watches (issue #1508)', () => {
   });
 
   it('says an item that does not exist, or the hopper cannot read, was not found (issues #1691, #2066)', () => {
-    expect(endedNote([{ url: 'https://github.com/acme/gss/issues/330', state: 'not_found' }]))
-      .toBe(NOT_FOUND_NOTE('https://github.com/acme/gss/issues/330'));
+    expect(endedNote([{ url: 'https://github.com/acme/ledger/issues/330', state: 'not_found' }]))
+      .toBe(NOT_FOUND_NOTE('https://github.com/acme/ledger/issues/330'));
   });
 
   it('job.waited_items_ended wakes that job only', () => {

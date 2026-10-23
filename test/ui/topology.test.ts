@@ -45,7 +45,7 @@ describe('the topology model', () => {
       entry('cluster', 30, { asset: { kind: 'cluster', name: 'prod' } }),
       entry('namespace', 20, { asset: { kind: 'namespace', name: 'prod/shop' } }),
       entry('vpc by id', 10, { target: 'VPC-1' }),
-      entry('workspace', 5, { asset: { kind: 'terraform-workspace', name: 'uat-network' } }),
+      entry('workspace', 5, { asset: { kind: 'terraform-workspace', name: 'utility-network' } }),
       entry('another vpc', 1, { target: 'vpc-2' }),
     ];
     const [byName, role, cluster, namespace, byId, workspace, other] = entries.map((e) => entryNodes(g, e));

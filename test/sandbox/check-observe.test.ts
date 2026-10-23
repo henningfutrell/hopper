@@ -26,8 +26,8 @@ const fakes: FakeCloudTools[] = [];
 afterEach(() => { for (const f of fakes.splice(0)) f.cleanup(); });
 
 const IMAGE = 'ghcr.io/henningfutrell/hopper:box-claude';
-const OBSERVE: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
-const READ: OperationProfile = { operation: 'read', asset: { kind: 'namespace', name: 'uat/monitoring' } };
+const OBSERVE: OperationProfile = { operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } };
+const READ: OperationProfile = { operation: 'read', asset: { kind: 'namespace', name: 'utility/monitoring' } };
 const minted = (token: string) => ({ minted: { kind: 'kube' as const, token, expirationTimestamp: '2030-01-01T00:10:00Z' }, reach: { kind: 'kube' as const, server: 'https://k' } });
 
 function setup(profiles: OperationProfile[], mode: CloudMode = 'read-only') {
@@ -91,8 +91,8 @@ describe('the read-only check under observe (issue #2146, part 5)', () => {
     const check = s.check();
     expect(check.state).toBe('failed');
     const failed = failedProbes(check);
-    expect(failed).toContain('observe.exec on uat/monitoring under observe (allowed)');
-    expect(failed).toContain('observe.secret-read on uat/monitoring under observe (allowed)');
+    expect(failed).toContain('observe.exec on utility/monitoring under observe (allowed)');
+    expect(failed).toContain('observe.secret-read on utility/monitoring under observe (allowed)');
   });
 
   it('a credential the cluster does not take errs on exec and the Secret read, and is never reported allowed (issue #2396)', async () => {
@@ -105,7 +105,7 @@ describe('the read-only check under observe (issue #2146, part 5)', () => {
       expect(probe, id).toMatchObject({ expect: 'denied', outcome: 'error', passed: false });
       expect(probe!.output).toContain('Unauthorized');
     }
-    expect(failedProbes(check)).toContain('observe.exec on uat/monitoring under observe (error)');
+    expect(failedProbes(check)).toContain('observe.exec on utility/monitoring under observe (error)');
   });
 
   it('one request refused and the other erred is an error, not a refusal (issue #2396)', async () => {
@@ -146,7 +146,7 @@ describe('the read-only check under observe (issue #2146, part 5)', () => {
     expect(Object.keys(spec!.env).sort()).toEqual(['HOPPER_CHECK_0_KUBECONFIG', 'HOPPER_CHECK_1_KUBECONFIG']);
     // Each probe runs with the kubeconfig of its own need.
     const script = spec!.script ?? '';
-    expect(script).toMatch(/# kube\.get on uat\/monitoring\n[\s\S]*?KUBECONFIG="\$HOME\/c0\/kubeconfig"/);
-    expect(script).toMatch(/# observe\.exec on uat\/monitoring under observe\n[\s\S]*?KUBECONFIG="\$HOME\/c1\/kubeconfig"/);
+    expect(script).toMatch(/# kube\.get on utility\/monitoring\n[\s\S]*?KUBECONFIG="\$HOME\/c0\/kubeconfig"/);
+    expect(script).toMatch(/# observe\.exec on utility\/monitoring under observe\n[\s\S]*?KUBECONFIG="\$HOME\/c1\/kubeconfig"/);
   });
 });

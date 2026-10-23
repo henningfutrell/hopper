@@ -311,7 +311,7 @@ describe('a wait check (issue #1694)', () => {
     now = T0 + FIRST_CHECK_MS;
     await a.checks.run();
     expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({
-      result: 'the hopper cannot read octo/tools#8 now: pull request octo/tools#8: Resource not accessible by integration', nextCheckAt: new Date(now + FIRST_CHECK_MS).toISOString(),
+      result: 'the hopper cannot read octo/tools#8 now: pull request octo/tools#8: Resource not accessible by integration', nextCheckAt: new Date(now + FIRST_CHECK_MS).toISOString(), brokenAt: new Date(now).toISOString(),
     });
 
     fail = false;
@@ -327,7 +327,7 @@ describe('a wait check (issue #1694)', () => {
     await a.checks.run();
     now = T0 + FIRST_CHECK_MS;
     await a.checks.run();
-    expect(a.store.jobs.get(checks.id)!.wait!.check).toMatchObject({ result: 'the job\'s source reads no pull request, so the hopper cannot read octo/tools#8' });
+    expect(a.store.jobs.get(checks.id)!.wait!.check).toMatchObject({ result: 'the job\'s source reads no pull request, so the hopper cannot read octo/tools#8', brokenAt: new Date(now).toISOString() });
   });
 
   it('a wait on a pull request\'s review: not met with no review since it began, then ended by a new review (part 3)', async () => {

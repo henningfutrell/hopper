@@ -37,7 +37,7 @@ async function start(): Promise<{ a: TestApp; plan: string }> {
   cleanup = db.cleanup;
   const a = t = await startTestApp({ dbPath: db.dbPath });
   const kept = a.user().githubProxy.infraPlans.record({ id: 'recorder' } as Job, {
-    tool: 'terraform', asset: ASSET, target: 'uat-identity', repo: 'octo/infra', ref: 'main', commit: 'a'.repeat(40),
+    tool: 'terraform', asset: ASSET, target: 'utility-identity', repo: 'octo/infra', ref: 'main', commit: 'a'.repeat(40),
     text: 'Plan: 1 to add, 0 to change, 0 to destroy.', json: JSON_PLAN,
   });
   if ('no' in kept) throw new Error(kept.no);

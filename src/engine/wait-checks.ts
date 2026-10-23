@@ -72,12 +72,12 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
   }
 
   /** A pull request a check reads (issue #2210): what `read` answers, else why not — the job's source reads none, or the read's error. Tried again at the next check. */
-  async function readPull<T>(at: { repo: string; number: number }, read: () => Promise<T | undefined> | undefined): Promise<T | { met: false; result: string }> {
+  async function readPull<T>(at: { repo: string; number: number }, read: () => Promise<T | undefined> | undefined): Promise<T | { met: false; result: string; broken: true }> {
     const what = `${at.repo}#${at.number}`;
     try {
-      return (await read()) ?? { met: false, result: `the job's source reads no pull request, so the hopper cannot read ${what}` };
+      return (await read()) ?? { met: false, result: `the job's source reads no pull request, so the hopper cannot read ${what}`, broken: true };
     } catch (e) {
-      return { met: false, result: `the hopper cannot read ${what} now: ${(e as Error).message}` };
+      return { met: false, result: `the hopper cannot read ${what} now: ${(e as Error).message}`, broken: true };
     }
   }
 
@@ -86,7 +86,7 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
     switch (cond.kind) {
       case 'items_ended': {
         const ended = await c.waitReads?.endedWatched(job, cond.refs).catch(() => undefined);
-        if (!ended) return { met: false, result: 'the hopper cannot read the items now' };
+        if (!ended) return { met: false, result: 'the hopper cannot read the items now', broken: true };
         const missing = ended.filter((e) => e.state === NOT_FOUND);
         if (missing.length) return { met: true, note: endedNote(missing) };
         // Issue #2219: what an outside wait's text names that ended before the wait began does not end it.
@@ -142,7 +142,7 @@ export function createWaitChecks(c: WaitCheckDeps, o: { owner?: string } = {}): 
         return true;
       }
       const result = outcome.met ? `${outcome.note} before this wait began; the hopper woke the job for it once` : outcome.result;
-      const next = afterCheck(check, result, nowMs(), outcome.met);
+      const next = afterCheck(check, result, nowMs(), outcome.met, !outcome.met && outcome.broken === true);
       store.jobs.update(job.id, { wait: { ...now.wait!, check: next.check } });
       if (next.overdue) store.events.append({ type: 'job.wait_overdue', jobId: job.id, data: { deadline: check.deadline, result } });
       return false;
