@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 import type { Executor, MachineShell } from '../../src/domain/ports.ts';
 import type { DiscoveryFacts, DomainEvent, Job } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
-import { createFakeGitHub } from './fake-forges.ts';
+import { createFakeGitHub, type FakePull } from './fake-forges.ts';
 import { connectGitHub } from './github-account.ts';
 import { startTestApp, tempDbPath, type TestApp } from './app.ts';
 import { waitFor } from './wait.ts';
@@ -48,7 +48,8 @@ export async function start() {
   const gitRoot = mkdtempSync(join(tmpdir(), 'hopper-git-forge-'));
   cleanups.push(() => rmSync(gitRoot, { recursive: true, force: true }));
   for (const repo of ['octo/tools', 'octo/site', 'elsewhere/lib']) await bareRepo(gitRoot, repo);
-  const github = await createFakeGitHub({ clientId: 'gh-client-id', gitRoot });
+  const pulls: FakePull[] = [];
+  const github = await createFakeGitHub({ clientId: 'gh-client-id', gitRoot, pulls });
   cleanups.push(() => github.close());
   github.tokens.set('test-account-token', 'owner');
   const db = tempDbPath();
@@ -89,7 +90,7 @@ export async function start() {
   });
   apps.push(app);
   connectGitHub(app, ['octo/tools', 'octo/site']);
-  return { app, github, gitRoot, root, held };
+  return { app, github, gitRoot, root, held, pulls };
 }
 
 export type Started = Awaited<ReturnType<typeof start>>;
