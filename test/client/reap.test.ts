@@ -12,8 +12,7 @@ import { withoutUse } from '../support/reap-said.ts';
 
 const JOB = 'job-401-abcdef', OTHER = 'job-401-other';
 
-let root: string;
-let scratch: string;
+let root: string, scratch: string;
 const children: ChildProcess[] = [];
 
 const git = (cwd: string, ...args: string[]): string => execFileSync('git', args, {
