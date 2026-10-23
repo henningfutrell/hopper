@@ -1,10 +1,15 @@
 // Which exited containers the storage prune removes (issue #2494, design.md "Hopper's own disk use" → "Part 8"): pure.
 import { describe, expect, it } from 'vitest';
-import { containersToPrune, stoppedAtMs } from '../../src/domain/storage-prune.ts';
+import { containersToPrune, PRUNE_KEEP_LABELS, stoppedAtMs } from '../../src/domain/storage-prune.ts';
+import { KEEP_LABELS } from '../../src/client/prune.ts';
 
 const NOW = Date.parse('2026-10-22T00:00:00Z');
 const DAY = 86_400_000;
 const exited = (id: string, finishedAt: string, labels: string[] = []) => ({ runtime: 'podman' as const, id: id.repeat(64), finishedAt, labels });
+
+it('keeps the same labels as the prune on the machine', () => {
+  expect([...PRUNE_KEEP_LABELS]).toEqual([...KEEP_LABELS]);
+});
 
 describe('when a container stopped', () => {
   it('reads docker\'s time and podman\'s, and no zero time', () => {

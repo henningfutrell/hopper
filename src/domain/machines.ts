@@ -269,7 +269,11 @@ export type EndStatus = 'finished' | 'failed' | 'cancelled' | 'rejected';
  * job's scratch dir there is reaped once it is `scratchMaxAgeHours` old (absent, 24). `retainHours` (issue #2494): for a
  * status named, the job's work stays this many hours from its end instead (`src/domain/retention.ts`).
  */
-export interface SweepSettings { everyMinutes?: number; scratchMaxAgeHours?: number; retainHours?: Partial<Record<EndStatus, number>> }
+export interface SweepSettings {
+  everyMinutes?: number; scratchMaxAgeHours?: number; retainHours?: Partial<Record<EndStatus, number>>;
+  /** The storage prune's age in days (issue #2494, src/domain/storage-prune.ts); absent: the sweep prunes nothing there. */
+  pruneAfterDays?: number;
+}
 
 /** A job's side of its machine's link (issue #752, design.md "Link-lost hold"). */
 export interface JobMachineLink {

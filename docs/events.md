@@ -3294,6 +3294,44 @@ Version 1 (`docs/schemas/machine.disk_ok.v1.json`). A machine told by `machine.d
 }
 ```
 
+## `machine.storage_pruned`
+
+Version 1 (`docs/schemas/machine.storage_pruned.v1.json`). The sweep pruned the container storage of a machine (`machineId`) whose `pruneAfterDays` option is set (issue #2494, design.md "Hopper's own disk use" → "Part 8"), once a day, or once an hour while its disk is low: `removed`, each by its container `runtime`, `kind` and full `id`, with its size in `bytes` when the runtime said it — the exited containers stopped more than `olderThanDays` days ago with no label the prune keeps (the stack's, the hopper's boxes', a kind node's, a job's), each with its anonymous volumes; the anonymous volumes no container uses; and the images no container uses built more than `olderThanDays` days ago, never one titled `hopper`. `bytes`: the sum of the sizes said. Nothing is forced, and a named volume (a seat's home, the stack's) is never removed. Only when it removed something.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `olderThanDays` | number | yes |
+| `bytes` | number | yes |
+| `removed` | object[] | yes |
+
+```json
+{
+  "machineId": "seat-l1",
+  "olderThanDays": 30,
+  "bytes": 1500004096,
+  "removed": [
+    {
+      "runtime": "podman",
+      "kind": "container",
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "bytes": 4096
+    },
+    {
+      "runtime": "podman",
+      "kind": "volume",
+      "id": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "runtime": "podman",
+      "kind": "image",
+      "id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "bytes": 1500000000
+    }
+  ]
+}
+```
+
 ## `machine.leftover_kept`
 
 Version 1 (`docs/schemas/machine.leftover_kept.v1.json`). A person keeps a leftover on Machines (issue #1116): a dir in a work tree's `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.

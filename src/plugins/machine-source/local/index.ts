@@ -12,7 +12,7 @@
 // `memoryFloorGiB` / `memoryPerJobGiB`: its memory floor (issue #2291).
 // `jobMemoryMaxGiB` / `jobCpuPercent`: its limits for each job's scope (issue #2498).
 // `reapEveryMinutes` / `scratchMaxAgeHours`: how the sweep treats it (issue #410); `retain<Status>Hours`: how long an
-// ended job's work stays, by the status it ended in (issue #2494).
+// ended job's work stays, by the status it ended in (issue #2494); `pruneAfterDays`: the storage prune's age (issue #2494).
 import { createLocalMachineSource } from '../../../machines/index.ts';
 import { ensureHerdrSession, sessionProblem } from '../../../executors/herdr/index.ts';
 import type { PluginDefinition } from '../../sdk.ts';
@@ -22,7 +22,7 @@ import type { UsageLimitPair } from '../../../domain/usage.ts'; import type { Re
 export interface LocalOptions {
   lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors?: string[]; session?: string; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number; jobMemoryMaxGiB?: number; jobCpuPercent?: number;
-  retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number;
+  retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number; pruneAfterDays?: number;
 }
 
 /** Starts this machine's herdr session when it is not running; rejects with the reason. */
