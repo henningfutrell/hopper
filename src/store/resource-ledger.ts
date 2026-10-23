@@ -24,11 +24,14 @@ export function createResourceLedgerRepository(c: StoreContext): ResourceLedgerR
         ON CONFLICT (job_id, kind, locator) DO NOTHING`, e.jobId, e.kind, e.locator, e.machineId, e.createdAt);
     },
     close(jobId, kind, locator, state, at, reason) {
-      c.db.run(`UPDATE job_resource_ledger SET state = ?, reason = ?, ended_at = ? WHERE job_id = ? AND kind = ? AND locator = ? AND state IN ('live', 'kept')`,
+      c.db.run(`UPDATE job_resource_ledger SET state = ?, reason = ?, ended_at = ? WHERE job_id = ? AND kind = ? AND locator = ? AND state <> 'reaped'`,
         state, reason ?? null, at, jobId, kind, locator);
     },
     forJob(jobId) {
       return c.db.all('SELECT * FROM job_resource_ledger WHERE job_id = ? ORDER BY created_at, kind, locator', jobId).map(entry);
+    },
+    open() {
+      return c.db.all(`SELECT * FROM job_resource_ledger WHERE state IN ('live', 'failed') ORDER BY job_id, created_at, kind, locator`).map(entry);
     },
   };
 }
