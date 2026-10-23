@@ -6,6 +6,7 @@ import type { ContainerStorage, SurveyedCache } from './hopper-disk.ts';
 import type { Leftover } from './leftovers.ts';
 import type { KeptReason } from './kept-work.ts';
 import type { ExitedContainer, Pruned } from './storage-prune.ts';
+import type { Trimmed } from './disk-trim.ts';
 
 /**
  * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
@@ -116,4 +117,6 @@ export interface MachineShell {
    * than `days` ago but the hopper's own; never forced. Says what it removed. Absent: the shell prunes nothing.
    */
   prune?(days: number, containers: string[]): Promise<Pruned>;
+  /** The trim (issue #2494): fstrim on the filesystem the machine's home is on; says how it ended. Absent: the shell trims nothing. */
+  trim?(): Promise<Trimmed>;
 }

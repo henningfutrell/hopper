@@ -192,7 +192,7 @@ function withCalls(session: string, call: Exec, callTimeout: number, shell: Mach
     async closePane(paneId) { await run(['pane', 'close', paneId]); },
     reap: (jobId, scratch, keep, discard) => shell.reap(jobId, scratch, keep, discard),
     survey: (roots) => shell.survey(roots),
-    ...(shell.prune ? { prune: shell.prune } : {}),
+    ...(shell.prune ? { prune: shell.prune } : {}), ...(shell.trim ? { trim: shell.trim } : {}),
     discover: () => shell.discover(),
     reach: (url) => shell.reach(url),
     checkpoint: (jobId, worktree, session) => (shell.checkpoint ? shell.checkpoint(jobId, worktree, session) : Promise.resolve({ none: 'its machine takes no checkpoint' })),

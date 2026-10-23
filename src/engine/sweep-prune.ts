@@ -12,8 +12,8 @@ export const PRUNE_EVERY_MS = 24 * 3600_000;
 export const PRUNE_LOW_MS = 3600_000;
 
 export interface SweepPrune {
-  /** Prunes the machine's container storage when it is due, from what the pass's survey `found`. Never throws. */
-  pass(m: MachineSnapshot, shell: MachineShell, found: Survey): Promise<void>;
+  /** Prunes the machine's container storage when it is due, from what the pass's survey `found`; the bytes it said it freed. Never throws. */
+  pass(m: MachineSnapshot, shell: MachineShell, found: Survey): Promise<number>;
 }
 
 const count = (n: number, what: string): string => `${n} ${what}${n === 1 ? '' : 's'}`;
@@ -25,10 +25,10 @@ export function createPrune(c: Pick<EngineContext, 'store' | 'clock' | 'stopping
   return {
     async pass(m, shell, found) {
       const days = m.sweep?.pruneAfterDays;
-      if (!days || !shell.prune) return;
+      if (!days || !shell.prune) return 0;
       const now = c.clock.now().getTime();
       const at = last.get(m.id);
-      if (at !== undefined && now - at < (m.disk?.low ? PRUNE_LOW_MS : PRUNE_EVERY_MS)) return;
+      if (at !== undefined && now - at < (m.disk?.low ? PRUNE_LOW_MS : PRUNE_EVERY_MS)) return 0;
       last.set(m.id, now);
       let removed: PrunedItem[];
       try {
@@ -37,13 +37,14 @@ export function createPrune(c: Pick<EngineContext, 'store' | 'clock' | 'stopping
       } catch (e) {
         if (!failing.has(m.id)) log(`hopper: the sweep could not prune the container storage on ${m.id}: ${(e as Error).message}`);
         failing.add(m.id);
-        return;
+        return 0;
       }
-      if (c.stopping() || removed.length === 0) return;
       const bytes = removed.reduce((n, r) => n + (r.bytes ?? 0), 0);
+      if (c.stopping() || removed.length === 0) return bytes;
       const of = (kind: PrunedItem['kind']): number => removed.filter((r) => r.kind === kind).length;
       log(`hopper: the sweep pruned ${count(of('container'), 'container')}, ${count(of('volume'), 'volume')} and ${count(of('image'), 'image')} on ${m.id}, ${(bytes / 1e9).toFixed(1)} GB`);
       c.store.events.append({ type: 'machine.storage_pruned', machineId: m.id, data: { machineId: m.id, olderThanDays: days, bytes, removed } });
+      return bytes;
     },
   };
 }

@@ -161,18 +161,20 @@ export const sweepShape = (z: typeof Z) => ({
   ...retainShape(z),
   pruneAfterDays: z.number().int().min(1).max(3650).optional()
     .meta({ description: 'the storage prune (absent: off): once a day, the sweep removes here the exited containers stopped this many days ago, the anonymous volumes no container uses and the images no container uses built this many days ago; never the stack\'s, the hopper\'s own image, a box\'s or a job\'s' }),
+  trimAboveGiB: z.number().positive().max(100000).optional()
+    .meta({ description: 'the trim (absent: off): once the sweep\'s cleanups here freed this many GiB, it runs fstrim on the filesystem the home is on (needs root, or sudo with no password for fstrim)' }),
 });
 
 /** The sweep settings the options set; undefined when none is. */
-export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: number; pruneAfterDays?: number } & RetainOptions): SweepSettings | undefined => {
+export const sweepOf = (o: { reapEveryMinutes?: number; scratchMaxAgeHours?: number; pruneAfterDays?: number; trimAboveGiB?: number } & RetainOptions): SweepSettings | undefined => {
   const retainHours: Partial<Record<EndStatus, number>> = {};
   for (const [status, key] of Object.entries(RETAIN_OPTIONS) as [EndStatus, keyof RetainOptions][]) if (o[key] !== undefined) retainHours[status] = o[key];
   const retains = Object.keys(retainHours).length > 0;
-  return (o.reapEveryMinutes === undefined && o.scratchMaxAgeHours === undefined && o.pruneAfterDays === undefined && !retains ? undefined : {
+  return (o.reapEveryMinutes === undefined && o.scratchMaxAgeHours === undefined && o.pruneAfterDays === undefined && o.trimAboveGiB === undefined && !retains ? undefined : {
     ...(o.reapEveryMinutes !== undefined ? { everyMinutes: o.reapEveryMinutes } : {}),
     ...(o.scratchMaxAgeHours !== undefined ? { scratchMaxAgeHours: o.scratchMaxAgeHours } : {}),
     ...(retains ? { retainHours } : {}),
-    ...(o.pruneAfterDays !== undefined ? { pruneAfterDays: o.pruneAfterDays } : {}),
+    ...(o.pruneAfterDays !== undefined ? { pruneAfterDays: o.pruneAfterDays } : {}), ...(o.trimAboveGiB !== undefined ? { trimAboveGiB: o.trimAboveGiB } : {}),
   });
 };
 
@@ -193,7 +195,7 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
 export interface AttachedOptions {
   label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number; jobMemoryMaxGiB?: number; jobCpuPercent?: number;
-  retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number; pruneAfterDays?: number;
+  retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number; pruneAfterDays?: number; trimAboveGiB?: number;
 }
 
 /** The plain fields of an attached machine named `name`. */

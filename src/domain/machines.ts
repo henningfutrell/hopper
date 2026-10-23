@@ -273,6 +273,8 @@ export interface SweepSettings {
   everyMinutes?: number; scratchMaxAgeHours?: number; retainHours?: Partial<Record<EndStatus, number>>;
   /** The storage prune's age in days (issue #2494, src/domain/storage-prune.ts); absent: the sweep prunes nothing there. */
   pruneAfterDays?: number;
+  /** The trim's threshold in GiB (issue #2494, src/engine/sweep-trim.ts): fstrim once the cleanups freed this much; absent: never. */
+  trimAboveGiB?: number;
 }
 
 /** A job's side of its machine's link (issue #752, design.md "Link-lost hold"). */

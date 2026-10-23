@@ -3332,6 +3332,31 @@ Version 1 (`docs/schemas/machine.storage_pruned.v1.json`). The sweep pruned the 
 }
 ```
 
+## `machine.disk_trim_ran`
+
+Version 1 (`docs/schemas/machine.disk_trim_ran.v1.json`). The sweep ran fstrim on a machine (`machineId`) whose `trimAboveGiB` option is set (issue #2494, design.md "Hopper's own disk use" → "Part 9"), on the filesystem its home is on (`mount`), once its cleanups there had freed that many GiB since the last trim: `freedBytes`, what the storage prune said it removed and the drop of the hopper's own disk use its reaps made. `outcome`: `trimmed`, with the bytes fstrim said it trimmed in `trimmedBytes`; `refused`, only root may and sudo did not let it with no password; `unsupported`, no fstrim there or a filesystem with no discard; `failed`, anything else; `said`, what fstrim said when it did not trim. `hostCompaction`: the machine is a WSL distro, whose virtual disk on the host shrinks only once it is compacted there (design.md says how), which the hopper cannot do from inside.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `freedBytes` | number | yes |
+| `mount` | string | yes |
+| `outcome` | `trimmed` \| `refused` \| `unsupported` \| `failed` | yes |
+| `trimmedBytes` | number | no |
+| `said` | string | no |
+| `hostCompaction` | boolean | no |
+
+```json
+{
+  "machineId": "seat-l1",
+  "freedBytes": 12000000000,
+  "mount": "/",
+  "outcome": "trimmed",
+  "trimmedBytes": 14500000000,
+  "hostCompaction": true
+}
+```
+
 ## `machine.leftover_kept`
 
 Version 1 (`docs/schemas/machine.leftover_kept.v1.json`). A person keeps a leftover on Machines (issue #1116): a dir in a work tree's `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.
