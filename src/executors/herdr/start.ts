@@ -14,6 +14,7 @@ import {
   type PassFetches,
 } from './job-worktree.ts';
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
+import { scopeLimitsOf } from '../../domain/job-limits.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/reap.ts';
 import { enterRuntime, enterSandbox } from './start-isolation.ts';
@@ -280,7 +281,7 @@ async function makeScratch(d: StartDeps, ctx: ExecutionContext, s: PaneState, ma
  * done, else the failure (the shell never answered: the pane is gone or hung).
  */
 async function enterScope(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<StartTimedOut | null> {
-  await d.herdr.runInPane(s.paneId, enterScopeCommand(ctx.job.id, ctx.machine.jobLimits));
+  await d.herdr.runInPane(s.paneId, enterScopeCommand(ctx.job.id, scopeLimitsOf(ctx.machine)));
   for (let waited = 0; waited < START_TIMEOUT_MS; waited += SCRATCH_WAIT_MS) {
     if (ctx.signal.aborted) return null;
     if (await d.herdr.waitOutput(s.paneId, SCOPE_MARK, SCRATCH_WAIT_MS)) {

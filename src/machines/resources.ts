@@ -3,10 +3,13 @@
 // two /proc/stat cpu lines a second apart, the load averages, the memory lines, the memory pressure and the core count, each line
 // marked `hopper-res `; a client target's from its `/release` answer, checked before it is believed. An ssh target's probe
 // also prints each cgroup on its own path with a memory limit, and its user manager's (issue #2499): a seat's container
-// or a slice's MemoryMax; the tightest is its memory, as this machine's meter reads it.
+// or a slice's MemoryMax; the tightest is its memory, as this machine's meter reads it. It prints `um` when its user manager
+// runs (issue #2622): each job's scope there then holds the job's memory.
 import { nodeFloorOf } from '../client/node-floor.ts';
 import { pressureOf, type OomCount } from '../client/resources.ts';
-import { WINDOWS_LINK_URL, type JobUseNow, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
+import { WINDOWS_LINK_URL, type JobMemoryLimit, type JobUseNow, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
+
+const JOB_MEMORY_LIMITS: readonly JobMemoryLimit[] = ['scope', 'machine', 'none'];
 
 const MARK = 'hopper-res ';
 
@@ -16,6 +19,7 @@ export const RESOURCES_COMMAND = `if [ -r /proc/stat ]; then { p=$(sed -n 's/^0:
   + ` head -n1 /proc/stat; t 0; sleep 1; head -n1 /proc/stat; t 1; cat /proc/loadavg;`
   + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; echo boot $(cat /proc/sys/kernel/random/boot_id); cat /proc/pressure/memory; sed -n 's/^oom_kill /oom /p' /proc/vmstat;`
   + ` m=$(printf '%s\\n' $ds | grep -m1 '/user@[0-9]*\\.service$') && x= || { m=/user.slice/user-$u.slice/user@$u.service; x=$m; };`
+  + ` [ -d /sys/fs/cgroup$m ] && echo um;`
   + ` for d in $ds $x; do f=/sys/fs/cgroup\${d%/}; [ -r $f/memory.max ] || continue; echo cg $d $(cat $f/memory.max) $(cat $f/memory.current) $(sed -n 's/^inactive_file //p' $f/memory.stat); sed "s|^|cgp $d |" $f/memory.pressure; sed -n "s|^oom_kill |cgo $d |p" $f/memory.events; done;`
   + ` for f in /sys/fs/cgroup$m/*.slice/hopper-job-*.scope; do [ -r $f/memory.current ] || continue; echo cgj \${f#/sys/fs/cgroup} cur=$(cat $f/memory.current) $(sed -n 's/^inactive_file /i=/p' $f/memory.stat) $(sed 's/^/peak=/' $f/memory.peak) $(sed -n 's/^usage_usec /usec=/p' $f/cpu.stat) $(sed -n 's/^oom_kill /oom=/p' $f/memory.events); done;`
   + ` nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
@@ -49,6 +53,7 @@ export function readResources(stdout: string): ResourceReading | undefined {
   const boot = bootOf(lines.map((l) => /^boot (\S+)\s*$/.exec(l)?.[1]).find((b) => b));
   const throttled = throttleOf(lines);
   const scopes = jobScopesOf(lines);
+  const held = { jobMemoryLimit: lines.some((l) => l.trim() === 'um') ? 'scope' as const : limited ? 'machine' as const : 'none' as const };
   const use = Object.fromEntries(scopes.filter((s) => Object.keys(s.use).length).map((s) => [s.id, s.use]));
   const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...(Object.keys(use).length ? { jobUse: use } : {}) } : {};
   const cpu = {
@@ -62,7 +67,7 @@ export function readResources(stdout: string): ResourceReading | undefined {
     const outside = scopes.filter((s) => limited.dir !== '/' && s.dir !== limited.dir && !s.dir.startsWith(`${limited.dir}/`)).reduce((n, s) => n + s.bytes, 0);
     return {
       ...cpu, memTotalBytes: limited.total, memAvailableBytes: Math.max(0, limited.available - outside), container: true,
-      kernelMemTotalBytes: total, kernelMemAvailableBytes: available, ...jobs, ...boot, ...(psi ? { memPressure: psi } : {}),
+      kernelMemTotalBytes: total, kernelMemAvailableBytes: available, ...jobs, ...boot, ...(psi ? { memPressure: psi } : {}), ...held,
     };
   }
   return {
@@ -71,7 +76,7 @@ export function readResources(stdout: string): ResourceReading | undefined {
     ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
     ...(wsl ? { wsl: true as const, ...(free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}) } : {}),
     ...jobs, ...boot,
-    ...(psi ? { memPressure: psi } : {}),
+    ...(psi ? { memPressure: psi } : {}), ...held,
   };
 }
 
@@ -185,6 +190,7 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
     ...pressureOfClient(r.memPressure),
     ...(typeof r.memOomKillAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{1,3})?Z$/.test(r.memOomKillAt) && Number.isFinite(Date.parse(r.memOomKillAt))
       ? { memOomKillAt: r.memOomKillAt } : {}),
+    ...(JOB_MEMORY_LIMITS.includes(r.jobMemoryLimit as JobMemoryLimit) ? { jobMemoryLimit: r.jobMemoryLimit as JobMemoryLimit } : {}),
   };
 }
 

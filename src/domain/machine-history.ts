@@ -65,7 +65,17 @@ export interface ResourceReading {
    * started, an ssh target, Windows, macOS, an older client).
    */
   memOomKillAt?: string;
+  /**
+   * Issue #2622: what holds its jobs' memory: `scope`, each job's own scope with its **job limits** (a systemd user manager
+   * runs there); `machine`, a cgroup memory limit over the machine itself (a seat's container, a unit's MemoryMax); `none`,
+   * nothing, and the Machines page warns: one burst of builds there can take the whole host. Absent: not read (Windows,
+   * macOS, an older client).
+   */
+  jobMemoryLimit?: JobMemoryLimit;
 }
+
+/** What holds a machine's jobs' memory (issue #2622). */
+export type JobMemoryLimit = 'scope' | 'machine' | 'none';
 
 /** A memory pressure reading (issue #2499): the share of the last 10 s, 0..100, that some task and every task waited on memory. */
 export interface MemoryPressure { someAvg10: number; fullAvg10: number }

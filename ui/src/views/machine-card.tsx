@@ -123,6 +123,9 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       {m.template?.waiting && (
         <p role="alert" className="text-sm text-warn">Takes no job: {m.template.waiting}. Its jobs wait for another machine until a person approves the template on <a href="#approvals/access-requests" className="underline">Access requests</a>.</p>
       )}
+      {m.resources?.jobMemoryLimit === 'none' && (
+        <p role="alert" className="text-sm text-warn">No memory limit: its jobs run in no systemd scope and under no cgroup memory limit, so one burst of builds there can take all of its host's memory. Give it a memory limit (for example a container's <code>--memory</code>), or run a systemd user manager there.</p>
+      )}
       {m.herdrProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.herdrProblem}. Its jobs wait for another machine.</p>
       )}
