@@ -44,7 +44,7 @@
 // The trim (issue #2494, sweep-trim.ts): then, on a machine with `sweep.trimAboveGiB`, fstrim once the cleanups freed that much.
 import type { ActingPerson, Discarding, DiskBudget, DiskMeasure, HopperDisk, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
-import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, overBudgetTold, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
+import { BUDGET_EVENTS, discardingOf, discardReasonOf, hopperDiskOf, jobDiskOf, overBudgetTold, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
 import { jobScratchOf, scratchParts, worktreeJobOf as treeJob, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -205,8 +205,8 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
   /** The machine's measure kept, and a person told when it goes over the budget or back within it. */
   function measure(m: MachineSnapshot, found: Survey, budget: DiskBudget | undefined): void {
     const at = c.clock.now().toISOString();
-    const more = { caches: found.caches, storage: found.storage }, disk = hopperDiskOf(found.usage, at, budget, more);
-    if (!disk) return; const last: DiskMeasure = { at, paths: disk.paths, ...(found.caches?.length ? { caches: found.caches } : {}), ...(found.storage?.length ? { storage: found.storage } : {}) };
+    const more = { caches: found.caches, storage: found.storage, jobs: jobDiskOf(found.jobs ?? []) }, disk = hopperDiskOf(found.usage, at, budget, more);
+    if (!disk) return; const last: DiskMeasure = { at, paths: disk.paths, ...(found.caches?.length ? { caches: found.caches } : {}), ...(found.storage?.length ? { storage: found.storage } : {}), ...(disk.jobs ? { jobs: disk.jobs } : {}) };
     measured().set(m.id, last); c.store.diskMeasures.keep(m.id, last);
     if (!budget) { told().delete(m.id); return; }
     if (disk.over && !told().has(m.id)) {

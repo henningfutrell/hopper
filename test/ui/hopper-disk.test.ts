@@ -1,6 +1,6 @@
 // The hopper's own disk use on a Machines card, and the disk budget an admin sets (issue #1120): the model, pure.
 import { describe, expect, it } from 'vitest';
-import { budgetBody, budgetDraft, cachesText, cleanupLeftoversText, hopperDiskText, storageText } from '../../ui/src/model/hopper-disk.ts';
+import { budgetBody, budgetDraft, cachesText, cleanupLeftoversText, hopperDiskText, jobsDiskText, storageText } from '../../ui/src/model/hopper-disk.ts';
 
 const GB = 1e9;
 const at = '2026-10-14T10:00:00.000Z';
@@ -55,5 +55,20 @@ describe('cleanupLeftoversText (issue #2504 part 3)', () => {
   it('says how many things ended jobs left, of how many jobs, and how many removals failed', () => {
     expect(cleanupLeftoversText({ jobs: 1, entries: 1, failed: 0 })).toBe('1 thing of 1 ended job, not removed yet');
     expect(cleanupLeftoversText({ jobs: 2, entries: 3, failed: 2 })).toBe('3 things of 2 ended jobs, 2 removals failed: see Failures');
+  });
+});
+
+describe('jobsDiskText (issue #2494)', () => {
+  const job = (jobId: string, bytes: number) => ({ jobId, bytes, worktreeBytes: bytes, scratchBytes: 0 });
+
+  it('names the jobs that take the most, biggest first, and how many more there are', () => {
+    expect(jobsDiskText([job('job-b', 1 * GB), job('job-a', 4.2 * GB), job('job-c', 500e6), job('job-d', 1e6), job('job-e', 2e6)]))
+      .toBe('job-a 4.2 GB · job-b 1.0 GB · job-c 500 MB, and 2 more');
+    expect(jobsDiskText([job('job-a', 4.2 * GB)])).toBe('job-a 4.2 GB');
+  });
+
+  it('says nothing when no job was measured', () => {
+    expect(jobsDiskText(undefined)).toBeUndefined();
+    expect(jobsDiskText([])).toBeUndefined();
   });
 });

@@ -8,16 +8,19 @@ import { none, rig } from './sweep-rig.ts';
 const found: Survey = {
   ...none, roots: ['/w'], usage: [{ path: '/w/.worktrees', bytes: 3000 }],
   caches: [{ kind: 'npm', path: '/home/u/.npm', bytes: 500 }], storage: [{ runtime: 'podman', kind: 'images', bytes: 900, reclaimableBytes: 100 }],
+  jobs: [{ jobId: 'job-1', kind: 'tree', path: '/w/.worktrees/app/job-1', bytes: 2000 }, { jobId: 'job-1', kind: 'scratch', path: '/w/.worktrees/@scratch/job-1', bytes: 600 }],
 };
 
 describe('the sweep keeps the last disk measure in the store (issue #2494)', () => {
-  it('a pass keeps what it measured, caches and container storage too', async () => {
+  it('a pass keeps what it measured, caches, container storage and each job\'s bytes too', async () => {
     const r = rig({ found });
     await r.sweep.run(true);
+    const jobs = [{ jobId: 'job-1', bytes: 2600, worktreeBytes: 2000, scratchBytes: 600 }];
     expect(r.measures.get('m')).toEqual({
       at: '2026-10-08T00:00:00.000Z', paths: [{ path: '/w/.worktrees', bytes: 3000 }],
-      caches: [{ kind: 'npm', path: '/home/u/.npm', bytes: 500 }], storage: [{ runtime: 'podman', kind: 'images', bytes: 900, reclaimableBytes: 100 }],
+      caches: [{ kind: 'npm', path: '/home/u/.npm', bytes: 500 }], storage: [{ runtime: 'podman', kind: 'images', bytes: 900, reclaimableBytes: 100 }], jobs,
     });
+    expect(r.sweep.disk('m')?.jobs).toEqual(jobs);
   });
 
   it('after a restart, the measure kept shows before any pass, against the budget now', () => {

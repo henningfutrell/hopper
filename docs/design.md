@@ -24632,6 +24632,18 @@ them. The survey measures them since part 5; this part caps them.
   emptied under it: its tool fetches again what it misses. The clear's own window is short, and the hour between clears
   keeps it rare.
 
+**Part 11: the bytes of each job** (issue #2494, `src/client/reap.ts` `jobdu`, `src/domain/hopper-disk.ts` `jobDiskOf`).
+The measure said what `.worktrees` takes as a whole, not which jobs take it.
+- **The measure.** In the same survey, where `timeout` is, one more `du -skx` per work tree: each job's scratch dir
+  (`.worktrees/@scratch/<job id>`) and each job worktree (`.worktrees/<name>/<job id>`) on its own, cut off at 20 s. No
+  other `@` dir, no link, and no dir whose name is not a job id. The layout before issue #1188 is not measured by job.
+- **Kept.** Each job's worktrees and scratch dir summed (`worktreeBytes`, `scratchBytes`, `bytes`), biggest first, the
+  50 biggest only (`KEPT_JOB_DISKS`), so a machine with many jobs left keeps a short measure. They go in the measure the
+  store keeps (part 7) and in `hopperDisk.jobs` on `GET /api/machines`. The budget counts `.worktrees` as before.
+- **Shown.** The Machines card names the three biggest jobs, with their sizes, and how many more there are.
+- **Cost.** The job dirs are read a second time in each pass, after the `.worktrees` measure, so their entries are in
+  the page cache already.
+
 The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
 know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
@@ -24652,7 +24664,8 @@ container storage for real, with a fake runtime), `test/domain/hopper-disk.test.
 (the survey's listing and the prune for real, with a fake runtime), `test/domain/storage-prune.test.ts`,
 `test/engine/sweep-prune.test.ts`. Part 9: `test/client/disk-trim.test.ts` (the trim for real, with a fake fstrim and sudo),
 `test/engine/sweep-trim.test.ts`. Part 10: `test/client/caches.test.ts` (the clear for real in a home made for the test,
-with a fake pkill), `test/domain/cache-caps.test.ts`, `test/engine/sweep-caches.test.ts`.
+with a fake pkill), `test/domain/cache-caps.test.ts`, `test/engine/sweep-caches.test.ts`. Part 11:
+`test/client/survey-job-disk.test.ts` (the measure for real), `test/domain/job-disk.test.ts`, `test/engine/sweep-disk-kept.test.ts`.
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 
