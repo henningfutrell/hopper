@@ -105,6 +105,29 @@ const pressed = (room: MemoryRoom): boolean => room.pressure !== undefined && ro
 export const memoryAdmits = (room: MemoryRoom | undefined, cost?: ExpectedCost): boolean =>
   !room || (ownAdmits(room, cost) && !pressed(room) && poolAdmits(room, cost));
 
+/**
+ * Issue #2499: the memory a machine has for new jobs now, over its floor: its own, or its host pool's when that is lower,
+ * less what is kept for jobs started lately; none under memory pressure. It shrinks as this Decision places jobs there.
+ */
+function headroomOf(room: MemoryRoom): { bytes: number; floorBytes: number } {
+  const own = room.availableBytes - room.keptBytes - room.floorBytes;
+  const pool = room.pool ? room.pool.availableBytes - room.pool.keptBytes - room.pool.floorBytes : Infinity;
+  const floorBytes = pool < own ? room.pool!.floorBytes : room.floorBytes;
+  return { bytes: pressed(room) ? 0 : Math.max(0, Math.min(own, pool)), floorBytes };
+}
+
+export const memoryHeadroom = (room: MemoryRoom): number => headroomOf(room).bytes;
+
+/** Issue #2499: how many more jobs of a job's memory the machine's memory holds now: its lane cap as its memory reads it. */
+export const memoryLanes = (room: MemoryRoom): number => Math.floor(memoryHeadroom(room) / room.perJobBytes);
+
+/** The Decision's note of what a machine's memory holds (issue #2499). */
+export function headroomNote(id: string, room: MemoryRoom): string {
+  const n = memoryLanes(room);
+  const h = headroomOf(room);
+  return `${id}: memory for ${n} more job${n === 1 ? '' : 's'} (${gib(h.bytes)} over its floor of ${gib(h.floorBytes)})`;
+}
+
 /** Count a job placed on the machine, and on its host pool, for the jobs placed after it in this Decision. */
 export function keepMemory(room: MemoryRoom | undefined, cost: ExpectedCost | undefined): void {
   if (!room) return;

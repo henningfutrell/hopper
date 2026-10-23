@@ -1,6 +1,7 @@
 import type { HoldPlan, JobId, Lane, LanePlan, StartPlan, WaitPlan } from '../domain/types.ts';
 import { NO_NEW_JOB, homeless, unpinnedCap, type MachineState } from './assign.ts';
 import { SIGN_IN, signedOutEvery } from './signed-out.ts';
+import { memoryAdmits, memoryShort } from './memory-floor.ts';
 
 /**
  * Step 8: per-machine lane plan. `unassignedIdle` = idle lanes no start took. `priorityOf`: the running jobs'
@@ -82,6 +83,7 @@ export function idleReason(s: MachineState, hold: readonly HoldPlan[], wait: rea
   const gated = s.gate?.gated.find((g) => g.machineId === m.id);
   if (gated && used === 0) return `gated by blast radius: ${gated.reason}; only jobs let through the gate run here`;
   if (used >= s.cap) return `usage pacing: lane cap ${s.cap} of ${m.maxLanes} (${s.band}${s.band === 'soft' || s.band === 'hard' ? `, used ${Math.round(s.usedFrac * 100)}%` : ''})`;
+  if (wait.length > 0 && s.memory && !memoryAdmits(s.memory)) return `memory holds no more job: ${memoryShort(s.memory, undefined, m.id)}`;
   if (wait.length > 0 && s.unpinned >= unpinnedCap(s) && (m.reservedLanes ?? 0) > 0) {
     const kept = m.reservedLanes!;
     return `reserved: ${kept} lane${kept === 1 ? '' : 's'} kept for jobs pinned to this machine`;
