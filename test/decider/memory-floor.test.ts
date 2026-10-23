@@ -238,3 +238,26 @@ describe('memory pressure (issue #2499)', () => {
     expect(decide(inputs({ machines: [pressed(80, { memoryFloor: { floorGiB: 0 } })], waiting: burst(1) }), 'd1').start).toHaveLength(1);
   });
 });
+
+// Issue #2499 part 7: a seat at its cgroup limit has processes killed for memory (OOM kills) while its reading can still
+// show memory available. A machine that saw an OOM kill less than 10 minutes ago takes no new job.
+describe('OOM kills (issue #2499)', () => {
+  const killed = (minutesAgo: number, over: Partial<MachineSnapshot> = {}): MachineSnapshot =>
+    machine({ maxLanes: 8, resources: { cores: 8, memTotalBytes: 4 * GIB, memAvailableBytes: 3.6 * GIB, memOomKillAt: ago(minutesAgo) }, ...over });
+
+  it('a machine that saw a process killed for memory less than 10 minutes ago takes no new job, though its memory holds one', () => {
+    const d = decide(inputs({ machines: [killed(3)], waiting: burst(1) }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toBe("waiting for memory: local's memory killed a process 3 min ago (out of memory), and a new job starts only 10 min after");
+  });
+
+  it('10 minutes after, the machine takes the job, and a job goes to the machine with no OOM kill', () => {
+    expect(decide(inputs({ machines: [killed(10)], waiting: burst(1) }), 'd1').start).toHaveLength(1);
+    const d = decide(inputs({ machines: [killed(1, { id: 'a' }), killed(60, { id: 'b' })], waiting: burst(1) }), 'd1');
+    expect(d.start.map((s) => s.machineId)).toEqual(['b']);
+  });
+
+  it('a floor of 0 turns the OOM kill check off too', () => {
+    expect(decide(inputs({ machines: [killed(1, { memoryFloor: { floorGiB: 0 } })], waiting: burst(1) }), 'd1').start).toHaveLength(1);
+  });
+});
