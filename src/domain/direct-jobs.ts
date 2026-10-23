@@ -22,16 +22,19 @@ export const directKey = (id: string): string => `${DIRECT_SOURCE}:${id}`;
 export type DirectPullRequests = Required<Pick<FollowsPullRequests, 'follow' | 'mergesOnReady' | 'tendStarted' | 'checkLogs' | 'endedPullRequests' | 'endedWatched' | 'waitedChecks' | 'waitedReviews'>>;
 
 /**
- * The pull request a direct job opened on its repository `repo` through the hopper's GitHub proxy (issue #1068): the
- * newest `github_proxy.done` of op `pr.create` among `events`, the job's own. Undefined: it opened none there.
+ * The pull requests a job opened through the hopper's GitHub proxy (issues #1068, #2510): of each `github_proxy.done` of op
+ * `pr.create` among `events`, the job's own, its URL, the newest first; only those of repository `repo` when it is given.
  */
-export function openedPullRequest(events: readonly DomainEvent[], repo: string): string | undefined {
-  const opened = events
+export function openedPullRequests(events: readonly DomainEvent[], repo?: string): string[] {
+  return events
     .filter((e) => e.type === 'github_proxy.done' && e.data.op === 'pr.create' && typeof e.data.url === 'string'
-      && typeof e.data.repo === 'string' && e.data.repo.toLowerCase() === repo.toLowerCase())
-    .sort((a, b) => b.seq - a.seq);
-  return opened[0]?.data.url as string | undefined;
+      && typeof e.data.repo === 'string' && (repo === undefined || e.data.repo.toLowerCase() === repo.toLowerCase()))
+    .sort((a, b) => b.seq - a.seq)
+    .map((e) => e.data.url as string);
 }
+
+/** The pull request a direct job opened on its repository `repo` through the hopper (issue #1068): the newest. Undefined: none there. */
+export const openedPullRequest = (events: readonly DomainEvent[], repo: string): string | undefined => openedPullRequests(events, repo)[0];
 
 /** What a person submits. */
 export interface DirectJobInput {

@@ -56,7 +56,7 @@ import {
 import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type ReferencingPullRequest } from './api.ts';
 import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
-import { closesByKeyword, fromReleaseBranch, isClosedAsCompleted, isPartOf, namesIssue, openClosingWork, worksOnAnotherIssue } from './completion.ts';
+import { closesByKeyword, fromReleaseBranch, isClosedAsCompleted, isPartOf, namesIssue, openClosingWork, ownOpenPullRequestOf, worksOnAnotherIssue } from './completion.ts';
 import { blockedForPullRequest, followLabels, type FollowEnd } from './item-labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
 import { mergeGateOf } from './merge-gate.ts';
@@ -117,17 +117,20 @@ function seenFromBatch(ctx: PullRequestContext, job: Job, s: Followed, url: stri
 
 /**
  * The newest open pull request of the issue, in any state of review (issue #677: the report names only a ready one): one
- * that closes it, else one in its repository that mentions it (a part says "Part of #N"), else one on a branch named for it.
+ * that closes it, else one in its repository that mentions it (a part says "Part of #N"), else one on a branch named for it,
+ * else the job's own open one those miss (issue #2510: in another repository, or one it opened through the hopper).
  */
-async function openPullRequestOf(api: GitHubApi, repo: string, number: number): Promise<{ url: string; part: boolean } | undefined> {
+async function openPullRequestOf(ctx: FollowContext, job: Job, repo: string, number: number): Promise<{ url: string; part: boolean } | undefined> {
+  const { api } = ctx;
   const newest = <P extends { createdAt: string }>(prs: P[]): P | undefined => [...prs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   const closing = newest(await openClosingWork(api, repo, number));
   if (closing) return { url: closing.url, part: false };
-  const mention = newest((await api.referencingPullRequests(repo, number))
+  const referencing = await api.referencingPullRequests(repo, number);
+  const mention = newest(referencing
     .filter((pr) => pr.state === 'open' && pr.repo.toLowerCase() === repo.toLowerCase() && !worksOnAnotherIssue(pr, repo, number)));
   if (mention) return { url: mention.url, part: isPartOf(mention, repo, number) };
   const branch = newest((await api.openPullRequests(repo)).filter((pr) => namesIssue(pr.headRef, number)));
-  return branch && { url: branch.url, part: false };
+  return branch ? { url: branch.url, part: false } : ownOpenPullRequestOf(api, job, repo, number, referencing, ctx.opened);
 }
 
 /**
@@ -393,7 +396,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
     if (rechecksMerge(job)) return await recheckMerge(ctx, key, repo, number, s);
     if (s.follow !== 'open') return undefined;
     if (!s.pullRequest) {
-      const open = await openPullRequestOf(ctx.api, repo, number);
+      const open = await openPullRequestOf(ctx, job, repo, number);
       const found = open ?? await mergedPartOf(ctx.api, repo, number, job);
       if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}), ...('mention' in found && found.mention ? { mention: true } : {}) };
       // Blocked for want of a pull request (issue #1891), one found open: its issue waits on it, as a report says. The ledger says it is blocked (issue #1892 part 27).

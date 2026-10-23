@@ -28,7 +28,7 @@ import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
 import { doneCriteriaHold, doneCriteriaMiss, partCriteriaMiss, type JobAllowedDeletes, type JobDoneCriteria } from './done-criteria.ts';
-import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts, type WaitsOnBatch } from './completion.ts';
+import { issueState, notComplete, ownPullRequestChecks, ownPullRequestOpen, partlyDone, unfinishedPullRequest, workState, type JobArtifacts, type JobOpenedPullRequests, type WaitsOnBatch } from './completion.ts';
 import { waitingOnBatch, waitsOnBatch } from './batch-wait.ts';
 import { rerunChecks } from './rerun-checks.ts';
 import { endedWatched, waitedChecks, waitedReviews } from './watched.ts';
@@ -93,6 +93,8 @@ export interface GitHubSourceOptions {
   yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined; changeRule?: (repo: string) => ChangeRule;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
   jobArtifacts?: JobArtifacts;
+  /** The pull requests a job opened through the hopper (issue #2510): its report and follow link its own. Absent: none. */
+  openedPullRequests?: JobOpenedPullRequests;
   /** The done criteria of the conditional skills a job got (issue #1924): checked on its own pull request before it is done. Absent: none. */
   doneCriteria?: JobDoneCriteria;
   /** The deletes a job's issue allows by resource address (issue #1924 part 2): a plan's delete of one does not count. Absent: none. */
@@ -146,9 +148,9 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     const e = item && issueChangeEvent(item, { state: 'closed', ...(reason ? { reason } : {}) }, 'read');
     if (e?.type === 'work_item.issue_closed') o.intake?.record(e.type, e.data);
   };
-  const reportContext = () => ({ api, ensuredLabels, issueClosed, ...(o.intake ? { holder: o.intake.holder } : {}) });
+  const reportContext = () => ({ api, ensuredLabels, issueClosed, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.openedPullRequests ? { opened: o.openedPullRequests } : {}) });
   const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
-  const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}),
+  const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, ...(o.openedPullRequests ? { opened: o.openedPullRequests } : {}), batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}),
     ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}), labels: labelRows('follow'), ...(o.intake?.workItem ? { item: o.intake.workItem } : {}) });
   /** A follow's or a report's label change (issue #1892 parts 14 and 15): outbox rows, once per end, sent in its own pass. */
   const labelRows = (act: 'follow' | 'report'): LabelSink => async (key, repo, change, tag, replaces) => {

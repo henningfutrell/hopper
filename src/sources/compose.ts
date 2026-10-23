@@ -13,7 +13,7 @@ import { notConnected } from '../connected-accounts/service.ts';
 import { createAccountGitHubApi } from './github/account/api.ts';
 import { GitHubApiError } from './github/api.ts';
 import type { Rejection } from './github/discover.ts';
-import type { JobArtifacts } from './github/completion.ts';
+import type { JobArtifacts, JobOpenedPullRequests } from './github/completion.ts';
 import type { IssueGraphRecorder } from './github/graph.ts';
 import type { IntakeContext, IntakeTrust } from '../domain/intake.ts';
 import type { GitHubApi } from './github/index.ts';
@@ -57,6 +57,8 @@ export interface GitHubSourceDeps {
   changeRule?: (repo: string) => ChangeRule;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. */
   jobArtifacts?: JobArtifacts;
+  /** The pull requests a job opened through the hopper (issue #2510): its report and follow link its own. */
+  openedPullRequests?: JobOpenedPullRequests;
   /** The user's issue graph (issue #437). */
   issueGraph?: IssueGraphRecorder;
   /** The user's mirrors of the job repositories (issue #858): git says whether a pull request has conflicts. Absent: GitHub says. */
@@ -112,7 +114,7 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
         source: createGitHubSource({
           name: o.name, kind, whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
-          ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}),
+          ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), ...(o.openedPullRequests ? { openedPullRequests: o.openedPullRequests } : {}),
           ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o), connected: () => accounts.account(provider) !== undefined,
         }),
       };
