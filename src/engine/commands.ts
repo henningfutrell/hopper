@@ -107,10 +107,11 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
         if (runner.cancel(id, reason, note) || c.leases.relay(id, { kind: 'cancel', reason, ...(note ? { note } : {}) })) return job;
       }
       // A waiting_answer or parked job's question is cancelled in the same tx; a job on a question or about to
-      // resume holds a pane, and a parked job its work tree, released after the commit by the normal reap.
+      // resume holds a pane, and a parked job its work tree, released after the commit by the normal reap. No runner holds
+      // it, so no lane is its: a lane id an earlier attempt left names a lane another job may hold now (issue #2676).
       const next = store.tx(() => {
         if ((job.status === 'waiting_answer' || job.status === 'parked') && job.questionId) c.questions.cancel(job.questionId);
-        const cancelled = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c), pendingAnswer: undefined, ...cleanupDue(c) });
+        const cancelled = store.jobs.update(id, { status: 'cancelled', finishedAt: nowIso(c), laneId: undefined, pendingAnswer: undefined, ...cleanupDue(c) });
         store.events.append({ type: 'job.cancelled', jobId: id, data: { reason, ...(note ? { note } : {}) } });
         return cancelled;
       });

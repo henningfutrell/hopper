@@ -3,7 +3,7 @@
 // tab a filter of that one workflow: Approvals (Access requests, Pending approvals), Failures (Failures with Stuck, Parked),
 // Jobs (Jobs, Queue order), Ask hopper (Run a job, Ask a question), Activity (Events, Decisions), Machines (Machines,
 // Accounts, Logins), Usage (Usage, Resources). Every old hash opens its new home; an entry's badge sums its tabs'. Search
-// keeps its route, which the header's search box opens; Your reports and Version history are in the user menu.
+// keeps its route, which the command palette opens (issue #2661); Your reports and Version history are in the user menu.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -132,14 +132,16 @@ describe('an old hash', () => {
     expect(currentTab()).toBe('#ask/direct-queries');
   });
 
-  it('#search opens the Search page, which the header\'s search box opens, with no nav entry', async () => {
+  it('#search opens the Search page, which the command palette opens, with no nav entry', async () => {
     await boot('#search');
     await vi.waitFor(() => expect(document.title).toBe('Search · hopper'));
     expect(document.querySelector('aside a[href="#search"]')).toBeNull();
     expect(window.location.hash).toBe('#search');
-    // A phone has no search box in the header: the drawer lists Search.
+    // The command palette's button is in the header at every width (issue #2661): the drawer lists no Search.
+    expect(document.querySelector('header [data-slot="palette-button"]')).not.toBeNull();
     await act(async () => { (document.querySelector('button[aria-label="Open navigation"]') as HTMLButtonElement).click(); });
-    await vi.waitFor(() => expect(document.querySelector('[role="dialog"] a[href="#search"]')).not.toBeNull());
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"] a[href="#dashboard"]')).not.toBeNull());
+    expect(document.querySelector('[role="dialog"] a[href="#search"]')).toBeNull();
   });
 
   it('#reports opens Your reports, with no nav entry: the user menu links to it, and to Version history', async () => {

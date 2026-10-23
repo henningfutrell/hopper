@@ -76,6 +76,13 @@ describe('herdr CLI client', () => {
     expect(calls().map((c) => c.argv.slice(2))).toEqual([['tab', 'list', '--workspace', 'w7'], ['pane', 'list']]);
   });
 
+  it('tabLabel answers the label of the tab a pane is in, and null for a pane no tab has (issue #2676)', async () => {
+    process.env.FAKE_HERDR_PANE_LIST = '1';
+    expect(await herdr().tabLabel('w7:p5')).toBe('local/lane-1 · abcd1234 · 1.1');
+    expect(calls().map((c) => c.argv.slice(2))).toEqual([['pane', 'list'], ['tab', 'list', '--workspace', 'w7']]);
+    expect(await herdr().tabLabel('w7:p404')).toBeNull();
+  });
+
   it('findTab answers null for a label no tab has, and lists no pane', async () => {
     expect(await herdr().findTab({ workspaceId: 'w7', label: 'local/lane-1 · abcd1234 · 2.1' })).toBeNull();
     expect(calls()).toHaveLength(1);

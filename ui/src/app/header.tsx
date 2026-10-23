@@ -12,7 +12,8 @@
 // is the work-item ledger's count, a link to the Jobs view filtered to them; the others link to the Dashboard.
 // File an issue (issue #471, file-issue.tsx) is a button here on every screen from tablet width up (a phone has it in the
 // user menu): an operator's or admin's, off with the reason while no provider can draft.
-// The search box (issue #945, search-box.tsx) finds jobs from every screen at tablet width and up; a phone uses the Search entry.
+// The command palette's button (issue #2661, command-palette.tsx) is here on every screen: it finds pages, commands, jobs, settings
+// and more, and Cmd-K or Ctrl-K opens it too. It is an icon on a phone.
 // On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
 import { Activity, BookOpen, CircleCheck, CircleHelp, CircleX, HardDrive, KeyRound, Layers, MessageCircleQuestion, Timer, Zap } from 'lucide-react';
@@ -33,7 +34,7 @@ import { cn } from '@/lib/utils';
 import { useHeaderBadges, useYoloMode } from '@/store/polled';
 import { useKpis, useLoginsBadge } from '@/store/selectors';
 import { FileIssueButton } from './file-issue';
-import { SearchBox } from './search-box';
+import { CommandPaletteButton } from './command-palette';
 import { UpdateButton } from './update';
 import { UserMenu } from './user-menu';
 
@@ -91,7 +92,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
           <span className="max-sm:sr-only">hopper</span>
         </div>
         <UpdateButton version={health?.version} />
-        <div className="hidden min-w-0 flex-1 justify-center md:flex"><SearchBox /></div>
+        <div className="flex min-w-0 justify-center md:flex-1"><CommandPaletteButton /></div>
         <div className="ml-auto flex items-center gap-1 text-xs sm:gap-3">
           {ended && (
             <a data-connection-ended href="#sources" title={ended}

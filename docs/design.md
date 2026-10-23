@@ -1530,8 +1530,8 @@ page** (`PAGE_TABS`, `ui/src/app/routes.ts`; `ui/src/app/page-tabs.tsx`), whose 
 - **Badges**: each tab shows its own badge; the entry's badge is their sum (`mergedBadge`, the same sum as a collapsed
   group's, each tab's title as it is). A collapsed group sums the entries' badges as before, so no count is lost or
   counted twice.
-- **No entry**: Search, which the header's search box opens (on a phone, which has no search box, the navigation
-  drawer lists it after Needs you); Your reports and Version history, in the user menu. Their routes stay (`#search`,
+- **No entry**: Search, which the command palette opens (issue #2661: its button is in the header at every width, so the
+  navigation drawer no longer lists Search); Your reports and Version history, in the user menu. Their routes stay (`#search`,
   `#reports`, `#settings/version-history`).
 - **Fits**: with every group open the sidebar holds 24 entries (with Plugins, Vault and Users & access, issue #2373) and needs no scroll at 1440×900; its rows are tighter
   than the drawer's, whose rows stay a touch target's height.
@@ -17872,6 +17872,22 @@ matching '"'`, and every job there failed after it ran. Only the reap held a `\"
 before a reset (`CONF_SH`, `src/client/job-runtime.ts`). Its printf formats are now in single quotes. Every fixed script
 a client runs is held to the round trip (`test/client/windows-command-line.test.ts`).
 
+**A job's end acts only on its own pane** (issue #2676). A job's executor state names its pane by herdr's id, and herdr
+gives ids again once its server starts again (a lane's machine, or a lane box, that started again): the next job on the
+lane had the pane whose id an ended job's state still named. That job's cleanup (a cancel while it waited, a deferred
+cleanup tried again) sent ctrl+c to that pane and closed it, and the next job's Claude ended with exit code 143. Now the
+end of a pane — at a cleanup, a park, a run's end, or the end of the pane a moved job left — first asks whose the pane
+is (`ownPane`, `src/executors/herdr/pane-ends.ts`): the job's while its agent runs in it or its tab's label names the job
+(the pane key). Another job's pane, or none, gets no key and stays open; the reap, which acts by the job's id, runs all
+the same. A pane whose herdr is not reached gets no key either, and the cleanup is tried again. A cancel of a job no
+runner holds also clears the lane id an earlier attempt left on it.
+
+**A Windows client's script is not on its command line** (issue #2676). The sh of Git for Windows cut the reap script
+near 8 KiB on a native Windows client's command line: `sh: -c: line 2: syntax error: unexpected end of file` (the error
+of issue #2427 was the same cut, at another place in the script of that time). There the client puts a `sh -c` script in
+the variable `HOPPER_CLIENT_SCRIPT` and gives sh only a short `-c` that takes it out of the environment and runs it
+(`CLIENT_SCRIPT_SH`, `src/client/spawn.ts`); the script's arguments stay on the command line.
+
 **Never a GitHub sign-in.** The protocol line on GitHub (`GITHUB_PROXY_LINE`) says: when the hopper cannot be reached,
 never start or ask for a GitHub sign-in to get around it; end failed with the reason. A herdr-claude job that reports a
 GitHub login again right after it was steered fails (`GITHUB_LOGIN_AGAIN`); before, that login went to the Logins.
@@ -21440,10 +21456,10 @@ user's documents (tenancy), so the viewer is always the owner and nothing is cou
 **When Solr is down** search answers `degraded` and why, the hits empty; every other route works as before, and the
 updates wait in `search_pending` until Solr takes them.
 
-**In the UI and the operator CLI** (part 2). The **search box** in the header (`ui/src/app/search-box.tsx`, tablet width and
-up) asks `GET /api/search/suggest` 150 ms after a person stops typing (two characters at least) and lists the titles, each a
-link to its job; Enter opens the **Search view** on the words. The Search view (`#search/<search>`, `ui/src/views/search.tsx`;
-the Search entry of the navigation drawer opens it on a phone, issue #2374) keeps the whole search in the hash — `q`, each `type`,
+**In the UI and the operator CLI** (part 2). The **command palette** (issue #2661, "The command palette" below; it replaced
+the header's search box) asks `GET /api/search/suggest` 150 ms after a person stops typing (two characters at least) and
+lists the titles with its other entries; its last entry opens the **Search view** on the words. The Search view
+(`#search/<search>`, `ui/src/views/search.tsx`) keeps the whole search in the hash — `q`, each `type`,
 `status`, `label` and `repo` picked, `offset` — URL-encoded as one part (`ui/src/model/search.ts`), so a link and the back
 button work. It reads `GET /api/search` (20 a page): the total, each hit with a link to its job view (`#job/<id>`, not the
 answer's `url`, which may name the public URL), its title and at most two snippets (asked, result, question, failure,
@@ -21470,11 +21486,52 @@ and caught up after, the backfill and Reindex, Access not asked, and `hopper sea
 summary with their links and the type facet, a removed artifact gone, Reindex marking artifacts too; part 4: an issue and a
 pull request found by their words with their job's link, an intake item by why it was not taken and written again after an
 intake event, and an agent's API token searching on the same routes), `test/ui/search.test.ts` (part 2:
-the highlight read as text, the search in the hash, the Search view's hits, facets and degraded state, the search box's
-type-ahead; part 3: each type's link and the text snippet; part 4: an issue's and a pull request's link, never other than
+the highlight read as text, the search in the hash, the Search view's hits, facets and degraded state; part 3: each type's link and the text snippet; part 4: an issue's and a pull request's link, never other than
 `https://`, and the links and intake snippets), `test/authz/model.test.ts`, `test/update/drift.test.ts`
 and `test/scripts/compose.test.ts` (the `solr` service). The Solr tests use `HOPPER_TEST_SOLR_URL` when it names a core,
 else start Solr in a container (`test/support/solr.ts`).
+
+## The command palette (issue #2661, 2026-10-23)
+
+Owner direction: replace the header's search box with one global command palette, so everything in the hopper is a few
+keys away.
+
+**Opens.** Cmd-K or Ctrl-K on every screen, or the header's button (`data-slot="palette-button"`, every width; an icon on
+a phone, so the navigation drawer no longer lists Search). `ui/src/app/command-palette.tsx`, on **cmdk** (the library
+shadcn's Command component wraps: fuzzy match, groups, the keyboard and the listbox roles, over Radix's dialog, which the
+UI already ships). Arrows move, Enter picks, Escape closes; Backspace in an empty input goes back from a job's actions.
+
+**What it finds**, grouped in this order (`PALETTE_GROUPS`, `ui/src/model/command-palette.ts`, pure):
+
+- **Pages**: every view of the navigation, each merged page's other tabs (`Jobs: Queue order`), Your reports and Search.
+- **Commands**: from the **scope registry** (`GET /api/scopes`, "Grants and refresh tokens" The scope registry): every
+  route that changes something (a `POST` route's own scope, not a body's action) whose least role the person's role
+  allows. Its words are the route's summary. So a new route is a new command with no edit to the palette, and a viewer sees
+  none. A command on no one job opens the page where it is done: its area's page (`queue:order` → `#jobs/queue`), else a
+  Settings section of its area's name (`yolo-mode:edit` → `#settings/yolo-mode`), else its section's page; the palette
+  never sends a command's request itself, since most need input that page asks for.
+- **Jobs, issues, pull requests, artifacts, infra plans**: the jobs the page already holds (the queue's, matched at once),
+  and the search index's suggestions (`GET /api/search/suggest`): the hopper's own copy in Solr, never a GitHub call per
+  key. A job the page holds is not listed twice.
+- **Questions** and **machines**: from the store.
+- **Vault**: secrets, shared secrets, system secrets and templates **by name only** (`vaultEntries` reads `name` and
+  nothing else, never a value, a scope or the last characters), from the vault view the page already reads.
+- **Settings**: each Settings section (`SETTINGS_SECTIONS`).
+
+**A job's actions.** A job picked shows Open the job, then each job action of the registry (`POST /ui/api/jobs/:id/<act>`)
+the role allows. Approve, End wait, Re-queue, Lift quarantine, Approve trust, Dismiss and Cancel send their request with no
+body (Cancel asks Enter once more); Run again goes through the give-back (`store/give-back.ts`), as its button does; any
+other action, and one added later, opens the job, where it is done. The daemon still decides each request: the palette
+only hides what the role cannot do.
+
+**Recents.** With no words typed, the last eight picks come first (`localStorage`, per browser: a convenience, so storage
+that cannot be read or holds junk gives none).
+
+**Why cmdk and not code of our own**: it is the established React command menu (shadcn's), steady releases, and its
+dependencies are Radix packages the UI already has; writing the fuzzy match, the list's keyboard and its ARIA ourselves
+would be ours to keep. Tests: `test/ui/command-palette.test.ts` (the commands from the registry, the role filter, a new
+permission shown with no edit, the pages commands open, the vault by names only, recents, and the palette on the page:
+Ctrl-K, every page, a job found and its actions, Cancel's second Enter).
 
 ## Promote to GitHub (issue #946, 2026-10-12)
 
@@ -33243,6 +33300,27 @@ Verification: `test/domain/rerun-chain.test.ts` (both ways along the chain, othe
 approval), `test/sandbox/requests.test.ts` (a carried run, to a second rerun too; no decline carried; a job not a rerun
 waits; a rerun below the trust waits), `test/integration/need-steps.test.ts` (real daemon: a run card approved for one job,
 the job cancelled and its item offered again, and the rerun's write step runs with no card).
+
+**The card carries the vault grant (issue #2639 part 3, 2026-10-23).** Seen on a hopper: a critical job needed a run
+card's approval for a template, and then, once its step asked for the template's secret, a vault grant on a card of its
+own, 6 minutes later. For one job and one template these are one decision.
+
+- **On the card** (`runCards`, `granted`): a run card carries the job's vault grant (`vaultGrant: true`) when its template
+  gives the vault — a vault secret or a profile the vault mints for — and the job's item has no grant yet. The card lists
+  it (Vault grant) and its confirm says it. A grant ask of the same job and template is on the card, not in `grantAsks`
+  (`looseGrantAsks`).
+- **One approval.** `approve-run` of such a card grants the job's item the vault (`grant`, `vault.granted`, by the
+  person), before the template and the run are approved, so the job's first ask of the vault finds it. Access decides
+  first, as on Grant (`vault_grant#can_grant`, 403; 503 when it cannot be asked): a refusal changes nothing. An API token's
+  card that waits for a person's confirm (issue #909) grants nothing until then.
+- **What it widens.** Nothing beyond Grant: the grant is kept for the item, as every vault grant is, and the template's
+  approved scope still bounds what the job gets ("Vault grants"). A person who wants the run with no grant declines the
+  card, or approves the run and revokes the grant on Vault.
+
+**Migration.** None: no stored format changes. `vaultGrant` is a new optional field of the vault's view.
+
+Tests: `test/domain/run-card-vault-grant.test.ts`, `test/integration/run-card-vault-grant.test.ts` (the real daemon: one
+`approve-run` approves the template and the run and grants the vault), `test/ui/sandbox-runs-view.test.ts`.
 
 ## A job waits on an infra plan (issue #2205, 2026-10-19)
 

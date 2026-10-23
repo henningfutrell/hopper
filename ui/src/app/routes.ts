@@ -8,7 +8,7 @@ import { SECTION_KINDS } from '@/model/sections';
 
 export const VIEWS = ['dashboard', 'needs-you', 'intake', 'questions', 'proposals', 'approvals', 'failures', 'tagged', 'jobs', 'pull-requests', 'research', 'ask', 'artifacts', 'activity', 'machines', 'usage', 'sources', 'infra', 'topology', 'vault', 'users-access', 'skills', 'plugins', 'settings'] as const;
 /** The routes: every view in the navigation, and those with no nav entry — the job view (timeline entries link to it),
- *  Search (the header's search box opens it) and Your reports (the user menu links to it). */
+ *  Search (the command palette opens it) and Your reports (the user menu links to it). */
 const ROUTES = [...VIEWS, 'job', 'search', 'reports'] as const;
 export type View = (typeof ROUTES)[number];
 /** The views above the nav groups, always shown. */

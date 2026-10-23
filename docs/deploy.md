@@ -1286,8 +1286,8 @@ sync (`argocd app sync --core`, or a patch of the Application's `operation`). To
 ## Search
 
 Search (issue #945, docs/design.md "Search") finds your jobs, artifacts, infra plans, and the issues and pull requests your job sources see by their words, filters and facets: `GET /api/search`,
-type-ahead at `GET /api/search/suggest`, the index's state at `GET /api/search/status`. In the UI, the search box in
-the header and the Search view use them; from a shell, `hopper search`; an agent, with an API token. It reads a Solr core the hopper keeps from its
+type-ahead at `GET /api/search/suggest`, the index's state at `GET /api/search/status`. In the UI, the command palette
+(Cmd-K or Ctrl-K) and the Search view use them; from a shell, `hopper search`; an agent, with an API token. It reads a Solr core the hopper keeps from its
 events.
 
 - **In containers** it is set up: `compose.yaml` runs `docker.io/library/solr` as the service `solr`, one core (`hopper`)

@@ -13,7 +13,7 @@
 // Jobs holds the Queue order; Ask hopper (issue #2375) holds Run a job (Direct jobs, issue #901) and Ask a question (Direct queries, issue #2184); Activity holds
 // Events and Decisions; Machines holds Accounts (issue #1128) and Logins; Usage holds Resources (issue #947). A merged
 // page's entry badge sums its tabs', each tab showing its own (page-tabs.tsx). Search (issue #945) has no entry in the
-// sidebar: the header's search box opens it; on a phone, which has no search box, the drawer lists it after Needs you.
+// navigation: the command palette (issue #2661) in the header opens it at every width.
 // Your reports (issue #694) and Version history are in the user menu. Plugins, Vault and Users & access (issue #2373) left
 // Settings for entries of their own: Vault in Infra, Plugins and Users & access in Admin; their old Settings hashes open them.
 import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, LayoutDashboard, LockKeyhole, LayoutGrid, ListTree, Menu, Network, MessageCircleQuestion, OctagonAlert, Puzzle, Send, Server, Settings, ShieldQuestion, Telescope, Users, type LucideIcon } from 'lucide-react';
@@ -134,7 +134,7 @@ function Links({ view, onPick, phone }: { view: View; onPick?: () => void; phone
   };
   return (
     <nav className="grid gap-0.5">
-      <div className="grid gap-px">{NAV_PINNED.map((v) => entry(v))}{phone && entry('search')}</div>
+      <div className="grid gap-px">{NAV_PINNED.map((v) => entry(v))}</div>
       {NAV_GROUPS.map((g) => {
         const open = !collapsed.includes(g.id);
         const holdsView = (g.views as readonly View[]).includes(view);
