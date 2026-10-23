@@ -1,6 +1,6 @@
 // The hopper's own disk use on a Machines card, and the disk budget an admin sets (issue #1120): the model, pure.
 import { describe, expect, it } from 'vitest';
-import { budgetBody, budgetDraft, hopperDiskText } from '../../ui/src/model/hopper-disk.ts';
+import { budgetBody, budgetDraft, cachesText, hopperDiskText, storageText } from '../../ui/src/model/hopper-disk.ts';
 
 const GB = 1e9;
 const at = '2026-10-14T10:00:00.000Z';
@@ -32,5 +32,21 @@ describe('the disk budget form', () => {
   it('starts from the budget set, in gigabytes', () => {
     expect(budgetDraft({ bytes: 50 * GB })).toBe('50');
     expect(budgetDraft(null)).toBe('');
+  });
+});
+
+describe('the caches and container storage on a card (issue #2494)', () => {
+  it('names each cache kind with its size, biggest first; none when there is none', () => {
+    expect(cachesText([{ kind: 'gradle', bytes: 12.4 * GB, paths: [] }, { kind: 'cache', bytes: 340e6, paths: [] }])).toBe('Gradle 12 GB · other ~/.cache 340 MB');
+    expect(cachesText([])).toBeUndefined();
+  });
+
+  it('names each runtime\'s storage with what it could reclaim', () => {
+    expect(storageText([
+      { runtime: 'podman', kind: 'images', bytes: 20 * GB, reclaimableBytes: 8 * GB },
+      { runtime: 'podman', kind: 'volumes', bytes: 3 * GB, reclaimableBytes: 0 },
+      { runtime: 'podman', kind: 'containers', bytes: 0, reclaimableBytes: 0 },
+    ])).toBe('podman: images 20 GB (8.0 GB reclaimable), volumes 3.0 GB');
+    expect(storageText([])).toBeUndefined();
   });
 });
