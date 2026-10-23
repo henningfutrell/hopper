@@ -1,7 +1,7 @@
 // Issue #2504: a job's resource ledger — what the hopper made for a job on a machine, from its executor's saved state, closed
 // as each reap says — and the job's cleanup status read from it. Pure.
 import { describe, expect, it } from 'vitest';
-import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, goneClosures, ledgerEntriesOf, ledgerParts, machineLeftoversOf, reapClosures, retainedEntriesOf, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
+import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, goneClosures, ledgerEntriesOf, ledgerParts, machineLeftoversOf, reapClosures, retainedEntriesOf, unledgeredEntriesOf, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
 
 const AT = '2026-10-22T10:00:00.000Z';
 const SCRATCH = '/w/.worktrees/@scratch/j1';
@@ -188,5 +188,32 @@ describe('machineLeftoversOf (issue #2504 part 3)', () => {
     expect(machineLeftoversOf(leftovers, 'm1')).toEqual({ jobs: 2, entries: 3, failed: 1 });
     expect(machineLeftoversOf(leftovers, 'm2')).toEqual({ jobs: 1, entries: 1, failed: 0 });
     expect(machineLeftoversOf(leftovers, 'm3')).toBeUndefined();
+  });
+});
+
+describe('unledgeredEntriesOf (issue #2504 part 6)', () => {
+  const HOUR = 3600_000, NOW = Date.parse(AT);
+  const jobs: Record<string, { id: string; status: 'finished' | 'running'; finishedAt?: string }> = {
+    j1: { id: 'j1', status: 'finished', finishedAt: '2026-10-20T10:00:00.000Z' }, live: { id: 'live', status: 'running' },
+  };
+  const found = {
+    scopes: ['j1', 'live'], processes: [], roots: ['/w'],
+    scratch: [{ jobId: 'j1', path: SCRATCH, ageMs: 2 * HOUR }, { jobId: 'live', path: '/w/.worktrees/@scratch/live', ageMs: 1 }, { jobId: 'other', path: '/w/.worktrees/@scratch/other', ageMs: 1 }],
+    trees: [{ path: TREE, ageMs: 30 * HOUR }, { path: '/w/workspace/worktrees/my-app-j1', ageMs: 30 * HOUR }, { path: '/w/.worktrees/app/other', ageMs: 1 }],
+  };
+  const of = (ledgered: string[] = []) => unledgeredEntriesOf(found, new Set(ledgered), (id) => jobs[id] as never, 'm1', undefined, NOW);
+
+  it("records what the survey found of an ended job that its ledger does not name, kept until the sweep's reap of it", () => {
+    expect(of()).toEqual([
+      { jobId: 'j1', machineId: 'm1', kind: 'scratch_dir', locator: SCRATCH, createdAt: AT, retainedUntil: new Date(NOW + 22 * HOUR).toISOString() },
+      { jobId: 'j1', machineId: 'm1', kind: 'job_worktree', locator: TREE, createdAt: AT, retainedUntil: new Date(NOW - 6 * HOUR).toISOString() },
+      { jobId: 'j1', machineId: 'm1', kind: 'job_worktree', locator: '/w/workspace/worktrees/my-app-j1', createdAt: AT, retainedUntil: new Date(NOW - 6 * HOUR).toISOString() },
+      { jobId: 'j1', machineId: 'm1', kind: 'job_scope', locator: 'hopper-job-j1.scope', createdAt: AT },
+    ]);
+  });
+
+  it('records nothing the ledger names already, nothing of a job not ended, and nothing of a job the store does not know', () => {
+    const keys = [`j1\0scratch_dir\0${SCRATCH}`, `j1\0job_worktree\0${TREE}`, 'j1\0job_worktree\0/w/workspace/worktrees/my-app-j1', 'j1\0job_scope\0hopper-job-j1.scope'];
+    expect(of(keys)).toEqual([]);
   });
 });

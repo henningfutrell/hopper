@@ -1,8 +1,9 @@
 // The resource ledger's writes (issue #2504, design.md "The resource ledger"): entries recorded from what a job's executor
 // saved, and closed as each reap — the cleanup at the job's end, the sweep, a discard — says.
-import { goneClosures, ledgerEntriesOf, reapClosures, retainedEntriesOf } from '../domain/resource-ledger.ts';
+import { goneClosures, ledgerEntriesOf, ledgerKey, reapClosures, retainedEntriesOf, unledgeredEntriesOf } from '../domain/resource-ledger.ts';
 import type { Reaped, Survey } from '../domain/ports.ts';
 import type { UserStore } from '../domain/store.ts';
+import type { Job, MachineSnapshot } from '../domain/types.ts';
 
 type Ledger = Pick<UserStore, 'resourceLedger'>;
 
@@ -29,4 +30,15 @@ export function closeGone(store: Ledger & Pick<UserStore, 'jobs'>, machineId: st
   const closed = goneClosures(store.resourceLedger.open(), found, machineId, (id) => store.jobs.get(id));
   for (const c of closed) store.resourceLedger.close(c.entry.jobId, c.entry.kind, c.entry.locator, c.state, at, c.reason);
   return closed.length;
+}
+
+/**
+ * The reconciler on machine `m` (issue #2504 parts 3, 6), after its survey and before the sweep's reaps: the entries whose
+ * thing is gone closed (`closeGone`), then what the survey found of an ended job that no entry names recorded, so the
+ * reaps close it and the leftover check tells it should it stay. `jobOf` reads the store, also for a job outside the job list.
+ */
+export function reconcileLedger(store: Ledger & Pick<UserStore, 'jobs'>, m: Pick<MachineSnapshot, 'id' | 'sweep'>, found: Survey, jobOf: (id: string) => Job | undefined, at: string): void {
+  closeGone(store, m.id, found, at);
+  const ledgered = new Set(store.resourceLedger.onMachine(m.id).map((e) => ledgerKey(e.jobId, e.kind, e.locator)));
+  for (const e of unledgeredEntriesOf(found, ledgered, jobOf, m.id, m.sweep, Date.parse(at))) store.resourceLedger.record(e);
 }
