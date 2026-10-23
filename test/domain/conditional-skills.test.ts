@@ -89,8 +89,8 @@ describe('a skill\'s done criteria', () => {
       'no check named terraform plan* ran yet', 'no terraform plan summary in the checks named terraform plan* or the pull request\'s comments',
     ]);
     expect(unmetCriteria(criteria, {
-      checks: [passed, { name: 'Terraform Plan (uat)', state: 'failing', text: 'Plan: 0 to add, 0 to change, 1 to destroy.' }, { name: 'terraform plan (dev)', state: 'pending' }], comments: [],
-    })).toEqual(['check Terraform Plan (uat) is failing, terraform plan (dev) is pending', 'a terraform plan destroys or replaces 1 resource (Terraform Plan (uat)); at most 0 may be']);
+      checks: [passed, { name: 'Terraform Plan (staging)', state: 'failing', text: 'Plan: 0 to add, 0 to change, 1 to destroy.' }, { name: 'terraform plan (dev)', state: 'pending' }], comments: [],
+    })).toEqual(['check Terraform Plan (staging) is failing, terraform plan (dev) is pending', 'a terraform plan destroys or replaces 1 resource (Terraform Plan (staging)); at most 0 may be']);
     expect(unmetCriteria([{ kind: 'plan-destroy' }], { checks: [], comments: ['Plan: 0 to add, 1 to change, 2 to destroy.'] }))
       .toEqual(['a terraform plan destroys or replaces 2 resources (a comment); at most 0 may be']);
     expect(unmetCriteria([{ kind: 'plan-destroy', max: 2 }], { checks: [], comments: ['Plan: 0 to add, 1 to change, 2 to destroy.'] })).toEqual([]);

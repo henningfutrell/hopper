@@ -5415,10 +5415,10 @@ Version 1 (`docs/schemas/bastion.started.v1.json`). A job started a bastion (iss
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "template": "observe-uat",
-  "box": "hopper-bastion-observe-uat-5c1d2e3f",
+  "template": "observe-utility",
+  "box": "hopper-bastion-observe-utility-5c1d2e3f",
   "targets": [
-    "uat/monitoring/svc/prometheus-server:9090"
+    "utility/monitoring/svc/prometheus-server:9090"
   ],
   "expiresAt": "2026-10-20T13:00:00.000Z"
 }
@@ -5440,8 +5440,8 @@ Version 1 (`docs/schemas/bastion.ended.v1.json`). A bastion ended (issue #2146):
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "template": "observe-uat",
-  "box": "hopper-bastion-observe-uat-5c1d2e3f",
+  "template": "observe-utility",
+  "box": "hopper-bastion-observe-utility-5c1d2e3f",
   "reason": "stopped",
   "by": "job"
 }
@@ -5461,7 +5461,7 @@ Version 1 (`docs/schemas/bastion.relayed.v1.json`). A job's relay connection to 
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "target": "uat/monitoring/svc/prometheus-server:9090",
+  "target": "utility/monitoring/svc/prometheus-server:9090",
   "openedAt": "2026-10-20T12:10:00.000Z",
   "ms": 1500
 }
@@ -5480,8 +5480,8 @@ Version 1 (`docs/schemas/bastion.relay_refused.v1.json`). A job's relay connecti
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "target": "uat/monitoring/svc/grafana:80",
-  "reason": "job:u1/j1 may not relay to uat/monitoring/svc/grafana:80"
+  "target": "utility/monitoring/svc/grafana:80",
+  "reason": "job:u1/j1 may not relay to utility/monitoring/svc/grafana:80"
 }
 ```
 
@@ -5503,7 +5503,7 @@ Version 1 (`docs/schemas/bastion.read.v1.json`). A bastion read ran (issue #2146
 ```json
 {
   "bastion": "5c1d2e3f-0000-4000-8000-000000000001",
-  "target": "uat/monitoring/svc/grafana:80",
+  "target": "utility/monitoring/svc/grafana:80",
   "method": "GET",
   "path": "/api/search?query=latency",
   "status": 200,
@@ -5744,7 +5744,7 @@ Version 1 (`docs/schemas/vault.run_card_opened.v1.json`). A new **run card** (is
 
 ## `vault.sandbox_approved`
 
-Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before, or `Jev` when Jev's sandbox check (issue #655 part 13, the decision point `sandbox-request` active) allowed a run one of those would approve. It starts no box (issue #1349): the job's box steps then run, each in a sandbox of its own, burned after it. On the job's timeline.
+Version 1 (`docs/schemas/vault.sandbox_approved.v1.json`). A sandbox request was approved (issue #991): `by` a person, `skip sandbox approval` when the toggle approved it, `the auto-approve policy` with the template's `radius` (issue #1001), `the template's approval by <person>` when a person approved the template this job asked for, or `a remembered write approval` (issue #1001) when a person approved each change the template makes before, or `the approval of job <id>, which it runs again` when a person approved the same run for the job this one runs again (issue #2639 part 2), or `Jev` when Jev's sandbox check (issue #655 part 13, the decision point `sandbox-request` active) allowed a run one of those would approve. It starts no box (issue #1349): the job's box steps then run, each in a sandbox of its own, burned after it. On the job's timeline.
 
 | field | type | required |
 |---|---|---|

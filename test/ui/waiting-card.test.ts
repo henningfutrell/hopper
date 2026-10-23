@@ -40,7 +40,7 @@ const heldJob = {
   id: 'g1', spec: { executor: 'test', payload: {}, goal: 'Roll the fleet config to the new image' }, priority: 75, status: 'held', holdReason: HOLD,
   approved: false, accepted: true, attempts: 0, createdAt: T, updatedAt: T,
   advice: { action: 'proceed_full', reason: 'default', details: {}, source: 'gate-router', at: T },
-  source: { source: 'github', kind: 'github-account', key: 'k', title: 'Roll the fleet config to the new image', repo: 'org/platform-workflows', number: 1219, url: 'https://github.com/org/platform-workflows/issues/1219' },
+  source: { source: 'github', kind: 'github-account', key: 'k', title: 'Roll the fleet config to the new image', repo: 'org/infra-workflows', number: 1219, url: 'https://github.com/org/infra-workflows/issues/1219' },
 };
 
 function fakeDaemon() {
@@ -99,8 +99,8 @@ describe('a Waiting card', () => {
     await vi.waitFor(() => expect(row()?.querySelector('[data-slot="hold-reason"]')?.textContent).toContain('Fleet runner (fleet-l1)'));
     const card = row()!;
     expect(card.firstElementChild!.textContent).toContain('Roll the fleet config to the new image');
-    const link = card.querySelector<HTMLAnchorElement>('a[href="https://github.com/org/platform-workflows/issues/1219"]')!;
-    expect(link.textContent).toContain('platform-workflows#1219');
+    const link = card.querySelector<HTMLAnchorElement>('a[href="https://github.com/org/infra-workflows/issues/1219"]')!;
+    expect(link.textContent).toContain('infra-workflows#1219');
 
     const hold = card.querySelector('[data-slot="hold-reason"]')!;
     expect(hold.className).not.toContain('truncate');

@@ -6,8 +6,8 @@
 // Feature: a cluster signs in through EKS, and a mint test shows who the token is in the cluster
 //   Scenario: an eks credential mints a token from the role's read session; the mint test answers who it is
 //     Given the minting credential AWS_LAB for aws-account/123456789012, with the session name p2zapwin
-//     And the minting credential EKS_UAT for cluster/uat: EKS sign-in with the role eks-view
-//     When the operator runs `hopper vault mint-test cluster/uat`
+//     And the minting credential EKS_UTILITY for cluster/utility: EKS sign-in with the role eks-view
+//     When the operator runs `hopper vault mint-test cluster/utility`
 //     Then STS gets one AssumeRole on the role eks-view: 900 s, the ReadOnlyAccess policy and the session name p2zapwin
 //     And the cluster gets an EKS token (k8s-aws-v1.) for `whoami` and `get ns`, and nothing else
 //     And the answer is the cluster's user and groups, its namespaces, the role and the session name; never a key
@@ -29,7 +29,7 @@ const ACCOUNT = '123456789012';
 const ROLE = `arn:aws:iam::${ACCOUNT}:role/eks-view`;
 const MINTING_SECRET = 'minting-secret-key-fedcba-never-shown';
 const KUBE_MINTING_TOKEN = 'kube-minting-token-never-shown';
-const CA = Buffer.from('-----BEGIN CERTIFICATE-----\nuat\n-----END CERTIFICATE-----\n').toString('base64');
+const CA = Buffer.from('-----BEGIN CERTIFICATE-----\nutility\n-----END CERTIFICATE-----\n').toString('base64');
 
 let t: TestApp | undefined;
 const cleanups: (() => void)[] = [];
@@ -67,8 +67,8 @@ async function boot(o: Boot = {}): Promise<{ a: TestApp; sts: FakeApi; kube: Fak
     await set({ name: 'AWS_LAB', mints: { kind: 'aws-account', name: ACCOUNT }, value: JSON.stringify({ AccessKeyId: 'AKIAMINTING', SecretAccessKey: MINTING_SECRET, Region: 'us-east-1', Endpoint: sts.url, SessionName: 'p2zapwin' }) });
   }
   for (const [name, value] of Object.entries(o.secrets?.(kube.url) ?? {})) await set({ name, value });
-  const eks = o.eks?.(kube.url) ?? { type: 'eks', roleArn: ROLE, cluster: 'uat', region: 'eu-west-1', server: kube.url, certificateAuthorityData: CA };
-  await set({ name: 'EKS_UAT', mints: { kind: 'cluster', name: 'uat' }, value: JSON.stringify(eks) });
+  const eks = o.eks?.(kube.url) ?? { type: 'eks', roleArn: ROLE, cluster: 'utility', region: 'eu-west-1', server: kube.url, certificateAuthorityData: CA };
+  await set({ name: 'EKS_UTILITY', mints: { kind: 'cluster', name: 'utility' }, value: JSON.stringify(eks) });
   return { a: t, sts, kube };
 }
 
@@ -104,12 +104,12 @@ const ASKED = [
 describe('a cluster that signs in through EKS, and its mint test (issue #854)', () => {
   it('mints an EKS token from the role\'s read session; the test answers who the token is and the namespaces it sees', async () => {
     const { a, sts, kube } = await boot();
-    const r = await hopper(a, ['vault', 'mint-test', 'cluster/uat']);
+    const r = await hopper(a, ['vault', 'mint-test', 'cluster/utility']);
     expect(r.err).toBe('');
     expect(r.code).toBe(0);
     const answer = JSON.parse(r.out) as Record<string, unknown>;
     expect(answer).toEqual({
-      kind: 'kube', asset: { kind: 'cluster', name: 'uat' }, credential: 'EKS_UAT', server: kube.url, expiresAt: expect.any(String),
+      kind: 'kube', asset: { kind: 'cluster', name: 'utility' }, credential: 'EKS_UTILITY', server: kube.url, expiresAt: expect.any(String),
       roleArn: ROLE, account: '123456789012', sessionName: 'p2zapwin', user: KUBE_USER, namespaces: KUBE_NAMESPACES,
     });
     expect(Date.parse(answer.expiresAt as string) - Date.now()).toBeLessThanOrEqual(14 * 60_000);
@@ -132,20 +132,20 @@ describe('a cluster that signs in through EKS, and its mint test (issue #854)', 
       expect(url.searchParams.get('X-Amz-Security-Token')).toBe(MINTED_AWS.SessionToken);
     }
     expect(testedEvents(a)).toEqual([expect.objectContaining({
-      data: expect.objectContaining({ asset: { kind: 'cluster', name: 'uat' }, credential: 'EKS_UAT', sessionName: 'p2zapwin', user: KUBE_USER.username }),
+      data: expect.objectContaining({ asset: { kind: 'cluster', name: 'utility' }, credential: 'EKS_UTILITY', sessionName: 'p2zapwin', user: KUBE_USER.username }),
     })]);
     noKeyAnywhere(a, r.out, kube);
   });
 
   it('takes the cluster, its server and CA from a vault kubeconfig with EKS exec sign-in', async () => {
     const kubeconfig = (server: string) => [
-      'apiVersion: v1', 'kind: Config', 'current-context: uat',
-      `clusters: [{ name: uat, cluster: { server: '${server}', certificate-authority-data: ${CA} } }]`,
-      'contexts: [{ name: uat, context: { cluster: uat, user: uat } }]',
-      'users: [{ name: uat, user: { exec: { apiVersion: client.authentication.k8s.io/v1beta1, command: aws, args: [--region, eu-west-1, eks, get-token, --cluster-name, uat] } } }]',
+      'apiVersion: v1', 'kind: Config', 'current-context: utility',
+      `clusters: [{ name: utility, cluster: { server: '${server}', certificate-authority-data: ${CA} } }]`,
+      'contexts: [{ name: utility, context: { cluster: utility, user: utility } }]',
+      'users: [{ name: utility, user: { exec: { apiVersion: client.authentication.k8s.io/v1beta1, command: aws, args: [--region, eu-west-1, eks, get-token, --cluster-name, utility] } } }]',
     ].join('\n');
     const { a, kube } = await boot({ secrets: (url) => ({ 'kube-config': kubeconfig(url) }), eks: () => ({ type: 'eks', roleArn: ROLE, kubeconfig: 'kube-config' }) });
-    const r = await hopper(a, ['vault', 'mint-test', 'cluster/uat']);
+    const r = await hopper(a, ['vault', 'mint-test', 'cluster/utility']);
     expect(r.err).toBe('');
     expect(JSON.parse(r.out)).toMatchObject({ server: kube.url, user: KUBE_USER });
     expect(eksUrls(kube).map((u) => u.origin)).toEqual(['https://sts.eu-west-1.amazonaws.com', 'https://sts.eu-west-1.amazonaws.com']);
@@ -154,7 +154,7 @@ describe('a cluster that signs in through EKS, and its mint test (issue #854)', 
 
   it('with the vault in a container of its own, the vault mints and asks the cluster', async () => {
     const { a, sts, kube } = await boot({ container: true });
-    const r = await hopper(a, ['vault', 'mint-test', 'cluster/uat']);
+    const r = await hopper(a, ['vault', 'mint-test', 'cluster/utility']);
     expect(r.err).toBe('');
     expect(JSON.parse(r.out)).toMatchObject({ kind: 'kube', sessionName: 'p2zapwin', user: KUBE_USER, namespaces: KUBE_NAMESPACES });
     expect(sts.seen).toHaveLength(1);
@@ -164,10 +164,10 @@ describe('a cluster that signs in through EKS, and its mint test (issue #854)', 
 
   it('tests a token credential too: a TokenRequest token for hopper-read, then whoami and get ns with it', async () => {
     const { a, sts, kube } = await boot({ aws: false, eks: (url) => ({ server: url, token: KUBE_MINTING_TOKEN }) });
-    const r = await hopper(a, ['vault', 'mint-test', 'cluster/uat']);
+    const r = await hopper(a, ['vault', 'mint-test', 'cluster/utility']);
     expect(r.err).toBe('');
     expect(JSON.parse(r.out)).toEqual({
-      kind: 'kube', asset: { kind: 'cluster', name: 'uat' }, credential: 'EKS_UAT', server: kube.url, expiresAt: '2030-01-01T00:10:00.000Z', user: KUBE_USER, namespaces: KUBE_NAMESPACES,
+      kind: 'kube', asset: { kind: 'cluster', name: 'utility' }, credential: 'EKS_UTILITY', server: kube.url, expiresAt: '2030-01-01T00:10:00.000Z', user: KUBE_USER, namespaces: KUBE_NAMESPACES,
     });
     expect(kube.seen.map(({ method, url, authorization }) => ({ method, url, authorization }))).toEqual([
       { method: 'POST', url: '/api/v1/namespaces/hopper/serviceaccounts/hopper-read/token', authorization: `Bearer ${KUBE_MINTING_TOKEN}` },
@@ -178,21 +178,21 @@ describe('a cluster that signs in through EKS, and its mint test (issue #854)', 
 
   it('says why when the cluster forbids the token', async () => {
     const { a, kube } = await boot({ forbid: true });
-    const r = await hopper(a, ['vault', 'mint-test', 'cluster/uat']);
+    const r = await hopper(a, ['vault', 'mint-test', 'cluster/utility']);
     expect(r.code).toBe(2);
     expect(r.err).toMatch(/the Kubernetes API answered 403: namespaces is forbidden/);
-    expect(testedEvents(a)).toEqual([expect.objectContaining({ data: expect.objectContaining({ credential: 'EKS_UAT', reason: expect.stringMatching(/403/) }) })]);
+    expect(testedEvents(a)).toEqual([expect.objectContaining({ data: expect.objectContaining({ credential: 'EKS_UTILITY', reason: expect.stringMatching(/403/) }) })]);
     noKeyAnywhere(a, r.err, kube);
   });
 
   it('refuses when no AWS minting credential mints for the role\'s account, or none mints for the cluster', async () => {
     const { a, sts, kube } = await boot({ aws: false });
-    const noAws = await hopper(a, ['vault', 'mint-test', 'cluster/uat']);
+    const noAws = await hopper(a, ['vault', 'mint-test', 'cluster/utility']);
     expect(noAws.code).toBe(2);
     expect(noAws.err).toMatch(/EKS sign-in assumes arn:aws:iam::123456789012:role\/eks-view: no minting credential mints for aws-account 123456789012/);
     const noCluster = await hopper(a, ['vault', 'mint-test', 'cluster/prod']);
     expect(noCluster.err).toMatch(/no minting credential mints for cluster prod/);
-    const namespace = await hopper(a, ['vault', 'mint-test', 'namespace/uat/shop']);
+    const namespace = await hopper(a, ['vault', 'mint-test', 'namespace/utility/shop']);
     expect(namespace.err).toMatch(/aws-role\/<account>\/<role> or cluster\/<name>/);
     expect(sts.seen).toEqual([]);
     expect(kube.seen).toEqual([]);

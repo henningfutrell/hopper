@@ -32,24 +32,24 @@ function fakeReader(answer: () => Promise<{ approvals: Row[]; problems: { where:
 describe('pending approvals (issue #2088)', () => {
   it('reads each account\'s intake orgs, marks the stale runs over all of them, and answers from what it read', async () => {
     let now = Date.parse('2026-10-19T12:00:00Z');
-    const one = fakeReader(async () => ({ approvals: [row('acme/gss', 5, 'production-approval', '2026-10-08T10:00:00Z'), row('acme/gss', 9, 'production-approval', '2026-10-19T09:00:00Z')], problems: [] }));
-    const two = fakeReader(async () => ({ approvals: [row('platform-co/platform', 41, 'production-approval', '2026-10-18T09:00:00Z'), row('acme/gss', 9, 'production-approval', '2026-10-19T09:00:00Z')], problems: [{ where: 'platform-co/infra', error: 'GitHub answered 403' }] }));
+    const one = fakeReader(async () => ({ approvals: [row('acme/ledger', 5, 'production-approval', '2026-10-08T10:00:00Z'), row('acme/ledger', 9, 'production-approval', '2026-10-19T09:00:00Z')], problems: [] }));
+    const two = fakeReader(async () => ({ approvals: [row('widget-co/widgets', 41, 'production-approval', '2026-10-18T09:00:00Z'), row('acme/ledger', 9, 'production-approval', '2026-10-19T09:00:00Z')], problems: [{ where: 'widget-co/infra', error: 'GitHub answered 403' }] }));
     const s = createPendingApprovals({
       sources: () => [
-        { account: 'github', api: one.api, repos: ['acme/gss', 'Acme/iac'] },
-        { account: 'github-2', api: two.api, repos: ['platform-co/platform'] },
+        { account: 'github', api: one.api, repos: ['acme/ledger', 'Acme/iac'] },
+        { account: 'github-2', api: two.api, repos: ['widget-co/widgets'] },
       ],
       now: () => now, log: () => undefined,
     });
-    expect(s.view()).toEqual({ approvals: [], orgs: ['acme', 'platform-co'], problems: [] });
+    expect(s.view()).toEqual({ approvals: [], orgs: ['acme', 'widget-co'], problems: [] });
     await s.tick();
     expect(one.asked.map((a) => a.orgs)).toEqual([['acme']]);
-    expect(two.asked.map((a) => a.orgs)).toEqual([['platform-co']]);
+    expect(two.asked.map((a) => a.orgs)).toEqual([['widget-co']]);
     const v = s.view();
     expect(v.checkedAt).toBe('2026-10-19T12:00:00.000Z');
     // The run both accounts reach is one row.
     expect(v.approvals.map((a) => [a.runId, a.stale])).toEqual([[41, false], [9, false], [5, true]]);
-    expect(v.problems).toEqual([{ where: 'platform-co/infra', error: 'GitHub answered 403' }]);
+    expect(v.problems).toEqual([{ where: 'widget-co/infra', error: 'GitHub answered 403' }]);
 
     // Not due yet: no read. Due: read with the answers kept from the read before.
     now += FRESH_MS - 1;
@@ -64,9 +64,9 @@ describe('pending approvals (issue #2088)', () => {
   it('a failed read keeps the account\'s approvals read before, and says why', async () => {
     let fail = false;
     let now = 0;
-    const r = fakeReader(async () => { if (fail) throw new Error('GitHub answered 502'); return { approvals: [row('acme/gss', 9, 'production-approval', '2026-10-19T09:00:00Z')], problems: [] }; });
+    const r = fakeReader(async () => { if (fail) throw new Error('GitHub answered 502'); return { approvals: [row('acme/ledger', 9, 'production-approval', '2026-10-19T09:00:00Z')], problems: [] }; });
     const lines: string[] = [];
-    const s = createPendingApprovals({ sources: () => [{ account: 'github', api: r.api, repos: ['acme/gss'] }], now: () => now, log: (l) => lines.push(l) });
+    const s = createPendingApprovals({ sources: () => [{ account: 'github', api: r.api, repos: ['acme/ledger'] }], now: () => now, log: (l) => lines.push(l) });
     await s.tick();
     fail = true;
     now += FRESH_MS;
@@ -91,7 +91,7 @@ describe('pending approvals (issue #2088)', () => {
   it('one read at a time: a tick while one runs joins it, and the view says it reads', async () => {
     let release: (() => void) | undefined;
     const r = fakeReader(() => new Promise((ok) => { release = () => ok({ approvals: [], problems: [] }); }));
-    const s = createPendingApprovals({ sources: () => [{ account: 'github', api: r.api, repos: ['acme/gss'] }], now: () => 0, log: () => undefined });
+    const s = createPendingApprovals({ sources: () => [{ account: 'github', api: r.api, repos: ['acme/ledger'] }], now: () => 0, log: () => undefined });
     const a = s.tick(), b = s.tick();
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     expect(s.view().reading).toBe(true);

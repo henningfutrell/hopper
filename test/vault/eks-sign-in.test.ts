@@ -27,47 +27,47 @@ describe('a kube minting credential that signs in through EKS', () => {
   });
 
   it('reads an eks credential with the cluster named in it', () => {
-    expect(eks({ cluster: 'uat', region: 'eu-west-1', server: SERVER, certificateAuthorityData: CA })).toEqual({
-      type: 'eks', roleArn: ROLE, cluster: 'uat', region: 'eu-west-1', server: SERVER, certificateAuthorityData: CA,
+    expect(eks({ cluster: 'utility', region: 'eu-west-1', server: SERVER, certificateAuthorityData: CA })).toEqual({
+      type: 'eks', roleArn: ROLE, cluster: 'utility', region: 'eu-west-1', server: SERVER, certificateAuthorityData: CA,
     });
   });
 
   it('reads an eks credential that takes the cluster from a vault kubeconfig', () => {
-    expect(eks({ kubeconfig: 'kube-config', context: 'uat' })).toEqual({ type: 'eks', roleArn: ROLE, kubeconfig: 'kube-config', context: 'uat' });
+    expect(eks({ kubeconfig: 'kube-config', context: 'utility' })).toEqual({ type: 'eks', roleArn: ROLE, kubeconfig: 'kube-config', context: 'utility' });
   });
 
   it('refuses an eks credential with no role, a role that is no IAM role, or no cluster and no kubeconfig', () => {
-    expect(mintingCredentialOf('kube', JSON.stringify({ type: 'eks', cluster: 'uat', region: 'eu-west-1', server: SERVER }))).toMatch(/roleArn/);
+    expect(mintingCredentialOf('kube', JSON.stringify({ type: 'eks', cluster: 'utility', region: 'eu-west-1', server: SERVER }))).toMatch(/roleArn/);
     expect(eks({ roleArn: 'arn:aws:iam::123456789012:user/me', kubeconfig: 'k' })).toMatch(/roleArn/);
-    expect(eks({ cluster: 'uat' })).toMatch(/cluster, region and server, or kubeconfig/);
-    expect(eks({ cluster: 'uat', region: 'eu-west-1', server: 'ftp://x' })).toMatch(/cluster, region and server, or kubeconfig/);
+    expect(eks({ cluster: 'utility' })).toMatch(/cluster, region and server, or kubeconfig/);
+    expect(eks({ cluster: 'utility', region: 'eu-west-1', server: 'ftp://x' })).toMatch(/cluster, region and server, or kubeconfig/);
     expect(mintingCredentialOf('kube', JSON.stringify({ type: 'oidc' }))).toMatch(/type is token or eks/);
   });
 });
 
 const KUBECONFIG = `apiVersion: v1
 kind: Config
-current-context: arn:aws:eks:eu-west-1:123456789012:cluster/uat
+current-context: arn:aws:eks:eu-west-1:123456789012:cluster/utility
 clusters:
-- name: arn:aws:eks:eu-west-1:123456789012:cluster/uat
+- name: arn:aws:eks:eu-west-1:123456789012:cluster/utility
   cluster:
     server: ${SERVER}
     certificate-authority-data: ${CA}
 - name: lab
   cluster: { server: 'https://lab.example:6443' }
 contexts:
-- name: arn:aws:eks:eu-west-1:123456789012:cluster/uat
-  context: { cluster: 'arn:aws:eks:eu-west-1:123456789012:cluster/uat', user: 'arn:aws:eks:eu-west-1:123456789012:cluster/uat' }
+- name: arn:aws:eks:eu-west-1:123456789012:cluster/utility
+  context: { cluster: 'arn:aws:eks:eu-west-1:123456789012:cluster/utility', user: 'arn:aws:eks:eu-west-1:123456789012:cluster/utility' }
 - name: lab
   context: { cluster: lab, user: lab }
 users:
-- name: arn:aws:eks:eu-west-1:123456789012:cluster/uat
+- name: arn:aws:eks:eu-west-1:123456789012:cluster/utility
   user:
     exec:
       apiVersion: client.authentication.k8s.io/v1beta1
       command: aws
-      args: [--region, eu-west-1, eks, get-token, --cluster-name, uat, --output, json]
-      env: [{ name: AWS_PROFILE, value: gss }]
+      args: [--region, eu-west-1, eks, get-token, --cluster-name, utility, --output, json]
+      env: [{ name: AWS_PROFILE, value: ledger }]
 - name: lab
   user: { token: abc }
 `;
@@ -76,19 +76,19 @@ describe('the cluster an eks credential signs in to', () => {
   const fromKubeconfig = (v: Record<string, unknown>, kubeconfig = KUBECONFIG) => eksClusterOf(eks({ kubeconfig: 'kube-config', ...v }) as EksMintingCredential, kubeconfig);
 
   it('is the one the credential names', () => {
-    expect(eksClusterOf(eks({ cluster: 'uat', region: 'eu-west-1', server: SERVER }) as EksMintingCredential, undefined)).toEqual({ cluster: 'uat', region: 'eu-west-1', server: SERVER });
+    expect(eksClusterOf(eks({ cluster: 'utility', region: 'eu-west-1', server: SERVER }) as EksMintingCredential, undefined)).toEqual({ cluster: 'utility', region: 'eu-west-1', server: SERVER });
   });
 
   it('is found in the kubeconfig\'s current context: the server, its CA, and the cluster and region of its EKS sign-in', () => {
-    expect(fromKubeconfig({})).toEqual({ cluster: 'uat', region: 'eu-west-1', server: SERVER, certificateAuthorityData: CA });
+    expect(fromKubeconfig({})).toEqual({ cluster: 'utility', region: 'eu-west-1', server: SERVER, certificateAuthorityData: CA });
   });
 
   it('takes --cluster-name=, the region from the environment or the server, and lets the credential\'s own fields win', () => {
-    const other = KUBECONFIG.replace('[--region, eu-west-1, eks, get-token, --cluster-name, uat, --output, json]', '[eks, get-token, --cluster-name=uat]')
-      .replace('{ name: AWS_PROFILE, value: gss }', '{ name: AWS_REGION, value: eu-central-1 }');
-    expect(fromKubeconfig({}, other)).toMatchObject({ cluster: 'uat', region: 'eu-central-1' });
+    const other = KUBECONFIG.replace('[--region, eu-west-1, eks, get-token, --cluster-name, utility, --output, json]', '[eks, get-token, --cluster-name=utility]')
+      .replace('{ name: AWS_PROFILE, value: ledger }', '{ name: AWS_REGION, value: eu-central-1 }');
+    expect(fromKubeconfig({}, other)).toMatchObject({ cluster: 'utility', region: 'eu-central-1' });
     expect(fromKubeconfig({}, other.replace('{ name: AWS_REGION, value: eu-central-1 }', '{ name: X, value: y }'))).toMatchObject({ region: 'eu-west-1' });
-    expect(fromKubeconfig({ cluster: 'uat-blue', region: 'us-east-2' })).toMatchObject({ cluster: 'uat-blue', region: 'us-east-2', server: SERVER });
+    expect(fromKubeconfig({ cluster: 'utility-blue', region: 'us-east-2' })).toMatchObject({ cluster: 'utility-blue', region: 'us-east-2', server: SERVER });
   });
 
   it('says why when the kubeconfig gives no EKS sign-in, has no such context, or is not one', () => {
@@ -104,7 +104,7 @@ describe('an EKS token', () => {
 
   it('is a GetCallerIdentity URL presigned with the session, at the cluster region\'s STS, the cluster named in a signed header', async () => {
     const before = Date.now();
-    const minted = await createCredentialMinter().eksToken(session, { cluster: 'uat', region: 'eu-west-1' });
+    const minted = await createCredentialMinter().eksToken(session, { cluster: 'utility', region: 'eu-west-1' });
     const url = urlOf(minted.token);
     expect(url.origin).toBe('https://sts.eu-west-1.amazonaws.com');
     expect(url.pathname).toBe('/');
@@ -125,12 +125,12 @@ describe('an EKS token', () => {
 
   it('expires no later than the session that signed it', async () => {
     const soon = new Date(Date.now() + 5 * 60_000).toISOString();
-    const minted = await createCredentialMinter().eksToken({ ...session, Expiration: soon }, { cluster: 'uat', region: 'eu-west-1' });
+    const minted = await createCredentialMinter().eksToken({ ...session, Expiration: soon }, { cluster: 'utility', region: 'eu-west-1' });
     expect(minted.expirationTimestamp).toBe(soon);
   });
 
   it('is signed at the China partition\'s STS for a China region', async () => {
-    const minted = await createCredentialMinter().eksToken(session, { cluster: 'uat', region: 'cn-north-1' });
+    const minted = await createCredentialMinter().eksToken(session, { cluster: 'utility', region: 'cn-north-1' });
     expect(urlOf(minted.token).origin).toBe('https://sts.cn-north-1.amazonaws.com.cn');
   });
 });

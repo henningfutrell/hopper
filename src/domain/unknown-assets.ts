@@ -3,7 +3,7 @@
 // topology** lists. The vault would look for it in every account and find it in none, so a template of it never passes
 // its read-only check: a job that asks for it is told at once, with the clusters the topology does list, nearest first,
 // so it asks again with the right name. While the topology lists no cluster, no asset is unknown. Issue #2168: a name that
-// is the prefix of one listed cluster (a short name, `uat` for `uat-eks`) resolves to it, and discovery finds it by that
+// is the prefix of one listed cluster (a short name, `utility` for `utility-eks`) resolves to it, and discovery finds it by that
 // name; the prefix of several is ambiguous, an unknown asset with its candidates, never a guess. Pure.
 import { distance } from 'fastest-levenshtein';
 import type { Asset, OperationProfile } from './access.ts';
@@ -85,6 +85,6 @@ export function shortClusters(needs: readonly OperationProfile[], f: ClusterFact
   return [...out.values()];
 }
 
-/** An unknown asset in words: `no cluster staging; known: staging-eks, …`, or `cluster uat is ambiguous: uat-eks, uat-gke`. */
+/** An unknown asset in words: `no cluster staging; known: staging-eks, …`, or `cluster utility is ambiguous: utility-eks, utility-gke`. */
 export const unknownAssetText = (u: UnknownAsset): string =>
   (u.candidates ? `cluster ${u.cluster} is ambiguous: ${u.candidates.join(', ')}` : `no cluster ${u.cluster}; known: ${u.known.join(', ')}`);

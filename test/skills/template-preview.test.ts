@@ -38,8 +38,8 @@ describe('the template a request makes, shown before it is made (issue #708)', (
   });
 
   it('an observe changes no asset: a template of read and observe needs takes the read-only check (issue #2146, part 5)', () => {
-    expect(previewTemplate(user(), { needs: 'observe/namespace/uat/monitoring read/cluster/uat' })).toMatchObject({ readOnly: true });
-    expect(previewTemplate(user(), { needs: 'observe/namespace/uat/monitoring write/namespace/uat/web' })).toMatchObject({ readOnly: false });
+    expect(previewTemplate(user(), { needs: 'observe/namespace/utility/monitoring read/cluster/utility' })).toMatchObject({ readOnly: true });
+    expect(previewTemplate(user(), { needs: 'observe/namespace/utility/monitoring write/namespace/utility/web' })).toMatchObject({ readOnly: false });
   });
 
   it('with no read policy and low auto-approve off, every template waits for a person', () => {

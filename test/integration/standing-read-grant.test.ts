@@ -6,9 +6,9 @@
 // Feature: the standing read grant
 //   Scenario: off by default, a read-only job is still refused and a person is asked
 //   Scenario: on, a job on a read-only template gets the grant with no person
-//     Given the read policy holds cluster/uat, a template uat-view of read cluster/uat only, a box joined as uat-view
+//     Given the read policy holds cluster/utility, a template utility-view of read cluster/utility only, a box joined as utility-view
 //     And the standing read grant on
-//     When a job on the box mints kube read cluster/uat
+//     When a job on the box mints kube read cluster/utility
 //     Then it is not refused for a vault grant, and vault.granted names the setting as its by
 //     And no grant ask waits for a person
 //   Scenario: turned off, a job that has not started gets nothing; the job it granted keeps it
@@ -37,7 +37,7 @@ afterEach(async () => {
   process.env = { ...saved };
 });
 
-const UAT = { kind: 'cluster', name: 'uat' };
+const UTILITY = { kind: 'cluster', name: 'utility' };
 const NO_GRANT = /has no vault grant/;
 
 async function boot(o: { outside?: boolean } = {}): Promise<{ a: TestApp; session: string; dir: string }> {
@@ -51,11 +51,11 @@ async function boot(o: { outside?: boolean } = {}): Promise<{ a: TestApp; sessio
   });
   const session = await t.login();
   const edit = (body: Record<string, unknown>) => t!.ui('/ui/api/vault', body, { token: session });
-  expect((await edit({ action: 'set-read-policy', assets: ['cluster/uat'] })).status).toBe(200);
-  const profiles = [{ operation: 'read', asset: UAT }, ...(o.outside ? [{ operation: 'read', asset: { kind: 'cluster', name: 'prod' } }] : [])];
-  expect((await edit({ action: 'save-template', name: 'uat-view', image: 'localhost/box-kubectl:1', secrets: [], profiles })).status).toBe(200);
-  await edit({ action: 'approve-template', name: 'uat-view' });
-  const dir = await box.join(t, session, 'hopper-sandbox-uat', 'uat-view');
+  expect((await edit({ action: 'set-read-policy', assets: ['cluster/utility'] })).status).toBe(200);
+  const profiles = [{ operation: 'read', asset: UTILITY }, ...(o.outside ? [{ operation: 'read', asset: { kind: 'cluster', name: 'prod' } }] : [])];
+  expect((await edit({ action: 'save-template', name: 'utility-view', image: 'localhost/box-kubectl:1', secrets: [], profiles })).status).toBe(200);
+  await edit({ action: 'approve-template', name: 'utility-view' });
+  const dir = await box.join(t, session, 'hopper-sandbox-utility', 'utility-view');
   return { a: t, session, dir };
 }
 
@@ -65,7 +65,7 @@ async function running(a: TestApp): Promise<Job> {
 }
 
 const standing = (a: TestApp, session: string, on: boolean) => a.ui('/ui/api/sandbox-approvals', { standingReadGrant: on }, { token: session });
-const mint = (a: TestApp, dir: string, job: Job) => helper(dir, ['kube', 'read', 'cluster/uat'], box.tokenFileOf(a, job.id));
+const mint = (a: TestApp, dir: string, job: Job) => helper(dir, ['kube', 'read', 'cluster/utility'], box.tokenFileOf(a, job.id));
 const grantEvents = async (a: TestApp) => (await a.events()).filter((e) => e.type === 'vault.granted');
 const asks = async (a: TestApp) => ((await a.api<{ grantAsks?: { job: string }[] }>('GET', '/api/vault')).body.grantAsks ?? []).map((g) => g.job);
 
@@ -114,7 +114,7 @@ describe('the standing read grant (issue #1472)', () => {
   it('on: sandbox strictness locked for the template (issue #655 part 8): the job is refused, and a person is asked', async () => {
     const { a, session, dir } = await boot();
     await standing(a, session, true);
-    expect((await a.ui('/ui/api/sandbox-strictness', { default: 'standard', radius: {}, templates: { 'uat-view': 'locked' } }, { token: session })).status).toBe(200);
+    expect((await a.ui('/ui/api/sandbox-strictness', { default: 'standard', radius: {}, templates: { 'utility-view': 'locked' } }, { token: session })).status).toBe(200);
     const job = await running(a);
     expect((await mint(a, dir, job)).stderr).toMatch(NO_GRANT);
     expect(await asks(a)).toEqual([job.id]);

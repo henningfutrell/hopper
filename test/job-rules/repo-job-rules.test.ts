@@ -24,17 +24,17 @@ describe('the repository job rules', () => {
 
   it('a job of no repository, or of one with none, is told nothing more', () => {
     expect(repoJobRulesFor(records(), 'acme/app')).toBe('');
-    expect(repoJobRulesFor(records({ 'acme/app': 'Deploy to uat.' }), undefined)).toBe('');
-    expect(repoJobRulesFor(records({ 'acme/app': 'Deploy to uat.' }), 'acme/other')).toBe('');
+    expect(repoJobRulesFor(records({ 'acme/app': 'Deploy to staging.' }), undefined)).toBe('');
+    expect(repoJobRulesFor(records({ 'acme/app': 'Deploy to staging.' }), 'acme/other')).toBe('');
   });
 
   it('the owner\'s rules first, then the repository\'s, matched in any case', () => {
-    const config = records({ 'Acme/App': 'Follow the change to qa in uat.', 'acme/*': 'Production stays with a person.' });
+    const config = records({ 'Acme/App': 'Follow the change to qa in staging.', 'acme/*': 'Production stays with a person.' });
     expect(repoJobRulesFor(config, 'acme/app')).toBe([
       '[hopper repository rules] Rules set in the hopper for every job of acme/*:',
       'Production stays with a person.',
       '[hopper repository rules] Rules set in the hopper for every job of Acme/App:',
-      'Follow the change to qa in uat.',
+      'Follow the change to qa in staging.',
     ].join('\n'));
   });
 

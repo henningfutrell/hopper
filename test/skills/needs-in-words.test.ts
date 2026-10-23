@@ -36,8 +36,8 @@ describe('needs read from plain words (issue #708)', () => {
   });
 
   it('names an observe for a port-forward (issue #2146), and no change', () => {
-    expect(needsFromWords('kubectl port-forward to prometheus in namespace metrics on cluster uat')).toEqual([{ operation: 'observe', asset: { kind: 'namespace', name: 'uat/metrics' } }]);
-    expect(needsFromWords('observe and query the cluster uat')).toEqual([read('cluster', 'uat'), { operation: 'observe', asset: { kind: 'cluster', name: 'uat' } }]);
+    expect(needsFromWords('kubectl port-forward to prometheus in namespace metrics on cluster utility')).toEqual([{ operation: 'observe', asset: { kind: 'namespace', name: 'utility/metrics' } }]);
+    expect(needsFromWords('observe and query the cluster utility')).toEqual([read('cluster', 'utility'), { operation: 'observe', asset: { kind: 'cluster', name: 'utility' } }]);
   });
 
   it('a change word after not or never makes no change need', () => {

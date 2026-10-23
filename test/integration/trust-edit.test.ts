@@ -65,7 +65,7 @@ describe('an edit of a started job\'s item (issue #655, part 7)', () => {
     const skill = await fetch(`${a.url}/job/skill`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ args: [] }) });
     expect(skill.status).not.toBe(401);
     expect(a.user().sandboxRequests.ask(job.id, 'aws-prod').state).toBe('waiting');
-    const step = await fetch(`${a.url}/job/step?needs=read/cluster/uat&key=step-0001&command=true`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
+    const step = await fetch(`${a.url}/job/step?needs=read/cluster/utility&key=step-0001&command=true`, { method: 'POST', headers: { authorization: `Bearer ${token}` } });
     expect(step.status).toBe(403);
     expect(await step.text()).toMatch(/trust stamp untrusted is below approved/);
 

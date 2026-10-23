@@ -6,10 +6,10 @@ import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const OBSERVE = { operation: 'observe', asset: { kind: 'namespace', name: 'uat/monitoring' } };
-const PROM = 'uat/monitoring/svc/prometheus-server:9090', GRAFANA = 'uat/monitoring/svc/grafana:80';
+const OBSERVE = { operation: 'observe', asset: { kind: 'namespace', name: 'utility/monitoring' } };
+const PROM = 'utility/monitoring/svc/prometheus-server:9090', GRAFANA = 'utility/monitoring/svc/grafana:80';
 const OBS = {
-  name: 'observe-uat', image: 'img', secrets: [], profiles: [OBSERVE], savedBy: 'Ada', savedAt: '2026-10-20T10:00:00Z', bastionTargets: [GRAFANA, PROM],
+  name: 'observe-utility', image: 'img', secrets: [], profiles: [OBSERVE], savedBy: 'Ada', savedAt: '2026-10-20T10:00:00Z', bastionTargets: [GRAFANA, PROM],
   approval: { image: 'img', secrets: [], bastionTargets: [PROM], by: 'Ada', at: '' }, pending: { secrets: [], image: false, egress: [], bastionTargets: [GRAFANA], profiles: [] },
   gives: [], radius: { level: 'high', reasons: [], profiles: [] }, tools: ['kubectl'], readOnly: true,
 };
@@ -103,11 +103,11 @@ describe('Vault: a template\'s bastion targets (issue #2146)', () => {
     await click(button('Edit', item()!));
     const form = item()!.querySelector('form')!;
     expect(field('Bastion targets', form).value).toBe(`${GRAFANA} ${PROM}`);
-    await type(field('Bastion targets', form), `${PROM}, uat/monitoring/svc/loki:3100 ${PROM}`);
+    await type(field('Bastion targets', form), `${PROM}, utility/monitoring/svc/loki:3100 ${PROM}`);
     await click(button('Save template', form));
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/vault' && x.method === 'POST')).toBeDefined());
     expect(daemon.calls.find((x) => x.path === '/ui/api/vault' && x.method === 'POST')!.body).toMatchObject({
-      action: 'save-template', name: 'observe-uat', bastionTargets: [PROM, 'uat/monitoring/svc/loki:3100'],
+      action: 'save-template', name: 'observe-utility', bastionTargets: [PROM, 'utility/monitoring/svc/loki:3100'],
     });
   });
 
@@ -115,8 +115,8 @@ describe('Vault: a template\'s bastion targets (issue #2146)', () => {
     const daemon = await boot(OBS);
     await click(button('Edit', item()!));
     const form = item()!.querySelector('form')!;
-    await type(field('Bastion targets', form), `${PROM} uat/monitoring/secret/x:1`);
-    expect(form.textContent).toContain('uat/monitoring/secret/x:1 is not <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>');
+    await type(field('Bastion targets', form), `${PROM} utility/monitoring/secret/x:1`);
+    expect(form.textContent).toContain('utility/monitoring/secret/x:1 is not <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>');
     expect(button('Save template', form).disabled).toBe(true);
     await type(field('Bastion targets', form), '');
     await click(button('Save template', form));
