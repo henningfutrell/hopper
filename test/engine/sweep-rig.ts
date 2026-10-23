@@ -4,6 +4,7 @@ import type { DomainEvent, Job, Leftover, MachineSnapshot } from '../../src/doma
 import type { Executor, MachineShell, Survey } from '../../src/domain/ports.ts';
 import { createSweep } from '../../src/engine/sweep.ts';
 import type { LedgerEntry } from '../../src/domain/resource-ledger.ts';
+import type { DiskMeasure } from '../../src/domain/hopper-disk.ts';
 
 export const HOUR = 3600_000;
 export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
@@ -14,7 +15,7 @@ export const none: Survey = { scopes: [], processes: [], scratch: [] };
 export const day = (_job: Job, ageMs: number): boolean => ageMs >= 24 * HOUR;
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[] } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[]; measures?: Map<string, DiskMeasure>; told?: { type: string; machineId: string; data: unknown }[] } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -23,8 +24,12 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
   const jobs = [...[job('done', 'finished', '/w'), job('run', 'running', '/v'), job('old', 'failed', '/w')].map((j) => ({ ...j, spec: { ...j.spec, ...o.spec }, source: { source: 's', kind: 'github', key: `item:${j.id}` } }) as Job), ...(o.others ?? [])];
   const events: { type: string; jobId?: string; machineId?: string; data: unknown }[] = (o.kept ?? []).map((id) => ({ type: 'job.work_kept', jobId: id, data: { paths: ['x'] } }));
   // `proxied`: the jobs whose commit `tip-<id>` the hopper pushed (issue #2087); `tips`: the jobs whose kept repository names that tip.
+  // `told`: what the event log told before (issue #2494), as a hopper that ran before would have.
+  events.push(...(o.told ?? []));
   for (const id of o.proxied ?? []) events.push({ type: 'github_proxy.done', jobId: id, data: { requestId: 'r', op: 'git.push', repo: 'o/r', refs: ['refs/heads/x'], heads: [`tip-${id}`] } });
   const ledger = o.ledger ?? [];
+  // Each machine's last disk measure (issue #2494), as the store keeps it; one map shared by two rigs is a restart.
+  const measures = o.measures ?? new Map<string, DiskMeasure>();
   const surveyed: string[][] = [];
   const reaps: { jobId: string; scratch?: string; discard?: boolean }[] = [];
   const logs: string[] = [];
@@ -85,6 +90,7 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       },
       workItems: { get: (key: string) => (o.itemDone?.some((id) => key === `item:${id}`) ? { key, state: 'done' } : undefined) },
       settings: { getDiskBudget: () => (budget === undefined ? undefined : { bytes: budget }) },
+      diskMeasures: { keep: (machineId: string, m: DiskMeasure) => { measures.set(machineId, m); }, all: () => [...measures] },
       // The resource ledger (issue #2504): `ledger`'s entries, closed in place.
       resourceLedger: {
         forJob: (id: string) => ledger.filter((e) => e.jobId === id),
@@ -95,5 +101,5 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       },
     } as never,
   }, (l) => logs.push(l));
-  return { sweep, jobs, ledger, surveyed, reaps, events, logs, listings, removals, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
+  return { sweep, jobs, ledger, measures, surveyed, reaps, events, logs, listings, removals, advance: (ms: number) => { now += ms; }, setBudget: (b: number | undefined) => { budget = b; } };
 }

@@ -26,8 +26,35 @@ export interface ContainerStorage { runtime: 'docker' | 'podman'; kind: 'images'
  */
 export interface HopperDisk { bytes: number; at: string; paths: HopperDiskPath[]; budgetBytes?: number; over: boolean; caches?: CacheUse[]; storage?: ContainerStorage[] }
 
+/**
+ * What the sweep last measured on one machine (issue #2494), as the store keeps it: its places, when, and its caches and
+ * container storage as the survey said them. The disk budget is applied at each read, so a new budget needs no new measure.
+ */
+export interface DiskMeasure { at: string; paths: HopperDiskPath[]; caches?: SurveyedCache[]; storage?: ContainerStorage[] }
+
+/** Each machine's last disk measure (issue #2494, tenant migration 94): one per machine, the newest replaces the one before. */
+export interface DiskMeasureRepository {
+  keep(machineId: string, measure: DiskMeasure): void;
+  /** Every machine's last measure. */
+  all(): Array<[string, DiskMeasure]>;
+}
+
 /** The disk budget (issue #1120): the most the hopper's own disk use may be on each machine. The user's setting, an admin's to change. */
 export interface DiskBudget { bytes: number }
+
+/** The budget events, by type. */
+export const BUDGET_EVENTS = ['machine.disk_over_budget', 'machine.disk_within_budget'] as const;
+
+/** The machines whose newest budget event (newest first, as the event log reads them) told them over the disk budget (issue #2494). */
+export function overBudgetTold(events: readonly { type: string; machineId?: string }[]): Set<string> {
+  const seen = new Set<string>(), over = new Set<string>();
+  for (const e of events) {
+    if (!e.machineId || seen.has(e.machineId)) continue;
+    seen.add(e.machineId);
+    if (e.type === 'machine.disk_over_budget') over.add(e.machineId);
+  }
+  return over;
+}
 
 /** Each kind of cache, its places summed, biggest first; the rest of `~/.cache` less the other kinds' places in it. */
 export function cacheUseOf(found: readonly SurveyedCache[]): CacheUse[] {
