@@ -37,36 +37,34 @@ afterEach(async () => {
 const git = (cwd: string, ...args: string[]): void => { execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd, stdio: 'ignore' }); };
 
 /**
- * What a run leaves in `work`: its scratch dir and a job worktree; with `unpushed`, a repository with a commit no remote has.
- * The test writes them once the hopper that ran the jobs stopped: that hopper's maids (issue #2504 part 14) reap an ended
- * job's dirs its own cleanup left, so dirs written while it ran could be gone before the sweep's pass.
+ * Each run leaves its scratch dir and a job worktree in `work`, and finishes; a job whose payload says `unpushed` leaves a
+ * repository with a commit no remote has (its payload names `unpushed`). Its own cleanup reaps nothing: only the sweep, on the client target, can.
+ * It says so as a real cleanup's reap does, so the job's ledger entries close: open ones the maids (issue #2504 part 14)
+ * would reap at any pass, also before the sweep reached the machine, and the pass would then have nothing to remove.
  */
-function leave(work: string, jobId: string, unpushed: boolean): void {
-  const scratch = join(work, '.worktrees', '@scratch', jobId);
-  mkdirSync(scratch, { recursive: true });
-  mkdirSync(join(work, '.worktrees', 'app', jobId), { recursive: true });
-  writeFileSync(join(scratch, 'build.out'), Buffer.alloc(2 * MIB, 1));
-  writeFileSync(join(work, '.worktrees', 'app', jobId, 'tree.out'), Buffer.alloc(MIB, 1));
-  if (!unpushed) return;
-  const repo = join(scratch, 'repo');
-  mkdirSync(repo);
-  git(repo, 'init', '-q');
-  writeFileSync(join(repo, 'a.txt'), 'work');
-  git(repo, 'add', 'a.txt');
-  git(repo, 'commit', '-q', '-m', 'work');
-}
-
-/** Each run finishes in `work`; its own cleanup reaps nothing: only the sweep, on the client target, can. */
 function createLeaver(work: string, shell: () => MachineShell): Executor {
   return {
     name: 'leaver',
     idempotent: false,
     validate: () => null,
     async run(ctx) {
+      const scratch = join(work, '.worktrees', '@scratch', ctx.job.id);
+      mkdirSync(scratch, { recursive: true });
+      mkdirSync(join(work, '.worktrees', 'app', ctx.job.id), { recursive: true });
+      writeFileSync(join(scratch, 'build.out'), Buffer.alloc(2 * MIB, 1));
+      writeFileSync(join(work, '.worktrees', 'app', ctx.job.id, 'tree.out'), Buffer.alloc(MIB, 1));
+      if (JSON.stringify(ctx.job.spec.payload).includes('unpushed')) {
+        const repo = join(scratch, 'repo');
+        mkdirSync(repo);
+        git(repo, 'init', '-q');
+        writeFileSync(join(repo, 'a.txt'), 'work');
+        git(repo, 'add', 'a.txt');
+        git(repo, 'commit', '-q', '-m', 'work');
+      }
       ctx.saveState({ cwd: work });
       return { kind: 'finished', result: {} };
     },
-    async cleanup() {},
+    async cleanup() { return { kept: [] }; },
     machineShell: () => shell(),
   };
 }
@@ -90,8 +88,6 @@ describe.runIf(existsSync('/proc/self/environ'))('one cleanup pass on a remote m
     await first.waitForStatus(kept.id, 'finished');
     await first.stop();
     apps.splice(0);
-    leave(work, clean.id, false);
-    leave(work, kept.id, true);
 
     // Two days old, so the sweep's age rule takes both jobs' dirs.
     const old = new Date(Date.now() - 48 * 3600_000);
