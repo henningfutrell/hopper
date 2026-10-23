@@ -311,10 +311,8 @@ describe('a wait check (issue #1694)', () => {
     now = T0 + FIRST_CHECK_MS;
     await a.checks.run();
     expect(a.store.jobs.get(job.id)!.wait!.check).toMatchObject({
-      result: 'the hopper cannot read octo/tools#8 now: pull request octo/tools#8: Resource not accessible by integration', nextCheckAt: new Date(now + FIRST_CHECK_MS).toISOString(),
+      result: 'the hopper cannot read octo/tools#8 now: pull request octo/tools#8: Resource not accessible by integration', nextCheckAt: new Date(now + FIRST_CHECK_MS).toISOString(), brokenAt: new Date(now).toISOString(),
     });
-    // Issue #2684: its wait broke, until a check reads it again.
-    expect(a.store.jobs.get(job.id)!.wait!.check!.brokenAt).toBe(new Date(now).toISOString());
 
     fail = false;
     now += FIRST_CHECK_MS;

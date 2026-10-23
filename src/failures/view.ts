@@ -8,7 +8,6 @@ import type { UserStore } from '../domain/ports.ts';
 import { DEFAULT_YOLO_MODE, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type Discarding, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
 import { HANDOFF_WAIT } from '../domain/work-items.ts';
 import { blockedStuck } from '../domain/item-lifecycle.ts';
-import { cleanupLeftoversOf } from '../domain/resource-ledger.ts';
 import { handoffCard, takenCard } from './card.ts';
 import { keptWorkViews, type Sessions } from './kept-work.ts';
 import { knownCauses, matchCause, NO_WAY_TO_HOPPER } from './causes.ts';
@@ -175,7 +174,7 @@ function prOpenStale(store: Reads, now: Date): string[] {
   return store.workItems.list({ state: ['blocked'] }).filter((i) => blockedStuck(i, now.toISOString())).map((i) => i.jobId ?? i.key);
 }
 
-export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events' | 'connectedAccounts' | 'resourceLedger'>, settings: FailureSettings, now: Date, sessions: Sessions, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {
+export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 'events' | 'connectedAccounts'>, settings: FailureSettings, now: Date, sessions: Sessions, takesBack: TakesBack, discarding?: (jobId: string) => Discarding | undefined): FailuresView {
   const dayAgo = new Date(now.getTime() - DAY_MS).toISOString();
   const handoffs = [...store.handoffs.list({ status: 'open' }), ...store.handoffs.list({ status: 'closed', closedSince: dayAgo, limit: 50 })];
   const resolved = store.problems.list({ status: 'resolved', limit: 50 }).filter((p) => (p.resolvedAt ?? '') >= dayAgo);
@@ -198,9 +197,7 @@ export function viewOf(store: Reads & Pick<UserStore, 'settings' | 'handoffs' | 
     // Work not pushed (issue #1010): ended jobs whose reap kept work, each with Push it and Discard.
     keptWork,
     // Stuck work (issue #1010): each item that waits on a person, by its cause, with one bulk action or what to do.
-    stuck: stuckOf({ handoffs: shownHandoffs, recent, keptWork, pullRequests: pullRequestCards(store, now), jobs: store.jobs.list({ status: ['waiting_on', 'queued', 'claimed', 'running'] }), prOpen: prOpenStale(store, now),
-      // Cleanup leftovers (issue #2504): ended jobs whose ledger still holds an entry after the grace period.
-      leftovers: cleanupLeftoversOf(store.resourceLedger.open(), (id) => store.jobs.get(id), now.getTime()).map((l) => l.jobId) }),
+    stuck: stuckOf({ handoffs: shownHandoffs, recent, keptWork, pullRequests: pullRequestCards(store, now), jobs: store.jobs.list({ status: ['waiting_on', 'queued', 'claimed', 'running'] }), prOpen: prOpenStale(store, now) }),
     problems: [...store.problems.list({ status: 'open' }), ...resolved].map((p) => problemView(store, p)),
     // Nothing waits on an ended one (issues #529, #618): out of the open failures, in Ended for a day, still in the profile.
     recent,
