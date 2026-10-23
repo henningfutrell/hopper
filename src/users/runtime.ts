@@ -34,7 +34,7 @@ import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../
 import { userTypesafeKey } from './typesafe-key.ts';
 import { openTldrs, type Tldrs } from '../tldr/haiku.ts'; import { createItemReconciler } from '../work-items/reconcile.ts';
 import { openUserSystemSecrets } from './system-secrets.ts';
-import { withSystemScope } from '../vault/system-view.ts';
+import { withSystemScope } from '../vault/system-view.ts'; import { withLiveEgress } from '../vault/live-egress.ts';
 import type { SystemSecrets } from '../vault/system.ts';
 import { answerSignedOut, createQuestionService } from '../questions/index.ts';
 import { runtimeSecrets } from '../secrets/runtime.ts';
@@ -349,7 +349,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // A job's source as the sync loop has it now: a removed one still answers for its own jobs (issue #356).
   const sourceOf = (job: Job) => sync.source(job.source?.source ?? '');
   // The vault's view carries the system scope too (issue #658): the user's and the whole hopper's own secrets, and their audit trail.
-  const vault = withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), plans: proxy.githubProxy.infraPlans, ...(o.infraApplies ? { applies: () => o.infraApplies!() } : {}), ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}), ...(o.sandboxes ? { elsewhere: () => o.sandboxes!.elsewhere() } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events });
+  const vault = withLiveEgress(withSystemScope(await openUserVault({ ...o.config, env: o.env, user: user.id, store, access: o.access, ...(o.minter ? { minter: o.minter } : {}), clock, logger, targets: () => vaultTargets(host.targets()), holds: (p) => proxy.githubProxy.user.holds(p), backends: () => host.vaultBackends(), plans: proxy.githubProxy.infraPlans, ...(o.infraApplies ? { applies: () => o.infraApplies!() } : {}), ...(o.sharedSecrets ? { shared: o.sharedSecrets } : {}), ...(o.sandboxes ? { elsewhere: () => o.sandboxes!.elsewhere() } : {}) }), { system, ...(o.instanceSecrets ? { instance: o.instanceSecrets } : {}), events: store.events }), (hosts) => o.sandboxes?.allowEgress(hosts) ?? Promise.resolve()); // an approved egress host is live in the egress proxy before the approval ends (issue #2639 part 4)
   const engine: Engine = createEngine({
     store, clock, executors, router, questions, reviews, logins, queueSorter: host.queueSorter, lease,
     routing: { rules: () => host.routingRules(), machines: () => host.machineIds() }, configuredMachines: () => host.configuredMachineIds(),

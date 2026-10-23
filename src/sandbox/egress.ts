@@ -9,7 +9,8 @@
 // filter), `ports` (the ports a CONNECT may name) and, last, `version` (a hash of both). The proxy reloads when `version`
 // changes, then writes the version it took into `loaded`. A box starts only once `loaded` says the proxy holds its hosts:
 // a proxy that does not answer in time fails the box, so a read-only box never starts with egress the hopper did not set.
-// The allowlist only grows while the hopper runs: a box's hosts stay allowed for the boxes after it.
+// The allowlist only grows while the hopper runs: a box's hosts stay allowed for the boxes after it. An approval of a
+// template's new egress host adds its hosts too, before the approval is kept (issue #2639 part 4, src/vault/live-egress.ts).
 import { createHash } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';

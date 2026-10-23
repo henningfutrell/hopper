@@ -123,6 +123,11 @@ export interface Sandboxes {
   burnLaunched(): Promise<void>;
   /** The need boxes another live hopper runs now (`drivenElsewhere`), by name: their tokens stay bound too (issue #1954). */
   elsewhere(): ReadonlySet<string>;
+  /**
+   * Adds a template's egress hosts (`host:port`) to the egress allowlist, and resolves once the proxy holds them (issue
+   * #2639 part 4): a box that runs already reaches a host a person approved now. Resolves at once with no egress set.
+   */
+  allowEgress(hosts: readonly string[]): Promise<void>;
   /** One pass of the sweep, the read-only check (issue #716) and the warm pass: each due template is checked; a pass that runs already is joined, each on its own (issue #1965). */
   check(): Promise<void>;
   start(): void;
@@ -386,6 +391,7 @@ export function createSandboxes(o: SandboxesOptions): Sandboxes {
     needStep: (userId, box, io, run) => traceJobStep(run.jobId, 'need_box', () => needStep(userId, { ...box, env: { ...box.env, ...traceEnv() } }, io, run), outcomeOf),
     burnLaunched: burnPass,
     elsewhere,
+    allowEgress: (hosts) => (o.egress && hosts.length ? o.egress.allow([], hosts) : Promise.resolve()),
     check,
     start() {
       if (timer) return;

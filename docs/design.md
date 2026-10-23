@@ -29823,6 +29823,14 @@ no way to name another host. A person could not approve "this box may reach this
   template's hosts to the **egress allowlist** with the hosts of the step's credentials (`Egress.allow`). The step keeps
   the template's hosts as they were when it was asked for (`NeedStepTemplate.egress`); a step is asked for only of a
   ready template, so they are approved hosts.
+- **Live before the approval ends** (issue #2639 part 4, 2026-10-23). Seen on a hopper: a person approved a template's
+  new egress host, and the job's box got 403 for it for minutes after. The allowlist took a host only when a box started,
+  so a box that ran already (a job's sandbox box, a bastion) did not reach it. Now an approval that approves a new egress
+  host (`pending.egress` not empty) first adds every egress host of the template to the allowlist (`withLiveEgress`,
+  `src/vault/live-egress.ts`, through `Sandboxes.allowEgress`), and the vault keeps the approval only once the proxy
+  holds them. So the job's wait on the approval ends only when the host is live. When the proxy does not take them in
+  30 seconds, the approval is refused (`unavailable`), with the reason: approve again once the proxy runs. An approval
+  with no new egress host, or a hopper with no egress settings, does not wait for the proxy.
 
 **Residual risk, stated.** The allowlist is shared, and only grows while the hopper runs: a host one template named
 stays allowed for every box behind the proxy after it, as a cluster's host does. tinyproxy allows a host and a port
@@ -29844,7 +29852,9 @@ a job's template request that asks for vault secrets, that image and egress host
 Tests: `test/integration/template-egress.test.ts` (save, approve, widen and narrow through the real routes; the radius;
 a host that is not `host:port` refused), `test/sandbox/template-egress.test.ts` (a write box of a template with hosts
 behind the proxy, the hosts on the allowlist; a read-only box's hosts joined to its clusters; the host's form),
-`test/blast-radius/template-rate.test.ts`, `test/ui/vault.test.ts`.
+`test/blast-radius/template-rate.test.ts`, `test/ui/vault.test.ts`; part 4 of issue #2639:
+`test/integration/template-egress-live.test.ts` (the approval answers only once the proxy took the host; no wait with no
+new host), `test/vault/live-egress.test.ts` (the hosts before the approval; refused when the proxy does not take them).
 
 ## The test image, and a template request with secrets, an image and egress hosts (issue #1875, part 2, 2026-10-18)
 
