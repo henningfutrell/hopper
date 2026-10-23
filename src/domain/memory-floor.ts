@@ -15,6 +15,11 @@ export const MEMORY_FLOOR_MIN_GIB = 1;
  */
 export const MEMORY_PRESSURE_PERCENT = 20;
 /**
+ * Issue #2499: a machine whose memory pressure is at or above this share, in percent, pauses the job that started there
+ * last, as a machine below its floor does. Twice the admission's share, so a machine that only takes no new job pauses none.
+ */
+export const MEMORY_PRESSURE_PAUSE_PERCENT = 40;
+/**
  * Issue #2499: a machine that saw an OOM kill (a process killed for memory) less than this ago takes no new job: it is at
  * its memory limit, though its reading may show memory available again once the kill freed it.
  */

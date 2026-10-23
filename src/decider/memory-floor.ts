@@ -7,15 +7,15 @@
 // wait names it. Machines whose readings name one kernel are a host pool: a job also needs room in that kernel's memory,
 // less what every machine of the pool keeps, over the kernel's own floor. A machine whose tasks wait on memory (its memory
 // pressure at or above MEMORY_PRESSURE_PERCENT) takes no new job, nor one that saw an OOM kill less than MEMORY_OOM_KILL_MS
-// ago. Pure: the clock is `at`.
+// ago. The memory pause is in memory-pause.ts. Pure: the clock is `at`.
 import {
-  MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_OOM_KILL_MS, MEMORY_PAUSE_EVERY_MS, MEMORY_PRESSURE_PERCENT, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT, WAIT_RELEASE_AFTER_MS,
-  type ExpectedCost, type Job, type JobId, type Lane, type MachineSnapshot, type MemoryPausePlan, type ResourceReading,
+  MEMORY_FLOOR_MIN_GIB, MEMORY_FLOOR_PERCENT, MEMORY_OOM_KILL_MS, MEMORY_PRESSURE_PERCENT, MEMORY_PER_JOB_GIB, MEMORY_RAMP_MS, MEMORY_WAIT, WAIT_RELEASE_AFTER_MS,
+  type ExpectedCost, type Job, type Lane, type MachineSnapshot, type ResourceReading,
   type WaitReleasePlan, type WaitSession,
 } from '../domain/types.ts';
 
 const GIB = 1024 ** 3;
-const gib = (bytes: number): string => `${Math.round((bytes / GIB) * 10) / 10} GiB`;
+export const gib = (bytes: number): string => `${Math.round((bytes / GIB) * 10) / 10} GiB`;
 
 /**
  * A machine's memory as one Decision counts it: what it has, its floor, a job's need, and what is kept and for how many jobs.
@@ -39,7 +39,7 @@ const availableOf = (r: ResourceReading): number =>
   (r.wsl && r.hostMemFreeBytes !== undefined ? Math.min(r.memAvailableBytes, r.hostMemFreeBytes) : r.memAvailableBytes);
 
 /** A kernel's own floor: 10% of its memory, at least 1 GiB. */
-const kernelFloor = (total: number): number => Math.max(MEMORY_FLOOR_MIN_GIB * GIB, (total * MEMORY_FLOOR_PERCENT) / 100);
+export const kernelFloor = (total: number): number => Math.max(MEMORY_FLOOR_MIN_GIB * GIB, (total * MEMORY_FLOOR_PERCENT) / 100);
 
 /** The machine's floor and a job's memory there; undefined when it has no memory reading or its floor is 0 (off). */
 function ownFloor(m: MachineSnapshot): { r: ResourceReading; floorBytes: number; perJobBytes: number } | undefined {
@@ -51,7 +51,7 @@ function ownFloor(m: MachineSnapshot): { r: ResourceReading; floorBytes: number;
 }
 
 /** The machine's memory, floor and need for a job; undefined when it has no memory reading or its floor is 0 (off). */
-function floorOf(m: MachineSnapshot, at: number): Omit<MemoryRoom, 'keptBytes' | 'kept' | 'waitingBytes' | 'waiting'> | undefined {
+export function floorOf(m: MachineSnapshot, at: number): Omit<MemoryRoom, 'keptBytes' | 'kept' | 'waitingBytes' | 'waiting'> | undefined {
   const o = ownFloor(m);
   if (!o) return undefined;
   const { r, floorBytes, perJobBytes } = o;
@@ -79,11 +79,11 @@ export function memoryRoom(m: MachineSnapshot, lanes: readonly Lane[], running: 
 }
 
 /** The kernel's own memory, total and available, as a reading says it: its own when not in a container. */
-const kernelOf = (r: ResourceReading): { total: number; available: number }[] => (!r.container ? [{ total: r.memTotalBytes, available: r.memAvailableBytes }]
+export const kernelOf = (r: ResourceReading): { total: number; available: number }[] => (!r.container ? [{ total: r.memTotalBytes, available: r.memAvailableBytes }]
   : r.kernelMemTotalBytes !== undefined && r.kernelMemAvailableBytes !== undefined ? [{ total: r.kernelMemTotalBytes, available: r.kernelMemAvailableBytes }] : []);
 
 /** The machines of `ms` that make host pools: per boot id, two machines or more, or one in a container. */
-function poolsOf<T extends { machine: MachineSnapshot }>(ms: readonly T[]): T[][] {
+export function poolsOf<T extends { machine: MachineSnapshot }>(ms: readonly T[]): T[][] {
   const byBoot = new Map<string, T[]>();
   for (const s of ms) {
     const boot = s.machine.resources?.bootId;
@@ -229,38 +229,6 @@ export function memoryWait(states: readonly { machine: MachineSnapshot; memory?:
     return [short.startsWith('its ') ? `${m.id}'s ${short.slice(4)}` : `${m.id} has ${short}`];
   });
   return `${MEMORY_WAIT}: ${each.join('; ')}`;
-}
-
-/**
- * Step 7c: for each online machine whose memory available is below its floor, pause the running job that started there
- * last: its executor parks, it has an agent session to resume, and no preemption names it. None on a machine with a
- * memory pause less than `MEMORY_PAUSE_EVERY_MS` old, so the park frees memory and a new reading shows it first.
- */
-export function memoryPauses(
-  machines: readonly MachineSnapshot[], lanes: readonly Lane[], running: readonly Job[], waiting: readonly Job[],
-  parking: readonly string[] | undefined, atIso: string, taken: ReadonlySet<JobId>, pausedAt: Readonly<Record<string, string>> = {},
-): MemoryPausePlan[] {
-  if (!parking?.length) return [];
-  const at = Date.parse(atIso);
-  const plans: MemoryPausePlan[] = [];
-  for (const m of machines) {
-    const f = floorOf(m, at);
-    if (!f || !m.online || f.availableBytes >= f.floorBytes) continue;
-    const recent = (iso: string | undefined): boolean => iso !== undefined && at - Date.parse(iso) < MEMORY_PAUSE_EVERY_MS;
-    if (recent(pausedAt[m.id]) || [...running, ...waiting].some((j) => j.memoryPaused?.machineId === m.id && recent(j.memoryPaused.at))) continue;
-    const options = running.flatMap((j) => {
-      if (j.status !== 'running' || j.startedAt === undefined || j.agentSession === undefined || j.preempted !== undefined || taken.has(j.id) || !parking.includes(j.spec.executor)) return [];
-      const lane = lanes.find((l) => l.jobId === j.id && l.state === 'busy' && l.machineId === m.id);
-      return lane ? [{ j, lane }] : [];
-    });
-    const last = options.sort((a, b) => b.j.startedAt!.localeCompare(a.j.startedAt!) || a.j.id.localeCompare(b.j.id))[0];
-    if (!last) continue;
-    plans.push({
-      jobId: last.j.id, laneId: last.lane.id, machineId: m.id, availableBytes: f.availableBytes, floorBytes: f.floorBytes,
-      reason: `pauses ${last.j.id} on ${last.lane.id}: ${m.id} has ${gib(f.availableBytes)} available, below its floor of ${gib(f.floorBytes)}; ${last.j.id} started there last`,
-    });
-  }
-  return plans;
 }
 
 /**

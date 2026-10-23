@@ -1,0 +1,1 @@
+- When machines that share one computer run it out of memory, or a machine's programs wait for memory most of the time, the hopper now pauses the job that started there last, keeps its work, and resumes it when there is room again.
