@@ -58,7 +58,12 @@ export const UNPUSHED_SH: readonly string[] = [
   // its own HEAD; a clone for HEAD and every branch it has. A node_modules link to the shared dependencies (issue #410) is no
   // work of the job's.
   'held() { hd=$1; hr="HEAD --branches"; [ -f "$hd/.git" ] && hr=HEAD;',
-  '  ! hs=$(git -C "$hd" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$hs" | grep -vx "?? node_modules")" ] || ! hu=$(git -C "$hd" log --oneline -1 $hr --not --remotes 2>/dev/null) || { [ -n "$hu" ] && unpushed "$hd" "$hr"; }; };',
+  '  ! hs=$(git -C "$hd" status --porcelain 2>/dev/null) || [ -n "$(printf "%s\\n" "$hs" | grep -vx "?? node_modules")" ] || ! hu=$(git -C "$hd" log --oneline -1 $hr --not --remotes 2>/dev/null) || { [ -n "$hu" ] && unpushed "$hd" "$hr"; } || stashed "$hd"; };',
+  // Whether the checkout $1 holds a stash (issue #2494): a clone any entry of its own, a worktree (.git a file, the stash
+  // its repository's) one made on its own HEAD. Another worktree at the same commit keeps it too: never one too few.
+  'stashed() { [ -f "$1/.git" ] || { [ -n "$(git -C "$1" stash list 2>/dev/null)" ]; return; };',
+  '  sb=$(git -C "$1" rev-parse -q --verify HEAD 2>/dev/null) || return 1;',
+  '  git -C "$1" log -g --format=%P refs/stash 2>/dev/null | cut -d " " -f 1 | grep -qx "$sb"; };',
 ];
 
 // $1 the job id, $2 its scratch dir or empty, $3 `keep` to keep the scratch dir whatever it holds (a timed-out
@@ -120,9 +125,9 @@ const REAP_SCRIPT = [
   ...UNPUSHED_SH,
   // The commits of a clean checkout $1 that hold work no remote has (issue #2087): a worktree's HEAD, a clone's HEAD and
   // branches. The hopper reads a checkout whose every such commit it pushed for the job as pushed: the push says so, though
-  // the checkout's remote branches may not. A checkout with a change names none.
+  // the checkout's remote branches may not. A checkout with a change or a stash (issue #2494) names none.
   'tips() { td=$1; tr="HEAD --branches"; [ -f "$td/.git" ] && tr=HEAD; ts=$(git -C "$td" status --porcelain 2>/dev/null) || return 0;',
-  '  [ -z "$(printf "%s\\n" "$ts" | grep -vx "?? node_modules")" ] || return 0;',
+  '  [ -z "$(printf "%s\\n" "$ts" | grep -vx "?? node_modules")" ] || return 0; ! stashed "$td" || return 0;',
   '  for tu in $(git -C "$td" rev-parse $tr 2>/dev/null); do unpushed "$td" "$tu" && printf "hopper-kept-tip %s %s\\n" "$tu" "$td"; done; };',
   'kept=; [ "$k" = discard ] || kept=$(repos | while IFS= read -r g; do',
   '  d=${g%/.git}; held "$d" && { printf "hopper-kept %s\\n" "$d"; tips "$d"; };',
