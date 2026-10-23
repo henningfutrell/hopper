@@ -6,6 +6,7 @@ import { tail } from './monitor.ts';
 import { GUARDS_MARK, RUNTIME_MARK, RUNTIME_SUBDIR, guardsCommand, guardsOutcome, runtimeOutcome, setupCommand } from '../../client/job-runtime.ts';
 import { SANDBOX_MARK, sandboxCommand, sandboxOutcome } from '../../client/job-sandbox.ts';
 import { jobScratchOf } from '../../domain/job-layout.ts';
+import { HEAVY_SHIMS } from '../../domain/heavy-steps.ts';
 import { awaitOnScreen } from './pane-wait.ts';
 import type { PaneState, StartDeps, StartTimedOut } from './start.ts';
 
@@ -26,8 +27,9 @@ const SANDBOX_WAIT_MS = 30000;
  */
 export async function enterRuntime(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<ExecutionOutcome | StartTimedOut | null> {
   const scratch = jobScratchOf(s.cwd, ctx.job.id);
-  // Two steps, each one line a terminal keeps (issue #2234): the guards first, then the setup once the shell read them.
-  await d.herdr.runInPane(s.paneId, guardsCommand(scratch));
+  // Two steps, each one line a terminal keeps (issue #2234): the guards first, with the heavy steps' shims (issue #2622
+  // part 3), then the setup once the shell read them.
+  await d.herdr.runInPane(s.paneId, guardsCommand(scratch, HEAVY_SHIMS));
   const guards = await awaitOnScreen(d, ctx, s.paneId, GUARDS_MARK, guardsOutcome, GUARDS_WAIT_MS);
   if (ctx.signal.aborted) return null;
   if (guards.found === 'failed') return { kind: 'failed', error: `the job's own container runtime could not be set up on ${ctx.machine.id}: ${tail(guards.screen, 10)}` };

@@ -13,7 +13,7 @@ import { doneAtSource, highFirst, IN_FLIGHT_STATUSES, jobPriorityTag, judge, ove
 import { pullRequestSettings, storeSourceContext } from './source-context.ts';
 import type { Config } from '../config.ts';
 import { createEngine, type Engine } from '../engine/index.ts'; import type { JobMoveData } from '../engine/lost-move.ts'; import type { JobRunData } from '../engine/job-run.ts';
-import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts'; import { createMachineTerminal, type MachineTerminal } from '../engine/machine-terminal.ts';
+import { logFailures } from '../engine/failure-log.ts'; import { createJobTerminal, type JobTerminal } from '../engine/terminal.ts'; import { createMachineTerminal, type MachineTerminal } from '../engine/machine-terminal.ts'; import { createHeavyGate, type HeavyGate } from '../engine/heavy-gate.ts'; import { randomUUID } from 'node:crypto';
 import { linkToken } from '../client/link.ts';
 import type { MachineLinks } from '../machines/links.ts'; import { laneSignIn } from '../machines/lane-pool.ts'; import { cachedDiskDefaults } from '../store/disk-defaults-settings.ts';
 import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machineLeave, type MachineLeaveAnswer } from './machine-leave.ts';
@@ -177,7 +177,7 @@ export interface UserRuntime {
   /** The GitHub proxy's view of this user (issue #563). */
   githubProxy: UserGitHubProxy;
   /** A job's step run on a Windows host the user set up (issue #731); search (issue #945): the index kept from job events, and the permission-checked search; the boxes the user's jobs ask for (issue #991). */
-  windowsSteps: WindowsSteps; podmanHost(name: string): ContainerRuntime | undefined; podmanHostSocket(name: string): RuntimeSocket | undefined; search: UserSearch; sandboxRequests: SandboxRequests; needSteps: NeedSteps; bastions: Bastions; topologyDiscovery: UserTopologyDiscovery; // a job's need steps (issue #1007), its bastion (issue #2146); topology discovery (issue #1781 part 3); a Podman host's runtime and its stream by name, read at each look (issue #2272)
+  windowsSteps: WindowsSteps; podmanHost(name: string): ContainerRuntime | undefined; podmanHostSocket(name: string): RuntimeSocket | undefined; search: UserSearch; sandboxRequests: SandboxRequests; heavyGate: HeavyGate; needSteps: NeedSteps; bastions: Bastions; topologyDiscovery: UserTopologyDiscovery; // a job's need steps (issue #1007), its bastion (issue #2146); topology discovery (issue #1781 part 3); a Podman host's runtime and its stream by name, read at each look (issue #2272)
   /** Start the loops: engine and source sync (the dispatcher and notifiers run from creation). Once. */
   start(): Promise<void>;
   /** Stop every loop and part; close the user's store. Once. */
@@ -410,7 +410,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Search (issue #945): the user's documents in the index, kept from job events; each hit decided by Access.
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined, recovering: Promise<void> = Promise.resolve();
   return {
-    search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, podmanHost: (name) => { const h = readPodmanHosts(store.config).find((x) => x.name === name); return h && createPodmanHostRuntime(h, { auth: sshAuth, sshDir: join(dataDir, 'ssh') }); }, podmanHostSocket: (name) => { const h = readPodmanHosts(store.config).find((x) => x.name === name); return h && podmanHostSocket(h, { auth: sshAuth, sshDir: join(dataDir, 'ssh') }); }, needSteps, bastions, directJobs, sandboxRequests,
+    search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, podmanHost: (name) => { const h = readPodmanHosts(store.config).find((x) => x.name === name); return h && createPodmanHostRuntime(h, { auth: sshAuth, sshDir: join(dataDir, 'ssh') }); }, podmanHostSocket: (name) => { const h = readPodmanHosts(store.config).find((x) => x.name === name); return h && podmanHostSocket(h, { auth: sshAuth, sshDir: join(dataDir, 'ssh') }); }, needSteps, bastions, directJobs, sandboxRequests, heavyGate: createHeavyGate({ clock, idGen: randomUUID, machines: () => host.machines().list(), machineOf: (job) => store.lanes.list().find((l) => l.id === job.laneId)?.machineId }), // issue #2622 part 3
     user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts, gitlabAccount,
     ...history.recorders, windowsLink: history.windowsLink,

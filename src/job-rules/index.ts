@@ -66,6 +66,12 @@ export const SKILL_LINE = 'When you need something set up from outside this mach
  */
 export const INFRA_TOOLS_LINE = '[hopper infra tools] Run infrastructure tools (terraform, aws, kubectl, helm, and the like) only in a sandbox the hopper starts for the job: ask for one with sh "$HOPPER_SKILL". Never run them on this machine itself: they write credentials and caches into its home, and a machine whose home holds credentials takes no new job. With no sandbox, read and edit infrastructure code only.';
 
+/**
+ * The protocol line on heavy steps (issue #2622 part 3, design.md "The heavy-step gate"): a build the job starts as
+ * `./gradlew` is a path, which no shim on its PATH catches, so the job runs it through the gate itself.
+ */
+export const HEAVY_STEPS_LINE = '[hopper heavy steps] Run a JVM build (./gradlew, ./mvnw), a package install, a Playwright install or test run, or an image build as sh "$HOPPER_HEAVY" <command>, for example sh "$HOPPER_HEAVY" ./gradlew test. It waits while the machine\'s memory holds no more such work, and it says why. gradle, mvn, npm, pnpm, yarn, npx and playwright on PATH do this by themselves. Do not start a heavy step another way to get past the wait.';
+
 /** The protocol line on a job's own wait (issue #483); a wait on its own command says so in `until:` (issue #1037). */
 export const WAIT_LINE = 'When the job is blocked on something only a person or the outside world can do (access to be granted, a review, a release), and you have nothing else to do, end your message with a line containing only HOPPER_WAITING, then one line: for: <what you wait for>, one line: on: <what you wait on>, one of: pr <number> merge, pr <number> checks, pr <number> review (for a pull request in another repository: pr <owner>/<name>#<number> checks, and the same for merge and review), job <id>, issue <number>, question <id>, sandbox approval, template approval, infra plan <id>, vault grant, own command, outside: not managed: <what>, outside: gated: <what>, outside: <what>, and, if you can, one line: until: <how you will know it happened>. You can add one line to say when the hopper checks: check: in <time> (when it checks next, for example in 20m), or check: after <time> or check: at <ISO time> (it wakes you then, if nothing else did before). The hopper wakes you when a pull request you wait on is merged or closed. While you wait, your session ends (but on your own command), and the hopper resumes it when what you wait on happens, maybe on another machine. A command you leave in the background ends with it, so never start a poll: name on: what the hopper can check. For an outside event the hopper cannot see, it wakes you only when a person ends the wait, or at the time your check: line names: so for one that ends by itself, name a check: line. While you wait, the hopper does not prompt you; a person can also end the wait. Never open a question only to wait. A wait only for a command of your own that runs in the background (a build, a test run) is not blocked: if you end your message with HOPPER_WAITING for it, write until: own command <its id> ends. A poll is never a command of your own: never write own command for it. Never wait in a loop for the hopper to tend, rebase or merge a pull request: it does that by itself, so go on with your work or end the job.';
 
@@ -105,6 +111,8 @@ export const PROTOCOL_LINES: readonly string[] = [
   SKILL_LINE,
   // Infrastructure tools (issue #1502): only in the job's sandbox, never on the machine.
   INFRA_TOOLS_LINE,
+  // Heavy steps (issue #2622 part 3): a build, an install, a browser run or an image build through the job's gate.
+  HEAVY_STEPS_LINE,
   // A login (issue #476); its outcome, said by the job that asked for it (issue #1110, `hopper-login`).
   AUTH_PENDING_LINE,
   // A job's task count (issue #794): its progress, x/y, as each task completes; never a clock.
