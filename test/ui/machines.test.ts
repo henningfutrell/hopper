@@ -298,6 +298,7 @@ describe('diskText', () => {
   it('says how much of the disk is free, in GB', () => {
     expect(diskText({ freeBytes: 120.4 * GB, totalBytes: 500 * GB, low: false })).toBe('120 GB free of 500 GB (24%)');
     expect(diskText({ freeBytes: 2.25 * GB, totalBytes: 40 * GB, low: true })).toBe('2.3 GB free of 40 GB (6%): low, jobs may fail as it fills');
+    expect(diskText({ freeBytes: 0.5 * GB, totalBytes: 40 * GB, low: true, critical: true })).toBe('0.5 GB free of 40 GB (1%): critical, no job runs here until it frees');
   });
 
   it('says nothing for a machine whose disk was not read', () => {

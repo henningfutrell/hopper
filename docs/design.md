@@ -4091,6 +4091,18 @@ dir and job worktree whatever its age, as over the disk budget, with the reap's 
 parked or live job's work is never touched. One log line each pass says so. Kept in memory: after a restart, the
 first pass sweeps every machine. Reported from a real machine: a disk filled with the dirs of ended jobs while the
 low disk only held new jobs off it.
+**A critical disk holds every job** (issue #2494): below a second, stricter threshold — the options
+`diskCriticalBelowGiB` (default 1) and `diskCriticalBelowPercent` (default 2) — the reading is also `critical`
+(`MachineSnapshot.disk.critical`), and a critical disk is low whatever the low thresholds say. A critical machine takes
+no job at all: a job resuming there (an answered question) waits too, held as `pinned machine <machine> disk critical
+(…)`, since its turn would only fail as the disk fills. Running jobs go on. **A person is told** (issue #2494,
+`src/machines/disk-watch.ts`): at each record of the resource recorder the disk watch sees every machine, and tells a
+disk that turns low once (`machine.disk_low`, `critical` false), again when it turns critical (`critical` true), and
+once more when it is no longer low (`machine.disk_ok`); webhooks and notifiers take them. A machine offline or with no
+reading keeps its state. The watch starts from the newest disk events of the event log, so a restart of the hopper tells
+nothing twice. The header shows the machines whose disk is low on every screen, each with its free space, a link to
+Machines (`ui/src/model/disk-alert.ts`); critical when one of them is. The card says `critical, no job runs here until
+it frees`.
 
 **A lane shows its machine and its work tree** (issue #166). `lane-1` is on every machine, so a
 lane is never named by its number alone: the UI names it `<machine label> (<machine id>) · lane-<n>`

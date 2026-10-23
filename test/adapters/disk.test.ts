@@ -29,6 +29,19 @@ describe('a disk reading', () => {
     expect(diskOf(4 * GIB, 100 * GIB, { belowPercent: 1 }).low).toBe(true);
   });
 
+  it('is critical below 1 GiB free or below 2% free by default, or by the machine\'s own critical thresholds (issue #2494)', () => {
+    expect(diskOf(0.5 * GIB, 20 * GIB)).toEqual({ freeBytes: 0.5 * GIB, totalBytes: 20 * GIB, low: true, critical: true });
+    expect(diskOf(1.5 * GIB, 100 * GIB)).toEqual({ freeBytes: 1.5 * GIB, totalBytes: 100 * GIB, low: true, critical: true });
+    expect(diskOf(3 * GIB, 100 * GIB)).toEqual({ freeBytes: 3 * GIB, totalBytes: 100 * GIB, low: true });
+    expect(diskOf(3 * GIB, 100 * GIB, { criticalBelowGiB: 4 }).critical).toBe(true);
+    expect(diskOf(3 * GIB, 100 * GIB, { criticalBelowPercent: 5 }).critical).toBe(true);
+    expect(diskOf(1.5 * GIB, 100 * GIB, { criticalBelowGiB: 1, criticalBelowPercent: 1 })).not.toHaveProperty('critical');
+  });
+
+  it('is low whenever it is critical, whatever the low thresholds say', () => {
+    expect(diskOf(3 * GIB, 100 * GIB, { belowGiB: 1, belowPercent: 1, criticalBelowGiB: 4 })).toMatchObject({ low: true, critical: true });
+  });
+
   it('reads the filesystem a path is on, through the nearest directory that exists', () => {
     const here = diskAt(dir)!;
     expect(here.totalBytes).toBeGreaterThan(0);

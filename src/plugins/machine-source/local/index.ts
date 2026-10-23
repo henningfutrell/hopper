@@ -19,7 +19,7 @@ import { diskLowOf, diskLowShape, memoryFloorOf, memoryFloorShape, elbowInsOptio
 import type { UsageLimitPair } from '../../../domain/usage.ts'; import type { ResourceReading } from '../../../domain/types.ts';
 
 export interface LocalOptions {
-  lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors?: string[]; session?: string; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors?: string[]; session?: string; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number;
   retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number;
 }

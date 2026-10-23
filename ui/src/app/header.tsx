@@ -5,6 +5,7 @@
 // with: the connection is a source, and its end ends no session (issue #1380). Pending logins are
 // counted here on every screen, warning when one expires soon, a link to the Logins view (issue #477). Yolo mode shows here
 // on every screen (issue #897): off, on, or on in some repositories, a link to its one switch in Settings → Yolo mode.
+// Machines whose disk is low show here on every screen (issue #2494), a link to Machines, critical when one takes no job at all.
 // A stall of the hopper's event loop shows here for 10 minutes, a warning with how long it was and the routes in flight (issue #1002).
 // The header badges (issue #1181) show here on every screen: the Dashboard's KPI cards the user chose in Customize, each its
 // card's own total (`useKpis`), so a badge and its card never disagree; one Lanes badge until chosen. In flight (issue #1113)
@@ -14,7 +15,7 @@
 // The search box (issue #945, search-box.tsx) finds jobs from every screen at tablet width and up; a phone uses the Search entry.
 // On a phone the wordmark, the help link and the API reference give way (Help stays in the user menu), so the version badge with its channel, the connection dot and
 // the user menu are all the bar holds (issues #497, #666).
-import { Activity, BookOpen, CircleCheck, CircleHelp, CircleX, KeyRound, Layers, MessageCircleQuestion, Timer, Zap } from 'lucide-react';
+import { Activity, BookOpen, CircleCheck, CircleHelp, CircleX, HardDrive, KeyRound, Layers, MessageCircleQuestion, Timer, Zap } from 'lucide-react';
 import logo from '../../../site/hopper-logo.svg';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -25,6 +26,7 @@ import { inFlightParts } from '@/model/in-flight';
 import { BADGES, shownBadges } from '@/model/header-badges';
 import type { HeaderBadge, Health } from '@/model/wire';
 import { connectionEnded } from '@/model/sources';
+import { diskAlert } from '@/model/disk-alert';
 import { yoloIndicator } from '@/model/yolo-mode';
 import { useHopper } from '@/store';
 import { cn } from '@/lib/utils';
@@ -74,6 +76,7 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
   const ended = useHopper((s) => connectionEnded(s.sources));
   const logins = useLoginsBadge();
   const yolo = yoloIndicator(useYoloMode());
+  const disk = diskAlert(useHopper((s) => s.machines));
   return (
     <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
       <div className="flex h-14 items-center gap-2 px-3 sm:gap-3 sm:px-4 lg:px-6">
@@ -90,6 +93,13 @@ export function Header({ nav }: { nav?: React.ReactNode }) {
               className="rounded-md border border-bad/30 bg-bad/5 px-2 py-1 font-medium text-bad hover:bg-bad/10">GitHub: reconnect needed</a>
           )}
           <HeaderBadges />
+          {disk && (
+            <a data-disk-alert={disk.critical ? 'critical' : 'low'} href="#machines" title={disk.title}
+              className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium',
+                disk.critical ? 'border-bad/30 bg-bad/5 text-bad hover:bg-bad/10' : 'border-warn/40 bg-warn/10 text-warn hover:bg-warn/15')}>
+              <HardDrive className="size-3.5" aria-hidden /><span className="num">{disk.n}</span> <span className="max-sm:sr-only">{disk.words}</span>
+            </a>
+          )}
           {logins.n > 0 && (
             <a data-logins-pending href="#machines/logins" title={logins.warn ? 'A login expires soon' : 'Logins wait on you'}
               className={cn('flex items-center gap-1.5 rounded-md border px-2 py-1 font-medium',

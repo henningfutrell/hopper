@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "label": {
+      "type": "string"
+    },
+    "freeBytes": {
+      "type": "number"
+    },
+    "totalBytes": {
+      "type": "number"
+    },
+    "critical": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "machineId",
+    "label",
+    "freeBytes",
+    "totalBytes",
+    "critical"
+  ],
+  "additionalProperties": false
+}

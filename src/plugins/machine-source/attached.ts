@@ -79,6 +79,10 @@ export const diskLowShape = (z: typeof Z) => ({
     .meta({ description: 'its disk is low below this many GiB free (default 5); a machine with a low disk takes no new job' }),
   diskLowBelowPercent: z.number().min(0).max(100).optional()
     .meta({ description: 'its disk is low below this share free, in percent (default 10); a machine with a low disk takes no new job' }),
+  diskCriticalBelowGiB: z.number().positive().optional()
+    .meta({ description: 'its disk is critical below this many GiB free (default 1); a machine with a critical disk takes no job at all, not even a job back to its pane' }),
+  diskCriticalBelowPercent: z.number().min(0).max(100).optional()
+    .meta({ description: 'its disk is critical below this share free, in percent (default 2); a machine with a critical disk takes no job at all, not even a job back to its pane' }),
 });
 
 /**
@@ -100,12 +104,19 @@ export const memoryFloorOf = (o: { memoryFloorGiB?: number; memoryPerJobGiB?: nu
     ...(o.memoryPerJobGiB !== undefined ? { perJobGiB: o.memoryPerJobGiB } : {}),
   });
 
-/** The thresholds the disk options set; undefined when neither is. */
-export const diskLowOf = (o: { diskLowBelowGiB?: number; diskLowBelowPercent?: number }): DiskThresholds | undefined =>
-  (o.diskLowBelowGiB === undefined && o.diskLowBelowPercent === undefined ? undefined : {
+/** The disk options (issue #410, critical: issue #2494). */
+export type DiskOptions = { diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number };
+
+/** The thresholds the disk options set; undefined when none is. */
+export function diskLowOf(o: DiskOptions): DiskThresholds | undefined {
+  const t: DiskThresholds = {
     ...(o.diskLowBelowGiB !== undefined ? { belowGiB: o.diskLowBelowGiB } : {}),
     ...(o.diskLowBelowPercent !== undefined ? { belowPercent: o.diskLowBelowPercent } : {}),
-  });
+    ...(o.diskCriticalBelowGiB !== undefined ? { criticalBelowGiB: o.diskCriticalBelowGiB } : {}),
+    ...(o.diskCriticalBelowPercent !== undefined ? { criticalBelowPercent: o.diskCriticalBelowPercent } : {}),
+  };
+  return Object.keys(t).length > 0 ? t : undefined;
+}
 
 /** The retention option of each status a job ends in (issue #2494), by the status. */
 const RETAIN_OPTIONS = { finished: 'retainFinishedHours', failed: 'retainFailedHours', cancelled: 'retainCancelledHours', rejected: 'retainRejectedHours' } as const;
@@ -159,7 +170,7 @@ export function attachedShape(z: typeof Z, executors: readonly string[]) {
 }
 
 export interface AttachedOptions {
-  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number;
+  label?: string; lanes: number; reservedLanes?: number; elbowIns?: number; windows?: boolean; usageLimits?: UsageLimitPair; executors: string[]; workTree?: string; workTrees?: Record<string, string>; diskLowBelowGiB?: number; diskLowBelowPercent?: number; diskCriticalBelowGiB?: number; diskCriticalBelowPercent?: number;
   reapEveryMinutes?: number; scratchMaxAgeHours?: number; memoryFloorGiB?: number; memoryPerJobGiB?: number;
   retainFinishedHours?: number; retainFailedHours?: number; retainCancelledHours?: number; retainRejectedHours?: number;
 }
