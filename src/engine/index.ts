@@ -6,7 +6,7 @@ import { keptTreeOf, keptWorkOf, REVIEW_KINDS, REVIEW_SECTIONS, WORK_EVENTS, typ
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createSignedOutMove } from './signed-out-move.ts';
-import { BUSY_MOVE_EVERY_MS, createBusyMove } from './busy-move.ts';
+import { BUSY_MOVE_EVERY_MS, createBusyMove } from './busy-move.ts'; import { DELIVERY_LEDGER_EVERY_MS, recordDeliveryLedger } from './delivery-ledger.ts';
 import { preemptRunning } from './preemption.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
@@ -183,6 +183,8 @@ export function createEngine(o: EngineOptions): Engine {
   const busyMove = createBusyMove(c);
   let busyMoving = false;
   let busyMovedAt = 0;
+  // The delivery ledger pass (issue #2554 part 6): its first pass one interval after the start.
+  let ledgerAt = c.clock.now().getTime();
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
@@ -324,6 +326,10 @@ export function createEngine(o: EngineOptions): Engine {
           busyMoving = true;
           busyMovedAt = c.clock.now().getTime();
           void busyMove().catch((e: unknown) => console.error('hopper: the busy-machine move failed', e)).finally(() => { busyMoving = false; });
+        }
+        if (c.clock.now().getTime() - ledgerAt >= DELIVERY_LEDGER_EVERY_MS && passes.held('deliveryLedger')) {
+          ledgerAt = c.clock.now().getTime();
+          try { recordDeliveryLedger(store, c.clock.now()); } catch (e) { console.error('hopper: the delivery ledger pass failed', e); }
         }
         c.trigger('tick');
       }, o.tickMs);
