@@ -11268,7 +11268,8 @@ registry.
   terraform on PATH, must fail. `hashicorp/null` is small and real: with the registry in reach and no mirror, `init`
   installs it, and the probe fails. A box with no mirror config fails it, unless the egress proxy filters the registry:
   `init` then fails with `could not connect to registry.terraform.io: … Filtered`, and that is a refusal too (issue
-  #2107). A registry out of reach for another reason (no DNS, no route) is an error.
+  #2107). A registry out of reach for another reason (no DNS, no route) is an error. Off a terminal terraform wraps its
+  error at 78 columns, so the probe reads these words across a line break (issue #2564).
 
 Considered and not built: a read-only plugin cache (`TF_PLUGIN_CACHE_DIR` on a directory the box cannot write) — a cache
 does not stop a download, it only keeps one; more providers or more versions of the AWS provider — no case asks for one

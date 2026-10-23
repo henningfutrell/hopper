@@ -268,8 +268,9 @@ STATE
     // downloaded. hashicorp/dns is small, real and not in the mirror (issue #1977 put hashicorp/null there): with a
     // registry in reach, init would install it. A registry the egress proxy filtered (tinyproxy answers `Filtered`) is a
     // refusal too: the download did not happen (issue #2107). A registry out of reach for another reason is an error.
+    // Off a terminal terraform wraps its error at 78 columns, so a line break can fall between any two words (issue #2564).
     id: 'terraform.provider-download', title: 'install a provider the image does not hold (terraform on PATH)', kinds: ['terraform-workspace'], tool: 'terraform', expect: 'denied',
-    denial: /was not found in any of the search locations|refused by the read-only wrapper|could not connect to registry\.terraform\.io: [^\n]*\bFiltered\b/,
+    denial: /was\s+not\s+found\s+in\s+any\s+of\s+the\s+search\s+locations|refused by the read-only wrapper|could\s+not\s+connect\s+to\s+registry\.terraform\.io:(?:[^\n]|\n(?!\n))*\bFiltered\b/,
     script: `mkdir -p "$HOME/tf-provider" && cd "$HOME/tf-provider" && rm -rf .terraform .terraform.lock.hcl
 cat > main.tf <<'TF'
 terraform {
