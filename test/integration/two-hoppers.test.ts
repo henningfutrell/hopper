@@ -272,7 +272,8 @@ describe('several hoppers on one database (issue #1662)', () => {
     const m = splitMachine();
     cleanups.push(() => { for (const p of m.panes.values()) p.end(); });
     const held = m.holdOpen();
-    const a = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(1) }, source: createManualSource(), seams: { executors: [m.executor('first')] } });
+    const source = createManualSource();
+    const a = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(1) }, source, seams: { executors: [m.executor('first')] } });
     apps.push(a);
     const job = await a.pull({}, { executor: 'split' });
     await held.begun;
@@ -280,6 +281,10 @@ describe('several hoppers on one database (issue #1662)', () => {
     held.release();
     expect((await a.waitForStatus(job.id, 'cancelled', 8000)).attempts).toBe(1);
     expect(eventsOf(a, 'job.cancelled').filter((e) => e.jobId === job.id).map((e) => e.data)).toEqual([{ reason: 'cancelled in UI' }]);
+    // Its end reported, a sync makes no new job of the item: a new job's task would be sent.
+    await waitFor(() => source.reports.some((r) => r.kind === 'cancelled' && r.job.id === job.id), { what: 'the cancelled end reported' });
+    await a.user(ADMIN_ID).sources.syncNow(source.name);
+    expect(eventsOf(a, 'job.queued').map((e) => e.jobId)).toEqual([job.id]);
     expect(m.sent).toEqual([]);
   });
 
