@@ -22,7 +22,7 @@ describe('the memory floor (issue #2291)', () => {
     const d = decide(inputs({ machines: [vm(11)], waiting: burst(7) }), 'd1');
     expect(d.start.map((s) => s.jobId)).toEqual(['j1', 'j2', 'j3', 'j4']);
     expect(d.wait.map((w) => w.jobId)).toEqual(['j5', 'j6', 'j7']);
-    expect(d.wait[0]!.reason).toBe('waiting for memory: local has 11 GiB available, 8 GiB of it kept for 4 jobs started lately; a new job needs 2 GiB over its floor of 1.4 GiB');
+    expect(d.wait[0]!.reason).toBe('waiting for memory: local has 11 GiB available, 8 GiB of it kept for 4 jobs started lately, and a new job needs 2 GiB over its floor of 1.4 GiB');
   });
 
   it('counts the jobs it started lately: their memory is not taken yet', () => {
@@ -145,5 +145,23 @@ describe('a wait release (issues #2303, #2326)', () => {
   it('ends none whose wait is less than 5 seconds old', () => {
     const fresh = { jobId: 'w0', machineId: 'local', since: new Date(new Date(NOW).getTime() - 4_000).toISOString() };
     expect(decide(inputs({ machines: [vm(3)], waiting: [], waitSessions: [fresh, session('w1', 1)] }), 'd1').waitRelease?.map((r) => r.jobId)).toEqual(['w1']);
+  });
+});
+
+// Issue #2499: real per-seat limits and per-job demand from history.
+describe('the memory floor on a seat, and a job\'s demand from its history (issue #2499)', () => {
+  it('a seat at 90% of its cgroup limit takes no new job, though the VM it runs in has free memory', () => {
+    const seat = machine({ id: 'seat', maxLanes: 3, resources: { cores: 2, memTotalBytes: 4 * GIB, memAvailableBytes: 0.4 * GIB, container: true, wsl: true, hostMemFreeBytes: 8 * GIB } });
+    const d = decide(inputs({ machines: [seat], waiting: [job('a')] }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.wait[0]!.reason).toMatch(/^waiting for memory: seat has 0\.4 GiB available/);
+  });
+
+  it('a repository whose jobs peaked at 3 GiB reserves 3 GiB a job, not the flat 2 GiB', () => {
+    const cost = { group: 'repo' as const, key: 'o/gradle', jobs: 5, memoryBytes: { avg: 2 * GIB, peak: 3 * GIB } };
+    // 8 GiB available, the floor 1.4 GiB: two jobs of 3 GiB fit (1.4 + 6 ≤ 8), a third does not; at 2 GiB a third would.
+    const d = decide(inputs({ machines: [vm(8)], waiting: burst(3), expectedCosts: { j1: cost, j2: cost, j3: cost } }), 'd1');
+    expect(d.start.map((s) => s.jobId)).toEqual(['j1', 'j2']);
+    expect(d.wait[0]!.reason).toMatch(/a new job needs 3 GiB over its floor/);
   });
 });

@@ -56,7 +56,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.rerun': { by: 'user' },
   'job.rework_requested': { pullRequest: 'https://github.com/owner/repo/pull/14', notes: 'Rename the flag.', nextJobId: 'j-2', person: 'operator', via: 'ui' },
   'job.dismissed': { by: 'user' },
-  'job.work_kept': { paths: ['/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f'] },
+  'job.work_kept': { paths: ['/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f'], reasons: { '/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f': ['dirty', 'unpushed'] } },
   'job.work_removed': { paths: ['/home/me/hopper-jobs/.worktrees/@scratch/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f'] },
   'job.cleanup_deferred': { error: 'herdr: client is not dialled in' },
   'job.cleaned_up': { deferredAt: '2026-10-07T21:31:00.000Z' },

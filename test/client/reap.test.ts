@@ -154,7 +154,7 @@ describe('the reap at job end (issue #401)', () => {
     writeFileSync(join(ahead, 'd.txt'), 'd\n');
     git(ahead, 'add', '.');
     git(ahead, 'commit', '-q', '-m', 'd');
-    expect(readReap(reap())).toEqual({ kept: [ahead], ...tipsOf(ahead) });
+    expect(readReap(reap())).toEqual({ kept: [ahead], ...tipsOf(ahead), reasons: { [ahead]: ['unpushed'] } });
   });
 
   it('touches nothing but a job scratch dir', () => {
@@ -215,7 +215,7 @@ describe('a job worktree linked to shared dependencies (issue #410)', () => {
     mkdirSync(join(root, 'nm'));
     symlinkSync(join(root, 'nm'), join(tree, 'node_modules'));
     writeFileSync(join(tree, 'new.txt'), 'n\n');
-    expect(readReap(reap())).toEqual({ kept: [tree] });
+    expect(readReap(reap())).toEqual({ kept: [tree], reasons: { [tree]: ['dirty'] } });
     expect(lstatSync(join(tree, 'node_modules')).isSymbolicLink()).toBe(true);
   });
 });
@@ -321,7 +321,7 @@ describe('the reap at a timeout (issue #630): the scratch dir kept, and what the
     commit(repo, 'b.txt');
     git(repo, 'push', '-q', 'origin', 'issue-1');
     commit(repo, 'c.txt');
-    expect(readReap(keeping())).toEqual({ kept: [repo], ...tipsOf(repo), pushed: [repo] });
+    expect(readReap(keeping())).toEqual({ kept: [repo], ...tipsOf(repo), reasons: { [repo]: ['unpushed'] }, pushed: [repo] });
   });
 
   it('a branch with commits no remote has is not pushed', () => {
@@ -329,7 +329,7 @@ describe('the reap at a timeout (issue #630): the scratch dir kept, and what the
     cloneAt(repo);
     git(repo, 'checkout', '-q', '-b', 'issue-1');
     commit(repo, 'b.txt');
-    expect(readReap(keeping())).toEqual({ kept: [repo], ...tipsOf(repo) });
+    expect(readReap(keeping())).toEqual({ kept: [repo], ...tipsOf(repo), reasons: { [repo]: ['unpushed'] } });
     expect(existsSync(scratch)).toBe(true);
   });
 

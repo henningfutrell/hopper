@@ -888,17 +888,24 @@ Version 1 (`docs/schemas/job.reassigned.v1.json`). A flagged job's issue is assi
 
 ## `job.work_kept`
 
-Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (issue #401), or a later sweep (issue #410), kept its scratch dir and its job worktrees (issue #1188: in its work tree's `.worktrees`): each of `paths` is a repository there holding uncommitted or unpushed work. Nothing in it was removed; the job's processes were still stopped. The sweep tries again on each pass, and removes it once the work is pushed (`job.work_removed`).
+Version 1 (`docs/schemas/job.work_kept.v1.json`). The reap at the job's end (issue #401), or a later sweep (issue #410), kept its scratch dir and its job worktrees (issue #1188: in its work tree's `.worktrees`): each of `paths` is a repository there holding uncommitted or unpushed work. `reasons` (issue #2494; absent from a client older than that) says, for each path, why: `dirty` (a change not committed), `stash` (a stash), `unpushed` (commits no remote has). Nothing in it was removed; the job's processes were still stopped. The sweep tries again on each pass, and removes it once the work is pushed (`job.work_removed`).
 
 | field | type | required |
 |---|---|---|
 | `paths` | string[] | yes |
+| `reasons` | object | no |
 
 ```json
 {
   "paths": [
     "/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f"
-  ]
+  ],
+  "reasons": {
+    "/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f": [
+      "dirty",
+      "unpushed"
+    ]
+  }
 }
 ```
 
@@ -1052,6 +1059,24 @@ Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at 
 ```json
 {
   "executor": "kubernetes"
+}
+```
+
+## `job.resources_used`
+
+Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used on its machine (`machineId`), read by the job's reap at its end from the scope's cgroup before it stopped the scope (issue #2498): `memoryPeakBytes`, the most memory the scope held at once (cgroup `memory.peak`); `cpuSeconds`, the CPU time of every process in it (`cpu.stat` `usage_usec`); `oomKills`, the processes in it the kernel killed for want of memory (`memory.events` `oom_kill`). Each is absent where the cgroup has none (`memory.peak` needs Linux 5.19). None where the job has no scope there: no systemd user manager, or its scope ended before the reap (a parked job's, a print-mode agent's after its turn), or a client older than this. The job's parts list shows it.
+
+| field | type | required |
+|---|---|---|
+| `memoryPeakBytes` | number | no |
+| `cpuSeconds` | number | no |
+| `oomKills` | number | no |
+
+```json
+{
+  "memoryPeakBytes": 3221225472,
+  "cpuSeconds": 754.5,
+  "oomKills": 1
 }
 ```
 

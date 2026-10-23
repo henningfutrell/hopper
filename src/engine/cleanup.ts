@@ -7,7 +7,7 @@
 // route cannot do (issue #2490: its ssh name no longer resolves) reaps through the machine as it is reached now.
 import { jobScratchOf } from '../domain/job-layout.ts';
 import type { MachineShell, Reaped } from '../domain/ports.ts';
-import { keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job, type MachineSnapshot } from '../domain/types.ts';
+import { keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, proxyPushedOf, PUSHES_READ, TERMINAL_STATUSES, WORK_EVENTS, type CleanupDue, type Job, type MachineSnapshot } from '../domain/types.ts';
 import { EngineError } from './errors.ts';
 import { nowIso, type EngineContext } from './context.ts';
 
@@ -83,13 +83,15 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
       const was = c.store.jobs.get(jobId)?.cleanupDeferred;
       c.store.tx(() => {
         // Never removed silently (issue #401): what the reap kept is flagged on the job.
-        if (reaped && reaped.kept.length > 0) c.store.events.append({ type: 'job.work_kept', jobId, data: { paths: reaped.kept } });
+        if (reaped && reaped.kept.length > 0) c.store.events.append({ type: 'job.work_kept', jobId, data: keptData(reaped, reaped.kept) });
         // The job's containers and volumes it removed (issue #1120), with what it said of each container (issue #975).
         const removed = reaped?.removed;
         const machineId = machineRanOn(job);
         if (removed && (removed.containers.length > 0 || removed.volumes.length > 0)) {
           c.store.events.append({ type: 'job.containers_removed', jobId, ...(machineId ? { machineId } : {}), data: removed });
         }
+        // What the job's scope used (issue #2498), as its reap read it before it stopped the scope.
+        if (reaped?.used) c.store.events.append({ type: 'job.resources_used', jobId, ...(machineId ? { machineId } : {}), data: reaped.used });
         // Work an earlier end kept, pushed by the job that went on with it (issue #1010): no longer kept.
         const before = reaped && reaped.kept.length === 0 ? keptWorkOf(c.store.events.recent(1, [...WORK_EVENTS], jobId))[0] : undefined;
         if (before) c.store.events.append({ type: 'job.work_removed', jobId, data: { paths: [keptScratchOf(before, job) ?? before.paths[0]!] } });

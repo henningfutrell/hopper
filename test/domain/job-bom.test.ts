@@ -281,3 +281,22 @@ describe('a job\'s test databases (issue #975)', () => {
     expect(bom.parts.filter((p) => p.id === 'container:c1')).toHaveLength(1);
   });
 });
+
+describe('what a job used (issue #2498)', () => {
+  it('one part under machines: the highest peak memory, the CPU time of every reap, and the OOM kills, with each machine', () => {
+    const bom = jobBom(input({ events: [
+      event('job.resources_used', { memoryPeakBytes: 3 * 1024 ** 3, cpuSeconds: 700, oomKills: 0 }, { machineId: 'm1', at: '2026-10-01T00:30:00.000Z' }),
+      event('job.resources_used', { memoryPeakBytes: 1024 ** 3, cpuSeconds: 54.5, oomKills: 1 }, { machineId: 'm2', at: '2026-10-01T01:00:00.000Z' }),
+    ] }));
+    expect(part(bom, 'resources')).toEqual({
+      id: 'resources', group: 'machines', kind: 'resources', label: 'Peak memory 3 GiB, CPU 12m 34s', status: 'recorded', at: '2026-10-01T01:00:00.000Z',
+      detail: '1 OOM kill, on m1 and m2', href: '#machines',
+    });
+  });
+
+  it('says only what was read: a small job in MiB and seconds, no OOM count when none was read', () => {
+    const bom = jobBom(input({ events: [event('job.resources_used', { memoryPeakBytes: 300 * 1024 ** 2, cpuSeconds: 12.4 }, { machineId: 'm1' })] }));
+    expect(part(bom, 'resources')).toMatchObject({ label: 'Peak memory 300 MiB, CPU 12s', detail: 'on m1' });
+    expect(part(jobBom(input({ events: [] })), 'resources')).toBeUndefined();
+  });
+});

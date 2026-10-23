@@ -174,7 +174,13 @@ same Decision. Algorithm, in order:
    the machine's (or ties and is lower), else the machine's — with its number and lanes in use
    (`waiting for a lane: machine m's lane cap is N[ (usage soft limit, used P%)], all K in use` /
    `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)` /
-   `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`).
+   `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`). A job not pinned to a machine
+   is then told of every other machine that runs its executor and why it was left out (issue #2499,
+   `src/decider/wait-reason.ts`): `; left out: m2 is full: machine m2's lane cap is 2, all 2 in use; m3 is drained since
+   <time>; m4 is offline; m5 is full: usage hard limit stops executor e on m5 (used P%)` — also leaving, held (home,
+   disk, work tree, reach, credentials, herdr, template, signed out, a problem, the gate) or short of memory. A
+   **waiting for memory** reason lists the machines with no lane for it the same way. A drained or paced machine never
+   hides behind the one named.
 7b. **Preempt** (issue #1525, "Preemption"; only with `inputs.preemption`). For each job left waiting in step 7, in
    order: the running job of the lowest priority, then started last, then the lowest id, whose own priority is
    strictly below the waiting job's, that has run at least the minimum run time since it started or resumed, whose
@@ -906,8 +912,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   client target in its client (`POST /reap {jobId, scratch}`, "Client targets"). So a job is reaped
   though Claude is still in front of its pane, and though the pane is gone (a crashed hopper, a lost
   pane). The script, on whichever machine the job ran:
-  1. stops the job's scope, `systemctl --user stop hopper-job-<job id>.scope`, which kills every process
-     in it and waits up to 10 s (`TimeoutStopSec`);
+  1. reads what the job's scope used from its cgroup — its peak memory, CPU time and OOM kills (issue #2498, "A job's
+     parts list" → "Resources used") —, then stops the scope, `systemctl --user stop hopper-job-<job id>.scope`, which
+     kills every process in it and waits up to 10 s (`TimeoutStopSec`);
   2. then every process whose environment still carries the job's `HOPPER_JOB_ID` gets `SIGTERM`, then
      `SIGKILL` after 3 s — the fallback where there is no systemd. The script runs with the variable
      unset, so it never matches itself. Linux only (`/proc`); elsewhere this step is skipped.
@@ -927,7 +934,10 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
      own the remote does not have) or has every file it changed from the default branch with the same
      content. A stash is work too (issue #2494): a clone keeps for any entry of its stash; a worktree, whose
      stash is its repository's, keeps for an entry made on its own `HEAD` (the stash commit's first parent),
-     so another worktree at the same commit keeps too, never one too few. Then nothing is removed and each such repository is printed; a pushed git worktree
+     so another worktree at the same commit keeps too, never one too few. Then nothing is removed and each such repository is printed,
+     with why it keeps it, `hopper-kept-why <reason> <path>` once for each it holds (issue #2494): `dirty` (a change not
+     committed), `stash`, `unpushed` (commits no remote has). `job.work_kept` records them as `reasons`, and Work not
+     pushed in Failures shows them beside each repository; a client older than this says none; a pushed git worktree
      of a repository outside is removed through `git worktree remove`, never with `--force` (its
      `node_modules` link removed first), so its repository keeps no stale entry. The job's worktrees,
      `<work tree>/.worktrees/<name>/<job id>` (issue #1188), are read and removed with the scratch dir by the same
@@ -971,7 +981,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `Executor.machineShell` — what jobs left there (the survey: the `hopper-job-*` scopes, the
   `HOPPER_JOB_ID`s of its processes, and the scratch dirs and the job worktrees in `.worktrees`
   (`.worktrees/<name>/<job id>`, issue #1188; and the layout before's) under the work trees of the newest 2000 jobs, with their ages; a
-  client target's `POST /survey {roots}`), and reaps:
+  client target's `POST /survey {roots}`; the programs it starts do not grow with what it finds — one `stat` per work tree
+  for the scratch dirs and one for the job worktrees, one `tr` for every process — because the sh of Git for Windows starts a
+  program slowly, and a native Windows client with about 520 dirs ran past the survey's 60 s, issue #2490), and reaps:
   - the scope and processes of every job the hopper knows that is not live (live: claimed, running,
     waiting on an answer, or led by an operator);
   - an ended job's scratch dir once it is `scratchMaxAgeHours` old (a machine option, default 24), or at
@@ -13050,7 +13062,10 @@ never a hold, read from a machine reading taken before the burst took its memory
   available less a job's memory for each job on its lanes that is claimed or started (or resumed) less than 10 minutes
   ago (`MEMORY_RAMP_MS`: its memory is not in the reading yet), and for each job it places there. A job starts or resumes
   there only while that, less its own need, stays at or above the floor. Else it **waits**, with the reason
-  `waiting for memory: <machine> has 7 GiB available, 4 GiB of it kept for 2 jobs started lately; a new job needs 2 GiB over its floor of 1.4 GiB`.
+  `waiting for memory: <machine> has 7 GiB available, 4 GiB of it kept for 2 jobs started lately, and a new job needs 2 GiB over its floor of 1.4 GiB`,
+  each such machine after a `;`, then the machines left out (step 7, issue #2499). A job's need is the flat 2 GiB, or its
+  expected memory peak from its repository's or kind's job cost group when that is more ("Job cost profiles"): a
+  repository whose jobs peak at 3 GiB reserves 3 GiB a job.
   A wait for memory preempts nothing: preemption frees a lane, not memory. This holds for an elbow-in and a critical job
   too, and for a job resuming on its pane.
 - **WSL.** The memory available is Linux's in the VM, or Windows' own free memory (`hostMemFreeBytes`, issue #868) when
@@ -15029,7 +15044,10 @@ memory total and available (available, not free), and swap total and used where 
   the core count, each marked `hopper-res ` (`RESOURCES_COMMAND`); a machine with no /proc prints none. The second's
   wait is in the probe's background call, never in a Decision.
 - **in a container**: a meter whose cgroup (v2) sets a memory limit reads the limit as its total and its own use less
-  the page cache it could drop (`inactive_file`); a CPU quota is its cores, and CPU busy is its own `usage_usec` against
+  the page cache it could drop (`inactive_file`). The limit may sit on a cgroup above its own (issue #2499): a seat's
+  container seen from the host's cgroup namespace, or a systemd unit's `MemoryMax`. The meter walks up from the cgroup
+  `/proc/self/cgroup` names to the root and reads the tightest (least memory available), so a seat reads its 4 GiB, not
+  the VM's total; a CPU quota is its cores, and CPU busy is its own `usage_usec` against
   the quota. `container: true` says so; the card says "container limit". A container target (a command box per command) is not read,
   as its disk is not.
 - Per lane (an agent's process tree): not built.
@@ -19618,6 +19636,23 @@ of them. Three decisions:
    and that its reap removed it. A recorded container is therefore never still there. A job whose reap has not run yet
    (it runs, or its cleanup is deferred, or it timed out and may go on) shows none: the hopper learns of its containers
    only at the reap.
+
+**Resources used** (issue #2498). Lane machines ran out of memory, and nothing said which job held it. A job's processes
+are already in its scope (`hopper-job-<job id>.scope`, "The job's scope"), so its cgroup counts them, whatever they did to
+their environment. Three decisions:
+
+1. *When it is read.* By the reap, before it stops the scope: once the scope stops, systemd removes its cgroup and the
+   counts with it. The reap asks `systemctl --user show -p ControlGroup` for the scope's cgroup and reads three files
+   there: `memory.peak` (Linux 5.19 and later), `cpu.stat` `usage_usec` and `memory.events` `oom_kill`. One line
+   `hopper-used <bytes> <µs> <kills>`, `-` for a file it could not read; `readReap` reads it as `used`, and the cleanup
+   records `job.resources_used` with the job's machine. A cgroup path with `..` is never read.
+2. *What it misses.* A job with no scope there (no systemd user manager), a scope that ended before the reap (a parked
+   job's pane closed at the park; a print-mode agent's turn ended), and a client older than this: no event. Disk per job,
+   the current use of a running job, and memory or CPU limits on the scope are not read or set here: later parts of
+   issue #2498.
+3. *What the part shows.* One part, `resources` in the machines group: "Peak memory <n>, CPU <time>", the OOM kills when
+   there were any, and the machines. A job reaped on more than one machine (moved, resumed elsewhere) shows the highest
+   peak, and the CPU time and OOM kills of all of them (`src/domain/job-resources.ts`).
 
 **The route.** `GET /api/jobs/:id/bom` (`src/http/jobs.ts`), the user's own; 404 for a job it does not know. It reads the
 job's newest 2000 events (`EventLog.recent` takes a job now, over the `events_job` index of tenant migration 45), its

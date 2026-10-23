@@ -57,11 +57,13 @@ export function keepMemory(room: MemoryRoom | undefined, cost: ExpectedCost | un
   room.kept += 1;
 }
 
+/** What a machine's memory room holds against a new job's need. */
+export const memoryShort = (r: MemoryRoom, cost: ExpectedCost | undefined): string =>
+  `${gib(r.availableBytes)} available${r.kept ? `, ${gib(r.keptBytes)} of it kept for ${r.kept} job${r.kept === 1 ? '' : 's'} started lately` : ''}, and a new job needs ${gib(needOf(r, cost))} over its floor of ${gib(r.floorBytes)}`;
+
 /** The wait reason of a job that has a lane on these machines but whose memory none of them holds. */
 export function memoryWait(states: readonly { machine: MachineSnapshot; memory?: MemoryRoom }[], cost: ExpectedCost | undefined): string {
-  const each = states.flatMap(({ machine: m, memory: r }) => (r
-    ? [`${m.id} has ${gib(r.availableBytes)} available${r.kept ? `, ${gib(r.keptBytes)} of it kept for ${r.kept} job${r.kept === 1 ? '' : 's'} started lately` : ''}; a new job needs ${gib(needOf(r, cost))} over its floor of ${gib(r.floorBytes)}`]
-    : []));
+  const each = states.flatMap(({ machine: m, memory: r }) => (r ? [`${m.id} has ${memoryShort(r, cost)}`] : []));
   return `${MEMORY_WAIT}: ${each.join('; ')}`;
 }
 

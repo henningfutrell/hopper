@@ -51,13 +51,13 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 describe('the tips of kept work (issue #2087)', () => {
   it('a clean worktree with a commit no remote has: kept, with that commit as its tip', () => {
     const head = commit(tree, 'b.txt', 'b\n');
-    expect(readReap(reap())).toEqual({ kept: [tree], tips: { [tree]: [head] } });
+    expect(readReap(reap())).toEqual({ kept: [tree], tips: { [tree]: [head] }, reasons: { [tree]: ['unpushed'] } });
   });
 
   it('a worktree with a change: kept, with no tip', () => {
     commit(tree, 'b.txt', 'b\n');
     writeFileSync(join(tree, 'c.txt'), 'c\n');
-    expect(readReap(reap())).toEqual({ kept: [tree] });
+    expect(readReap(reap())).toEqual({ kept: [tree], reasons: { [tree]: ['dirty', 'unpushed'] } });
   });
 
   it('a clean clone: each branch that holds work no remote has is a tip, a pushed one is not', () => {

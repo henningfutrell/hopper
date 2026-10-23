@@ -74,6 +74,11 @@ export const UNPUSHED_SH: readonly string[] = [
 // with HOPPER_JOB_ID unset, so neither it nor what it starts matches the processes it stops.
 const REAP_SCRIPT = [
   'id=$1; s=$2; k=$3;',
+  // What the job's scope used (issue #2498), read from its cgroup before it is stopped: its peak memory, its CPU time and the
+  // OOM kills in it, each `-` where the cgroup has none. HOPPER_CGROUP_ROOT stands in for the cgroup root in tests.
+  'cr=${HOPPER_CGROUP_ROOT:-/sys/fs/cgroup}; cg=; command -v systemctl >/dev/null 2>&1 && cg=$(systemctl --user show -p ControlGroup --value "hopper-job-$id.scope" 2>/dev/null);',
+  'case $cg in *..*) ;; /?*) [ -d "$cr$cg" ] && { mp=$(head -n 1 "$cr$cg/memory.peak" 2>/dev/null); cu=$(sed -n "s/^usage_usec //p" "$cr$cg/cpu.stat" 2>/dev/null);',
+  '  ok=$(sed -n "s/^oom_kill //p" "$cr$cg/memory.events" 2>/dev/null); printf "hopper-used %s %s %s\\n" "${mp:--}" "${cu:--}" "${ok:--}"; };; esac;',
   // The job's scope: every process in it, whatever it did to its environment or session.
   'if command -v systemctl >/dev/null 2>&1; then systemctl --user stop "hopper-job-$id.scope" >/dev/null 2>&1; fi;',
   // Where there is no systemd, or for what left the scope: the processes carrying the job's id, and those run from its
@@ -124,8 +129,13 @@ const REAP_SCRIPT = [
   'tips() { td=$1; tr="HEAD --branches"; [ -f "$td/.git" ] && tr=HEAD; ts=$(git -C "$td" status --porcelain 2>/dev/null) || return 0;',
   '  [ -z "$(printf "%s\\n" "$ts" | grep -vx "?? node_modules")" ] || return 0; ! stashed "$td" || return 0;',
   '  for tu in $(git -C "$td" rev-parse $tr 2>/dev/null); do unpushed "$td" "$tu" && printf "hopper-kept-tip %s %s\\n" "$tu" "$td"; done; };',
+  // Why the reap keeps the checkout $1 (issue #2494): each of a change, a stash and commits no remote has that it holds.
+  'why() { wd=$1; wr="HEAD --branches"; [ -f "$wd/.git" ] && wr=HEAD;',
+  '  ws=$(git -C "$wd" status --porcelain 2>/dev/null) && [ -n "$(printf "%s\\n" "$ws" | grep -vx "?? node_modules")" ] && printf "hopper-kept-why dirty %s\\n" "$wd";',
+  '  stashed "$wd" && printf "hopper-kept-why stash %s\\n" "$wd";',
+  '  wu=$(git -C "$wd" log --oneline -1 $wr --not --remotes 2>/dev/null) && [ -n "$wu" ] && unpushed "$wd" "$wr" && printf "hopper-kept-why unpushed %s\\n" "$wd"; };',
   'kept=; [ "$k" = discard ] || kept=$(repos | while IFS= read -r g; do',
-  '  d=${g%/.git}; held "$d" && { printf "hopper-kept %s\\n" "$d"; tips "$d"; };',
+  '  d=${g%/.git}; held "$d" && { printf "hopper-kept %s\\n" "$d"; why "$d"; tips "$d"; };',
   'done);',
   // What the job pushed (issue #630): a remote branch its HEAD holds that the default branch does not.
   'pushed=$(repos | while IFS= read -r g; do',
@@ -172,9 +182,11 @@ const SURVEY_SCRIPT = [
   '  systemctl --user list-units --type=scope --plain --no-legend "hopper-job-*" 2>/dev/null | sed -n "s/^hopper-job-\\([^ ]*\\)\\.scope .*/hopper-scope \\1/p";',
   'fi;',
   'if [ -r /proc/self/environ ]; then',
-  '  for f in /proc/[0-9]*/environ; do tr "\\0" "\\n" 2>/dev/null < "$f" | sed -n "s/^HOPPER_JOB_ID=//p"; done | sort -u | sed "s/^/hopper-proc /";',
+  '  cat /proc/[0-9]*/environ 2>/dev/null | tr "\\0" "\\n" | sed -n "s/^HOPPER_JOB_ID=//p" | sort -u | sed "s/^/hopper-proc /";',
   'fi;',
   'now=$(date +%s); to=; command -v timeout >/dev/null 2>&1 && to="timeout 20";',
+  // GNU stat (Linux, MSYS) or BSD stat (macOS): `<mtime> <path>` for each path.
+  'if stat -c %Y / >/dev/null 2>&1; then mtimes() { stat -c "%Y %n" "$@"; }; else mtimes() { stat -f "%m %N" "$@"; }; fi;',
   'for rt in docker podman; do command -v "$rt" >/dev/null 2>&1 || continue;',
   `  c=$($to "$rt" ps -aq --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$c" ] && $to "$rt" inspect --format '{{index .Config.Labels "${JOB_LABEL}"}}' $c 2>/dev/null | sed "s/^/hopper-container /";`,
   `  v=$($to "$rt" volume ls -q --filter label=${JOB_LABEL} 2>/dev/null); [ -n "$v" ] && $to "$rt" volume inspect --format '{{index .Labels "${JOB_LABEL}"}}' $v 2>/dev/null | sed "s/^/hopper-container /";`,
@@ -186,17 +198,15 @@ const SURVEY_SCRIPT = [
   '    set -- "$@" "$p";',
   '  done; [ $# -gt 0 ] || return 0;',
   `  $to du -skx "$@" 2>/dev/null | awk -F '\t' '$1 ~ /^[0-9]+$/ { k = $1; sub(/^[^\t]*\t/, ""); print "hopper-du " k " " $0 }'; };`,
+  // `ages <dir|tree> <paths>`: the dirs of the paths, with their ages, by one `stat` (issue #2490: a start per dir was too
+  // slow under MSYS). `for` takes its list once, so each pass shifts its path off and puts a dir back at the end.
+  'ages() { k=$1; shift; for d do shift; [ -d "$d" ] && [ ! -L "$d" ] || continue;',
+  `  [ "$k" = tree ] && case $d in "$r"/${LAYOUT.worktrees}/@*) continue;; esac; set -- "$@" "$d"; done; [ $# -gt 0 ] || return 0;`,
+  `  mtimes "$@" 2>/dev/null | awk -v now="$now" -v k="$k" '$1 ~ /^[0-9]+$/ { m = $1; sub(/^[^ ]* /, ""); print "hopper-" k " " (now - m) " " $0 }'; };`,
   `for r in "$@"; do if [ -d "$r/${LAYOUT.worktrees}" ] || [ -d "$r/${LAYOUT.oldScratch}" ]; then printf "hopper-root %s\\n" "$r";`,
   '  [ -n "$to" ] && measure;',
-  `fi; for d in "$r"/${LAYOUT.scratch}/* "$r"/${LAYOUT.oldScratch}/*; do`,
-  '  [ -d "$d" ] && [ ! -L "$d" ] || continue;',
-  '  m=$(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null) || continue;',
-  '  printf "hopper-dir %s %s\\n" "$((now - m))" "$d";',
-  `done; for d in "$r"/${LAYOUT.worktrees}/*/* "$r"/${LAYOUT.oldWorktrees}/*; do`,
-  `  case $d in "$r"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$d" ] && [ ! -L "$d" ] || continue;`,
-  '  m=$(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null) || continue;',
-  '  printf "hopper-tree %s %s\\n" "$((now - m))" "$d";',
-  'done; done;',
+  `fi; ages dir "$r"/${LAYOUT.scratch}/* "$r"/${LAYOUT.oldScratch}/*; ages tree "$r"/${LAYOUT.worktrees}/*/* "$r"/${LAYOUT.oldWorktrees}/*;`,
+  'done;',
   'printf "%s\\n" hopper-surveyed',
 ].map((l) => l.trim()).join(' ');
 
@@ -234,12 +244,16 @@ function detailsOf(line: string): ContainerDetails | undefined {
   return { id, name: name.replace(/^\//, ''), image, ...(startedAt ? { startedAt } : {}), ...(stoppedAt ? { stoppedAt } : {}) };
 }
 
+/** Why the reap kept a checkout (issue #2494): a change not committed, a stash, commits no remote has. */
+export const KEPT_REASONS = ['dirty', 'stash', 'unpushed'] as const;
+export type KeptReason = typeof KEPT_REASONS[number];
+
 /**
  * What a finished reap said: the repositories it kept, those whose branch was pushed (issue #630), the dirs of the job it
- * could not remove (issue #1452), and the containers and volumes of the job it removed (issue #1120), with what it said of
+ * could not remove (issue #1452), why it kept each it kept (`reasons`, issue #2494; none from a client older than that), and the containers and volumes of the job it removed (issue #1120), with what it said of
  * each container (issue #975; none from a client older than that). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] } } | undefined {
+export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
@@ -253,11 +267,29 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
     const t = /^hopper-kept-tip ([0-9a-f]{40,64}) (\/.*)$/.exec(l);
     if (t && kept.includes(t[2]!) && !tips[t[2]!]?.includes(t[1]!)) (tips[t[2]!] ??= []).push(t[1]!);
   }
+  const reasons: Record<string, KeptReason[]> = {};
+  for (const l of lines) {
+    const w = /^hopper-kept-why (\S+) (\/.*)$/.exec(l);
+    if (w && kept.includes(w[2]!) && (KEPT_REASONS as readonly string[]).includes(w[1]!) && !reasons[w[2]!]?.includes(w[1] as KeptReason)) (reasons[w[2]!] ??= []).push(w[1] as KeptReason);
+  }
   const details = [...new Map(named(DETAILS_MARK).map(detailsOf).filter((d) => d !== undefined && containers.includes(d.id)).map((d) => [d!.id, d!])).values()];
   return {
-    kept, ...(Object.keys(tips).length ? { tips } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}),
+    kept, ...(Object.keys(tips).length ? { tips } : {}), ...(Object.keys(reasons).length ? { reasons } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}),
     ...(containers.length || volumes.length ? { removed: { containers, volumes, ...(details.length ? { details } : {}) } } : {}),
+    ...usedOf(lines),
   };
+}
+
+/** What a job's scope used (issue #2498), as `job.resources_used` records it: each field absent where its cgroup had none. */
+export interface ResourceUse { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number }
+
+/** The reap's `hopper-used <peak bytes> <CPU µs> <OOM kills>` line, each `-` when unread; nothing when no field was read. */
+function usedOf(lines: readonly string[]): { used?: ResourceUse } {
+  const m = lines.map((l) => /^hopper-used (\S+) (\S+) (\S+)$/.exec(l)).find((x) => x !== null);
+  const n = (v: string | undefined): number | undefined => (v && /^\d+$/.test(v) ? Number(v) : undefined);
+  const peak = n(m?.[1]), usec = n(m?.[2]), oom = n(m?.[3]);
+  const used: ResourceUse = { ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}) };
+  return Object.keys(used).length ? { used } : {};
 }
 
 /** One scratch dir the survey found: its job, path and age. */

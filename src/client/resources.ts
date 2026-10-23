@@ -3,7 +3,8 @@
 // CPU time busy between this read and the one before (none at the first read, and a read sooner than a second after
 // the last keeps the last); memory is what is available, not what is free. On Linux memory and swap come from
 // /proc/meminfo; elsewhere (Windows, macOS) from the OS, with no swap. A process in a container whose cgroup (v2)
-// sets limits reads its limits and its own use: a memory limit as its total, a CPU quota as its cores.
+// sets limits reads its limits and its own use: a memory limit as its total, a CPU quota as its cores. The memory limit
+// may sit on a cgroup above the process's own (issue #2499): a seat's container, or a systemd unit's MemoryMax.
 // In WSL (issue #868) the VM keeps its page cache, which Windows cannot use: the meter adds the memory the VM holds
 // (MemTotal less MemFree) and, through WSL interop, Windows' own free memory, read in the background once a minute.
 // In a Kubernetes pod (issue #1289) it is never WSL, whatever the node's kernel, and always a container: its limits are
@@ -181,14 +182,30 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     return { busy, total };
   };
 
-  const memory = (): Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes'> => {
-    const max = platform === 'linux' ? limit(cgroup('memory.max')) ?? pod?.memBytes : undefined;
-    const current = max !== undefined ? limit(cgroup('memory.current')) : undefined;
-    if (max !== undefined && current !== undefined) {
-      // The page cache it could drop is available, as MemAvailable counts it on the host.
-      const used = Math.max(0, current - (fields(text(cgroup('memory.stat'))).get('inactive_file') ?? 0));
-      return { memTotalBytes: max, memAvailableBytes: Math.max(0, max - used), container: true };
+  /**
+   * Issue #2499: the memory limit of its own cgroup or one above it, as /proc/self/cgroup names it — a seat's container
+   * seen from the host's cgroup namespace, or a systemd unit's MemoryMax — the tightest, with that cgroup's use; at the
+   * root, a pod's limit through the Downward API. The page cache it could drop is available, as MemAvailable counts it.
+   */
+  const cgroupMemory = (): { memTotalBytes: number; memAvailableBytes: number } | undefined => {
+    const own = /^0::(\/.*)$/m.exec(text(join(root, 'proc/self/cgroup')) ?? '')?.[1] ?? '/';
+    const parts = own.split('/').filter(Boolean);
+    let tightest: { memTotalBytes: number; memAvailableBytes: number } | undefined;
+    for (let n = parts.length; n >= 0; n -= 1) {
+      const dir = parts.slice(0, n).join('/');
+      const max = limit(cgroup(join(dir, 'memory.max'))) ?? (n === 0 ? pod?.memBytes : undefined);
+      const current = max !== undefined ? limit(cgroup(join(dir, 'memory.current'))) : undefined;
+      if (max === undefined || current === undefined) continue;
+      const used = Math.max(0, current - (fields(text(cgroup(join(dir, 'memory.stat')))).get('inactive_file') ?? 0));
+      const available = Math.max(0, max - used);
+      if (!tightest || available < tightest.memAvailableBytes) tightest = { memTotalBytes: max, memAvailableBytes: available };
     }
+    return tightest;
+  };
+
+  const memory = (): Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes'> => {
+    const limited = platform === 'linux' ? cgroupMemory() : undefined;
+    if (limited) return { ...limited, container: true };
     const info = platform === 'linux' ? fields(text(join(root, 'proc/meminfo'))) : new Map<string, number>();
     const kib = (k: string) => (info.has(k) ? info.get(k)! * 1024 : undefined);
     const total = kib('MemTotal');

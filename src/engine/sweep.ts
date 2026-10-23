@@ -39,7 +39,7 @@
 // Machines shows them; a person keeps or removes each one (`decideLeftover`). The sweep removes none by itself.
 import type { ActingPerson, Discarding, DiskBudget, HopperDisk, HopperDiskPath, Job, KeptWork, MachineLeftovers, MachineSnapshot } from '../domain/types.ts';
 import type { MachineShell, Reaped, Survey } from '../domain/ports.ts';
-import { discardingOf, discardReasonOf, hopperDiskOf, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
+import { discardingOf, discardReasonOf, hopperDiskOf, keptData, keptPushedOf, keptScratchOf, keptWorkOf, machineRanOn, PROXY_PUSH_EVENTS, PUSHES_READ, proxyPushedOf, TERMINAL_STATUSES, WORK_EVENTS, type WorkDiscardReason } from '../domain/types.ts';
 import { jobScratchOf, scratchParts, worktreeParts } from '../domain/job-layout.ts';
 import type { EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
@@ -329,7 +329,7 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       const again = r.scratch !== undefined && said.kept.length > 0 && kept.has(r.jobId);
       if (!again) log(`hopper: the sweep reaped job ${r.jobId} on ${m.id}${r.scratch ? `, its scratch dir ${said.kept.length ? 'kept: it holds work not pushed' : 'removed'}` : ''}`);
       if (!r.scratch || c.stopping()) continue;
-      if (said.kept.length > 0 && !kept.has(r.jobId)) c.store.events.append({ type: 'job.work_kept', jobId: r.jobId, data: { paths: said.kept } });
+      if (said.kept.length > 0 && !kept.has(r.jobId)) c.store.events.append({ type: 'job.work_kept', jobId: r.jobId, data: keptData(said, said.kept) });
       if (said.kept.length === 0 && kept.has(r.jobId)) c.store.events.append({ type: 'job.work_removed', jobId: r.jobId, data: { paths: [r.scratch] } });
     }
     return removed;

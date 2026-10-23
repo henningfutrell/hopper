@@ -70,7 +70,7 @@ describe('placement by expected cost', () => {
     const d = decide(inputs({ machines: two(res(4), res(12)), waiting: [job('j1'), job('j2')], expectedCosts: { j1: cost(6), j2: cost(6) } }), 'd1');
     expect(d.start.map((s) => [s.jobId, s.machineId])).toEqual([['j1', 'b']]);
     expect(d.wait.map((w) => w.jobId)).toEqual(['j2']);
-    expect(d.wait[0]!.reason).toMatch(/^waiting for memory: a has 4 GiB available; a new job needs 6 GiB over its floor of 1.6 GiB; b has 12 GiB available, 6 GiB of it kept for 1 job started lately/);
+    expect(d.wait[0]!.reason).toMatch(/^waiting for memory: a has 4 GiB available, and a new job needs 6 GiB over its floor of 1.6 GiB; b has 12 GiB available, 6 GiB of it kept for 1 job started lately/);
   });
 
   it('a job whose CPU fits no machine is placed as before, and says so', () => {

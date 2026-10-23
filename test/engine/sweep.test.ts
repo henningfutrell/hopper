@@ -121,13 +121,17 @@ describe('the sweep runner (issue #410)', () => {
     expect(r.events.at(-1)).toEqual({ type: 'job.work_removed', jobId: 'old', data: { paths: ['/w/.worktrees/@scratch/old'] } });
   });
 
-  it('kept again records nothing new; kept the first time by the sweep is recorded as job.work_kept', async () => {
+  it('kept again records nothing new; kept the first time by the sweep is recorded as job.work_kept, with why', async () => {
     const again = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'old', path: '/w/.worktrees/@scratch/old', ageMs: HOUR }] }, kept: ['old'], keeps: ['old'] });
     await again.sweep.run(true);
     expect(again.events).toHaveLength(1);
     const first = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'done', path: '/w/.worktrees/@scratch/done', ageMs: 30 * HOUR }] }, keeps: ['done'] });
     await first.sweep.run(true);
     expect(first.events).toEqual([{ type: 'job.work_kept', jobId: 'done', data: { paths: ['/w/.worktrees/@scratch/done/repo'] } }]);
+    // With why the reap kept it (issue #2494).
+    const why = rig({ found: { scopes: [], processes: [], scratch: [{ jobId: 'done', path: '/w/.worktrees/@scratch/done', ageMs: 30 * HOUR }] }, keeps: ['done'], reasons: ['done'] });
+    await why.sweep.run(true);
+    expect(why.events).toEqual([{ type: 'job.work_kept', jobId: 'done', data: { paths: ['/w/.worktrees/@scratch/done/repo'], reasons: { '/w/.worktrees/@scratch/done/repo': ['unpushed'] } } }]);
   });
 
   it('logs work it keeps only the first time (issue #1010): kept again on each pass is no news', async () => {

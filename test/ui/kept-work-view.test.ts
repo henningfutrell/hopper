@@ -36,6 +36,15 @@ describe('Work not pushed (issue #1010)', () => {
     expect(document.querySelector('a[href="#failures"] [data-slot="nav-badge"]')?.textContent).toBe('1');
   });
 
+  it('says why each repository was kept (issue #2494); one recorded before says nothing more', async () => {
+    const repo = '/w/.worktrees/@scratch/j7/repo';
+    await boot('#failures', { failures: view({ problems: [], keptWork: [kept({ reasons: { [repo]: ['dirty', 'stash', 'unpushed'] } })] }) });
+    expect(row()?.querySelector('[data-slot="kept-why"]')?.textContent).toBe('— changes not committed, a stash, commits not pushed');
+    await unmount();
+    await boot('#failures', { failures: view({ problems: [], keptWork: [kept()] }) });
+    expect(row()?.querySelector('[data-slot="kept-why"]')).toBeNull();
+  });
+
   it('Push it goes to the daemon with the note; Discard asks first, then goes', async () => {
     await boot('#failures', { failures: view({ problems: [], keptWork: [kept()] }) });
     const note = row()!.querySelector('textarea')!;

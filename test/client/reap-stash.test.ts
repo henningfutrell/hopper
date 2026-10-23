@@ -59,14 +59,14 @@ describe('a stash is work (issue #2494)', () => {
   it('a clean, pushed worktree with a stash made in it: kept, with no tip', () => {
     stash(tree);
     expect(git(tree, 'status', '--porcelain')).toBe('');
-    expect(readReap(reap())).toEqual({ kept: [tree] });
+    expect(readReap(reap())).toEqual({ kept: [tree], reasons: { [tree]: ['stash'] } });
     expect(existsSync(tree)).toBe(true);
   });
 
   it('a clean, pushed worktree with a commit the hopper pushed and a stash: kept, with no tip', () => {
     commit(tree, 'b.txt', 'b\n');
     stash(tree);
-    expect(readReap(reap())).toEqual({ kept: [tree] });
+    expect(readReap(reap())).toEqual({ kept: [tree], reasons: { [tree]: ['stash', 'unpushed'] } });
   });
 
   it('a clean, pushed worktree whose repository has a stash made on another commit: removed', () => {
@@ -82,7 +82,7 @@ describe('a stash is work (issue #2494)', () => {
     const clone = join(scratch, 'clone');
     git(root, 'clone', '-q', join(root, 'remote.git'), clone);
     stash(clone);
-    expect(readReap(reap())).toEqual({ kept: [clone] });
+    expect(readReap(reap())).toEqual({ kept: [clone], reasons: { [clone]: ['stash'] } });
     expect(existsSync(clone)).toBe(true);
   });
 
