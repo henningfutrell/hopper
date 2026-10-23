@@ -67,7 +67,15 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
       ? { hostMemFreeBytes: r.hostMemFreeBytes, hostMemTotalBytes: r.hostMemTotalBytes } : {}),
     ...(r.wsl === true && windowsLinkOf(r.windowsLink) ? { windowsLink: windowsLinkOf(r.windowsLink)! } : {}),
     ...nodeOf(r.node),
+    ...jobMemoryOf(r.jobMemoryBytes),
   };
+}
+
+/** A client's job scope memory (issue #2499): each entry whose key reads as a job id and whose value as bytes; none, when none does. */
+function jobMemoryOf(v: unknown): Pick<ResourceReading, 'jobMemoryBytes'> {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return {};
+  const kept = Object.entries(v).filter(([id, bytes]) => /^[A-Za-z0-9_-]{1,64}$/.test(id) && count(bytes));
+  return kept.length ? { jobMemoryBytes: Object.fromEntries(kept) as Record<string, number> } : {};
 }
 
 /** A client's Node version (issue #2479), when it reads as one; its floor judged here, not taken from the client. */

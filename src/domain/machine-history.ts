@@ -32,6 +32,11 @@ export interface ResourceReading {
   node?: string;
   /** The patched floor (src/client/node-floor.ts) its Node is below: the Machines page warns. Absent: patched, or not said. */
   nodeFloor?: string;
+  /**
+   * Issue #2499: each job scope's memory in use, by job id (`hopper-job-<id>.scope`). A job with no lane in use there (on its
+   * own wait, parked, queued to resume) still holds it: its **waiting memory**. Absent: none read (no systemd, an ssh target, an older client).
+   */
+  jobMemoryBytes?: Record<string, number>;
 }
 
 /**
@@ -72,6 +77,8 @@ export interface MachineSample {
   vmHeldBytes?: number;
   hostMemFreeBytes?: number;
   hostMemTotalBytes?: number;
+  /** Issue #2499: the memory its job scopes hold for jobs with no lane in use there (waiting memory); absent, none read. */
+  waitingMemBytes?: number;
   lanesBusy: number;
   lanesMax: number;
 }

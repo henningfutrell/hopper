@@ -41,8 +41,11 @@ const runsCte = (oneJob: boolean): string => `
     SELECT job_id, machine_id, at AS start_at, end_at, end_type FROM ev
     WHERE type = 'job.claimed' AND machine_id IS NOT NULL AND end_type IS NOT NULL AND end_type <> 'job.claimed' AND end_at < ?::timestamptz)`;
 
-/** Used, per sample of table `t` (`s.`, or none): CPU busy (a share), memory and disk (bytes). */
-const used = (t = '') => ({ cpu: `${t}cpu_busy`, mem: `(${t}mem_total - ${t}mem_available)`, disk: `(${t}disk_total - ${t}disk_free)` }) as const;
+/**
+ * Used, per sample of table `t` (`s.`, or none): CPU busy (a share), memory and disk (bytes). Memory leaves out what jobs
+ * with no lane in use hold (issue #2499): it is not the lanes'.
+ */
+const used = (t = '') => ({ cpu: `${t}cpu_busy`, mem: `(${t}mem_total - ${t}mem_available - coalesce(${t}waiting_mem, 0))`, disk: `(${t}disk_total - ${t}disk_free)` }) as const;
 /** One lane's share of a sample's use net of the baseline `b`, never below 0; null where the sample or the baseline has none. */
 const lanePart = (k: 'cpu' | 'mem' | 'disk'): string => {
   const net = `${used('s.')[k]} - b.${k}`;
@@ -77,11 +80,11 @@ export function createMachineHistoryRepository(c: StoreContext): MachineHistoryR
         for (const s of samples) {
           added += c.db.run(`
             INSERT INTO machine_samples (at, machine_id, cores, cpu_busy, load1, mem_total, mem_available, swap_total, swap_used, disk_free, disk_total,
-              vm_held, host_mem_free, host_mem_total, lanes_busy, lanes_max)
-            VALUES (?::timestamptz, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+              vm_held, host_mem_free, host_mem_total, waiting_mem, lanes_busy, lanes_max)
+            VALUES (?::timestamptz, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
           s.at, s.machineId, s.cores ?? null, s.cpuBusyFrac ?? null, s.load1 ?? null, s.memTotalBytes ?? null, s.memAvailableBytes ?? null,
           s.swapTotalBytes ?? null, s.swapUsedBytes ?? null, s.diskFreeBytes ?? null, s.diskTotalBytes ?? null,
-          s.vmHeldBytes ?? null, s.hostMemFreeBytes ?? null, s.hostMemTotalBytes ?? null, s.lanesBusy, s.lanesMax).changes;
+          s.vmHeldBytes ?? null, s.hostMemFreeBytes ?? null, s.hostMemTotalBytes ?? null, s.waitingMemBytes ?? null, s.lanesBusy, s.lanesMax).changes;
         }
         return added;
       });
@@ -114,7 +117,7 @@ export function createMachineHistoryRepository(c: StoreContext): MachineHistoryR
           count(*) FILTER (WHERE ${SHARE.cpu} >= ?) AS cpu_p,
           count(*) FILTER (WHERE ${SHARE.memory} >= ?) AS mem_p,
           count(*) FILTER (WHERE ${SHARE.disk} >= ?) AS disk_p,
-          avg(cpu_busy) AS cpu_avg, avg(mem_total - mem_available) AS mem_used, max(mem_total) AS mem_total
+          avg(cpu_busy) AS cpu_avg, avg(${used().mem}) AS mem_used, max(mem_total) AS mem_total
         FROM machine_samples WHERE at >= ?::timestamptz AND at < ?::timestamptz
         GROUP BY machine_id, lanes_busy ORDER BY machine_id, lanes_busy`,
       q.pressure.cpu, q.pressure.memory, q.pressure.disk, q.from.toISOString(), q.to.toISOString());
