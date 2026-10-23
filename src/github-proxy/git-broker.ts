@@ -79,6 +79,8 @@ export interface GitUser {
    * evaluation of that commit, or no requirement applies to it. Refused: why, and what to do. Absent: none.
    */
   pushRequirements?(push: { jobId: string; repo: string; branch: string; base: string; new: string; pack: Buffer }): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** After a push GitHub took (issue #2555 part 4: the push requirements summary on the pull request). Never throws. Absent: nothing. */
+  pushed?(push: { jobId: string; repo: string; refs: readonly { ref: string; new: string }[] }): Promise<void>;
   /** Direct push (issue #1806): whether a job may push straight to `repo`'s target branch. Absent: never. */
   directPush?(repo: string): boolean;
   /** Whether a push from `old` to `new`, with its pack, is a fast-forward (issue #1806); undefined: git cannot say. Absent: no direct push is taken. */
@@ -326,8 +328,10 @@ export function createGitProxy(o: GitProxyOptions) {
         const answer = await forward(r, at, git);
         if (sends) {
           passProxyKillPoint('git.push', 'after-send');
-          if (answer.status === 200) record('github_proxy.done', { refs: refs.map((c) => c.ref), heads: refs.map((c) => c.new), ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}) });
-          else {
+          if (answer.status === 200) {
+            record('github_proxy.done', { refs: refs.map((c) => c.ref), heads: refs.map((c) => c.new), ...(direct.length > 0 ? { direct: direct.map((c) => c.ref) } : {}) });
+            void side.pushed?.({ jobId: job.id, repo: at.repo, refs: refs.filter((c) => !ZERO.test(c.new)) });
+          } else {
             const error = await githubRefusal(answer);
             record('github_proxy.failed', { refs: refs.map((c) => c.ref), error });
             return refusedReport(plain!, refs, error);

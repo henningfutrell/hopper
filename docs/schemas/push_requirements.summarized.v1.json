@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "number": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "head": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "repo",
+    "number",
+    "head"
+  ],
+  "additionalProperties": false
+}

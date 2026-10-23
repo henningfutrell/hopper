@@ -23,7 +23,7 @@ describe('the push requirements summary', () => {
     expect(text).toContain('Passed for `4f1c2a9e8b7d` against `dev`');
     expect(text).toContain('| `kotlin-coverage` | repo | passed | changed-files coverage | `./gradlew koverVerify` | changedLines ≥ 80, 70 ≤ changedBranches ≤ 100 | changedLines 84, changedBranches 71.5 |');
     // A pipe or a backtick in a cell does not break the table or the code span.
-    expect(text).toContain('| `lint` | default | passed | lint \\| strict | ``npm run lint -- --max-warnings=0 \\| tee `lint.log` `` | | |');
+    expect(text).toContain('| `lint` | default | passed | lint \\| strict | `` npm run lint -- --max-warnings=0 \\| tee `lint.log` `` | | |');
     expect(text).toContain('| `migrations` | repo | skipped: no changed files match `**/*.sql` | | | | |');
   });
 

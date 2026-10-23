@@ -18,4 +18,5 @@ export const PUSH_REQUIREMENT_EVENT_SCHEMAS = {
     repo: z.string(), branch: z.string(), base: z.string(), head: z.string(), passed: z.boolean(), requirements: z.array(requirement),
   }),
   'push_requirements.defaults_changed': strict({ from: z.array(z.string()), to: z.array(z.string()), by: z.string() }),
+  'push_requirements.summarized': strict({ repo: z.string(), number: z.number().int(), head: z.string() }),
 };
