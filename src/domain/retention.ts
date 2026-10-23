@@ -25,3 +25,15 @@ export function retentionOver(s: SweepSettings | undefined, job: Job, ageMs: num
 
 /** Whether the reap at a job's end keeps its scratch dir: a retention above 0 set for the status it ended in. */
 export const retainsAtEnd = (s: SweepSettings | undefined, status: JobStatus): boolean => (retainHoursOf(s, status) ?? 0) > 0;
+
+/**
+ * Until when the reap at a job's end keeps its scratch dir (issue #2504 part 5), as the resource ledger records it: the end
+ * (`finishedAt`, else `nowMs`) plus the retention set for its status; a timed-out job's (`liveness`: it may go on there), plus
+ * the sweep's scratch age. Undefined: the reap keeps nothing for a time.
+ */
+export function retainedUntilOf(s: SweepSettings | undefined, job: Pick<Job, 'status' | 'finishedAt' | 'liveness'>, nowMs: number): string | undefined {
+  const hours = retainsAtEnd(s, job.status) ? retainHoursOf(s, job.status)! : job.liveness ? s?.scratchMaxAgeHours ?? SCRATCH_MAX_AGE_HOURS : undefined;
+  if (hours === undefined) return undefined;
+  const end = job.finishedAt ? Date.parse(job.finishedAt) : NaN;
+  return new Date((Number.isNaN(end) ? nowMs : end) + hours * HOUR_MS).toISOString();
+}

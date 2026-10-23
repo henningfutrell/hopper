@@ -1,6 +1,6 @@
 // The resource ledger's writes (issue #2504, design.md "The resource ledger"): entries recorded from what a job's executor
 // saved, and closed as each reap — the cleanup at the job's end, the sweep, a discard — says.
-import { goneClosures, ledgerEntriesOf, reapClosures } from '../domain/resource-ledger.ts';
+import { goneClosures, ledgerEntriesOf, reapClosures, retainedEntriesOf } from '../domain/resource-ledger.ts';
 import type { Reaped, Survey } from '../domain/ports.ts';
 import type { UserStore } from '../domain/store.ts';
 
@@ -14,6 +14,11 @@ export function recordLedger(store: Ledger, jobId: string, machineId: string, st
 /** The job's entries closed as the reap said; `scratch` false: it did not look at the scratch dir, so only its scope. */
 export function closeLedger(store: Ledger, jobId: string, said: Reaped, at: string, scratch = true): void {
   for (const c of reapClosures(store.resourceLedger.forJob(jobId), said, scratch)) store.resourceLedger.close(jobId, c.entry.kind, c.entry.locator, c.state, at, c.reason);
+}
+
+/** The job's entries a reap kept for a retention (issue #2504 part 5), marked kept until `until`: no cleanup leftover before then. */
+export function retainLedger(store: Ledger, jobId: string, until: string): void {
+  for (const e of retainedEntriesOf(store.resourceLedger.forJob(jobId))) store.resourceLedger.retain(jobId, e.kind, e.locator, until);
 }
 
 /**

@@ -1,0 +1,1 @@
+- A job whose machine keeps its work for a time after it ends now shows its cleanup as kept for that time, and is no longer reported as a cleanup leftover before that time ends.

@@ -182,4 +182,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 94: Each machine's last disk measure (issue #2494), so a restart still shows it. A table only: the build before runs on
   // it, and never reads it.
   DISK_MEASURE_TABLE,
+  // 95: Until when the reap at a job's end kept a resource ledger entry for a retention (issue #2504 part 5). A column with
+  // no default: the build before runs on it, and names its columns when it writes.
+  'ALTER TABLE job_resource_ledger ADD COLUMN retained_until TEXT',
 ];
