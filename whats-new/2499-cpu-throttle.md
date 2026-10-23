@@ -1,0 +1,1 @@
+- A machine that already uses all the processor time it is allowed now takes no new job until it has room again, and a job that waits says why.

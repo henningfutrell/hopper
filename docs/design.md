@@ -13127,6 +13127,16 @@ never a hold, read from a machine reading taken before the burst took its memory
   memory), and a new job starts only 10 min after`. A floor of 0 turns this check off too. An ssh target's probe keeps no
   count from one read to the next, so it says none. `memory.events` `max` (the limit was hit and memory reclaimed) is not
   read: a cgroup full of page cache hits it in normal work, and the memory pressure already says when the reclaim stalls tasks.
+- **The CPU throttle** (issue #2499, `src/decider/cpu-throttle.ts`). A seat with a CPU quota (`cpu.max`) whose tasks want
+  more CPU than the quota gives is throttled, while its CPU busy can read below resource pressure. Each reading says its
+  **CPU throttle** (`cpuThrottledFrac`): of each cgroup on its path with a quota, its own and those above it, the share of
+  its CPU periods throttled since the read before (`cpu.stat` `nr_throttled` of `nr_periods`), the most of them. A machine
+  whose CPU throttle is 50% or more (`CPU_THROTTLE_FRAC`) takes no new job and no job back, and no job elbows in there:
+  `waiting for CPU: a's CPU quota held its tasks back in 62% of its periods lately, and a new job starts only below 50%`.
+  A memory wait comes first: the CPU wait names only machines whose memory holds the job. A machine with free lanes and a
+  waiting job says so on its lane plan (`CPU holds no more job: …`), and a wait names it as left out (`a is throttled: …`).
+  It is not turned off by a floor of 0, since it is no memory check. A machine with no quota, an ssh target and a first
+  read say none.
 - **Placement by memory room** (issue #2499, `better` in `src/decider/assign.ts`). A machine's lane cap is a count of jobs,
   and 9 lanes of 2 GiB each did not fit a 14 GiB VM. So of the machines a job may go to, after placement pressure, the one
   with the most **real room** goes first: its lane room, only as far as its **memory room** holds jobs (its memory over its
@@ -15135,6 +15145,9 @@ memory total and available (available, not free), and swap total and used where 
 - **its memory pressure** (issue #2499): PSI's `some` and `full` avg10 (`memPressure`), of the cgroup whose limit it reads,
   else the kernel's; an ssh target's probe prints `/proc/pressure/memory`. Absent where there is no PSI. The decider reads it
   ("The memory floor"); no machine sample keeps it yet.
+- **its CPU throttle** (issue #2499): the share of CPU periods a CPU quota of its cgroup or one above it throttled since the
+  read before (`cpuThrottledFrac`), the most of them; absent with no quota and at the first read. The decider reads it
+  ("The memory floor", "The CPU throttle"); no machine sample keeps it yet.
 - Per lane (an agent's process tree): not built; a job's scope is the nearest.
 
 **Recording.** Each user runtime runs a **resource recorder** (`src/machines/history.ts`), on the usage recorder's loop

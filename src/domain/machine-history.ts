@@ -10,6 +10,12 @@ export interface ResourceReading {
   cores: number;
   /** Share of CPU time busy since the read before, 0..1. Absent: its first read. */
   cpuBusyFrac?: number;
+  /**
+   * Issue #2499: its **CPU throttle**, the share of CPU periods a CPU quota (`cpu.max`) of its own cgroup or one above it
+   * throttled since the read before (`cpu.stat` `nr_throttled` of `nr_periods`), 0..1, the most of them. Absent: no quota,
+   * its first read (an ssh target, Windows, macOS, an older client).
+   */
+  cpuThrottledFrac?: number;
   /** Load averages over 1, 5 and 15 minutes. Absent: Windows, which has none. */
   load?: [number, number, number];
   memTotalBytes: number;

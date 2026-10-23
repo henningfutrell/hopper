@@ -9,6 +9,7 @@
 // It names its kernel by its boot id and, under a cgroup limit, says the kernel's own memory (issue #2499): the hopper
 // counts the machines on one host as one pool. It says its memory pressure (PSI): the limited cgroup's, else the kernel's,
 // and when it last saw a process killed for memory (an OOM kill): the limited cgroup's memory.events, else /proc/vmstat.
+// It says the share of CPU periods a CPU quota throttled (issue #2499): its own cgroup's or one above it, the most of them.
 // In WSL (issue #868) the VM keeps its page cache, which Windows cannot use: the meter adds the memory the VM holds
 // (MemTotal less MemFree) and, through WSL interop, Windows' own free memory, read in the background once a minute.
 // In a Kubernetes pod (issue #1289) it is never WSL, whatever the node's kernel, and always a container: its limits are
@@ -26,6 +27,8 @@ export interface ResourceReading {
   cores: number;
   /** Share of CPU time busy since the read before, 0..1. Absent: the first read. */
   cpuBusyFrac?: number;
+  /** Issue #2499: the share of CPU periods a cgroup's quota throttled since the read before, 0..1, the most of its cgroups. Absent: no quota, or the first read. */
+  cpuThrottledFrac?: number;
   /** Load averages over 1, 5 and 15 minutes. Absent: Windows, which has none. */
   load?: [number, number, number];
   memTotalBytes: number;
@@ -184,6 +187,8 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const nodeFloor = nodeFloorOf(node);
   let host: { at: number; reading: HostMemory } | undefined;
   let kills: { of: string; count: number } | undefined;
+  let periods = new Map<string, { periods: number; throttled: number }>();
+  let throttledFrac: number | undefined;
   let killAt: number | undefined;
   let hostAskedAt: number | undefined;
   let hostAsking = false;
@@ -279,6 +284,29 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     return killAt !== undefined ? { memOomKillAt: new Date(killAt).toISOString() } : {};
   };
 
+  /**
+   * Issue #2499: of each cgroup on its path with a CPU quota (cpu.max), the share of its periods throttled since the read
+   * before (cpu.stat nr_throttled of nr_periods); the most of them. None with no quota, or no count before.
+   */
+  const throttle = (): number | undefined => {
+    const now = new Map<string, { periods: number; throttled: number }>();
+    let most: number | undefined;
+    const parts = ownCgroup();
+    for (let n = parts.length; n >= 0; n -= 1) {
+      const dir = parts.slice(0, n).join('/');
+      if (limit(cgroup(join(dir, 'cpu.max'))) === undefined) continue;
+      const stat = fields(text(cgroup(join(dir, 'cpu.stat'))));
+      const p = stat.get('nr_periods');
+      const t = stat.get('nr_throttled');
+      if (p === undefined || t === undefined) continue;
+      now.set(dir, { periods: p, throttled: t });
+      const before = periods.get(dir);
+      if (before && p > before.periods && t >= before.throttled) most = Math.max(most ?? 0, clamp((t - before.throttled) / (p - before.periods)));
+    }
+    periods = now;
+    return most;
+  };
+
   /** What each scope used so far (issue #2498); a scope with nothing read is left out. */
   const jobUseOf = (scopes: readonly { id: string; dir: string }[], at: number): Pick<ResourceReading, 'jobUse'> => {
     const next = new Map<string, { at: number; usec: number }>();
@@ -339,6 +367,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       const t = cpuTimes(q, at);
       if (last && t.total > last.total) busyFrac = clamp((t.busy - last.busy) / (t.total - last.total));
       last = { at, ...t };
+      if (platform === 'linux') throttledFrac = throttle();
     }
     const mem = memory(at);
     const bootId = platform === 'linux' ? text(join(root, 'proc/sys/kernel/random/boot_id'))?.trim() : undefined;
@@ -346,6 +375,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     return {
       cores: q ?? (d.parallelism ?? availableParallelism)(),
       ...(busyFrac !== undefined ? { cpuBusyFrac: busyFrac } : {}),
+      ...(throttledFrac !== undefined ? { cpuThrottledFrac: throttledFrac } : {}),
       ...(platform !== 'win32' && l.length === 3 ? { load: [l[0]!, l[1]!, l[2]!] as [number, number, number] } : {}),
       ...mem,
       ...(bootId ? { bootId } : {}),

@@ -6,8 +6,8 @@ import { windowsFits } from '../domain/windows-jobs.ts';
 import { roomToElbowIn } from './elbow-in.ts'; import { awayFrom, takeIdle } from './lane-health.ts';
 import { routerVerdict } from './router-verdict.ts';
 import type { CapBand } from './usage.ts';
-import { fitting, place, type PlacedCost } from './placement-cost.ts'; import { keepMemory, memoryAdmits, memoryHeadroom, memoryLanes, memoryWait, type MemoryRoom } from './memory-floor.ts';
-import { jevPicked } from './lane-calls.ts'; import { leftOut, waitReason } from './wait-reason.ts';
+import { fitting, place, type PlacedCost } from './placement-cost.ts'; import { keepMemory, memoryAdmits, memoryHeadroom, memoryLanes, type MemoryRoom } from './memory-floor.ts'; import { cpuThrottled } from './cpu-throttle.ts';
+import { jevPicked } from './lane-calls.ts'; import { roomWait, waitReason } from './wait-reason.ts';
 import { SIGN_IN, signedOutFor } from './signed-out.ts';
 import { addressHolds, credentialHolds, heldOff, herdrHolds, notReady, offNetwork, opensPane, workTreeHolds } from './machine-holds.ts';
 
@@ -368,11 +368,11 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     const elbowed = elbowing.length > 0;
     const squeezed = fits.length === 0 && !elbowed && critical > 0 && job.priority >= critical;
     const laned = elbowed ? elbowing : squeezed ? checked.filter((s) => squeezes(s, job)) : fits;
-    // The memory floor (issue #2291): of the machines with a lane for it, only one whose memory holds it.
-    const able = laned.filter((s) => memoryAdmits(s.memory, costs?.[job.id]));
+    // The memory floor (issue #2291): of the machines with a lane for it, only one whose memory holds it, and no CPU throttle (issue #2499).
+    const able = laned.filter((s) => memoryAdmits(s.memory, costs?.[job.id]) && !cpuThrottled(s.machine));
     if (able.length === 0) {
       // Every other machine of its executor is named with why it was left out (issues #2427, #2499).
-      wait.push({ jobId: job.id, reason: laned.length ? `${memoryWait(laned, costs?.[job.id])}${leftOut(job, checked, laned.map((s) => s.machine.id), pl, costs?.[job.id])}` : waitReason(job, checked, pl, costs?.[job.id]) });
+      wait.push({ jobId: job.id, reason: laned.length ? roomWait(job, checked, laned, pl, costs?.[job.id]) : waitReason(job, checked, pl, costs?.[job.id]) });
       continue;
     }
     const { options: fit, note: costed } = fitting(awayFrom(able, avoid[job.id]), costs?.[job.id]);

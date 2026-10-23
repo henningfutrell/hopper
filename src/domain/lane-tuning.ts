@@ -43,6 +43,12 @@ export interface ResourcePressure {
 export const RESOURCE_PRESSURE: ResourcePressure = { cpu: 0.95, memory: 0.9, disk: 0.95 };
 
 /**
+ * Issue #2499: a machine whose CPU quota throttled it in this share of its CPU periods or more, since its read before, takes
+ * no new job: its tasks already want more CPU than the quota gives, as a seat at its quota does while CPU busy reads lower.
+ */
+export const CPU_THROTTLE_FRAC = 0.5;
+
+/**
  * Lane load: what a machine's samples with this many lanes in use show. The averages are over the samples that read
  * the resource; absent when none did.
  */
