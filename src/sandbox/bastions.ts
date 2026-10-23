@@ -217,7 +217,7 @@ export function createBastions(o: BastionsOptions): Bastions {
       const at = now();
       const l: Live = {
         view: {
-          id, jobId: job.id, template: template.name, box, targets: placing.placed.map((t) => ({ target: targetText(t), local: t.local })), ...(names.length ? { secrets: names } : {}), state: 'starting',
+          id, jobId: job.id, template: template.name, box, targets: placing.placed.map((t) => ({ target: targetText(t) })), ...(names.length ? { secrets: names } : {}), state: 'starting',
           startedAt: at.toISOString(), expiresAt: new Date(at.getTime() + ttlMs).toISOString(), log: '',
         },
         placed: placing.placed, observes: placing.observes, stop: new AbortController(), open: new Set(), timers: [], done: Promise.resolve(),
@@ -252,7 +252,7 @@ export function createBastions(o: BastionsOptions): Bastions {
         log: (chunk) => {
           l.view.log = (l.view.log + chunk).slice(-LOG_TAIL);
           watch.add(chunk);
-          l.view.targets = l.view.targets.map((x) => ({ target: x.target, local: x.local, ...watch.of(x.target) }));
+          l.view.targets = l.view.targets.map((x) => ({ target: x.target, ...watch.of(x.target) }));
         },
         signal: l.stop.signal, running: renewing,
       }, { jobId: job.id, step: id, template: template.name }).then((r) => ended(l, r), (e: unknown) => ended(l, { exit: 125, problem: e instanceof Error ? e.message : String(e) }));
@@ -330,6 +330,8 @@ export function createBastions(o: BastionsOptions): Bastions {
     if (forward?.listening === undefined) {
       return { status: 503, no: `the bastion's forward to ${target} does not listen in the box yet: kubectl said nothing of it in ${listenMs / 1000} s. See where it stands with sh "$HOPPER_SKILL" bastion` };
     }
+    // Issue #2566: the port is the one kubectl picked and said, never one the hopper guessed.
+    if (forward.local === undefined) return { status: 503, no: `the bastion's forward to ${target} did not say its port in the box: see its output with sh "$HOPPER_SKILL" bastion` };
     const access = await o.mayRelay({ jobId, template: l.view.template, target }).catch((e: unknown) => ({ allowed: false, reason: `Access could not be asked: ${e instanceof Error ? e.message : String(e)}` }));
     if (!access.allowed) {
       o.record({ type: 'bastion.relay_refused', jobId, data: { bastion: l.view.id, target, reason: access.reason } });
@@ -337,7 +339,7 @@ export function createBastions(o: BastionsOptions): Bastions {
     }
     let pipe: BoxPipe;
     try {
-      pipe = await l.pipe(command ? command(t.local) : relayCommand(t.local));
+      pipe = await l.pipe(command ? command(forward.local) : relayCommand(forward.local));
     } catch (e) {
       return { status: 502, no: `the relay did not reach ${target} in the box: ${e instanceof Error ? e.message : String(e)}` };
     }

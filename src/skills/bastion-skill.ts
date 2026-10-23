@@ -43,7 +43,7 @@ const READ = 'sh "$HOPPER_SKILL" bastion read --targets TARGET --path "/api/..."
 export function bastionText(v: BastionView): string {
   // Issue #2413: each forward says whether it listens, and the running bastion its output too.
   const state = (t: BastionView['targets'][number]): string => (t.listening ? 'listening' : t.listening === false ? `not listening: ${t.said}` : 'not listening yet');
-  const forwards = v.targets.map((t) => `  ${t.target} on 127.0.0.1:${t.local} in the box: ${state(t)}`).join('\n');
+  const forwards = v.targets.map((t) => `  ${t.target} on ${t.local ? `127.0.0.1:${t.local}` : 'a port kubectl picks'} in the box: ${state(t)}`).join('\n');
   if (v.state === 'ended') {
     return `bastion ${v.id} of template ${v.template} ended at ${v.endedAt}: ${v.ended}${v.endedBy ? ` by ${v.endedBy}` : ''}${v.problem ? `: ${v.problem}` : ''}. Ask again for a new one: ${START}\n${v.log ? `Its last output:\n${v.log}\n` : ''}`;
   }

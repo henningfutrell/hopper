@@ -95,7 +95,7 @@ describe('a forward that has said nothing yet (issue #2484)', () => {
     expect(await b.read('job-1', { target: TEMPO, method: 'GET', path: PATH })).toEqual(no);
     expect(await ask({ asset: 'read', targets: TEMPO, path: PATH })).toEqual({ status: 503, text: `no: ${no.no}` });
     expect(started).toEqual([]);
-    expect(bastionText(b.of('job-1')!)).toContain(`${TEMPO} on 127.0.0.1:20000 in the box: not listening yet`);
+    expect(bastionText(b.of('job-1')!)).toContain(`${TEMPO} on a port kubectl picks in the box: not listening yet`);
   });
 
   it('a forward that ends while a relay waits refuses it with what kubectl said', async () => {

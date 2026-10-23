@@ -32485,7 +32485,13 @@ credential.
   bound to a Secret of its own). The box is a need box of the template through the sandbox module's `needStep`: its run in
   the sandbox runs ledger, the sweep leaves it while it runs, and it is burned when it ends. Its command
   (`bastionCommand`) runs `kubectl port-forward --address 127.0.0.1` to each target in a loop that starts it again 2 s
-  after it ends (a pod that restarted), each on a port of its own from 20000, its lines marked with its target.
+  after it ends (a pod that restarted), each on a free port kubectl picks (`:<port>`), its lines marked with its target.
+- **Each forward's port is kubectl's pick** (issue #2566). A box on a client machine shares the machine's network, so
+  the fixed ports a bastion took before (20000 and on) could be another box's or another process's: a bastion's first
+  target, on 20000, gave only "Empty reply from server" while its other targets answered. `forwardWatch` reads the port
+  from kubectl's `Forwarding from 127.0.0.1:<port>` (`BastionView.targets[].local`, absent until kubectl said it, and
+  again after the forward ends), and the relay, and so a bastion read, connects to that port only; a forward that
+  listens but named no port is a 503.
 - **Whether each forward listens** (issue #2413, `forwardWatch`). A bastion once said "running" and listed its forwards
   while each kubectl failed in the box (no RBAC, no kubectl), and every read answered only curl's "Failed to connect". The
   hopper reads each forward's lines in the box's output as they come: a forward listens once kubectl says "Forwarding
