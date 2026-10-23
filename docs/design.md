@@ -13125,8 +13125,9 @@ never a hold, read from a machine reading taken before the burst took its memory
   else in `/proc/vmstat`. A count is a counter, so the meter compares it with its read before: its first read, and a read
   of another cgroup, see no kill. A machine whose last OOM kill is less than 10 minutes old (`MEMORY_OOM_KILL_MS`) takes
   no new job and no job back, and has no memory room: `waiting for memory: a's memory killed a process 3 min ago (out of
-  memory), and a new job starts only 10 min after`. A floor of 0 turns this check off too. An ssh target's probe keeps no
-  count from one read to the next, so it says none. `memory.events` `max` (the limit was hit and memory reclaimed) is not
+  memory), and a new job starts only 10 min after`. A floor of 0 turns this check off too. An ssh target's probe prints the
+  same counts (`cgo <dir> <n>` for each cgroup with a limit, `oom <n>` from `/proc/vmstat`), and its attached machine keeps
+  the count from one probe to the next (`oomWatch`, part 13). `memory.events` `max` (the limit was hit and memory reclaimed) is not
   read: a cgroup full of page cache hits it in normal work, and the memory pressure already says when the reclaim stalls tasks.
 - **The CPU throttle** (issue #2499, `src/decider/cpu-throttle.ts`). A seat with a CPU quota (`cpu.max`) whose tasks want
   more CPU than the quota gives is throttled, while its CPU busy can read below resource pressure. Each reading says its
@@ -13136,8 +13137,9 @@ never a hold, read from a machine reading taken before the burst took its memory
   `waiting for CPU: a's CPU quota held its tasks back in 62% of its periods lately, and a new job starts only below 50%`.
   A memory wait comes first: the CPU wait names only machines whose memory holds the job. A machine with free lanes and a
   waiting job says so on its lane plan (`CPU holds no more job: …`), and a wait names it as left out (`a is throttled: …`).
-  It is not turned off by a floor of 0, since it is no memory check. A machine with no quota, an ssh target and a first
-  read say none.
+  It is not turned off by a floor of 0, since it is no memory check. A machine with no quota and a first read say none.
+  An ssh target's probe keeps no count from one probe to the next, so it reads `cpu.stat` of each cgroup with a quota
+  before and after its one second of CPU lines (`ct0`, `ct1`, part 13): its throttle is that second's.
 - **Placement by memory room** (issue #2499, `better` in `src/decider/assign.ts`). A machine's lane cap is a count of jobs,
   and 9 lanes of 2 GiB each did not fit a 14 GiB VM. So of the machines a job may go to, after placement pressure, the one
   with the most **real room** goes first: its lane room, only as far as its **memory room** holds jobs (its memory over its
@@ -15153,7 +15155,8 @@ memory total and available (available, not free), and swap total and used where 
   memory in use less the page cache it could drop, by job id (`jobMemoryBytes`). A scope outside the cgroup whose limit the
   reading is (a sibling of the hopper's own unit with a `MemoryMax`) is not in that cgroup's use, but takes the same
   machine's memory: it is taken off the memory available. A client target's client says the same in its `/release`
-  answer, checked by `resourcesOf`; an ssh target says none. What the scopes hold for jobs with no lane in use there — a
+  answer, checked by `resourcesOf`. An ssh target's probe prints each scope of its user manager (`cgj <dir> cur=<n> i=<n>
+  peak=<n> usec=<n> oom=<n>`, part 13), read the same way. What the scopes hold for jobs with no lane in use there — a
   job on its own wait, parked, or queued to resume, whose builds still run — is the machine's **waiting memory**.
 - **its kernel** (issue #2499): on Linux each reading names its kernel's boot id (`bootId`); an ssh target's probe prints
   it as `boot <id>`. Under a cgroup limit the meter also says the kernel's own memory (`kernelMemTotalBytes`,
@@ -19799,8 +19802,9 @@ job, or at a machine that is full, could not see which job holds what. Three dec
    reap (`memory.peak`, `cpu.stat` `usage_usec`, `memory.events` `oom_kill`) and says them as `jobUse`, per job id, with
    the CPU cores the scope kept busy since the read before (`cpuCores`; none at its first read, and a read sooner than a
    second after keeps the one before). A client's reading is checked field by field before it is believed
-   (`src/machines/resources.ts`). No second reader and no new probe: a machine with no systemd user manager, an ssh
-   target and an older client say none.
+   (`src/machines/resources.ts`). No second reader and no new probe: an ssh target's probe prints the same files for each
+   scope (issue #2499 part 13), with no cores busy, since it reads each scope once. A machine with no systemd user manager
+   and an older client say none.
 2. *Where it shows.* The job's parts list: one part `resources-now:<machine>` in the machines group, status `running`,
    "Memory <n> now, peak <n>, CPU <n> cores", and the CPU time so far, the OOM kills and the machine
    (`resourcesNow` in `src/domain/job-resources.ts`). `GET /api/jobs/:id/bom` reads the machines' last readings only for

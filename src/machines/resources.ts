@@ -5,16 +5,19 @@
 // also prints each cgroup on its own path with a memory limit, and its user manager's (issue #2499): a seat's container
 // or a slice's MemoryMax; the tightest is its memory, as this machine's meter reads it.
 import { nodeFloorOf } from '../client/node-floor.ts';
-import { pressureOf } from '../client/resources.ts';
+import { pressureOf, type OomCount } from '../client/resources.ts';
 import { WINDOWS_LINK_URL, type JobUseNow, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
 
 const MARK = 'hopper-res ';
 
 /** What an ssh target's probe runs: nothing printed where there is no /proc (the reading is then absent). */
-export const RESOURCES_COMMAND = `if [ -r /proc/stat ]; then { head -n1 /proc/stat; sleep 1; head -n1 /proc/stat; cat /proc/loadavg;`
-  + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; echo boot $(cat /proc/sys/kernel/random/boot_id); cat /proc/pressure/memory;`
-  + ` p=$(sed -n 's/^0:://p' /proc/self/cgroup); u=$(id -u); for d in $(while :; do echo "$p"; case $p in /|'') break;; esac; p=\${p%/*}; [ -n "$p" ] || p=/; done) /user.slice/user-$u.slice/user@$u.service;`
-  + ` do f=/sys/fs/cgroup\${d%/}; [ -r $f/memory.max ] || continue; echo cg $d $(cat $f/memory.max) $(cat $f/memory.current) $(sed -n 's/^inactive_file //p' $f/memory.stat); sed "s|^|cgp $d |" $f/memory.pressure; done;`
+export const RESOURCES_COMMAND = `if [ -r /proc/stat ]; then { p=$(sed -n 's/^0:://p' /proc/self/cgroup); u=$(id -u); ds=$(while :; do echo "$p"; case $p in /|'') break;; esac; p=\${p%/*}; [ -n "$p" ] || p=/; done);`
+  + ` t() { for d in $ds; do f=/sys/fs/cgroup\${d%/}; [ -r $f/cpu.max ] && read q r < $f/cpu.max && [ "$q" != max ] && echo ct$1 $d $(sed -n 's/^nr_periods //p;s/^nr_throttled //p' $f/cpu.stat); done; };`
+  + ` head -n1 /proc/stat; t 0; sleep 1; head -n1 /proc/stat; t 1; cat /proc/loadavg;`
+  + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; echo boot $(cat /proc/sys/kernel/random/boot_id); cat /proc/pressure/memory; sed -n 's/^oom_kill /oom /p' /proc/vmstat;`
+  + ` m=$(printf '%s\\n' $ds | grep -m1 '/user@[0-9]*\\.service$') && x= || { m=/user.slice/user-$u.slice/user@$u.service; x=$m; };`
+  + ` for d in $ds $x; do f=/sys/fs/cgroup\${d%/}; [ -r $f/memory.max ] || continue; echo cg $d $(cat $f/memory.max) $(cat $f/memory.current) $(sed -n 's/^inactive_file //p' $f/memory.stat); sed "s|^|cgp $d |" $f/memory.pressure; sed -n "s|^oom_kill |cgo $d |p" $f/memory.events; done;`
+  + ` for f in /sys/fs/cgroup$m/*.slice/hopper-job-*.scope; do [ -r $f/memory.current ] || continue; echo cgj \${f#/sys/fs/cgroup} cur=$(cat $f/memory.current) $(sed -n 's/^inactive_file /i=/p' $f/memory.stat) $(sed 's/^/peak=/' $f/memory.peak) $(sed -n 's/^usage_usec /usec=/p' $f/cpu.stat) $(sed -n 's/^oom_kill /oom=/p' $f/memory.events); done;`
   + ` nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
 
 /** Busy and total jiffies of a `cpu` line: iowait counts as idle; guest time is already in user. */
@@ -28,7 +31,7 @@ function jiffies(line: string): { busy: number; total: number } | undefined {
 
 /** The resources in what RESOURCES_COMMAND printed; undefined when it printed none. */
 export function readResources(stdout: string): ResourceReading | undefined {
-  const lines = stdout.split('\n').filter((l) => l.startsWith(MARK)).map((l) => l.slice(MARK.length));
+  const lines = linesOf(stdout);
   const mem = new Map(lines.flatMap((l) => { const m = /^(\w+):\s+(\d+)\s*kB/.exec(l); return m ? [[m[1]!, Number(m[2]) * 1024] as const] : []; }));
   const total = mem.get('MemTotal');
   const available = mem.get('MemAvailable');
@@ -44,15 +47,22 @@ export function readResources(stdout: string): ResourceReading | undefined {
   const limited = cgroupLimitOf(lines, total);
   const psi = pressureOf((limited ? cgroupPressure(lines, limited.dir) : undefined) ?? lines.join('\n'));
   const boot = bootOf(lines.map((l) => /^boot (\S+)\s*$/.exec(l)?.[1]).find((b) => b));
+  const throttled = throttleOf(lines);
+  const scopes = jobScopesOf(lines);
+  const use = Object.fromEntries(scopes.filter((s) => Object.keys(s.use).length).map((s) => [s.id, s.use]));
+  const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...(Object.keys(use).length ? { jobUse: use } : {}) } : {};
   const cpu = {
     cores,
     ...(busy !== undefined ? { cpuBusyFrac: busy } : {}),
+    ...(throttled !== undefined ? { cpuThrottledFrac: throttled } : {}),
     ...(load ? { load: [Number(load[1]), Number(load[2]), Number(load[3])] as [number, number, number] } : {}),
   };
   if (limited) {
+    // A scope outside the limited cgroup is not in its use, but takes the same machine's memory, as this machine's meter counts it.
+    const outside = scopes.filter((s) => limited.dir !== '/' && s.dir !== limited.dir && !s.dir.startsWith(`${limited.dir}/`)).reduce((n, s) => n + s.bytes, 0);
     return {
-      ...cpu, memTotalBytes: limited.total, memAvailableBytes: limited.available, container: true,
-      kernelMemTotalBytes: total, kernelMemAvailableBytes: available, ...boot, ...(psi ? { memPressure: psi } : {}),
+      ...cpu, memTotalBytes: limited.total, memAvailableBytes: Math.max(0, limited.available - outside), container: true,
+      kernelMemTotalBytes: total, kernelMemAvailableBytes: available, ...jobs, ...boot, ...(psi ? { memPressure: psi } : {}),
     };
   }
   return {
@@ -60,7 +70,7 @@ export function readResources(stdout: string): ResourceReading | undefined {
     memTotalBytes: total, memAvailableBytes: available,
     ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
     ...(wsl ? { wsl: true as const, ...(free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}) } : {}),
-    ...boot,
+    ...jobs, ...boot,
     ...(psi ? { memPressure: psi } : {}),
   };
 }
@@ -80,6 +90,59 @@ function cgroupLimitOf(lines: string[], kernelTotal: number): { dir: string; tot
     if (!tightest || available < tightest.available) tightest = { dir: m[1]!, total, available };
   }
   return tightest;
+}
+
+/** The lines RESOURCES_COMMAND printed, without their mark. */
+const linesOf = (stdout: string): string[] => stdout.split('\n').filter((l) => l.startsWith(MARK)).map((l) => l.slice(MARK.length));
+
+/**
+ * Issue #2499 part 13: the OOM kill count an ssh target printed, of the cgroup whose limit it reads (`cgo <dir> <n>`), else
+ * the kernel's (`oom <n>`). A count is a counter: the attached machine compares it with its probe before (`oomWatch`).
+ */
+export function readOomKills(stdout: string): OomCount | undefined {
+  const lines = linesOf(stdout);
+  const total = Number(/^MemTotal:\s+(\d+)\s*kB/m.exec(lines.join('\n'))?.[1]) * 1024;
+  const limited = total > 0 ? cgroupLimitOf(lines, total) : undefined;
+  const of = limited?.dir ?? 'kernel';
+  const at = limited ? `cgo ${limited.dir} ` : 'oom ';
+  const count = lines.map((l) => (l.startsWith(at) && /^\d+\s*$/.test(l.slice(at.length)) ? Number(l.slice(at.length)) : undefined)).find((n) => n !== undefined);
+  return count !== undefined ? { of, count } : undefined;
+}
+
+/**
+ * Issue #2499 part 13: of each cgroup with a CPU quota on an ssh target's path, the share of its periods throttled in the
+ * probe's second (`ct0` before it, `ct1` after: `<dir> <nr_periods> <nr_throttled>`); the most of them. None with no quota.
+ */
+function throttleOf(lines: string[]): number | undefined {
+  const at = (n: 0 | 1) => new Map(lines.flatMap((l) => {
+    const m = /^ct([01]) (\/\S*) (\d+) (\d+)\s*$/.exec(l);
+    return m && Number(m[1]) === n ? [[m[2]!, { periods: Number(m[3]), throttled: Number(m[4]) }] as const] : [];
+  }));
+  const before = at(0);
+  let most: number | undefined;
+  for (const [dir, { periods, throttled }] of at(1)) {
+    const b = before.get(dir);
+    if (b && periods > b.periods && throttled >= b.throttled) most = Math.max(most ?? 0, Math.min(1, (throttled - b.throttled) / (periods - b.periods)));
+  }
+  return most;
+}
+
+/**
+ * Issue #2499 part 13: each job scope (`hopper-job-<id>.scope`) of an ssh target's systemd user manager, as its probe printed
+ * it (`cgj <dir> cur=<n> [i=<n>] [peak=<n>] [usec=<n>] [oom=<n>]`): its memory in use less the page cache it could drop, and
+ * what it used so far. No CPU cores busy: a probe reads a scope once.
+ */
+function jobScopesOf(lines: string[]): { id: string; dir: string; bytes: number; use: JobUseNow }[] {
+  return lines.flatMap((l) => {
+    const m = /^cgj (\/\S*\/hopper-job-([A-Za-z0-9_-]{1,64})\.scope)((?: [a-z]+=\d+)*)\s*$/.exec(l);
+    if (!m) return [];
+    const f = new Map([...m[3]!.matchAll(/ ([a-z]+)=(\d+)/g)].map((x) => [x[1]!, Number(x[2])]));
+    const cur = f.get('cur');
+    if (cur === undefined) return [];
+    const peak = f.get('peak'), usec = f.get('usec'), oom = f.get('oom');
+    const use: JobUseNow = { ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}) };
+    return [{ id: m[2]!, dir: m[1]!, bytes: Math.max(0, cur - (f.get('i') ?? 0)), use }];
+  });
 }
 
 /** The memory pressure lines an ssh target printed for one cgroup (`cgp <dir> <line>`); undefined when none. */
