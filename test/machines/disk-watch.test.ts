@@ -3,7 +3,7 @@
 // machine is where it starts, so a restart tells nothing twice. Pure: no store, no clock.
 import { describe, expect, it } from 'vitest';
 import type { MachineSnapshot } from '../../src/domain/types.ts';
-import { createDiskWatch, type DiskEvent } from '../../src/machines/disk-watch.ts';
+import { createDiskWatch, toldOf, type DiskEvent } from '../../src/machines/disk-watch.ts';
 
 const GIB = 1024 ** 3;
 const at = (min: number) => new Date(Date.parse('2026-10-22T10:00:00.000Z') + min * 60_000).toISOString();
@@ -76,5 +76,11 @@ describe('the disk watch (issue #2494)', () => {
     w.observe([machine('l1', 50)], at(0));
     w.observe([machine('l1', 5)], at(1));
     expect(reads).toBe(1);
+  });
+
+  it('reads from the event log, newest first, the machines still told low', () => {
+    const e = (type: string, machineId: string, critical?: boolean) => ({ type, machineId, data: critical === undefined ? {} : { critical } });
+    expect(toldOf([e('machine.disk_low', 'l1', true), e('machine.disk_ok', 'l2'), e('machine.disk_low', 'l1', false), e('machine.disk_low', 'l2', false), e('machine.disk_low', 'l3', false)]))
+      .toEqual([['l1', 'critical'], ['l3', 'low']]);
   });
 });
