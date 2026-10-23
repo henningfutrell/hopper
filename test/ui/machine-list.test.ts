@@ -1,7 +1,7 @@
 // The Machines list view (ui/src/model/machine-list.ts, issue #2352), pure: a machine's badges as its card and its row show
 // them, whether it has an alert, its row's short readings, and the view mode read back from browser storage.
 import { describe, expect, it } from 'vitest';
-import { machineBadges, machineHasAlert, machineRow, nodeText, parseMachinesMode } from '../../ui/src/model/machine-list.ts';
+import { heavyStepLines, machineBadges, machineHasAlert, machineRow, nodeText, parseMachinesMode } from '../../ui/src/model/machine-list.ts';
 import type { MachineView } from '../../ui/src/model/wire.ts';
 
 const NOW = Date.parse('2026-10-21T12:00:00.000Z');
@@ -82,5 +82,25 @@ describe('a machine\'s row', () => {
 
   it('says a dash for each reading it has none of', () => {
     expect(machineRow(desk())).toEqual({ lanes: '0/3', cpu: '—', memory: '—', disk: '—', version: '—' });
+  });
+});
+
+// Issue #2622 part 7: the heavy-step gate's slots on the Machines page: which job's heavy step runs, is paused or waits
+// there, since when, and why.
+describe('a machine\'s heavy steps', () => {
+  it('say which job runs, is paused or waits, its command, how long, and why', () => {
+    const m = desk({
+      heavySteps: [
+        { jobId: 'j1', machineId: 'desk', kind: 'build', command: './gradlew test', since: '2026-10-21T11:58:00.000Z', bytes: 3 * 1024 ** 3 },
+        { jobId: 'j2', machineId: 'desk', kind: 'install', command: 'npm install', since: '2026-10-21T11:59:00.000Z', bytes: 1024 ** 3, recorded: true, paused: '2026-10-21T11:59:30.000Z', reason: 'desk is under memory pressure' },
+        { jobId: 'j3', machineId: 'desk', kind: 'build', command: './gradlew build', since: '2026-10-21T11:59:50.000Z', waiting: true, reason: 'desk runs 2 JVM builds' },
+      ],
+    } as unknown as Partial<MachineView>);
+    expect(heavyStepLines(m, NOW)).toEqual([
+      'job j1 runs ./gradlew test (JVM build, 3 GiB kept), for 2m 0s',
+      'job j2 is paused: npm install (install, 1 GiB kept, its repository\'s recorded peak), for 30s: desk is under memory pressure',
+      'job j3 waits to run ./gradlew build (JVM build), for 10s: desk runs 2 JVM builds',
+    ]);
+    expect(heavyStepLines(desk(), NOW)).toEqual([]);
   });
 });
