@@ -329,6 +329,17 @@ export interface Template {
 export const approvalCovers = (t: Template, jobId: string | undefined): boolean =>
   t.approval !== undefined && (t.approval.jobs === undefined || (jobId !== undefined && t.approval.jobs.includes(jobId)));
 
+/**
+ * The template with its approval for some jobs' runs widened to the jobs that run them again (issue #2639 part 2,
+ * `later`: src/domain/rerun-chain.ts), so a rerun gets no run card of its own. The same template when nothing widens.
+ */
+export function withReruns<T extends Template>(t: T, later: (jobId: string) => string[]): T {
+  const jobs = t.approval?.jobs;
+  if (!t.approval || !jobs) return t;
+  const more = jobs.flatMap(later).filter((id, i, all) => !jobs.includes(id) && all.indexOf(id) === i);
+  return more.length ? { ...t, approval: { ...t.approval, jobs: [...jobs, ...more] } } : t;
+}
+
 /** An egress host (issue #1875): a lowercase DNS name or IPv4 address, `:`, and a port from 1 to 65535. */
 const EGRESS_HOST = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*:([1-9][0-9]{0,4})$/;
 
