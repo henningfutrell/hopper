@@ -20998,6 +20998,14 @@ runs, and a parked job with such a copy can resume on any machine.
   machine lacked. A job that resumes elsewhere holds no pane on any machine, so the decider holds it off a machine a person
   drained and one with an address problem, as a new job (`opensPane`, `src/decider/assign.ts`); a job that resumes in its
   own pane still returns there. After three such moves (`MAX_NO_WAY_MOVES`) it fails as before.
+  **The remote out of reach** (issue #2639). A restore during a network outage could not fetch its checkpoint's base, said
+  `the checkpoint's base … is not on the remote`, and failed; the failure assessor ran its item again as a new job, so
+  the work after the last push, the session and the job's approvals were lost. The restore now asks the remote
+  (`git ls-remote origin HEAD`) when the base is not fetched: when the remote does not answer, it prints
+  `hopper: the remote is out of reach: …` (`RESTORE_REMOTE_OUT_OF_REACH`, the executor's failure says `remoteOutOfReach`),
+  and the job goes back to the queue as above — `the remote out of reach there` in its reason, counted apart from the
+  no-way moves, three at most — and that machine is held for ten minutes, so the same checkpoint is restored after the
+  hold, on that machine or another. A base the remote answers without is not on it: the job fails as before.
 - **The route.** `GET /job/checkpoint/:part` (`src/http/job-checkpoint.ts`) serves only the job's own checkpoint, only
   while it runs resuming elsewhere: 401 a token that is no running job's, 409 a job not resuming elsewhere now, 404 a part
   it does not hold. It changes nothing and records nothing.
