@@ -15148,10 +15148,10 @@ memory total and available (available, not free), and swap total and used where 
   `kernelMemAvailableBytes`), so the decider counts the machines on one host as one **host pool** ("The memory floor").
 - **its memory pressure** (issue #2499): PSI's `some` and `full` avg10 (`memPressure`), of the cgroup whose limit it reads,
   else the kernel's; an ssh target's probe prints `/proc/pressure/memory`. Absent where there is no PSI. The decider reads it
-  ("The memory floor"); no machine sample keeps it yet.
+  ("The memory floor"); each machine sample keeps `someAvg10` as a share (`mem_pressure`, tenant migration 96).
 - **its CPU throttle** (issue #2499): the share of CPU periods a CPU quota of its cgroup or one above it throttled since the
   read before (`cpuThrottledFrac`), the most of them; absent with no quota and at the first read. The decider reads it
-  ("The memory floor", "The CPU throttle"); no machine sample keeps it yet.
+  ("The memory floor", "The CPU throttle"); each machine sample keeps it (`cpu_throttled`, tenant migration 96).
 - Per lane (an agent's process tree): not built; a job's scope is the nearest.
 
 **Recording.** Each user runtime runs a **resource recorder** (`src/machines/history.ts`), on the usage recorder's loop
@@ -15167,15 +15167,17 @@ machines for 90 days are about 520 000 rows, aggregated in SQL per step.
 the usage graph's (`range` or `from`/`to`, `tz`); no saved view, default the last day. Its **resource step** is finer
 than the usage graph's, since a machine is read every minute (`resourceStepMs`): 15 minutes up to a day, an hour up to
 4, 6 hours up to 14, a day up to 60, else a week. Per machine and step, each resource's peak share: CPU busy, memory
-used (1 − available / total), swap used, disk used, lanes in use / lane cap. Gaps by the usage history's rule: a
+used (1 − available / total), swap used, disk used, lanes in use / lane cap, and (issue #2499) memory pressure (`some`
+avg10 / 100) and CPU throttle where the sample has them. Gaps by the usage history's rule: a
 stretch with no sample longer than 3 × the machine's usual spacing (at least 5 minutes).
 
 **UI.** The usage graph card (`ui/src/components/usage-graph-card.tsx`) draws it, with its own lines (`linesOf`,
 `ui/src/model/machine-history.ts`) and redrawn on `machine.recorded`. On Machines, each card says CPU and memory now,
 draws a CPU sparkline of the last day, and *Resources, lanes and usage* opens its graph: CPU, memory, swap, disk and lanes in
-use, one colour each (lanes dashed), with the usage that limits it and its lane changes (issue #688, "Lane tuning"). On the Usage page, *Machine resources over time* sits under the usage limits, at
+use, one colour each (lanes dashed), memory pressure and CPU throttle dotted (issue #2499), with the usage that limits it and its lane changes (issue #688, "Lane tuning"). On the Usage page, *Machine resources over time* sits under the usage limits, at
 the same day range as their usage line: every machine one colour, CPU solid, memory dashed, disk dotted; swap and lanes
-hidden until shown from the legend.
+hidden until shown from the legend, and so are memory pressure and CPU throttle. A card's CPU line also says its CPU
+throttle, and its memory line its memory pressure and its last OOM kill (issue #2499).
 
 **WSL and the memory alert** (issue #868). On a Windows machine whose clients run in WSL 2, the VM held about 15 GB at
 rest and Windows ran out of memory, while the samples showed no pressure: Linux counts the VM's page cache as available,
