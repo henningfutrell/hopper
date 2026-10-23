@@ -30,6 +30,15 @@ describe('herdr-claude executor: a checkpoint restore with no way to the hopper 
     expect(herdr.agentStarts).toHaveLength(0);
   });
 
+  // Issue #2639: the remote out of reach (a network outage) is no fault of the checkpoint: it is tried again later.
+  it('the remote out of reach: fails at once, marked to be tried again later from the same checkpoint', async () => {
+    const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], restore: 'remote-out-of-reach' }, { jobWorktrees: true });
+    const out = await executor.resume!(contextFor(moved()).ctx, 'The job moved.');
+    expect(out).toMatchObject({ kind: 'failed', remoteOutOfReach: true, error: expect.stringContaining('the remote is out of reach') });
+    expect(out).not.toHaveProperty('noWayToHopper');
+    expect(herdr.agentStarts).toHaveLength(0);
+  });
+
   // Issue #2428: a checkpoint whose patch does not apply whole no longer fails the job.
   it('a patch that applied only in part: the job goes on, its progress names what was left out, and the agent is told first', async () => {
     const { herdr, executor } = setup({ turns: [DONE], repositories: [CWD], restore: 'partly' }, { jobWorktrees: true });
@@ -50,6 +59,7 @@ describe('herdr-claude executor: a checkpoint restore with no way to the hopper 
     const out = await executor.resume!(contextFor(moved()).ctx, 'The job moved.');
     expect(out).toMatchObject({ kind: 'failed', error: expect.stringContaining('the checkpoint could not be restored') });
     expect(out).not.toHaveProperty('noWayToHopper');
+    expect(out).not.toHaveProperty('remoteOutOfReach');
     expect(herdr.restores).toHaveLength(1);
   });
 });

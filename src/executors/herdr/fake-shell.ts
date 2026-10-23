@@ -6,12 +6,13 @@
 import { TERMINAL_LINE_MAX } from './client.ts';
 import { EXIT_CODE_COMMAND, EXIT_CODE_MARK, OOM_KILLS_MARK } from './exited.ts';
 
-export type FakeRestore = 'restored' | 'partly' | 'kept' | 'failed' | 'no-way';
+export type FakeRestore = 'restored' | 'partly' | 'kept' | 'failed' | 'no-way' | 'remote-out-of-reach';
 
 /** What the next restore says: the first of a list, the last one kept. */
 function nextRestore(o: FakeShellOptions): string[] {
   const r = Array.isArray(o.restore) ? (o.restore.length > 1 ? o.restore.shift()! : o.restore[0]) : o.restore;
   if (r === 'partly') return ['hopper: left out src/a.ts', 'hopper: kept the whole patch in /w/.git/worktrees/j/hopper-checkpoint.patch', 'hopper-restore-partly'];
+  if (r === 'remote-out-of-reach') return ['hopper: the remote is out of reach: could not fetch the checkpoint\'s base', 'hopper-restore-failed'];
   return r === 'no-way' ? ['hopper: the job has no way to the hopper: HOPPER_URL is not set', 'hopper-restore-failed'] : [`hopper-restore-${r ?? 'restored'}`];
 }
 

@@ -13,7 +13,7 @@
 //     When the client is cut off from the hopper for longer than its max isolation
 //     Then job A's process is stopped, and job B's still runs
 //     When the link is back and the hopper probes the client
-//     Then the probe hears that job A was stopped, after how long out of reach, and the hopper logs it
+//     Then a probe hears that job A was stopped, after how long out of reach, and the hopper logs it
 //     And the next probe hears no stop again
 //   Scenario: a max isolation of 0 turns the stop off
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -87,7 +87,8 @@ describe.runIf(existsSync('/proc/self/environ'))('the isolation stop (issue #752
     expect(alive(b)).toBe(true);
     client.cut(false);
     await waitFor(() => client!.link(), { timeoutMs: 5000, what: 'the client to dial in again' });
-    expect(await keep(client.transport(TOKEN), () => [])).toMatchObject({ online: true });
+    // Job A's process dies while its reap still runs; the client says the stop once the reap ends (issue #2650).
+    await waitFor(async () => (await keep(client!.transport(TOKEN), () => [])).online && lines.some((l) => l.includes(A)), { timeoutMs: 5000, what: 'a probe to hear the stop' });
     expect(lines.filter((l) => l.includes(A))).toEqual([expect.stringMatching(/^hopper: client studio: stopped job job-752-isolated-a at \S+, cut off from the hopper for \d+ s$/)]);
     expect((await clientRunningRelease(client.transport(TOKEN), [])).isolationStops).toBeUndefined();
   });
