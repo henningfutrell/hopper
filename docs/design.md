@@ -13521,7 +13521,7 @@ Verification: `test/integration/auto-park.test.ts` (parked by a person, picked u
 up is 409, it stays parked with one `job.unparked`, and the answer resumes it; a job auto-parked on its proposal: 409),
 `test/integration/thread-ask.test.ts`, `test/ui/auto-park.test.ts`, `test/ui/parked-view.test.ts`.
 
-### The heavy-step gate (issue #2622 part 3, 2026-10-23)
+### The heavy-step gate (issue #2622 parts 3, 4, 2026-10-23)
 
 Admission counts a lane's memory when the lane opens. On one WSL VM (14 GB) lanes were admitted while their agents were
 light, about 0.4 GB each; within 2 minutes four of them started a JVM build, each up to ~5 GB, and the VM ran out of
@@ -13555,7 +13555,17 @@ memory. Nothing gated the build itself. Now a **heavy step** asks first.
   a job that stopped renewing (it died, its machine went away) holds no slot after its lease. Only the job that took a slot
   renews or lets it go. The route records nothing and changes no job, question, webhook or setting.
 
-Not built in this part: memory demand from a job's or a repository's history before the heavy step, the shed on
+- **Demand from history** (part 4, `heavyNeedOf`). A step's need is what its repository's recent jobs took at their peak:
+  the most of the `memoryPeakBytes` that `job.resources_used` recorded (each job's scope's `memory.peak` at its reap) for
+  the last 10 jobs of its repository (`HEAVY_HISTORY_JOBS`, the job's `source.repo`, in any case) in the last 30 days
+  (`HEAVY_HISTORY_DAYS`). So a 3 GiB history reserves 3 GiB, for the 2 minutes the reading does not show the step yet, and
+  in the step's own need. With no peak recorded, or a history that cannot be read, the need is its kind's estimate
+  (`HEAVY_STEP_GIB`). The read goes through the read pool (`memoryPeaks`, `src/store/events.ts`), before the gate looks at
+  its slots: the gate does not wait between its look and its new slot. The wait names the recorded peak: `and this step
+  needs 6 GiB (its repository's recorded peak) over its floor of 1.4 GiB`. A job's peak holds its agent too (about 0.4
+  GiB): the reserve is a little high, never low. The JVM build cap stays at 5 GiB a build.
+
+Not built yet: the shed on
 pressure (available under 2 GB, PSI `some avg60` over 10, swap over 50%: pause the newest heavy step), Windows' held
 memory and guest allocation-failure bursts as signals, a job limit sized by the host pool's lanes.
 
@@ -13564,7 +13574,9 @@ available stays over the floor; the ramp; the first step; an 8 GiB machine), `te
 release, lease, only the job's own, light), `test/github-proxy/heavy-script.test.ts` (the client: wait then run, light, a
 hopper that says no or cannot be reached, nested, usage), `test/client/heavy-shims.test.ts` (the shims and the guards for
 real, the terminal line), `test/integration/heavy-gate.test.ts` (three builds at once through the real daemon: two run, the
-third waits with the reason, then runs).
+third waits with the reason, then runs). Part 4: `heavyNeedOf` in `test/decider/heavy-steps.test.ts`, the reserve and its
+wait in `test/engine/heavy-gate.test.ts`, the read in `test/store/memory-peaks.test.ts`, and a repository that peaked at 6
+GiB through the real daemon in `test/integration/heavy-gate.test.ts`.
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 

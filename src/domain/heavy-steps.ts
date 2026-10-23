@@ -12,6 +12,20 @@ export const HEAVY_STEP_GIB: Readonly<Record<HeavyKind, number>> = { build: 3, i
 /** A JVM build at its worst, as measured with a project's own heap settings: how many a host's memory holds at once. */
 export const BUILD_WORST_GIB = 5;
 
+const GIB = 1024 ** 3;
+/** Demand from history (part 4): the recent jobs of a repository whose peaks a step's need reads, and how far back. */
+export const HEAVY_HISTORY_JOBS = 10;
+export const HEAVY_HISTORY_DAYS = 30;
+
+/**
+ * What a heavy step of `kind` needs (part 4): the most of `peaks`, the memory its repository's recent jobs took at their
+ * peak (`job.resources_used`), so a 3 GiB history reserves 3 GiB; with no peak recorded, the estimate of its kind.
+ */
+export function heavyNeedOf(kind: HeavyKind, peaks: readonly number[]): { bytes: number; recorded: boolean } {
+  const peak = Math.max(0, ...peaks);
+  return peak > 0 ? { bytes: peak, recorded: true } : { bytes: HEAVY_STEP_GIB[kind] * GIB, recorded: false };
+}
+
 /** What the job's client is told while it waits, and how often it asks again. */
 export const HEAVY_RETRY_S = 5;
 
