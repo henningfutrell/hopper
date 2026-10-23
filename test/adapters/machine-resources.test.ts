@@ -37,6 +37,10 @@ describe('resources an ssh target prints', () => {
     expect(readResources(printed.replace('hopper-res 8', `hopper-res MemFree:        ${1 * GIB / KIB} kB\nhopper-res 8`))).not.toHaveProperty('vmHeldBytes');
   });
 
+  it('its kernel\'s boot id (issue #2499), so machines on one host are one pool', () => {
+    expect(readResources(printed.replace('hopper-res 8', 'hopper-res boot 0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b\nhopper-res 8'))).toMatchObject({ bootId: '0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b' });
+  });
+
   it('no resource lines (a machine with no /proc): none', () => {
     expect(readResources('/home/far\nhopper-disk 1 1\nhopper-work-tree-ok')).toBeUndefined();
   });
@@ -58,6 +62,10 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...r, memTotalBytes: 'x' })).toBeUndefined();
     expect(resourcesOf({ ...r, cores: 0 })).toBeUndefined();
     expect(resourcesOf({ ...r, memAvailableBytes: 9 * GIB })).toBeUndefined();
+    // Issue #2499: its kernel's boot id and memory are kept when sane, else dropped.
+    const kernel = { bootId: 'b0a1-c2d3', kernelMemTotalBytes: 14 * GIB, kernelMemAvailableBytes: 3 * GIB };
+    expect(resourcesOf({ ...r, ...kernel })).toEqual({ ...r, ...kernel });
+    expect(resourcesOf({ ...r, bootId: 'x'.repeat(65), kernelMemTotalBytes: 1, kernelMemAvailableBytes: 2 })).toEqual(r);
     // A CPU busy outside 0..1 or a bad load is dropped, the rest kept.
     expect(resourcesOf({ ...r, cpuBusyFrac: 2, load: ['a'] })).toEqual({ cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB });
   });
