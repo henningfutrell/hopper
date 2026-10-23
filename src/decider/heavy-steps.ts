@@ -12,8 +12,8 @@ const GIB = 1024 ** 3;
 /** A heavy step that started less than this ago has not taken its memory yet: the reading does not show it. */
 export const HEAVY_RAMP_MS = 2 * 60_000;
 
-/** A heavy step that runs: its job, machine and kind, the memory it keeps, and when it got its slot. */
-export interface HeavyStep { id: string; jobId: string; machineId: string; kind: HeavyKind; bytes: number; command: string; since: string }
+/** A heavy step that runs: its job, machine and kind, the memory it keeps (`recorded`: its repository's peak, part 4), and when it got its slot. */
+export interface HeavyStep { id: string; jobId: string; machineId: string; kind: HeavyKind; bytes: number; recorded?: boolean; command: string; since: string }
 
 /** The memory a heavy step counts against: one machine's, or one kernel's that a host pool shares. */
 export interface HeavyHost { key: string; label: string; totalBytes: number; availableBytes: number; floorBytes: number }
@@ -39,8 +39,11 @@ export function heavyHostOf(m: MachineSnapshot, all: readonly MachineSnapshot[],
 
 const steps = (n: number): string => `${n} heavy step${n === 1 ? '' : 's'}`;
 
-/** Whether a heavy step of `kind`, which needs `needBytes`, runs now on `host`, where `held` run; else why it waits. */
-export function heavyAdmits(host: HeavyHost, held: readonly HeavyStep[], kind: HeavyKind, needBytes: number, at: number): { ok: true } | { ok: false; reason: string } {
+/**
+ * Whether a heavy step of `kind`, which needs `needBytes` (`recorded`: its repository's recorded peak, part 4), runs now on
+ * `host`, where `held` run; else why it waits.
+ */
+export function heavyAdmits(host: HeavyHost, held: readonly HeavyStep[], kind: HeavyKind, needBytes: number, at: number, recorded = false): { ok: true } | { ok: false; reason: string } {
   if (kind === 'build') {
     const cap = Math.max(1, Math.floor((host.totalBytes - host.floorBytes) / (BUILD_WORST_GIB * GIB)));
     const builds = held.filter((s) => s.kind === 'build').length;
@@ -57,6 +60,6 @@ export function heavyAdmits(host: HeavyHost, held: readonly HeavyStep[], kind: H
   if (host.availableBytes - kept - needBytes >= host.floorBytes) return { ok: true };
   return {
     ok: false,
-    reason: `${host.label} has ${gib(host.availableBytes)} available${lately.length ? `, ${gib(kept)} of it kept for ${steps(lately.length)} started lately` : ''}, and this step needs ${gib(needBytes)} over its floor of ${gib(host.floorBytes)}`,
+    reason: `${host.label} has ${gib(host.availableBytes)} available${lately.length ? `, ${gib(kept)} of it kept for ${steps(lately.length)} started lately` : ''}, and this step needs ${gib(needBytes)}${recorded ? ' (its repository\'s recorded peak)' : ''} over its floor of ${gib(host.floorBytes)}`,
   };
 }

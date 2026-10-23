@@ -66,3 +66,36 @@ describe('the heavy-step gate (issue #2622 part 3)', () => {
     expect(bare.gate.held()).toEqual([]);
   });
 });
+
+describe('the heavy-step gate reserves what history says (issue #2622 part 4)', () => {
+  function withPeaks(peaks: (j: Job) => Promise<number[]>, available = 10) {
+    const machines = [machine({ maxLanes: 8, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: available * GIB } })];
+    let n = 0;
+    const gate = createHeavyGate({ clock: { now: () => new Date(NOW) }, idGen: () => `slot-${++n}`, machines: async () => machines, machineOf: () => 'local', peaks });
+    const at = (i: number, repo = 'o/app'): Job => job(`j${i}`, { status: 'running', laneId: `local/lane-${i}`, source: { source: 'github', kind: 'issue', key: `k${i}`, repo } });
+    return { gate, at };
+  }
+
+  it('a repository whose jobs peaked at 3 GiB reserves about 3 GiB for its step, the most of its recent peaks', async () => {
+    const { gate, at } = withPeaks(async (j) => (j.source?.repo === 'o/app' ? [2.5 * GIB, 3 * GIB, 1 * GIB] : []));
+    await gate.take(at(1), ['npm', 'install']);
+    await gate.take(at(2, 'o/new'), ['npm', 'install']);
+    expect(gate.held().map((s) => [s.jobId, s.bytes, s.recorded])).toEqual([['j1', 3 * GIB, true], ['j2', 1 * GIB, false]]);
+  });
+
+  it('the reserve from history decides the wait, and the wait says it is the recorded peak', async () => {
+    // 7 GiB available, floor 1.4 GiB, 1 GiB kept for the first install: one that needs 6 GiB does not fit, one of 1 GiB does.
+    const { gate, at } = withPeaks(async (j) => (j.source?.repo === 'o/big' ? [6 * GIB] : []), 7);
+    expect(await gate.take(at(1), ['npm', 'install'])).toHaveProperty('slot');
+    const a = await gate.take(at(2, 'o/big'), ['npm', 'install']);
+    expect(a).toHaveProperty('wait');
+    expect((a as { wait: string }).wait).toContain('this step needs 6 GiB (its repository\'s recorded peak)');
+    expect(await gate.take(at(3), ['npm', 'install'])).toHaveProperty('slot');
+  });
+
+  it('a history that cannot be read reserves the estimate', async () => {
+    const { gate, at } = withPeaks(async () => { throw new Error('postgres: down'); });
+    expect(await gate.take(at(1), ['./gradlew', 'test'])).toHaveProperty('slot');
+    expect(gate.held()[0]).toMatchObject({ bytes: 3 * GIB, recorded: false });
+  });
+});

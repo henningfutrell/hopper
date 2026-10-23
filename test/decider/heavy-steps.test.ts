@@ -4,7 +4,7 @@
 // at their worst; the rest wait, and the wait says why.
 import { describe, expect, it } from 'vitest';
 import { HEAVY_RAMP_MS, heavyAdmits, heavyHostOf, type HeavyStep } from '../../src/decider/heavy-steps.ts';
-import { HEAVY_SHIMS, heavyKindOf, heavyShimCases } from '../../src/domain/heavy-steps.ts';
+import { HEAVY_SHIMS, heavyKindOf, heavyNeedOf, heavyShimCases } from '../../src/domain/heavy-steps.ts';
 import type { MachineSnapshot } from '../../src/domain/types.ts';
 import { NOW, machine } from './support.ts';
 
@@ -126,5 +126,14 @@ describe('the heavy-step gate (issue #2622 part 3)', () => {
     const h = heavyHostOf(eight, [eight], at)!;
     expect(heavyAdmits(h, [step('a', 'build', 3, ago(HEAVY_RAMP_MS + 1))], 'build', 3 * GIB, at)).toMatchObject({ ok: false });
     expect(heavyAdmits(h, [step('a', 'build', 3, ago(HEAVY_RAMP_MS + 1))], 'install', 1 * GIB, at)).toEqual({ ok: true });
+  });
+});
+
+describe('the need of a heavy step from history (issue #2622 part 4)', () => {
+  it('is the most of the recent recorded peaks; with none, the estimate of its kind', () => {
+    expect(heavyNeedOf('build', [3 * GIB])).toEqual({ bytes: 3 * GIB, recorded: true });
+    expect(heavyNeedOf('install', [1 * GIB, 2.5 * GIB, 2 * GIB])).toEqual({ bytes: 2.5 * GIB, recorded: true });
+    expect(heavyNeedOf('build', [])).toEqual({ bytes: 3 * GIB, recorded: false });
+    expect(heavyNeedOf('install', [0])).toEqual({ bytes: 1 * GIB, recorded: false });
   });
 });

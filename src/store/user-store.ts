@@ -13,7 +13,7 @@ import { readDb } from './read-pool.ts';
 import { createDecisionRepository } from './decisions.ts';
 import { createConfigRecords } from './config.ts';
 import { createConnectedAccountRepository } from './connected-accounts.ts';
-import { createEventLog, eventsBetweenRead } from './events.ts';
+import { createEventLog, eventsBetweenRead, memoryPeaksRead } from './events.ts';
 import { createEventCursorRepository } from './event-cursors.ts';
 import { createJobRepository } from './jobs.ts';
 import { createJobStreamRepository } from './job-stream.ts';
@@ -87,7 +87,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
   const read = readDb(o.url);
   return {
     jobs,
-    reads: { jobs: (filter) => jobs.listRead(read, filter), ...createInfraPlanReads(read), eventsBetween: eventsBetweenRead(read) },
+    reads: { jobs: (filter) => jobs.listRead(read, filter), ...createInfraPlanReads(read), eventsBetween: eventsBetweenRead(read), memoryPeaks: memoryPeaksRead(read) },
     lanes: createLaneRepository(ctx),
     decisions: createDecisionRepository(ctx),
     events,

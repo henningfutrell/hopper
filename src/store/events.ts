@@ -22,6 +22,15 @@ const BETWEEN = (types: readonly EventType[]): string => `SELECT * FROM events W
 export const eventsBetweenRead = (read: ReadDb) => async (types: readonly EventType[], since: string): Promise<DomainEvent[]> =>
   (types.length === 0 ? [] : (await read.all(BETWEEN(types), ...types, since)).map(toEvent));
 
+// The peaks of one repository's jobs, newest first (issue #2622 part 4): a job's repository is in its body, read in any case.
+const PEAKS = `SELECT (e.data::jsonb->>'memoryPeakBytes')::float8 AS peak FROM events e JOIN jobs j ON j.id = e.job_id
+  WHERE e.type = 'job.resources_used' AND e.at >= ? AND e.data::jsonb->>'memoryPeakBytes' IS NOT NULL
+  AND lower(j.body::jsonb->'source'->>'repo') = lower(?) ORDER BY e.seq DESC LIMIT ?`;
+
+/** The memory peaks `job.resources_used` recorded for `repo`'s jobs since `since`, newest first, at most `limit`, off the event loop. */
+export const memoryPeaksRead = (read: ReadDb) => async (repo: string, since: string, limit: number): Promise<number[]> =>
+  (await read.all(PEAKS, since, repo, limit)).map((r) => Number(r.peak));
+
 /** The log, plus `flush`/`discard` for the transaction wrapper to call at the outermost end. */
 export interface EventLogInternals extends EventLog {
   flush(): void;

@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ResourceReading } from '../../src/domain/types.ts';
+import { ADMIN_ID } from '../../src/domain/users.ts';
 import { run, running, start, stopGitProxies } from '../support/git-proxy.ts';
 
 afterEach(stopGitProxies);
@@ -68,5 +69,17 @@ describe('the heavy-step gate (issue #2622 part 3)', () => {
     expect(await stranger.text()).toContain('no: the token is not a job\'s of this hopper');
     const bad = await ask({ op: 'take', argv: [] });
     expect(bad.status).toBe(400);
+  });
+});
+
+describe('the heavy-step gate reserves what history says (issue #2622 part 4)', () => {
+  it('an earlier job of the repository peaked at 6 GiB: its next step reserves 6 GiB, and a second one waits for it', async () => {
+    const { t, ask } = await atWork();
+    const store = t.app.user(ADMIN_ID).store;
+    const earlier = store.jobs.create({ executor: 'holder', payload: {} }, 50, { source: 'github', kind: 'issue', key: 'earlier', repo: 'Octo/Tools' });
+    store.events.append({ type: 'job.resources_used', jobId: earlier.id, data: { memoryPeakBytes: 6 * GIB } });
+    expect(await (await ask({ op: 'take', argv: ['npm', 'ci'] })).json()).toHaveProperty('slot');
+    const second = await (await ask({ op: 'take', argv: ['npm', 'ci'] })).json() as { wait: string };
+    expect(second.wait).toBe('local has 10 GiB available, 6 GiB of it kept for 1 heavy step started lately, and this step needs 6 GiB (its repository\'s recorded peak) over its floor of 1.4 GiB');
   });
 });
