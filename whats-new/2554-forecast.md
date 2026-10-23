@@ -1,0 +1,1 @@
+- You can ask the hopper where a change is on its way to production, and when each step that is left is expected to end, from how long those steps took before.
