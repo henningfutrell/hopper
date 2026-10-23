@@ -93,6 +93,22 @@ describe('a machine\'s resources', () => {
     expect(m.read().cpuBusyFrac).toBeCloseTo(0.2);
   });
 
+  // Issue #2499: a seat's container (cgroupns host) or a systemd unit's MemoryMax sets the limit on the process's own
+  // cgroup or one above it, never on the root: the seat read the VM's total, not its 4 GiB.
+  it('a limit on its own cgroup or one above it, as /proc/self/cgroup names it: the tightest, with its use', () => {
+    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+    put('proc/self/cgroup', '0::/machine.slice/libpod-seat.scope/container\n');
+    put('sys/fs/cgroup/machine.slice/memory.max', 'max\n');
+    put('sys/fs/cgroup/machine.slice/libpod-seat.scope/memory.max', `${4 * GIB}\n`);
+    put('sys/fs/cgroup/machine.slice/libpod-seat.scope/memory.current', `${Math.round(3.6 * GIB)}\n`);
+    put('sys/fs/cgroup/machine.slice/libpod-seat.scope/memory.stat', 'anon 1\ninactive_file 0\n');
+    put('sys/fs/cgroup/machine.slice/libpod-seat.scope/container/memory.max', 'max\n');
+    put('sys/fs/cgroup/machine.slice/libpod-seat.scope/container/memory.current', `${3 * GIB}\n`);
+    const r = meter().read();
+    expect(r).toMatchObject({ container: true, memTotalBytes: 4 * GIB });
+    expect(r.memAvailableBytes).toBeCloseTo(0.4 * GIB, -3);
+  });
+
   it('a cgroup with no limits (`max`) reads the host', () => {
     put('proc/meminfo', `MemTotal: ${16 * GIB / KIB} kB\nMemAvailable: ${8 * GIB / KIB} kB`);
     put('sys/fs/cgroup/memory.max', 'max\n');

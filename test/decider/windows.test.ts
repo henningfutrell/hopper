@@ -39,7 +39,7 @@ describe('a Windows job goes only to a Windows machine (issue #1350)', () => {
   it('the Windows machine full: it waits for a lane there, never the Linux machine', () => {
     const d = decide(inputs({ machines: [linux, { ...win, maxLanes: 1 }], lanes: [busy(1, 'x', { machineId: 'win-native' })], waiting: [windowsJob('w')] }), 'd1');
     expect(d.start).toEqual([]);
-    expect(d.wait).toEqual([{ jobId: 'w', reason: 'waiting for a lane: machine win-native\'s lane cap is 1, all 1 in use' }]);
+    expect(d.wait).toEqual([{ jobId: 'w', reason: 'waiting for a lane: machine win-native\'s lane cap is 1, all 1 in use; left out: fleet-l1 is not a Windows machine' }]);
   });
 
   it('pinned to a Linux machine: it waits for a Windows lane', () => {

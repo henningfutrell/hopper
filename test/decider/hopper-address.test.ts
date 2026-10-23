@@ -47,11 +47,13 @@ describe('machines whose jobs cannot reach the hopper', () => {
   it('a hold or lane wait that names the machine left also names the machines held off as not reaching the hopper', () => {
     const seats = [machine({ id: 'seat-1', addressProblem: UNREACHED }), machine({ id: 'seat-2', addressProblem: UNREACHED })];
     const off = `; held off as not reaching the hopper: seat-1 is off-network: ${UNREACHED}; seat-2 is off-network: ${UNREACHED}`;
+    // Issue #2499: a lane wait names every machine left out, those off-network too.
+    const left = `; left out: seat-1 is off-network: ${UNREACHED}; seat-2 is off-network: ${UNREACHED}`;
     const notReady = decide(inputs({ machines: [...seats, machine({ id: 'client', infraCredentials: ['.kube'] })], waiting: [job('a')], credentialHeld: ['client'] }), 'd1');
     expect(notReady.hold).toEqual([{ jobId: 'a', reason: expect.stringMatching(/^no machine running executor test is ready: client is not ready: .*; held off as/) }]);
     expect(notReady.hold[0]!.reason.endsWith(off)).toBe(true);
     const full = decide(inputs({ machines: [...seats, machine({ id: 'client', maxLanes: 0 })], waiting: [job('a')] }), 'd1');
-    expect(full.wait).toEqual([{ jobId: 'a', reason: `waiting for a lane: machine client's lane cap is 0, all 0 in use${off}` }]);
+    expect(full.wait).toEqual([{ jobId: 'a', reason: `waiting for a lane: machine client's lane cap is 0, all 0 in use${left}` }]);
     // A job pinned to the machine left is told of that machine only.
     const pinned = decide(inputs({ machines: [...seats, machine({ id: 'client', maxLanes: 0 })], waiting: [job('a', { machineId: 'client' })] }), 'd1');
     expect(pinned.wait).toEqual([{ jobId: 'a', reason: "waiting for a lane: machine client's lane cap is 0, all 0 in use" }]);

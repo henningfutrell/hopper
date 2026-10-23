@@ -174,7 +174,13 @@ same Decision. Algorithm, in order:
    the machine's (or ties and is lower), else the machine's — with its number and lanes in use
    (`waiting for a lane: machine m's lane cap is N[ (usage soft limit, used P%)], all K in use` /
    `… executor e's lane cap on m is N …` / `… usage hard limit stops executor e on m (used P%)` /
-   `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`).
+   `… machine m keeps R of its N lanes for jobs pinned to it, the other K are in use`). A job not pinned to a machine
+   is then told of every other machine that runs its executor and why it was left out (issue #2499,
+   `src/decider/wait-reason.ts`): `; left out: m2 is full: machine m2's lane cap is 2, all 2 in use; m3 is drained since
+   <time>; m4 is offline; m5 is full: usage hard limit stops executor e on m5 (used P%)` — also leaving, held (home,
+   disk, work tree, reach, credentials, herdr, template, signed out, a problem, the gate) or short of memory. A
+   **waiting for memory** reason lists the machines with no lane for it the same way. A drained or paced machine never
+   hides behind the one named.
 7b. **Preempt** (issue #1525, "Preemption"; only with `inputs.preemption`). For each job left waiting in step 7, in
    order: the running job of the lowest priority, then started last, then the lowest id, whose own priority is
    strictly below the waiting job's, that has run at least the minimum run time since it started or resumed, whose
@@ -13056,7 +13062,10 @@ never a hold, read from a machine reading taken before the burst took its memory
   available less a job's memory for each job on its lanes that is claimed or started (or resumed) less than 10 minutes
   ago (`MEMORY_RAMP_MS`: its memory is not in the reading yet), and for each job it places there. A job starts or resumes
   there only while that, less its own need, stays at or above the floor. Else it **waits**, with the reason
-  `waiting for memory: <machine> has 7 GiB available, 4 GiB of it kept for 2 jobs started lately; a new job needs 2 GiB over its floor of 1.4 GiB`.
+  `waiting for memory: <machine> has 7 GiB available, 4 GiB of it kept for 2 jobs started lately, and a new job needs 2 GiB over its floor of 1.4 GiB`,
+  each such machine after a `;`, then the machines left out (step 7, issue #2499). A job's need is the flat 2 GiB, or its
+  expected memory peak from its repository's or kind's job cost group when that is more ("Job cost profiles"): a
+  repository whose jobs peak at 3 GiB reserves 3 GiB a job.
   A wait for memory preempts nothing: preemption frees a lane, not memory. This holds for an elbow-in and a critical job
   too, and for a job resuming on its pane.
 - **WSL.** The memory available is Linux's in the VM, or Windows' own free memory (`hostMemFreeBytes`, issue #868) when
@@ -15035,7 +15044,10 @@ memory total and available (available, not free), and swap total and used where 
   the core count, each marked `hopper-res ` (`RESOURCES_COMMAND`); a machine with no /proc prints none. The second's
   wait is in the probe's background call, never in a Decision.
 - **in a container**: a meter whose cgroup (v2) sets a memory limit reads the limit as its total and its own use less
-  the page cache it could drop (`inactive_file`); a CPU quota is its cores, and CPU busy is its own `usage_usec` against
+  the page cache it could drop (`inactive_file`). The limit may sit on a cgroup above its own (issue #2499): a seat's
+  container seen from the host's cgroup namespace, or a systemd unit's `MemoryMax`. The meter walks up from the cgroup
+  `/proc/self/cgroup` names to the root and reads the tightest (least memory available), so a seat reads its 4 GiB, not
+  the VM's total; a CPU quota is its cores, and CPU busy is its own `usage_usec` against
   the quota. `container: true` says so; the card says "container limit". A container target (a command box per command) is not read,
   as its disk is not.
 - Per lane (an agent's process tree): not built.
