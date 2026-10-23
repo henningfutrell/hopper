@@ -1064,19 +1064,21 @@ Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at 
 
 ## `job.resources_used`
 
-Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used on its machine (`machineId`), read by the job's reap at its end from the scope's cgroup before it stopped the scope (issue #2498): `memoryPeakBytes`, the most memory the scope held at once (cgroup `memory.peak`); `cpuSeconds`, the CPU time of every process in it (`cpu.stat` `usage_usec`); `oomKills`, the processes in it the kernel killed for want of memory (`memory.events` `oom_kill`). Each is absent where the cgroup has none (`memory.peak` needs Linux 5.19). None where the job has no scope there: no systemd user manager, or its scope ended before the reap (a parked job's, a print-mode agent's after its turn), or a client older than this. The job's parts list shows it.
+Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used on its machine (`machineId`), read by the job's reap at its end from the scope's cgroup before it stopped the scope (issue #2498): `memoryPeakBytes`, the most memory the scope held at once (cgroup `memory.peak`); `cpuSeconds`, the CPU time of every process in it (`cpu.stat` `usage_usec`); `oomKills`, the processes in it the kernel killed for want of memory (`memory.events` `oom_kill`). Each is absent where the cgroup has none (`memory.peak` needs Linux 5.19). Part 4: `diskBytes`, what the job's scratch dir and worktrees held on its machine (`du -skx` of each), read by the same reap before it removed or kept them; absent where the job had neither there. None where the job has no scope there (no systemd user manager, or its scope ended before the reap: a parked job's, a print-mode agent's after its turn) and no scratch dir or worktree, or a client older than this. The job's parts list shows it.
 
 | field | type | required |
 |---|---|---|
 | `memoryPeakBytes` | number | no |
 | `cpuSeconds` | number | no |
 | `oomKills` | number | no |
+| `diskBytes` | number | no |
 
 ```json
 {
   "memoryPeakBytes": 3221225472,
   "cpuSeconds": 754.5,
-  "oomKills": 1
+  "oomKills": 1,
+  "diskBytes": 1073741824
 }
 ```
 

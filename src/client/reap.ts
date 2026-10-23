@@ -127,6 +127,9 @@ const REAP_SCRIPT = [
   'gone() { [ -e "$1" ] && [ ! -L "$1" ] || return 0; rm -rf "$1" 2>/dev/null; [ -e "$1" ] || return 0; chmod -R u+rwX "$1" 2>/dev/null; rm -rf "$1" 2>/dev/null; };',
   'dirs() { for d in "$n" "$o"; do [ -d "$d" ] && [ ! -L "$d" ] && printf "%s\\n" "$d"; done; };',
   `trees() { for t in "$w"/${LAYOUT.worktrees}/*/"$id" "$w"/${LAYOUT.oldWorktrees}/*-"$id"; do case $t in "$w"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };`,
+  // The disk the job's scratch dir and worktrees hold (issue #2498 part 4), read before the reap removes or keeps them: one
+  // `du -skx` per dir, so a link in it (a worktree's node_modules) counts no more than the link.
+  '{ dirs; trees; } | while IFS= read -r d; do $to du -skx "$d" 2>/dev/null; done | awk \'$1 ~ /^[0-9]+$/ { k += $1; n = 1 } END { if (n) print "hopper-disk " k }\';',
   'repos() { { dirs | while IFS= read -r d; do find "$d" -name node_modules -prune -o -name .git -print -prune; done; trees | while IFS= read -r t; do [ -e "$t/.git" ] && printf "%s\\n" "$t/.git"; done; } 2>/dev/null; };',
   ...UNPUSHED_SH,
   // The commits of a clean checkout $1 that hold work no remote has (issue #2087): a worktree's HEAD, a clone's HEAD and
@@ -311,15 +314,25 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
   };
 }
 
-/** What a job's scope used (issue #2498), as `job.resources_used` records it: each field absent where its cgroup had none. */
-export interface ResourceUse { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number }
+/**
+ * What a job used (issue #2498), as `job.resources_used` records it: its scope's, each field absent where its cgroup had
+ * none, and the disk its scratch dir and worktrees held (part 4), absent where it had neither.
+ */
+export interface ResourceUse { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; diskBytes?: number }
 
-/** The reap's `hopper-used <peak bytes> <CPU µs> <OOM kills>` line, each `-` when unread; nothing when no field was read. */
+/**
+ * The reap's `hopper-used <peak bytes> <CPU µs> <OOM kills>` line, each `-` when unread, and its `hopper-disk <KiB>` line;
+ * nothing when no field was read.
+ */
 function usedOf(lines: readonly string[]): { used?: ResourceUse } {
   const m = lines.map((l) => /^hopper-used (\S+) (\S+) (\S+)$/.exec(l)).find((x) => x !== null);
   const n = (v: string | undefined): number | undefined => (v && /^\d+$/.test(v) ? Number(v) : undefined);
   const peak = n(m?.[1]), usec = n(m?.[2]), oom = n(m?.[3]);
-  const used: ResourceUse = { ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}) };
+  const kib = n(lines.map((l) => /^hopper-disk (\d+)$/.exec(l)?.[1]).find((x) => x !== undefined));
+  const used: ResourceUse = {
+    ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}),
+    ...(kib !== undefined ? { diskBytes: kib * 1024 } : {}),
+  };
   return Object.keys(used).length ? { used } : {};
 }
 

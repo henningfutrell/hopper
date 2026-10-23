@@ -25,9 +25,10 @@ export interface Reaped {
 
 /**
  * What a job's scope used (issue #2498), as `job.resources_used` records it: its peak memory (cgroup `memory.peak`), its CPU
- * time (`cpu.stat` `usage_usec`) and the OOM kills in it (`memory.events` `oom_kill`), each absent where the cgroup had none.
+ * time (`cpu.stat` `usage_usec`) and the OOM kills in it (`memory.events` `oom_kill`), each absent where the cgroup had none;
+ * and the disk its scratch dir and worktrees held before the reap removed them (part 4), absent where it had neither.
  */
-export type ResourceUse = { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number };
+export type ResourceUse = { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; diskBytes?: number };
 
 /**
  * The containers and volumes a reap removed (issue #1120), as `job.containers_removed` records them; `details` (issue #975):

@@ -916,7 +916,7 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   though Claude is still in front of its pane, and though the pane is gone (a crashed hopper, a lost
   pane). The script, on whichever machine the job ran:
   1. reads what the job's scope used from its cgroup — its peak memory, CPU time and OOM kills (issue #2498, "A job's
-     parts list" → "Resources used") —, then stops the scope, `systemctl --user stop hopper-job-<job id>.scope`, which
+     parts list" → "Resources used"; the disk its scratch dir and worktrees hold is read later, before they go, "Disk used") —, then stops the scope, `systemctl --user stop hopper-job-<job id>.scope`, which
      kills every process in it and waits up to 10 s (`TimeoutStopSec`);
   2. then every process whose environment still carries the job's `HOPPER_JOB_ID` gets `SIGTERM`, then
      `SIGKILL` after 3 s — the fallback where there is no systemd. The script runs with the variable
@@ -19758,10 +19758,24 @@ their environment. Three decisions:
    records `job.resources_used` with the job's machine. A cgroup path with `..` is never read.
 2. *What it misses.* A job with no scope there (no systemd user manager), a scope that ended before the reap (a parked
    job's pane closed at the park; a print-mode agent's turn ended), and a client older than this: no event. Disk per job
-   is not read here: a later part of issue #2498.
+   is read by the same reap (part 4, below).
 3. *What the part shows.* One part, `resources` in the machines group: "Peak memory <n>, CPU <time>", the OOM kills when
    there were any, and the machines. A job reaped on more than one machine (moved, resumed elsewhere) shows the highest
    peak, and the CPU time and OOM kills of all of them (`src/domain/job-resources.ts`).
+
+**Disk used** (issue #2498 part 4). A job's build output, caches and test data are in its scratch dir and worktrees
+("Work tree"), and nothing said how much a job left there. Three decisions:
+
+1. *When it is read.* By the reap, after it stopped the job's processes and before it removes or keeps those dirs: one
+   `du -skx` of each (cut off at 30 s where `timeout` is), added up, as one line `hopper-disk <KiB>`. `-x` keeps it on one
+   file system, and du follows no link, so a worktree's `node_modules` link to the shared dependencies counts as a link
+   only. `readReap` reads it as `used.diskBytes`, and `job.resources_used` records it with the scope's fields; with no
+   scope there it is recorded alone. No scratch dir and no worktree there: none.
+2. *What it is.* What the job held there at its end, not a peak over its life: the scratch dir only grows while the job
+   runs, but a job that removed its own build output says less than it held. The sweep's survey still measures each work
+   tree as a whole (issue #2494); it keeps nothing per job.
+3. *What the part shows.* The `resources` part says "disk <n>" after the memory and the CPU time: the most one reap found
+   (a job reaped on two machines held its dirs on each, and the highest says what one machine needed).
 
 **Resources in use now** (issue #2498 part 3). The reap reads a job's use only at its end; a person who looks at a running
 job, or at a machine that is full, could not see which job holds what. Three decisions:

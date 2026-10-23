@@ -10,6 +10,9 @@
     },
     "oomKills": {
       "type": "number"
+    },
+    "diskBytes": {
+      "type": "number"
     }
   },
   "additionalProperties": false
