@@ -1,7 +1,7 @@
 // Issue #2622 part 3: the heavy-step gate one user's jobs ask before a heavy step (`POST /job/heavy`). It keeps the steps
 // it let run, each on a lease the job's client renews; a step whose job stopped renewing it is let go.
 import { describe, expect, it } from 'vitest';
-import { HEAVY_LEASE_MS, createHeavyGate } from '../../src/engine/heavy-gate.ts';
+import { HEAVY_LEASE_MS, HEAVY_RENEW_S, createHeavyGate } from '../../src/engine/heavy-gate.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { NOW, job, machine } from '../decider/support.ts';
 
@@ -44,16 +44,16 @@ describe('the heavy-step gate (issue #2622 part 3)', () => {
     const kept = await gate.take(at(1), ['./gradlew', 'test']);
     await gate.take(at(2), ['./gradlew', 'test']);
     pass(HEAVY_LEASE_MS - 1000);
-    expect(gate.renew(at(1), (kept as { slot: string }).slot)).toBe(true);
+    expect(await gate.renew(at(1), (kept as { slot: string }).slot)).toEqual({ ok: true });
     pass(2000);
     expect(gate.held().map((s) => s.jobId)).toEqual(['j1']);
-    expect(gate.renew(at(2), 'slot-2')).toBe(false);
+    expect(await gate.renew(at(2), 'slot-2')).toEqual({ ok: false });
   });
 
   it('a job renews or releases only its own slot', async () => {
     const { gate, at } = rig();
     const a = await gate.take(at(1), ['npm', 'install']);
-    expect(gate.renew(at(2), (a as { slot: string }).slot)).toBe(false);
+    expect(await gate.renew(at(2), (a as { slot: string }).slot)).toEqual({ ok: false });
     expect(gate.release(at(2), (a as { slot: string }).slot)).toBe(false);
     expect(gate.held()).toHaveLength(1);
   });
@@ -97,5 +97,36 @@ describe('the heavy-step gate reserves what history says (issue #2622 part 4)', 
     const { gate, at } = withPeaks(async () => { throw new Error('postgres: down'); });
     expect(await gate.take(at(1), ['./gradlew', 'test'])).toHaveProperty('slot');
     expect(gate.held()[0]).toMatchObject({ bytes: 3 * GIB, recorded: false });
+  });
+});
+
+// Issue #2622 part 5: synthetic memory pressure stops new heavy steps, and pauses the newest one that runs within 30 s: its
+// client learns it at its next renew, every HEAVY_RENEW_S. When the pressure clears, it runs again.
+describe('the heavy-step gate sheds on memory pressure (issue #2622 part 5)', () => {
+  const reading = (available: number, someAvg60 = 0) => ({ cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: available * GIB, memPressure: { someAvg10: someAvg60, fullAvg10: 0, someAvg60 } });
+
+  it('pressure stops new steps and pauses the newest within 30 s; when it clears, the step runs again and new ones start', async () => {
+    const m = machine({ maxLanes: 8, resources: reading(10) });
+    const { gate, at, pass } = rig([m]);
+    const first = (await gate.take(at(1), ['./gradlew', 'test'])) as { slot: string };
+    pass(1000);
+    const newest = (await gate.take(at(2), ['npm', 'install'])) as { slot: string };
+    expect(HEAVY_RENEW_S * 1000).toBeLessThanOrEqual(30_000 / 2);
+    m.resources = reading(6, 25);
+    pass(HEAVY_RENEW_S * 1000);
+    expect(await gate.take(at(3), ['npm', 'install'])).toEqual({
+      wait: 'local is under memory pressure: its tasks waited on memory 25% of the last 60 s, over 10%; a heavy step starts when it clears', retryS: 5,
+    });
+    expect(await gate.renew(at(1), first.slot)).toEqual({ ok: true });
+    expect(await gate.renew(at(2), newest.slot)).toEqual({
+      ok: true, pause: 'local is under memory pressure: its tasks waited on memory 25% of the last 60 s, over 10%: the newest heavy step is paused until it clears',
+    });
+    expect(gate.held().map((s) => [s.jobId, s.paused !== undefined])).toEqual([['j1', false], ['j2', true]]);
+    m.resources = reading(6);
+    pass(30_000);
+    expect(await gate.take(at(3), ['npm', 'install'])).toMatchObject({ wait: 'local has a heavy step paused for memory pressure; a heavy step starts when it runs again' });
+    expect(await gate.renew(at(2), newest.slot)).toEqual({ ok: true });
+    expect(gate.held().map((s) => s.paused)).toEqual([undefined, undefined]);
+    expect(await gate.take(at(3), ['npm', 'install'])).toHaveProperty('slot');
   });
 });
