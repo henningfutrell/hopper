@@ -1,7 +1,8 @@
 // The vault as the hopper's parts reach it (issue #586): in the hopper's own process, or with its secrets in a container
 // of its own (src/vault/remote.ts); the credential requests (issue #583) over either; and the view every answer carries.
 import type { Clock, UserStore } from '../domain/ports.ts';
-import type { SystemSecretName, VaultView } from '../domain/vault.ts';
+import { withReruns, type SystemSecretName, type VaultView } from '../domain/vault.ts';
+import { laterRuns } from '../domain/rerun-chain.ts';
 import type { MintAsk } from './mint.ts';
 import type { MintTestAnswer } from './mint-test.ts'; import type { DiscoveryMintAnswer } from './discovery-mint.ts'; import type { Asset } from '../domain/access.ts';
 import type { CheckMintAnswer, CheckMintAsk } from './checks.ts';
@@ -70,7 +71,9 @@ export function withCredentialRequests(v: Omit<Vault, 'need' | 'give' | 'decline
   const held = new Map<string, string>();
   const view = (): VaultView => {
     const at = v.view();
-    return { ...at, requests: requests.list(), templates: at.templates.map((t) => (held.has(t.name) ? { ...t, checkHeld: held.get(t.name)! } : t)) };
+    // A template approved for some jobs' runs covers the jobs that run them again (issue #2639 part 2).
+    const later = (id: string): string[] => laterRuns(id, (x) => o.store.jobs.get(x), (key) => o.store.jobs.getBySourceKey(key));
+    return { ...at, requests: requests.list(), templates: at.templates.map((t) => withReruns(held.has(t.name) ? { ...t, checkHeld: held.get(t.name)! } : t, later)) };
   };
   return {
     ...v, view, need: requests.need, give: requests.give, decline: requests.decline,
