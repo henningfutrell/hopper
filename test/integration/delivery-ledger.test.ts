@@ -5,13 +5,12 @@
 // Feature: the delivery ledger
 //   Scenario: a change run end to end has a predicted and an actual time for every step, and the accuracy report its error
 //   Scenario: a later pass keeps the first prediction
-//   Scenario: the error over time, per day or week in the owner's time zone (part 7)
 //   Scenario: a bad query is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import type { PromotionSetSchedule } from '../../src/domain/promotion-sets.ts';
 import type { EventType } from '../../src/domain/types.ts';
 import { recordDeliveryLedger } from '../../src/engine/delivery-ledger.ts';
-import type { DeliveryLedgerView } from '../../src/domain/forecast-accuracy.ts';
+import type { DeliveryLedgerView } from '../../src/http/delivery-ledger.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 const apps: TestApp[] = [];
@@ -99,15 +98,6 @@ describe('the delivery ledger', () => {
     expect(all.rows.filter((r) => r.key === 'job:h1').map((r) => [r.step, r.predictedEnd, r.actualEnd !== undefined]))
       .toEqual(['queued', 'coding', 'pr_checks', 'landing', 'landing_checks', 'promotion_set', 'test_gate', 'production'].map((s) => [s, undefined, true]));
     expect(all.accuracy).toEqual(accuracy);
-    // Over time (part 7): per day of the actual end, in the repository's schedule time zone (UTC here) unless the query names one.
-    const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-    expect((await ledgerOf(a, 'job=c1&period=day')).overTime).toEqual({
-      period: 'day', timeZone: 'UTC',
-      points: expected.map((e, i) => ({ start: day(i < 5 ? T : cutoff), ...e })),
-    });
-    // UTC+14: T (02:00) and the cutoff (00:00 next day) are 16:00 and 14:00 there, so each keeps its day.
-    expect((await ledgerOf(a, 'job=c1&period=day&timeZone=Pacific%2FKiritimati')).overTime.timeZone).toBe('Pacific/Kiritimati');
-    expect((await ledgerOf(a, 'job=c1')).overTime.period).toBe('week');
   });
 
   it('a later pass keeps the first prediction, and fills a step the first one could not time', async () => {
@@ -124,7 +114,7 @@ describe('the delivery ledger', () => {
 
   it('refuses a bad query (400) and answers an empty ledger', async () => {
     const { a } = await boot();
-    for (const q of ['repo=shed', 'job=', 'job=c1&repo=octo%2Fshed', 'note=x', 'period=month', 'timeZone=Mars%2FBase']) expect((await a.api('GET', `/api/delivery-ledger?${q}`)).status).toBe(400);
-    expect(await ledgerOf(a, 'job=nope')).toEqual({ rows: [], accuracy: { byStep: [], byRepo: [] }, overTime: { period: 'week', timeZone: 'UTC', points: [] } });
+    for (const q of ['repo=shed', 'job=', 'job=c1&repo=octo%2Fshed', 'note=x']) expect((await a.api('GET', `/api/delivery-ledger?${q}`)).status).toBe(400);
+    expect(await ledgerOf(a, 'job=nope')).toEqual({ rows: [], accuracy: { byStep: [], byRepo: [] } });
   });
 });

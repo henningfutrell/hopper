@@ -5,7 +5,7 @@
 import {
   DEFAULT_BLOCKER, DELIVERY_STEPS, MIN_SAMPLES, SCHEDULED_STEPS, stepEstimate, type Blocker, type DeliveryStep,
 } from './delivery-steps.ts';
-import { nextCutoff, promotionSetOf, type PromotionSet, type PromotionSetSchedule } from './promotion-sets.ts';
+import { nextCutoff, promotionSetOf, type PromotionSetSchedule } from './promotion-sets.ts';
 import type { StepActual } from './forecast-accuracy.ts';
 
 export interface ForecastInput {
@@ -58,33 +58,6 @@ export interface DeliveryForecast {
   normal: DeliveryPath;
   /** Only when the change is expedited: the fastest path the schedule allows. */
   expedited?: DeliveryPath;
-}
-
-/** The answers of GET /api/delivery-forecast (issue #2554 part 2 on): a change's forecast, or a promotion set's. */
-export interface DeliveryForecastView {
-  jobId: string;
-  repo?: string;
-  issue?: string;
-  pullRequest?: string;
-  historyDays: number;
-  /** A person flagged the change as expedited: who, and when. Then `forecast.expedited` is its expedited path. */
-  expedited?: { by: string; at: string };
-  /** Past the end of production by its schedule, with no delivery gate holding it: then no forecast. */
-  deliveredAt?: string;
-  forecast?: DeliveryForecast;
-}
-
-/** A change in a promotion set, or expected in it: where it is now. */
-export interface PromotionSetChange { jobId: string; issue?: string; pullRequest?: string; step: DeliveryStep | 'delivered'; expected?: true; expedited?: true }
-
-export interface PromotionSetForecastView {
-  repo: string;
-  set: PromotionSet;
-  opensAt: string;
-  deliveredAt?: string;
-  /** Where the set is: its scheduled steps, from its opening. */
-  forecast?: DeliveryForecast;
-  changes: PromotionSetChange[];
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
