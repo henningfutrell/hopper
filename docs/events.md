@@ -3444,6 +3444,62 @@ Version 1 (`docs/schemas/machine.sweep_dry_run.v1.json`). The sweep ran in dry r
 }
 ```
 
+## `machine.sweep_passed`
+
+Version 1 (`docs/schemas/machine.sweep_passed.v1.json`). One real pass of the sweep on a machine (`machineId`) removed something, kept work or could not remove a dir for the first time, or ran fstrim (issue #2494, design.md "Hopper's own disk use" → "Part 15"). `removed`: what it removed by `kind` — `scratch`, ended jobs' scratch dirs with their job worktrees; `job-storage`, containers and volumes labelled with a job; `storage`, the storage prune's containers, volumes and images; `caches`, the cache places cleared —, each with its `count` and its `bytes` where they were measured; `freedBytes`, the sum of those bytes. `kept`: each ended job whose work the reap kept, its repositories (`paths`) and why (`reasons`: `dirty`, `stash`, `unpushed`); `again`, an earlier pass kept it too. `left`: the dirs the reap could not remove. `trim`: the fstrim result, as `machine.disk_trim_ran` has it. A pass that only keeps the same work again records none; a dry run records `machine.sweep_dry_run` in its place.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `freedBytes` | number | yes |
+| `removed` | object[] | yes |
+| `kept` | object[] | yes |
+| `left` | object[] | no |
+| `trim` | object | no |
+
+```json
+{
+  "machineId": "seat-l1",
+  "freedBytes": 11400000000,
+  "removed": [
+    {
+      "kind": "scratch",
+      "count": 3,
+      "bytes": 2400000000
+    },
+    {
+      "kind": "job-storage",
+      "count": 2
+    },
+    {
+      "kind": "caches",
+      "count": 1,
+      "bytes": 9000000000
+    }
+  ],
+  "kept": [
+    {
+      "jobId": "a7e90b12",
+      "paths": [
+        "/home/seat/work/.worktrees/@scratch/a7e90b12/app"
+      ],
+      "reasons": {
+        "/home/seat/work/.worktrees/@scratch/a7e90b12/app": [
+          "stash",
+          "unpushed"
+        ]
+      }
+    }
+  ],
+  "trim": {
+    "mount": "/",
+    "outcome": "trimmed",
+    "trimmedBytes": 14500000000,
+    "hostCompaction": true
+  }
+}
+```
+
 ## `machine.leftover_kept`
 
 Version 1 (`docs/schemas/machine.leftover_kept.v1.json`). A person keeps a leftover on Machines (issue #1116): a dir in a work tree's `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.

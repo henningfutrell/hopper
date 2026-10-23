@@ -1,0 +1,1 @@
+- Each cleanup on a machine now leaves one record in the events: what it removed, how much space it freed, and which work it kept and why.

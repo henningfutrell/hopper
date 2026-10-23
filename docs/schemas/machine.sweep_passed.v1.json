@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "machineId": {
+      "type": "string"
+    },
+    "freedBytes": {
+      "type": "number"
+    },
+    "removed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "scratch",
+              "job-storage",
+              "storage",
+              "caches"
+            ]
+          },
+          "count": {
+            "type": "number"
+          },
+          "bytes": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "count"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "kept": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reasons": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "dirty",
+                  "stash",
+                  "unpushed"
+                ]
+              }
+            }
+          },
+          "again": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "jobId",
+          "paths"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "left": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "jobId",
+          "paths"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "trim": {
+      "type": "object",
+      "properties": {
+        "mount": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "trimmed",
+            "refused",
+            "unsupported",
+            "failed"
+          ]
+        },
+        "trimmedBytes": {
+          "type": "number"
+        },
+        "said": {
+          "type": "string"
+        },
+        "hostCompaction": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "mount",
+        "outcome"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "machineId",
+    "freedBytes",
+    "removed",
+    "kept"
+  ],
+  "additionalProperties": false
+}

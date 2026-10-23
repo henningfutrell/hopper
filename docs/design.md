@@ -24707,6 +24707,21 @@ sweep would remove before it removed it.
   scratch dir there (as a retention does), so the sweep lists it. A person's discard still runs, and the measure, the
   budget's events and the leftovers listing go on as before. `sweepDryRun: false` wins over a default dry run.
 
+**Part 15: the record of each cleanup pass** (issue #2494, `src/engine/sweep-pass.ts`). Each part of the sweep recorded
+its own event, but no one event said what one pass did on a machine.
+- **One event for each real pass.** The sweep tallies what a pass did on a machine and records it as one
+  `machine.sweep_passed` event: what it removed by kind — `scratch` (ended jobs' scratch dirs with their job worktrees),
+  `job-storage` (the containers and volumes labelled with a job), `storage` (the storage prune), `caches` (the cache
+  caps) —, each with its count and its bytes where they were measured (the reap's own measure, else the pass's survey,
+  part 11; a job's containers and volumes have none); `freedBytes`, the sum; the work the reaps kept, with why
+  (`dirty`, `stash`, `unpushed`), `again` when an earlier pass kept it too; the dirs the reaps could not remove; and
+  the fstrim result (part 9).
+- **Only with news.** A pass records the event when it removed something, kept work or could not remove a dir for the
+  first time, or ran fstrim. A pass that only keeps the same work again records none, so a machine with old kept work
+  does not record one every interval. A dry run records `machine.sweep_dry_run` in its place (part 14).
+- **On any machine.** The pass runs through the machine's own connection, as every part does: an e2e test runs one on a
+  client target, through its signed `/survey` and `/reap`.
+
 The Grok Bot routine posts the disk budget's events (issue #1203, "Grok Bot routine webhook"). **Not the hopper's to
 know:** a container a
 job starts without the label (the job's own tooling outside the hopper's tests), and the fetch-stage images built before
@@ -24734,7 +24749,9 @@ with a fake pkill), `test/domain/cache-caps.test.ts`, `test/engine/sweep-caches.
 `test/machines/disk-defaults.test.ts`, `test/integration/disk-defaults.test.ts` (the setting through the daemon, and a machine with
 it applied), `test/ui/hopper-disk.test.ts` (the form). Part 14: `test/domain/sweep-dry-run.test.ts`, `test/engine/sweep-dry-run.test.ts`
 (nothing removed, the event once while it stays the same; a machine's own budget), `test/engine/cleanup-retention.test.ts` (the
-scratch dir kept at a job's end), `test/plugins/sweep-options.test.ts`.
+scratch dir kept at a job's end), `test/plugins/sweep-options.test.ts`. Part 15: `test/engine/sweep-pass.test.ts`,
+`test/integration/sweep-pass-remote.test.ts` (one pass on a client target, through the daemon: a clean job's dirs removed with
+their bytes, unpushed work kept with why).
 
 ## Tool accounts (issue #1128, 2026-10-14, part 1)
 
