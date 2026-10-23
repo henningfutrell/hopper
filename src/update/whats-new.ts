@@ -71,7 +71,7 @@ export function assemble(notes: Notes): string {
  * Why the change from `base` to `head` breaks the What's new rules (issue #824), or none. A bullet goes in a
  * fragment, never straight into WHATS-NEW.md: WHATS-NEW.md gains only bullets the assembly moved there from
  * `base`'s fragments. A released bullet (one `base` has) never changes or goes away: the update notice would
- * show it again as new. A bullet the change adds is in plain words (issue #1483); a released one that is not may be
+ * show it again as new, but a revert may delete a whole fragment while WHATS-NEW.md stays as it was. A bullet the change adds is in plain words (issue #1483); a released one that is not may be
  * written again, the one way to make it plain.
  */
 export function problems(base: Notes, head: Notes): string[] {
@@ -88,7 +88,9 @@ export function problems(base: Notes, head: Notes): string[] {
   }
   const now = allBullets(head);
   const kept = new Set(now);
-  const had = new Set(allBullets(base));
+  // A revert takes its fragment away whole and leaves WHATS-NEW.md as it was: its lines go with the change.
+  const reverted = base.file === head.file ? new Set(base.fragments.filter((f) => !head.fragments.some((h) => h.name === f.name)).flatMap((f) => bullets(f.text))) : new Set<string>();
+  const had = new Set(allBullets(base).filter((b) => !reverted.has(b)));
   for (const b of now) {
     if (!had.has(b) && breaksPlainWords(b)) out.push(`a line is not in plain words: no issue numbers, hashes, prefixes, file names or code words: "${b}"`);
   }
