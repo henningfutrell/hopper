@@ -13094,6 +13094,18 @@ never a hold, read from a machine reading taken before the burst took its memory
   too, and for a job resuming on its pane.
 - **WSL.** The memory available is Linux's in the VM, or Windows' own free memory (`hostMemFreeBytes`, issue #868) when
   that is lower. A machine with no reading (a container target, an old client, offline) has no floor.
+- **A host pool** (issue #2499, `poolHosts`). Seats in containers on one VM each read their own cgroup limit, so each had
+  room while the VM they share did not, and only the hopper's own machine read Windows' free memory. A reading names its
+  kernel by its boot id (`bootId`, `/proc/sys/kernel/random/boot_id`, the same in every container on one kernel) and,
+  under a cgroup limit, the kernel's own memory (`kernelMemTotalBytes`, `kernelMemAvailableBytes`, from /proc/meminfo).
+  The machines with a memory room whose readings name one boot id are a **host pool**: two machines or more, or one in a
+  container. Its memory available is the lowest kernel reading of its machines (a reading not in a container is the
+  kernel's), or Windows' free memory when one of its machines reads that lower; its floor is 10% of the kernel's memory
+  and at least 1 GiB. A job there needs room in its machine's memory and in the pool's: the pool's available less a
+  job's memory for each job that any of its machines keeps (started lately, or placed in this Decision), less its own
+  need, at or above the pool's floor. Else it waits: `waiting for memory: a's host (shared with b) has 4 GiB available,
+  2 GiB of it kept for 1 job started lately, and a new job needs 2 GiB over its floor of 1.4 GiB`. A machine with a floor of
+  0 is in no pool. The memory pause still reads each machine's own memory only.
 - **The memory pause** (step 7c, `memoryPauses`). An online machine whose memory available is below the floor itself
   pauses the running job that started there last: its executor parks (`parkingExecutors`, now an input of every
   Decision, whatever the preemption setting), it has an agent session, and no preemption names it. One per machine every
@@ -13118,6 +13130,7 @@ never a hold, read from a machine reading taken before the burst took its memory
 
 Verification: `test/decider/memory-floor.test.ts` (a burst of 7 starts what fits, jobs started lately keep memory, a
 resume waits, the better machine, own options and 0, no reading, the expected peak, WSL, no preemption for memory; the
+host pool: two seats on one kernel, two kernels, Windows' free memory for the pool, no pool alone or with a floor of 0; the
 pause: the newest job, at the floor nothing, one at a time, executors that cannot park and no session, off),
 `test/decider/placement-cost.test.ts`, `test/plugins/memory-floor-options.test.ts`, and
 `test/integration/memory-floor.test.ts` (the real daemon over the fake herdr: a burst of 7 queued jobs on 8 lanes starts
@@ -15082,6 +15095,9 @@ memory total and available (available, not free), and swap total and used where 
   machine's memory: it is taken off the memory available. A client target's client says the same in its `/release`
   answer, checked by `resourcesOf`; an ssh target says none. What the scopes hold for jobs with no lane in use there — a
   job on its own wait, parked, or queued to resume, whose builds still run — is the machine's **waiting memory**.
+- **its kernel** (issue #2499): on Linux each reading names its kernel's boot id (`bootId`); an ssh target's probe prints
+  it as `boot <id>`. Under a cgroup limit the meter also says the kernel's own memory (`kernelMemTotalBytes`,
+  `kernelMemAvailableBytes`), so the decider counts the machines on one host as one **host pool** ("The memory floor").
 - Per lane (an agent's process tree): not built; a job's scope is the nearest.
 
 **Recording.** Each user runtime runs a **resource recorder** (`src/machines/history.ts`), on the usage recorder's loop

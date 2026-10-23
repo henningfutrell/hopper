@@ -109,6 +109,18 @@ describe('a machine\'s resources', () => {
     expect(r.memAvailableBytes).toBeCloseTo(0.4 * GIB, -3);
   });
 
+  // Issue #2499 part 4: seats on one VM share its kernel. The reading names the kernel (its boot id) and, under a cgroup
+  // limit, the kernel's own memory, so the hopper counts the machines on one host as one pool.
+  it('names its kernel by its boot id; under a cgroup limit it says the kernel\'s memory too', () => {
+    put('proc/sys/kernel/random/boot_id', 'b0a1-c2d3\n');
+    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+    expect(meter().read()).toMatchObject({ bootId: 'b0a1-c2d3', memTotalBytes: 14 * GIB });
+    expect(meter().read()).not.toHaveProperty('kernelMemTotalBytes');
+    put('sys/fs/cgroup/memory.max', `${4 * GIB}\n`);
+    put('sys/fs/cgroup/memory.current', `${1 * GIB}\n`);
+    expect(meter().read()).toMatchObject({ bootId: 'b0a1-c2d3', memTotalBytes: 4 * GIB, kernelMemTotalBytes: 14 * GIB, kernelMemAvailableBytes: 10 * GIB });
+  });
+
   // Issue #2499: a job on its own wait holds no lane, but its scope keeps its builds. Each job scope's memory is read, and
   // a scope outside the cgroup whose limit the reading is (a sibling of the hopper's own unit) is taken off its memory.
   describe('job scopes (issue #2499)', () => {

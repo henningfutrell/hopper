@@ -6,6 +6,8 @@
 // sets limits reads its limits and its own use: a memory limit as its total, a CPU quota as its cores. The memory limit
 // may sit on a cgroup above the process's own (issue #2499): a seat's container, or a systemd unit's MemoryMax.
 // Each job scope's memory is read too (issue #2499): one outside the limited cgroup is taken off its memory available.
+// It names its kernel by its boot id and, under a cgroup limit, says the kernel's own memory (issue #2499): the hopper
+// counts the machines on one host as one pool.
 // In WSL (issue #868) the VM keeps its page cache, which Windows cannot use: the meter adds the memory the VM holds
 // (MemTotal less MemFree) and, through WSL interop, Windows' own free memory, read in the background once a minute.
 // In a Kubernetes pod (issue #1289) it is never WSL, whatever the node's kernel, and always a container: its limits are
@@ -45,6 +47,11 @@ export interface ResourceReading {
   nodeFloor?: string;
   /** Issue #2499: each job scope's memory in use (`hopper-job-<id>.scope`, less the page cache it could drop). Absent: none read. */
   jobMemoryBytes?: Record<string, number>;
+  /** Issue #2499: its kernel's boot id, so machines on one host are one pool. Absent: not read. */
+  bootId?: string;
+  /** Issue #2499: under a cgroup limit, the kernel's own memory (/proc/meminfo), total and available. */
+  kernelMemTotalBytes?: number;
+  kernelMemAvailableBytes?: number;
 }
 
 /** A host's physical memory, free and total. */
@@ -229,20 +236,22 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     }));
   };
 
-  const memory = (): Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes'> => {
+  type Memory = Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes' | 'kernelMemTotalBytes' | 'kernelMemAvailableBytes'>;
+  const memory = (): Memory => {
     const parts = platform === 'linux' ? ownCgroup() : [];
     const scopes = platform === 'linux' ? jobScopes(parts) : [];
     const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])) } : {};
     const limited = platform === 'linux' ? cgroupMemory(parts) : undefined;
-    if (limited) {
-      // A scope outside the limited cgroup is not in its use, but takes the same machine's memory.
-      const outside = scopes.filter((s) => limited.dir !== '' && s.dir !== limited.dir && !s.dir.startsWith(`${limited.dir}/`)).reduce((n, s) => n + s.bytes, 0);
-      return { memTotalBytes: limited.memTotalBytes, memAvailableBytes: Math.max(0, limited.memAvailableBytes - outside), container: true, ...jobs };
-    }
     const info = platform === 'linux' ? fields(text(join(root, 'proc/meminfo'))) : new Map<string, number>();
     const kib = (k: string) => (info.has(k) ? info.get(k)! * 1024 : undefined);
     const total = kib('MemTotal');
     const available = kib('MemAvailable');
+    if (limited) {
+      // A scope outside the limited cgroup is not in its use, but takes the same machine's memory.
+      const outside = scopes.filter((s) => limited.dir !== '' && s.dir !== limited.dir && !s.dir.startsWith(`${limited.dir}/`)).reduce((n, s) => n + s.bytes, 0);
+      const kernel = total !== undefined && available !== undefined && available <= total ? { kernelMemTotalBytes: total, kernelMemAvailableBytes: available } : {};
+      return { memTotalBytes: limited.memTotalBytes, memAvailableBytes: Math.max(0, limited.memAvailableBytes - outside), container: true, ...kernel, ...jobs };
+    }
     const swapTotal = kib('SwapTotal');
     const swapFree = kib('SwapFree');
     const free = kib('MemFree');
@@ -264,12 +273,14 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       last = { at, ...t };
     }
     const mem = memory();
+    const bootId = platform === 'linux' ? text(join(root, 'proc/sys/kernel/random/boot_id'))?.trim() : undefined;
     const l = (d.loadavg ?? loadavg)();
     return {
       cores: q ?? (d.parallelism ?? availableParallelism)(),
       ...(busyFrac !== undefined ? { cpuBusyFrac: busyFrac } : {}),
       ...(platform !== 'win32' && l.length === 3 ? { load: [l[0]!, l[1]!, l[2]!] as [number, number, number] } : {}),
       ...mem,
+      ...(bootId ? { bootId } : {}),
       ...(q !== undefined || pod ? { container: true as const } : {}),
       ...(wsl ? { wsl: true as const, ...hostNow(at) } : {}),
       node, ...(nodeFloor ? { nodeFloor } : {}),

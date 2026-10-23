@@ -9,7 +9,7 @@ const MARK = 'hopper-res ';
 
 /** What an ssh target's probe runs: nothing printed where there is no /proc (the reading is then absent). */
 export const RESOURCES_COMMAND = `if [ -r /proc/stat ]; then { head -n1 /proc/stat; sleep 1; head -n1 /proc/stat; cat /proc/loadavg;`
-  + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
+  + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; echo boot $(cat /proc/sys/kernel/random/boot_id); nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
 
 /** Busy and total jiffies of a `cpu` line: iowait counts as idle; guest time is already in user. */
 function jiffies(line: string): { busy: number; total: number } | undefined {
@@ -35,6 +35,7 @@ export function readResources(stdout: string): ResourceReading | undefined {
   const swapFree = mem.get('SwapFree');
   const free = mem.get('MemFree');
   const wsl = lines.some((l) => l.trim() === 'wsl');
+  const boot = bootOf(lines.map((l) => /^boot (\S+)\s*$/.exec(l)?.[1]).find((b) => b));
   return {
     cores,
     ...(busy !== undefined ? { cpuBusyFrac: busy } : {}),
@@ -42,8 +43,12 @@ export function readResources(stdout: string): ResourceReading | undefined {
     memTotalBytes: total, memAvailableBytes: available,
     ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
     ...(wsl ? { wsl: true as const, ...(free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}) } : {}),
+    ...boot,
   };
 }
+
+/** A kernel's boot id (issue #2499), when it reads as one. */
+const bootOf = (v: unknown): Pick<ResourceReading, 'bootId'> => (typeof v === 'string' && /^[A-Za-z0-9-]{1,64}$/.test(v) ? { bootId: v } : {});
 
 const count = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
 
@@ -68,6 +73,9 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
     ...(r.wsl === true && windowsLinkOf(r.windowsLink) ? { windowsLink: windowsLinkOf(r.windowsLink)! } : {}),
     ...nodeOf(r.node),
     ...jobMemoryOf(r.jobMemoryBytes),
+    ...bootOf(r.bootId),
+    ...(count(r.kernelMemTotalBytes) && count(r.kernelMemAvailableBytes) && r.kernelMemTotalBytes > 0 && r.kernelMemAvailableBytes <= r.kernelMemTotalBytes
+      ? { kernelMemTotalBytes: r.kernelMemTotalBytes, kernelMemAvailableBytes: r.kernelMemAvailableBytes } : {}),
   };
 }
 

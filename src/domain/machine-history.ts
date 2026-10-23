@@ -37,6 +37,14 @@ export interface ResourceReading {
    * own wait, parked, queued to resume) still holds it: its **waiting memory**. Absent: none read (no systemd, an ssh target, an older client).
    */
   jobMemoryBytes?: Record<string, number>;
+  /**
+   * Issue #2499: its kernel's boot id (`/proc/sys/kernel/random/boot_id`). Machines whose readings name one are on one host:
+   * a **host pool**. Absent: not read (Windows, macOS, an older client).
+   */
+  bootId?: string;
+  /** Issue #2499: under a cgroup limit (`container`), the kernel's own memory, total and available, as /proc/meminfo says. */
+  kernelMemTotalBytes?: number;
+  kernelMemAvailableBytes?: number;
 }
 
 /**
