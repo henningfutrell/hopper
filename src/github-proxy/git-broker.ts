@@ -24,6 +24,7 @@
 // so a refusal there — the hopper's (`refused: …`) or GitHub's error answer (`GitHub refused the push (HTTP n): …`) — is
 // answered as git's own refusal, an `ng` line per ref. GitHub's error answer to a push's ref advertisement is plain text,
 // which git shows as a `remote:` line.
+// Push requirements (issue #2555): a branch a push moves to a commit with no passing evaluation, where requirements apply, is refused.
 // A push git sends otherwise is answered so too (issue #2481): one from a shallow clone, refused with its ref updates read past
 // its `shallow` lines; git's probe (a flush packet) before a pack over its post buffer is taken, and the chunked pack is checked.
 import { Readable } from 'node:stream';
@@ -73,6 +74,11 @@ export interface GitUser {
    * the base branch `base`. Refused: the files and why. Absent: no guard.
    */
   shrinkGuard?(push: { repo: string; base: string; old: string; new: string; pack: Buffer }): Promise<{ ok: true } | { ok: false; shrunk: ShrunkFile[]; reason: string }>;
+  /**
+   * Push requirements (issue #2555): whether the job may push `new` to a branch of `repo` whose base is `base`: a passing
+   * evaluation of that commit, or no requirement applies to it. Refused: why, and what to do. Absent: none.
+   */
+  pushRequirements?(push: { jobId: string; repo: string; base: string; new: string; pack: Buffer }): Promise<{ ok: true } | { ok: false; reason: string }>;
   /** Direct push (issue #1806): whether a job may push straight to `repo`'s target branch. Absent: never. */
   directPush?(repo: string): boolean;
   /** Whether a push from `old` to `new`, with its pack, is a fast-forward (issue #1806); undefined: git cannot say. Absent: no direct push is taken. */
@@ -137,6 +143,15 @@ const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCas
  * (issue #1448 part 3) is a GitLab project, so it has no own repository on GitHub.
  */
 const repoOf = (job: Job): string | undefined => { const s = sourceItemOf(job); return isGitLabItem(s) ? undefined : s?.repo; };
+
+/**
+ * The base a branch merges into (issue #1147): its open pull request's, else the landing branch, else the default branch. A
+ * pull request GitHub cannot say of is none: the push is not held up by the read. The shrink guard's, and push requirements' (issue #2555).
+ */
+export async function baseBranchOf(side: GitUser, git: GitConnection, repo: string, branch: string, defaultBranch: string): Promise<string> {
+  const pull = await git.pullRequestBase(repo, branch).catch(() => undefined);
+  return pull ?? side.landingBranch?.(repo) ?? defaultBranch;
+}
 
 const pkt = (s: string | Buffer): Buffer => {
   const b = typeof s === 'string' ? Buffer.from(s) : s;
@@ -285,21 +300,21 @@ export function createGitProxy(o: GitProxyOptions) {
           record('github_proxy.refused', { refs: refs.map((x) => x.ref), reason });
           return refusedReport(plain, refs, reason);
         }
+        const baseOf = (ref: string): Promise<string> => baseBranchOf(side, git, at.repo, ref.replace(/^refs\/heads\//, ''), facts!.defaultBranch);
         if (side.shrinkGuard && facts?.defaultBranch) {
-          const defaultBranch = facts.defaultBranch;
-          // The base a branch merges into (issue #1147): its open pull request's, else the landing branch, else the default
-          // branch. A pull request GitHub cannot say of is none: the push is not held up by the read.
-          const baseOf = async (ref: string): Promise<string> => {
-            const branch = ref.replace(/^refs\/heads\//, '');
-            const pull = await git.pullRequestBase(at.repo, branch).catch(() => undefined);
-            return pull ?? side.landingBranch?.(at.repo) ?? defaultBranch;
-          };
           for (const c of refs.filter((x) => !ZERO.test(x.old))) {
             const judged = await side.shrinkGuard({ repo: at.repo, base: await baseOf(c.ref), old: c.old, new: c.new, pack: read.pack });
             if (judged.ok) continue;
             record('github_proxy.refused', { refs: refs.map((x) => x.ref), reason: judged.reason, shrunk: judged.shrunk });
             return refusedReport(plain, refs, judged.reason);
           }
+        }
+        // Push requirements (issue #2555): each branch the push moves needs a passing evaluation of its new head.
+        for (const c of side.pushRequirements ? refs.filter((x) => !ZERO.test(x.new) && x.ref.startsWith('refs/heads/')) : []) {
+          const judged = await side.pushRequirements!({ jobId: job.id, repo: at.repo, base: await baseOf(c.ref), new: c.new, pack: read.pack });
+          if (judged.ok) continue;
+          record('github_proxy.refused', { refs: refs.map((x) => x.ref), reason: judged.reason });
+          return refusedReport(plain, refs, judged.reason);
         }
       }
       if (!push && at.advertise) traffic.gitFetch(at.repo, job.id);

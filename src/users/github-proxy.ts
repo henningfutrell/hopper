@@ -9,6 +9,9 @@ import { createOutOfBandChanges, type OutOfBandChanges } from '../infra-plans/ou
 import type { Clock, ConnectedAccountTokens, JobProxyCredentials, UserStore } from '../domain/ports.ts';
 import { DEFAULT_SHRINK_GUARD, shrinkReason, shrunkFiles } from '../domain/shrink-guard.ts';
 import type { CheckFastForward, CountPushLines } from '../git-mirror/push-lines.ts';
+import type { HoldsRequirements } from '../git-mirror/push-requirements-at.ts';
+import { REQUIREMENTS_CLIENT, REQUIREMENTS_CLIENT_FILE, REQUIREMENTS_SCRIPT, REQUIREMENTS_SCRIPT_FILE, REQUIREMENTS_SCRIPT_VARIABLE } from '../github-proxy/requirements-script.ts';
+import { PUSH_REQUIREMENTS_EVALUATED, pushRequirementsGate } from './push-requirements.ts';
 import { DEFAULT_CONTRIBUTION, DEFAULT_YOLO_MODE, directPushFor, pullRequestList, sourceItemOf, yoloModeFor, type ConnectedAccountKey, type Job, type MachineSnapshot, type PullRequestSeen, type SourceStatus, type User } from '../domain/types.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
 import { ownsPullRequest } from './owns-pull-request.ts';
@@ -124,6 +127,8 @@ export interface UserGitHubProxyOptions {
   pushLines?: CountPushLines;
   /** Whether a direct push is a fast-forward (issue #1806), in the same mirrors; absent: no direct push is taken. */
   fastForward?: CheckFastForward;
+  /** Whether a pushed commit holds a requirements file (issue #2555), in the same mirrors; absent: a push no job evaluated goes on. */
+  holdsRequirements?: HoldsRequirements;
   /** File an issue's drafter (issue #471): the user's own AI connection; absent: none, so File an issue cannot draft. */
   issueDrafter?: IssueDrafter;
   /** The host name, masked in a job's context that File an issue attaches. */
@@ -229,9 +234,9 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
         // (issue #624) puts what the job makes for a person to see; `hopper-step` (issue #731) runs one step on a Windows host;
         // `hopper-login` (issue #1110) says what came of a login the job asked for; `hopper-relay` (issue #2146) joins a
-        // local port to a target of the job's bastion.
-        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id, job.movedAway ?? 0), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT, [STEP_SCRIPT_FILE]: STEP_SCRIPT, [LOGIN_SCRIPT_FILE]: LOGIN_SCRIPT, [RELAY_SCRIPT_FILE]: RELAY_SCRIPT, [RELAY_CLIENT_FILE]: RELAY_CLIENT, ...skill.files },
-        paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE, [ARTIFACT_SCRIPT_VARIABLE]: ARTIFACT_SCRIPT_FILE, [STEP_SCRIPT_VARIABLE]: STEP_SCRIPT_FILE, [LOGIN_SCRIPT_VARIABLE]: LOGIN_SCRIPT_FILE, [RELAY_SCRIPT_VARIABLE]: RELAY_SCRIPT_FILE, ...skill.paths },
+        // local port to a target of the job's bastion; `hopper-requirements` (issue #2555) checks a push's requirements.
+        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id, job.movedAway ?? 0), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT, [STEP_SCRIPT_FILE]: STEP_SCRIPT, [LOGIN_SCRIPT_FILE]: LOGIN_SCRIPT, [RELAY_SCRIPT_FILE]: RELAY_SCRIPT, [RELAY_CLIENT_FILE]: RELAY_CLIENT, [REQUIREMENTS_SCRIPT_FILE]: REQUIREMENTS_SCRIPT, [REQUIREMENTS_CLIENT_FILE]: REQUIREMENTS_CLIENT, ...skill.files },
+        paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE, [ARTIFACT_SCRIPT_VARIABLE]: ARTIFACT_SCRIPT_FILE, [STEP_SCRIPT_VARIABLE]: STEP_SCRIPT_FILE, [LOGIN_SCRIPT_VARIABLE]: LOGIN_SCRIPT_FILE, [RELAY_SCRIPT_VARIABLE]: RELAY_SCRIPT_FILE, [REQUIREMENTS_SCRIPT_VARIABLE]: REQUIREMENTS_SCRIPT_FILE, ...skill.paths },
         // The vault's helper (issue #558), where the machine's client serves one and the machine is a box of a template:
         // the vault gives nothing to any other machine (issue #652). It asks with this job's proxy token.
         // git's way to GitHub, through the hopper (issue #652): the job holds no GitHub token.
@@ -378,6 +383,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // A push kept as a saga (issue #1806): whether the broker recorded the push's event before a stop.
         recorded: (jobId, requestId) => o.store.events.recent(500, [...PUSH_EVENTS], jobId).some((e) => (e.data as { requestId?: unknown }).requestId === requestId),
         ...(o.fastForward ? { fastForward: ({ repo, ...push }: Parameters<CheckFastForward>[2] & { repo: string }) => o.fastForward!(repo, mirrorRemote(repo), push) } : {}),
+        // Push requirements (issue #2555): the job's evaluations, else the commit's tree in the mirror.
+        pushRequirements: pushRequirementsGate({ evaluations: (jobId) => o.store.events.recent(500, [PUSH_REQUIREMENTS_EVALUATED], jobId), ...(o.holdsRequirements ? { holds: o.holdsRequirements } : {}), remote: mirrorRemote }),
       },
     },
   };
