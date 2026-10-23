@@ -1,7 +1,8 @@
 // The reruns of a job (issue #2639 part 2, design.md "One approval per sandbox run", "Approvals a rerun keeps"): an
-// item's jobs, each the `rerunOf` of the next. What a person approved for one of them — its sandbox runs of a template, a template approved for its runs only —
-// carries to the jobs that run it again, so a rerun (the assessor's, or a person's Run again) does not wait on the same
-// cards again. A vault grant needs none of this: it is kept for the item. Pure.
+// item's jobs, each the `rerunOf` of the next. What a person approved for one of them — its sandbox runs of a template,
+// a template approved for its runs only — carries to the jobs that run it again, so a rerun (the assessor's, or a
+// person's Run again) does not wait on the same cards again. A vault grant needs none of this: it is kept for the item.
+// Pure.
 import type { Job } from './types.ts';
 
 /** How many jobs a chain is walked: the approvals of an item run again more often than this stay with the older jobs. */
