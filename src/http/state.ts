@@ -1,6 +1,5 @@
 // Read routes over engine state. Nothing here changes anything.
 import type { EventLoopStall } from './event-loop.ts';
-import { strayChildren as processStrays, type StrayChildren } from './stray-children.ts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Clock, PluginsView, UserStore } from '../domain/ports.ts';
@@ -53,7 +52,7 @@ export function routerView(plugins: PluginsView) {
 }
 
 /** The request's user's engine state (issue #158); `/api/health`'s version and uptime are the instance's. */
-export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string; port: () => number; sandboxes: Pick<Sandboxes, 'view'>; stall?: () => EventLoopStall | undefined; strays?: () => StrayChildren | undefined }): void {
+export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts; clock: Clock; version: string; port: () => number; sandboxes: Pick<Sandboxes, 'view'>; stall?: () => EventLoopStall | undefined }): void {
   const startedAt = o.clock.now().getTime();
 
   // A request with no user (loopback without a session, several users: issue #221) reads the instance's
@@ -61,9 +60,7 @@ export function stateRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequ
   app.get('/api/health', async (req) => {
     const uptimeS = Math.floor((o.clock.now().getTime() - startedAt) / 1000);
     // The last stall of the event loop (issue #1002), while it is shown: the instance's, like the uptime.
-    // The hopper's zombie and orphaned child processes, when there are more than a few (issue #2623): the instance's too.
-    const stall = o.stall?.(), strays = (o.strays ?? processStrays.problem)();
-    const loop = { ...(stall ? { eventLoopStall: stall } : {}), ...(strays ? { strayChildren: strays } : {}) };
+    const stall = o.stall?.(), loop = stall ? { eventLoopStall: stall } : {};
     if (userIdOf(req) === undefined) return { ok: true, version: o.version, uptimeS, ...loop };
     const { engine, plugins } = o.tenant(req);
     const r = plugins.routerStatus();
