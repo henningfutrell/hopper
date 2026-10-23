@@ -63,6 +63,23 @@ describe('a fixed script on a Windows client (issue #2676)', () => {
     }
   });
 
+  // Issue #2690: jobs on a Windows client still failed at the reap with the same error. Its client ran a build before the fix:
+  // a `-c` of CLIENT_SCRIPT_SH is one line, and cannot say `line 2`.
+  it('the reap reaches sh whole through the environment: it parses, and it fits a Windows environment variable', () => {
+    for (const argv of [reapArgv('job-1', 'C:/w/.worktrees/@scratch/job-1'), reapArgv('job-1', 'C:/w/.worktrees/@scratch/job-1', true), surveyArgv(['C:/w']), discoverArgv()]) {
+      const s = spawnOf(argv, {}, 'win32');
+      const script = s.env.HOPPER_CLIENT_SCRIPT!;
+      expect(script).toBe(argv[argv.indexOf('-c') + 1]);
+      // Windows holds at most 32767 characters in one variable.
+      expect(script.length).toBeLessThan(32_767);
+      execFileSync('sh', ['-c', 'printf "%s" "$HOPPER_CLIENT_SCRIPT" | sh -n'], { env: { ...s.env, PATH: process.env.PATH }, stdio: 'pipe' });
+    }
+    expect(CLIENT_SCRIPT_SH).not.toContain('\n');
+    // Cut where the command line cut it, the reap is the error the client said.
+    const reap = reapArgv('job-1', 'C:/w/.worktrees/@scratch/job-1');
+    expect(() => execFileSync('bash', ['-n', '-c', reap[reap.indexOf('-c') + 1]!.slice(0, 8191)], { stdio: 'pipe' })).toThrow(/unexpected end of file/);
+  });
+
   it('elsewhere the script stays on the command line', () => {
     expect(spawnOf(['sh', '-c', 'true'], {}, 'linux')).toEqual({ file: 'sh', args: ['-c', 'true'], env: {} });
   });
