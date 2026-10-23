@@ -74,6 +74,7 @@
         "job.cleaned_up",
         "job.pod_removed",
         "job.resources_used",
+        "job.cleanup_leftover",
         "job.parked",
         "job.unparked",
         "job.continued",

@@ -3,7 +3,7 @@
 // work not pushed, or failed with why. The parts list shows the cleanup status and each entry. Real database and HTTP server.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Executor, ExecutionOutcome, Reaped } from '../../src/domain/ports.ts';
-import type { JobBom } from '../../src/domain/types.ts';
+import type { FailuresView, JobBom } from '../../src/domain/types.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { createManualSource } from '../support/manual-source.ts';
 import { waitFor } from '../support/wait.ts';
@@ -83,5 +83,18 @@ describe('the resource ledger (issue #2504)', () => {
     const bom = (await a.api<JobBom>('GET', `/api/jobs/${job.id}/bom`)).body;
     expect(bom.parts.find((p) => p.id === 'cleanup')).toMatchObject({ status: 'failed', detail: '3 of 3 closed, 1 failed' });
     expect(bom.parts.find((p) => p.kind === 'scratch_dir')?.status).toBe('failed');
+  });
+
+  it('lists an ended job whose removal failed as stuck work once the grace period passed, until a later reap removes it', async () => {
+    const { a, job } = await ended((id) => ({ kept: [], left: [`/w/.worktrees/@scratch/${id}/containers`] }));
+    const store = a.user().store;
+    const stuck = async () => (await a.api<FailuresView>('GET', '/api/failures')).body.stuck.find((c) => c.cause === 'cleanup_leftover')?.ids ?? [];
+    expect(store.resourceLedger.open().map((e) => [e.jobId, e.kind, e.state])).toEqual([[job.id, 'scratch_dir', 'failed']]);
+    expect(await stuck()).toEqual([]);
+    store.jobs.update(job.id, { finishedAt: new Date(Date.now() - 2 * 3600_000).toISOString() });
+    expect(await stuck()).toEqual([job.id]);
+    store.resourceLedger.close(job.id, 'scratch_dir', `/w/.worktrees/@scratch/${job.id}`, 'reaped', new Date().toISOString());
+    expect(store.resourceLedger.open()).toEqual([]);
+    expect(await stuck()).toEqual([]);
   });
 });

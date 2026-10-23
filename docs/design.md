@@ -12836,7 +12836,8 @@ one press per cause where the hopper can move each item.
   requests page's own list, `pullRequestList`) the hopper gave up on, `tend` after a failed tend else `checks`, or one whose
   tend its source refused (`tend_refused`); a job on a wait that names nothing it waits on (`wait_unnamed`,
   "waiting on nothing recorded", issue #1245); a job on a wait whose agent session ended (`stranded`, issue #1779); a job stuck on its own command wait (`own_wait`); an
-  item blocked with no pull request to wait on (`pr_open_stale`, issues #1231, #1891).
+  item blocked with no pull request to wait on (`pr_open_stale`, issues #1231, #1891); an ended job with a cleanup leftover
+  (`cleanup_leftover`, issue #2504, "The resource ledger").
   Each has `ids`, `what` in a few words, and `act`, the bulk action's button, or `todo`, what a person does.
 - **The bulk action** (`POST /ui/api/failures/stuck/:cause`, operator, a box action; `src/failures/stuck.ts`
   `actOnStuck`). Only the causes in `STUCK_BULK`: `continue`, `run_again`, `wont_do`, `retry`, `push`, `tend`, `wait_unnamed`, `stranded` (else 400;
@@ -33219,8 +33220,8 @@ one can ask "what does this job still hold, and why".
   a discard (`src/engine/sweep.ts`) — closes the job's entries as it says (`reapClosures`): a dir it names as still there is
   `failed`, with that path as the reason; with work kept, the scratch dir and the job worktree are `kept` together, as the
   reap keeps them; else each is `reaped`. A scope is always `reaped`. A reap that did not look at the scratch dir (the
-  sweep stops only a scope or processes) closes only the scope. A `kept` entry a later reap removes becomes `reaped`; a
-  `reaped` or `failed` entry is not judged again. A reap that could not reach the machine closes nothing: the entries
+  sweep stops only a scope or processes) closes only the scope. A `kept` entry a later reap removes becomes `reaped`, and so
+  does a `failed` one (part 2); a `reaped` entry is not judged again. A reap that could not reach the machine closes nothing: the entries
   stay `live` until a reap goes through.
 - **Cleanup status** (`cleanupStatusOf`). `none` with no entry; `in_use` while the job has not ended; `pending` while its
   cleanup is deferred or an entry is still `live`; `in_progress` while its cleanup record is owed; then `failed` if an
@@ -33229,13 +33230,38 @@ one can ask "what does this job still hold, and why".
   the cleanup status and how many entries are closed, and one part per entry with its locator and state. An entry is a
   record, but one whose removal failed counts as `failed`.
 
-**Left for later parts** of issue #2504: containers, volumes, processes, agent sessions, herdr panes and build daemons as
-entries; the cleanup as a persisted work item per entry with backoff, on each machine's own transport, and container storage
-that only a `podman unshare` removes; the reconciler that compares each machine with the live jobs, also for a job outside
-the job-list window and what was left before the ledger; `job.cleanup_leftover` after a grace period; leftover counts and
-bytes on Machines; a cleanup failure on Failures.
-
 **Verification.** `test/domain/resource-ledger.test.ts` (the entries from a state, the closures, the status);
 `test/engine/sweep-ledger.test.ts` (the sweep closes entries: kept work later removed, a dir left, a scope-only reap);
 `test/integration/resource-ledger.test.ts` (a job that ends cancelled, finished or failed has every entry reaped; work kept;
 a removal that failed; the parts list).
+
+### Part 2: cleanup leftovers (2026-10-22)
+
+A failed removal or a cleanup that never reached its machine stayed in the ledger with nothing to say so: the job's page
+showed it only to a person who opened that job. The issue asks that a leftover found after a grace period is never silently
+ignored.
+
+- **Cleanup leftover** (`cleanupLeftoversOf`, `src/domain/resource-ledger.ts`, pure). An ended job's entries still `live`
+  or `failed` once `CLEANUP_GRACE_MINUTES` (60) passed after its end (`finishedAt`, else `updatedAt`). A job that has not
+  ended, and a job the store does not know, is no leftover here. The store reads the candidates in one query
+  (`ResourceLedgerRepository.open`: every entry `live` or `failed`).
+- **A failed entry is judged again.** A later reap that removed a `failed` entry's dir — the sweep reaps an ended job's
+  scratch dir again at each pass while it is there — closes it `reaped`; one that still leaves it keeps it `failed`, with
+  the new reason when it changed. Only a `reaped` entry is final. So a leftover ends when a reap removes it.
+- **The leftover check** (`src/engine/cleanup-leftovers.ts`). With each sweep pass, only on the host that holds the sweep
+  lease, before the sweep: each leftover is recorded once per job as `job.cleanup_leftover` (its end, the grace period, and
+  each entry: machine, kind, locator, state, reason) and logged. A job already told — in memory, or by its event after a
+  restart — is not told again. A check that fails is logged and throws nothing.
+- **Failures.** The stuck cause `cleanup_leftover` ("Ended jobs whose cleanup left something on a machine") lists each such
+  job while it stays, with what a person does. It has no bulk action: the hopper already tries again at each sweep pass.
+
+**Left for later parts** of issue #2504: containers, volumes, processes, agent sessions, herdr panes and build daemons as
+entries; the cleanup as a persisted work item per entry with backoff, on each machine's own transport, and container storage
+that only a `podman unshare` removes; the reconciler that compares each machine with the live jobs, also for a job outside
+the job-list window and what was left before the ledger — and that closes an entry whose thing is no longer there (removed
+by hand), which today stays a leftover; leftover counts and bytes on Machines.
+
+**Verification (part 2).** `test/domain/resource-ledger.test.ts` (`cleanupLeftoversOf`; a failed entry reaped later);
+`test/domain/stuck.test.ts` (the cause); `test/engine/cleanup-leftovers.test.ts` (told once, also after a restart; a check
+that fails); `test/integration/resource-ledger.test.ts` (real database: Failures lists the job after the grace period, and
+not after a reap removes the entry).

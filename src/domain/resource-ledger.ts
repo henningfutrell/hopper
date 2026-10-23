@@ -35,10 +35,12 @@ export type NewLedgerEntry = Pick<LedgerEntry, 'jobId' | 'machineId' | 'kind' | 
 export interface ResourceLedgerRepository {
   /** Records an entry as `live`; one already there (same job, kind and locator) is left as it is. */
   record(entry: NewLedgerEntry): void;
-  /** Closes the job's entry of that kind and locator, unless it is no longer `live` (or `kept`, which a later reap may close). */
+  /** Closes the job's entry of that kind and locator, unless it is `reaped`: a `kept` or `failed` one a later reap may close. */
   close(jobId: string, kind: LedgerKind, locator: string, state: Exclude<LedgerState, 'live'>, at: string, reason?: string): void;
   /** The job's entries, oldest first. */
   forJob(jobId: string): LedgerEntry[];
+  /** Every entry still `live` or `failed`, of every job, by job then oldest first: what the leftover check reads. */
+  open(): LedgerEntry[];
 }
 
 /**
@@ -65,15 +67,40 @@ const within = (path: string, dir: string): boolean => path === dir || path.star
 /**
  * What a reap says of each live or kept entry: a dir it could not remove failed; with work kept, the scratch dir and the job
  * worktree are kept (the reap keeps them together); else each is reaped. A scope is always stopped. A reap that did not look
- * at the scratch dir (`scratch` false) judges the scope only. An entry already reaped or failed is not judged again.
+ * at the scratch dir (`scratch` false) judges the scope only. A reaped entry is not judged again; a failed one a later reap
+ * removed is reaped.
  */
 export function reapClosures(entries: readonly LedgerEntry[], said: Reaped, scratch = true): { entry: LedgerEntry; state: Exclude<LedgerState, 'live'>; reason?: string }[] {
-  return entries.filter((e) => (e.state === 'live' || e.state === 'kept') && (scratch || e.kind === 'job_scope')).map((entry) => {
+  return entries.filter((e) => e.state !== 'reaped' && (scratch || e.kind === 'job_scope')).map((entry) => {
     if (entry.kind === 'job_scope') return { entry, state: 'reaped' as const };
     const left = said.left?.find((p) => within(p, entry.locator) || within(entry.locator, p));
     if (left) return { entry, state: 'failed' as const, reason: `${left} is still there` };
     return { entry, state: said.kept.length > 0 ? 'kept' as const : 'reaped' as const };
-  }).filter((c) => c.state !== c.entry.state);
+  }).filter((c) => c.state !== c.entry.state || c.reason !== c.entry.reason);
+}
+
+/** How long after a job ended an entry may stay `live` or `failed` before it is a **cleanup leftover** (issue #2504). */
+export const CLEANUP_GRACE_MINUTES = 60;
+
+/** An ended job's cleanup leftovers: its entries still `live` or `failed` once the grace period after its end passed. */
+export interface CleanupLeftover { jobId: string; endedAt: string; entries: LedgerEntry[] }
+
+/**
+ * The cleanup leftovers in `open` (every entry still `live` or `failed`), by job: a job that ended more than
+ * `CLEANUP_GRACE_MINUTES` before `now`; its end is when it finished, else when it last changed. A job the store does not
+ * know is not judged here.
+ */
+export function cleanupLeftoversOf(open: readonly LedgerEntry[], jobOf: (id: string) => Pick<Job, 'status' | 'finishedAt' | 'updatedAt'> | undefined, now: number): CleanupLeftover[] {
+  const byJob = new Map<string, LedgerEntry[]>();
+  for (const e of open) if (e.state === 'live' || e.state === 'failed') (byJob.get(e.jobId) ?? byJob.set(e.jobId, []).get(e.jobId)!).push(e);
+  const out: CleanupLeftover[] = [];
+  for (const [jobId, entries] of byJob) {
+    const job = jobOf(jobId);
+    if (!job || !TERMINAL_STATUSES.includes(job.status)) continue;
+    const endedAt = job.finishedAt ?? job.updatedAt;
+    if (now - Date.parse(endedAt) >= CLEANUP_GRACE_MINUTES * 60_000) out.push({ jobId, endedAt, entries });
+  }
+  return out;
 }
 
 /** The job's cleanup status, from its entries and its cleanup record (`cleanupDue`, `cleanupDeferred`). */

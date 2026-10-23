@@ -1080,6 +1080,32 @@ Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used
 }
 ```
 
+## `job.cleanup_leftover`
+
+Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Failures lists the job as stuck work (`cleanup_leftover`) while an entry stays.
+
+| field | type | required |
+|---|---|---|
+| `endedAt` | string | yes |
+| `graceMinutes` | number | yes |
+| `entries` | object[] | yes |
+
+```json
+{
+  "endedAt": "2026-10-22T09:00:00.000Z",
+  "graceMinutes": 60,
+  "entries": [
+    {
+      "machineId": "desk",
+      "kind": "scratch_dir",
+      "locator": "/home/me/work/.worktrees/@scratch/f3b1c2d4",
+      "state": "failed",
+      "reason": "/home/me/work/.worktrees/@scratch/f3b1c2d4/containers is still there"
+    }
+  ]
+}
+```
+
 ## `job.parked`
 
 Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issues #650, #2335: `auto`, its question waited on a person a few seconds, or its proposal or research report reached the human stage; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question, a proposal or a research report (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did (`ui`, `cli`, `api`), and the reason they gave; a running job that parked it through the `park` skill (`POST /job/park`) is `by` `job <its id>`, `via` `job`. `move` (issue #1892): the hopper parked it to move it off its machine with no person — `signed_out` (issue #1211), `busy_machine` (issue #1977) or `lost_machine` (issue #1569; also a run whose session had no way to the hopper, issue #2427, its `why` says so) — and picks it up elsewhere (`job.unparked`); its work item goes back to queued, not to needs you, and a stop before the pick up leaves the move to its next pass. A parked job never runs, its question never expires, and its proposal or research report is neither reviewed nor decided, until it is re-queued or cancelled.
