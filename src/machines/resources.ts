@@ -65,6 +65,7 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
   return {
     cores: r.cores,
     ...(busy !== undefined ? { cpuBusyFrac: busy } : {}),
+    ...(count(r.cpuThrottledFrac) && r.cpuThrottledFrac <= 1 ? { cpuThrottledFrac: r.cpuThrottledFrac } : {}),
     ...(load ? { load: [load[0], load[1], load[2]] } : {}),
     memTotalBytes: r.memTotalBytes, memAvailableBytes: r.memAvailableBytes,
     ...(count(r.swapTotalBytes) && count(r.swapUsedBytes) ? { swapTotalBytes: r.swapTotalBytes, swapUsedBytes: r.swapUsedBytes } : {}),
