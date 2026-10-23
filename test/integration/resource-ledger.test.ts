@@ -43,8 +43,11 @@ async function ended(said: (jobId: string) => Reaped, end: 'cancelled' | 'finish
   const db = tempDbPath();
   cleanup = db.cleanup;
   const { executor, cleaned } = ledgered(said);
-  app = await startTestApp({ dbPath: db.dbPath, source: createManualSource(), seams: { executors: [executor] } });
+  const source = createManualSource();
+  app = await startTestApp({ dbPath: db.dbPath, source, seams: { executors: [executor] } });
   const job = await app.pull(end === 'cancelled' ? {} : { end }, { executor: 'ledgered' });
+  // The manual source offers an ended job's item again, and a later sync would make a second job of it.
+  source.remove(job.source!.key);
   if (end === 'cancelled') {
     await app.waitForStatus(job.id, 'running');
     expect(app.user().store.resourceLedger.forJob(job.id).map((e) => [e.state, e.machineId])).toEqual([['live', 'local'], ['live', 'local'], ['live', 'local']]);
