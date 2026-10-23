@@ -4,7 +4,7 @@
 // EVENT_SCHEMA_VERSIONS in src/domain/types.ts and move the old schema to legacy.ts (its
 // docs/schemas file stays, re-exported from there).
 import { z } from 'zod';
-import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS, WORK_DISCARD_REASONS } from '../domain/types.ts';
+import { CONFIDENCES, CONNECTED_ACCOUNT_PROVIDERS, EVENT_DECISION_POINTS, MINOR_DECISION_MODES, RISK_CATEGORIES, NOT_APPLIED, EVENT_SCHEMA_VERSIONS, EVENT_TYPES, FAILURE_CLASSES, FAILURE_DECISIONS, GATE_AT, HANDOFF_ENDS, HANDOFF_REASONS, HANDOFF_RESOLUTIONS, WORK_ITEM_STATES, LOGIN_KINDS, PRIORITY_LANE_IDLE, QUEUE_GATE_MODES, RADIUS_LEVELS, OPERATIONS, ASSET_KINDS, REVIEW_DECISIONS, REVIEW_SECTIONS, REVIEW_VERDICTS, ROLES, SESSION_END_REASONS, UNCONFIRMED_AS, type EventType, type ReviewKind, ACTION_VIAS, JOB_PHASES, REVIEW_KINDS, SHIFT_MODES, SHIFT_THEN, MINT_KINDS, FINISH_STEPS, TEND_STEPS, WORK_DISCARD_REASONS, KEPT_REASONS } from '../domain/types.ts';
 import { DISMISSED_BY } from '../domain/locked.ts'; import { PARK_VIAS } from '../domain/park-ask.ts'; import { JOB_MOVES } from '../domain/checkpoints.ts'; import { LEGACY_EVENT_SCHEMAS, LEGACY_EVENT_TYPES } from './legacy.ts';
 import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { MACHINE_MEMORY_EVENT_SCHEMAS } from './machine-memory-schemas.ts'; import { MACHINE_DISK_EVENT_SCHEMAS } from './machine-disk-schemas.ts'; import { MACHINE_DRAIN_EVENT_SCHEMAS } from './machine-drain-schemas.ts'; import { SANDBOX_HOST_EVENT_SCHEMAS } from './sandbox-host-schemas.ts'; import { KEPT_WORK_EVENT_SCHEMAS } from './kept-work-schemas.ts'; import { GIVE_BACK_EVENT_SCHEMAS } from './give-back-schemas.ts'; import { EVENT_LOOP_EVENT_SCHEMAS } from './event-loop-schemas.ts'; import { PREEMPTION_EVENT_SCHEMAS } from './preemption-schemas.ts'; import { SKILL_LIBRARY_EVENT_SCHEMAS } from './skill-library-schemas.ts';
 import { PROXY_OPS } from '../github-proxy/policy.ts';
@@ -215,7 +215,7 @@ export const EVENT_SCHEMAS = {
   'job.rework_requested': strict({ pullRequest: z.string(), notes: z.string(), nextJobId: z.string(), ...actingIfPerson }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
   'job.dismissed': strict({ by: z.enum(DISMISSED_BY) }),
-  'job.work_kept': strict({ paths: z.array(z.string()).min(1) }),
+  'job.work_kept': strict({ paths: z.array(z.string()).min(1), reasons: z.record(z.string(), z.array(z.enum(KEPT_REASONS)).min(1)).optional() }),
   // `discarded` (issue #1010): a person discarded the kept work, unpushed; who, and the way. Or the sweep did, and `reason`
   // says why nobody waits on it (issue #1187).
   'job.work_removed': strict({ paths: z.array(z.string()).min(1), discarded: z.literal(true).optional(), gone: z.literal(true).optional(), reason: z.enum(WORK_DISCARD_REASONS).optional(), ...actingIfPerson }),

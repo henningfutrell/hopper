@@ -129,8 +129,13 @@ const REAP_SCRIPT = [
   'tips() { td=$1; tr="HEAD --branches"; [ -f "$td/.git" ] && tr=HEAD; ts=$(git -C "$td" status --porcelain 2>/dev/null) || return 0;',
   '  [ -z "$(printf "%s\\n" "$ts" | grep -vx "?? node_modules")" ] || return 0; ! stashed "$td" || return 0;',
   '  for tu in $(git -C "$td" rev-parse $tr 2>/dev/null); do unpushed "$td" "$tu" && printf "hopper-kept-tip %s %s\\n" "$tu" "$td"; done; };',
+  // Why the reap keeps the checkout $1 (issue #2494): each of a change, a stash and commits no remote has that it holds.
+  'why() { wd=$1; wr="HEAD --branches"; [ -f "$wd/.git" ] && wr=HEAD;',
+  '  ws=$(git -C "$wd" status --porcelain 2>/dev/null) && [ -n "$(printf "%s\\n" "$ws" | grep -vx "?? node_modules")" ] && printf "hopper-kept-why dirty %s\\n" "$wd";',
+  '  stashed "$wd" && printf "hopper-kept-why stash %s\\n" "$wd";',
+  '  wu=$(git -C "$wd" log --oneline -1 $wr --not --remotes 2>/dev/null) && [ -n "$wu" ] && unpushed "$wd" "$wr" && printf "hopper-kept-why unpushed %s\\n" "$wd"; };',
   'kept=; [ "$k" = discard ] || kept=$(repos | while IFS= read -r g; do',
-  '  d=${g%/.git}; held "$d" && { printf "hopper-kept %s\\n" "$d"; tips "$d"; };',
+  '  d=${g%/.git}; held "$d" && { printf "hopper-kept %s\\n" "$d"; why "$d"; tips "$d"; };',
   'done);',
   // What the job pushed (issue #630): a remote branch its HEAD holds that the default branch does not.
   'pushed=$(repos | while IFS= read -r g; do',
@@ -239,12 +244,16 @@ function detailsOf(line: string): ContainerDetails | undefined {
   return { id, name: name.replace(/^\//, ''), image, ...(startedAt ? { startedAt } : {}), ...(stoppedAt ? { stoppedAt } : {}) };
 }
 
+/** Why the reap kept a checkout (issue #2494): a change not committed, a stash, commits no remote has. */
+export const KEPT_REASONS = ['dirty', 'stash', 'unpushed'] as const;
+export type KeptReason = typeof KEPT_REASONS[number];
+
 /**
  * What a finished reap said: the repositories it kept, those whose branch was pushed (issue #630), the dirs of the job it
- * could not remove (issue #1452), and the containers and volumes of the job it removed (issue #1120), with what it said of
+ * could not remove (issue #1452), why it kept each it kept (`reasons`, issue #2494; none from a client older than that), and the containers and volumes of the job it removed (issue #1120), with what it said of
  * each container (issue #975; none from a client older than that). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse } | undefined {
+export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
@@ -258,9 +267,14 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
     const t = /^hopper-kept-tip ([0-9a-f]{40,64}) (\/.*)$/.exec(l);
     if (t && kept.includes(t[2]!) && !tips[t[2]!]?.includes(t[1]!)) (tips[t[2]!] ??= []).push(t[1]!);
   }
+  const reasons: Record<string, KeptReason[]> = {};
+  for (const l of lines) {
+    const w = /^hopper-kept-why (\S+) (\/.*)$/.exec(l);
+    if (w && kept.includes(w[2]!) && (KEPT_REASONS as readonly string[]).includes(w[1]!) && !reasons[w[2]!]?.includes(w[1] as KeptReason)) (reasons[w[2]!] ??= []).push(w[1] as KeptReason);
+  }
   const details = [...new Map(named(DETAILS_MARK).map(detailsOf).filter((d) => d !== undefined && containers.includes(d.id)).map((d) => [d!.id, d!])).values()];
   return {
-    kept, ...(Object.keys(tips).length ? { tips } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}),
+    kept, ...(Object.keys(tips).length ? { tips } : {}), ...(Object.keys(reasons).length ? { reasons } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}),
     ...(containers.length || volumes.length ? { removed: { containers, volumes, ...(details.length ? { details } : {}) } } : {}),
     ...usedOf(lines),
   };

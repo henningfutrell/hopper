@@ -109,15 +109,15 @@ describe('work already on a remote under other commits (issue #1187): not kept',
 
   it('kept when the remote has only part of it, or the same files with other content', () => {
     land((d) => commit(d, { 'b.txt': 'b\n' }, 'part'));
-    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree) });
+    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] } });
     land((d) => commit(d, { 'a.txt': 'a3\n', 'c.txt': 'c\n' }, 'other content'));
-    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree) });
+    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] } });
   });
 
   it('kept when it adds work of its own on top of what landed', () => {
     land((d) => commit(d, { 'a.txt': 'a2\n', 'b.txt': 'b\n', 'c.txt': 'c\n' }, 'squashed'));
     commit(tree, { 'd.txt': 'd\n' }, 'd');
-    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree) });
+    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] } });
   });
 
   it('a merge of its own not on the remote keeps it, though each patch is there', () => {
@@ -128,6 +128,6 @@ describe('work already on a remote under other commits (issue #1187): not kept',
     git(tree, 'merge', '-q', '--no-edit', 'origin/side');
     git(tree, 'push', '-q', 'origin', 'HEAD^1:refs/heads/issue-1');
     git(main, 'fetch', '-q', 'origin');
-    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree), pushed: [tree] });
+    expect(readReap(reap())).toEqual({ kept: [tree], ...tipsOf(tree), reasons: { [tree]: ['unpushed'] }, pushed: [tree] });
   });
 });

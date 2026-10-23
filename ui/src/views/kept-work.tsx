@@ -1,7 +1,8 @@
 // Work not pushed (issue #1010, design.md "Work not pushed"): in Failures, each ended job whose reap kept work not pushed —
 // where its work tree is, and the repositories holding the work —, with Push it (its own session goes on in its kept work
 // tree, told to push and open the pull request; a note for it) and Discard (asked first: the work is lost), or why Push
-// it is not taken now. Shown only when there is some. A discard shows at once as removed on the machine (issue #1194): the
+// it is not taken now. Each repository says why it was kept: changes not committed, a stash, commits not pushed (issue
+// #2494). Shown only when there is some. A discard shows at once as removed on the machine (issue #1194): the
 // daemon answers before the removal, which the entry follows — under way, or failed with why and Discard again.
 import { GitBranch, Loader2, Trash2, Upload } from 'lucide-react';
 import { useState } from 'react';
@@ -13,11 +14,14 @@ import { Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { ago } from '@/model/format';
-import type { KeptWorkView } from '@/model/wire';
+import type { KeptReason, KeptWorkView } from '@/model/wire';
 import { failureAct } from '@/store';
 import { giveBack, PENDING, useGivingBack } from '@/store/give-back';
 import { useCanOperate, useJobIndex } from '@/store/selectors';
 import { ReportBugButton } from '@/app/bug-report';
+
+/** Why the reap kept a repository (issue #2494), in plain words. */
+const KEPT_WHY: Record<KeptReason, string> = { dirty: 'changes not committed', stash: 'a stash', unpushed: 'commits not pushed' };
 
 /** One job's work not pushed (issue #1010): where it is, and its ways out — or why not now. */
 function KeptWorkRow({ k }: { k: KeptWorkView }) {
@@ -55,7 +59,12 @@ function KeptWorkRow({ k }: { k: KeptWorkView }) {
       {removing && <p data-slot="kept-work-removing" className="flex items-center gap-1.5 text-sm text-muted-foreground"><Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden />Discarded: removing the work tree on its machine</p>}
       {!removing && k.discarding?.state === 'failed' && <p data-slot="kept-work-discard-failed" role="alert" className="text-sm text-bad">The discard failed: {k.discarding.error}. The work is still kept.</p>}
       <ul className="space-y-0.5 text-xs text-muted-foreground">
-        {k.paths.map((p) => <li key={p} className="flex items-center gap-1.5 break-all font-mono"><GitBranch className="size-3 shrink-0" aria-hidden />{p}</li>)}
+        {k.paths.map((p) => (
+          <li key={p} className="flex flex-wrap items-center gap-1.5">
+            <GitBranch className="size-3 shrink-0" aria-hidden /><span className="break-all font-mono">{p}</span>
+            {k.reasons?.[p]?.length ? <span data-slot="kept-why">— {k.reasons[p].map((r) => KEPT_WHY[r]).join(', ')}</span> : null}
+          </li>
+        ))}
       </ul>
       {canAct && !removing && (
         <div className="space-y-2">

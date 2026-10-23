@@ -7,7 +7,7 @@ import type { Reaped } from '../../src/domain/ports.ts';
 
 const SSH_ERROR = 'the reap on m1 did not finish (exit 255): ssh: Could not resolve hostname old-name';
 
-function setup(o: { deferred?: boolean; reachable?: boolean; kept?: string[] } = {}) {
+function setup(o: { deferred?: boolean; reachable?: boolean; kept?: string[]; reasons?: Reaped['reasons'] } = {}) {
   let job: Record<string, unknown> = {
     id: 'j', status: 'finished', spec: { executor: 'herdr' }, source: { key: 'gh:o/r#1' },
     executorState: { cwd: '/w', laneId: 'm1/lane-1', ssh: 'old-name' },
@@ -19,7 +19,7 @@ function setup(o: { deferred?: boolean; reachable?: boolean; kept?: string[] } =
     reap: async (...args: unknown[]): Promise<Reaped> => {
       reaps.push(args);
       if (o.reachable === false) throw new Error('m1 is not dialled in');
-      return { kept: o.kept ?? [] };
+      return { kept: o.kept ?? [], ...(o.reasons ? { reasons: o.reasons } : {}) };
     },
   };
   const store = {
@@ -59,6 +59,13 @@ describe('a cleanup its own route cannot do', () => {
     const t = setup({ kept: ['/w/.worktrees/@scratch/j/repo'] });
     await t.cleanups.run('j');
     expect(t.events).toContainEqual({ type: 'job.work_kept', jobId: 'j', data: { paths: ['/w/.worktrees/@scratch/j/repo'] } });
+  });
+
+  it('with why the reap kept each repository (issue #2494), only those it kept', async () => {
+    const repo = '/w/.worktrees/@scratch/j/repo';
+    const t = setup({ kept: [repo], reasons: { [repo]: ['dirty', 'stash'], '/elsewhere': ['unpushed'] } });
+    await t.cleanups.run('j');
+    expect(t.events).toContainEqual({ type: 'job.work_kept', jobId: 'j', data: { paths: [repo], reasons: { [repo]: ['dirty', 'stash'] } } });
   });
 
   it('stays deferred, with its own route\'s error, when the machine is not reached that way either', async () => {

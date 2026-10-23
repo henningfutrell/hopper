@@ -11,7 +11,7 @@ export const job = (id: string, status: Job['status'], cwd = '/w'): Job => ({
 export const none: Survey = { scopes: [], processes: [], scratch: [] };
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[] } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[] } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -47,7 +47,9 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       // `lefts`: the jobs whose scratch dir the reap could not remove (issue #1452).
       const left = scratch && kept.length === 0 && o.lefts?.includes(jobId) ? { left: [scratch] } : {};
       const tips = kept.length > 0 && o.tips?.includes(jobId) ? { tips: { [kept[0]!]: [`tip-${jobId}`] } } : {};
-      return { kept, ...tips, ...left, ...removed };
+      // `reasons`: the jobs whose reap said why it kept their work (issue #2494).
+      const reasons = kept.length > 0 && o.reasons?.includes(jobId) ? { reasons: { [kept[0]!]: ['unpushed' as const] } } : {};
+      return { kept, ...tips, ...reasons, ...left, ...removed };
     },
     async keepCredential() { throw new Error('not asked'); },
     async reach() { throw new Error('not asked'); },
