@@ -248,7 +248,7 @@ export function createEngine(o: EngineOptions): Engine {
       // On several hosts on one database (issues #1627, #1662), only the sweep lease's holder sweeps; a host that takes it
       // sweeps every machine. Only the cleanups lease's holder does the owed cleanups, at its start and when it takes the lease.
       // With each sweep pass, the leftover check (issue #2504): an ended job whose cleanup left something is told once.
-      const sweepIfHeld = (): Promise<void> => { const h = passes.hold('sweep'); if (h.held) leftoverCheck(); return h.held ? sweep.run(h.taken) : Promise.resolve(); };
+      const sweepIfHeld = (): Promise<void> => { const h = passes.hold('sweep'); if (h.held) void leftoverCheck(); return h.held ? sweep.run(h.taken) : Promise.resolve(); };
       const resumeIfHeld = (): Promise<void> => { const h = passes.hold('cleanups'); return h.taken ? cleanups.resume() : Promise.resolve(); };
       void resumeIfHeld().then(sweepIfHeld);
       sweepTimer = setInterval(() => { void sweepIfHeld(); }, o.sweepCheckMs ?? SWEEP_CHECK_MS);

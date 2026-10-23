@@ -10,7 +10,8 @@ const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
 const entry = (jobId: string, state: LedgerEntry['state'], reason?: string): LedgerEntry =>
   ({ jobId, machineId: 'm1', kind: 'scratch_dir', locator: `/w/.worktrees/@scratch/${jobId}`, createdAt: ago(300), state, ...(reason ? { reason } : {}) });
 
-function rig(ledger: LedgerEntry[], jobs: Partial<Job>[], listed = ['m1'], configured: string[] | undefined = []) {
+function rig(ledger: LedgerEntry[], jobs: Partial<Job>[], machines: { listed: string[]; configured: string[] | undefined } = { listed: ['m1'], configured: [] }) {
+  const { listed, configured } = machines;
   const closed: unknown[][] = [];
   const events: { type: string; jobId?: string; data: unknown }[] = [];
   const logs: string[] = [];
@@ -22,8 +23,8 @@ function rig(ledger: LedgerEntry[], jobs: Partial<Job>[], listed = ['m1'], confi
       append: (e: { type: string; jobId?: string; data: unknown }) => { events.push(e); return e; },
     },
   };
-  const machines = { list: () => Promise.resolve(listed.map((id) => ({ id }))) };
-  const check = () => createLeftoverCheck({ store: store as never, clock: { now: () => new Date(NOW) }, machines: machines as never, configuredMachines: () => configured }, (l) => logs.push(l));
+  const source = { list: () => Promise.resolve(listed.map((id) => ({ id }))) };
+  const check = () => createLeftoverCheck({ store: store as never, clock: { now: () => new Date(NOW) }, machines: source as never, configuredMachines: () => configured }, (l) => logs.push(l));
   return { events, logs, check, closed };
 }
 
@@ -63,7 +64,7 @@ describe('the leftover check (issue #2504)', () => {
   });
 
   it('tells a leftover on a retired machine, then closes its entries retired (part 12)', async () => {
-    const r = rig(ledger, jobs, []);
+    const r = rig(ledger, jobs, { listed: [], configured: [] });
     await r.check()();
     expect(r.events.map((e) => [e.type, e.jobId])).toEqual([['job.cleanup_leftover', 'old']]);
     expect(r.closed).toEqual([['old', 'scratch_dir', '/w/.worktrees/@scratch/old', 'retired', new Date(NOW).toISOString(), 'its machine m1 is retired: it is no longer configured, so no reap reaches it']]);
@@ -71,8 +72,8 @@ describe('the leftover check (issue #2504)', () => {
   });
 
   it('closes nothing on a machine still listed or configured, nor while the plugins config has an error (part 12)', async () => {
-    for (const [listed, configured] of [[['m1'], []], [[], ['m1']], [[], undefined]] as const) {
-      const r = rig(ledger, jobs, [...listed], configured && [...configured]);
+    for (const machines of [{ listed: ['m1'], configured: [] }, { listed: [], configured: ['m1'] }, { listed: [], configured: undefined }]) {
+      const r = rig(ledger, jobs, machines);
       await r.check()();
       expect(r.closed).toEqual([]);
     }

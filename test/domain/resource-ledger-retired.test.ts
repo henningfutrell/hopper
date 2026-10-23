@@ -35,7 +35,7 @@ describe('a retired entry', () => {
 
   it('is judged again by a reap or the reconciler there, should the machine come back under its name', () => {
     expect(reapClosures([retired], { kept: [] }).map((c) => c.state)).toEqual(['reaped']);
-    expect(goneClosures([retired], { scratch: [], scopes: [], roots: ['/w'] }, 'box-7', () => ({ status: 'failed' })).map((c) => c.state)).toEqual(['reaped']);
+    expect(goneClosures([retired], { scratch: [], scopes: [], processes: [], roots: ['/w'] }, 'box-7', () => ({ status: 'failed' })).map((c) => c.state)).toEqual(['reaped']);
   });
 
   it('gives the job the cleanup status machine_retired, shown on the parts list', () => {

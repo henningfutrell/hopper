@@ -14,8 +14,11 @@ import { TERMINAL_STATUSES, type Job } from './types.ts';
 export const LEDGER_KINDS = ['scratch_dir', 'job_worktree', 'job_scope', 'container_runtime', 'job_processes', 'job_containers', 'agent_session'] as const;
 export type LedgerKind = typeof LEDGER_KINDS[number];
 
-/** Where a ledger entry stands: still there, removed, kept for work not pushed, or a removal that failed. */
-export const LEDGER_STATES = ['live', 'reaped', 'kept', 'failed'] as const;
+/**
+ * Where a ledger entry stands: still there, removed, kept for work not pushed, a removal that failed, or left on a retired
+ * machine (issue #2504 part 12), which no reap reaches.
+ */
+export const LEDGER_STATES = ['live', 'reaped', 'kept', 'failed', 'retired'] as const;
 export type LedgerState = typeof LEDGER_STATES[number];
 
 /** One thing the hopper made for a job: on which machine, what, where (`locator`: a path or a unit name), and since when. */
@@ -54,9 +57,10 @@ export interface ResourceLedgerRepository {
 
 /**
  * A job's cleanup status: no entry; the job not ended, so what it has is in use; its cleanup owed (not reached, or an entry
- * still live); under way; done; done with work kept; kept for a retention (every live entry); or a removal failed.
+ * still live); under way; done; done with work kept; kept for a retention (every live entry); left on a retired machine
+ * (part 12); or a removal failed.
  */
-export const CLEANUP_STATUSES = ['none', 'in_use', 'pending', 'in_progress', 'done', 'kept_work', 'retained', 'failed'] as const;
+export const CLEANUP_STATUSES = ['none', 'in_use', 'pending', 'in_progress', 'done', 'kept_work', 'retained', 'machine_retired', 'failed'] as const;
 export type CleanupStatus = typeof CLEANUP_STATUSES[number];
 
 /**
@@ -137,6 +141,21 @@ export function cleanupLeftoversOf(open: readonly LedgerEntry[], jobOf: (id: str
     if (over.length > 0) out.push({ jobId, endedAt, entries: over });
   }
   return out;
+}
+
+/** Why an entry on a retired machine (issue #919) is closed `retired` (issue #2504 part 12). */
+export const retiredReasonOf = (machineId: string): string => `its machine ${machineId} is retired: it is no longer configured, so no reap reaches it`;
+
+/**
+ * The leftover check's closures (issue #2504 part 12): each entry of `leftovers`, told already, on a retired machine — one
+ * that no machine source lists (`listed`) and the plugins config does not name (`configured`) —, closed `retired` with why.
+ * So it is no cleanup leftover for good, and stays as the record. None while the plugins config has an error (`configured`
+ * undefined). Not final: a reap or the reconciler there, should a machine of that name come back, judges it again.
+ */
+export function retiredClosures(leftovers: readonly CleanupLeftover[], listed: readonly string[], configured: readonly string[] | undefined): { entry: LedgerEntry; state: 'retired'; reason: string }[] {
+  if (configured === undefined) return [];
+  const known = new Set([...listed, ...configured]);
+  return leftovers.flatMap((l) => l.entries).filter((e) => !known.has(e.machineId)).map((entry) => ({ entry, state: 'retired' as const, reason: retiredReasonOf(entry.machineId) }));
 }
 
 /** Why an entry the survey no longer found is closed `reaped` (issue #2504 part 3): removed outside the hopper, or by a reap no one recorded. */
@@ -251,11 +270,12 @@ export function cleanupStatusOf(job: Pick<Job, 'status' | 'cleanupDue' | 'cleanu
   if (entries.some((e) => e.state === 'failed')) return 'failed';
   const live = entries.filter((e) => e.state === 'live');
   if (live.length > 0) return live.every((e) => e.retainedUntil) ? 'retained' : 'pending';
+  if (entries.some((e) => e.state === 'retired')) return 'machine_retired';
   return entries.some((e) => e.state === 'kept') ? 'kept_work' : 'done';
 }
 
 const KIND_WORDS: Record<LedgerKind, string> = { scratch_dir: 'Scratch dir', job_worktree: 'Job worktree', job_scope: 'Job scope', container_runtime: 'Container runtime', job_processes: 'Job processes', job_containers: 'Job containers', agent_session: 'Agent session' };
-const STATE_WORDS: Record<LedgerState, string> = { live: 'still there', reaped: 'removed', kept: 'kept: it holds work not pushed', failed: 'not removed' };
+const STATE_WORDS: Record<LedgerState, string> = { live: 'still there', reaped: 'removed', kept: 'kept: it holds work not pushed', failed: 'not removed', retired: 'not removed: its machine is retired' };
 const CLEANUP_PART: Record<Exclude<CleanupStatus, 'none'>, { status: BomStatus; label: string }> = {
   in_use: { status: 'running', label: 'Cleanup: the job still uses what it has' },
   pending: { status: 'open', label: 'Cleanup: owed' },
@@ -263,6 +283,7 @@ const CLEANUP_PART: Record<Exclude<CleanupStatus, 'none'>, { status: BomStatus; 
   done: { status: 'done', label: 'Cleanup: done' },
   kept_work: { status: 'open', label: 'Cleanup: done, work not pushed kept' },
   retained: { status: 'open', label: 'Cleanup: work kept for its retention' },
+  machine_retired: { status: 'open', label: 'Cleanup: its machine is retired, so what it holds there was not removed' },
   failed: { status: 'failed', label: 'Cleanup: failed' },
 };
 
