@@ -1,0 +1,1 @@
+- Settings, under Delivery, now shows each release set and its steps on your own clock, with a button to clear a release gate. You can also look up when one change reaches production, and see how far off the forecasts were per week or per day.
