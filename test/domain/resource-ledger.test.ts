@@ -1,7 +1,7 @@
 // Issue #2504: a job's resource ledger — what the hopper made for a job on a machine, from its executor's saved state, closed
 // as each reap says — and the job's cleanup status read from it. Pure.
 import { describe, expect, it } from 'vitest';
-import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, goneClosures, ledgerEntriesOf, ledgerParts, machineLeftoversOf, reapClosures, retainedEntriesOf, unledgeredEntriesOf, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
+import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, goneClosures, ledgerEntriesOf, ledgerRootsOf, ledgerParts, machineLeftoversOf, reapClosures, retainedEntriesOf, unledgeredEntriesOf, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
 
 const AT = '2026-10-22T10:00:00.000Z';
 const SCRATCH = '/w/.worktrees/@scratch/j1';
@@ -215,5 +215,15 @@ describe('unledgeredEntriesOf (issue #2504 part 6)', () => {
   it('records nothing the ledger names already, nothing of a job not ended, and nothing of a job the store does not know', () => {
     const keys = [`j1\0scratch_dir\0${SCRATCH}`, `j1\0job_worktree\0${TREE}`, 'j1\0job_worktree\0/w/workspace/worktrees/my-app-j1', 'j1\0job_scope\0hopper-job-j1.scope'];
     expect(of(keys)).toEqual([]);
+  });
+});
+
+describe('ledgerRootsOf (issue #2504 part 7)', () => {
+  it('names the work tree of each open entry on the machine, once, sorted; a scope has none, and another machine\'s are not here', () => {
+    expect(ledgerRootsOf([
+      entry('scratch_dir', SCRATCH), entry('job_worktree', '/v/.worktrees/app/j2'), entry('container_runtime', '/u/.worktrees/@scratch/j3/containers'),
+      entry('job_worktree', '/t/workspace/worktrees/my-app-j4'), entry('job_scope', 'hopper-job-j1.scope'), entry('scratch_dir', '/s/.worktrees/@scratch/j5', { machineId: 'm2' }),
+      entry('scratch_dir', '/w/.worktrees/@scratch/j6', { state: 'failed' }), entry('scratch_dir', '/r/.worktrees/@scratch/j7', { state: 'reaped' }), entry('scratch_dir', 'not-a-path'),
+    ], 'm1')).toEqual(['/t', '/u', '/v', '/w']);
   });
 });
