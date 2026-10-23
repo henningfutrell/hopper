@@ -10,8 +10,8 @@ import { carriesNoChange, clearancesOf, clearedOf, forecastOf, historyOf, tracks
 
 export const DELIVERY_LEDGER_EVERY_MS = 10 * 60_000;
 
-/** One pass at `now`: the ledger rows of every change of the window, kept in one transaction. */
-export function recordDeliveryLedger(store: UserStore, now: Date): void {
+/** One pass at `now`: the ledger rows of every change of the window, kept in one transaction; answers how many it wrote. */
+export function recordDeliveryLedger(store: UserStore, now: Date): number {
   const at = now.toISOString();
   const { tracks, windowStart } = tracksOf({ store }, now);
   const settings = store.settings.getDeliverySettings() ?? DEFAULT_DELIVERY_SETTINGS;
@@ -29,5 +29,5 @@ export function recordDeliveryLedger(store: UserStore, now: Date): void {
     const scheduled = track.current.step === 'promotion_set' ? scheduledActuals(d.schedule, track.current, d.gates, at, cleared) : [];
     rows.push(...deliveryLedger(repo, `job:${track.jobId}`, 'forecast' in f ? f.forecast.normal : { steps: [] }, [...measured, ...scheduled]));
   }
-  store.deliveryLedger.record(rows, at);
+  return store.deliveryLedger.record(rows, at);
 }

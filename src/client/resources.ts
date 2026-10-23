@@ -20,6 +20,7 @@ import { existsSync, readdirSync, readFileSync, statfsSync } from 'node:fs';
 import { availableParallelism, cpus, freemem, homedir, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { inCluster, podLimits, type Env } from './cluster.ts';
+import { allocFailureReader, type AllocFailures } from './kernel-log.ts';
 import { nodeFloorOf } from './node-floor.ts';
 
 export interface ResourceReading {
@@ -59,9 +60,11 @@ export interface ResourceReading {
   kernelMemTotalBytes?: number;
   kernelMemAvailableBytes?: number;
   /** Issue #2499: the share of the last 10 s, in percent, that some task and every task waited on memory (PSI). Absent: not read. */
-  memPressure?: { someAvg10: number; fullAvg10: number };
+  memPressure?: { someAvg10: number; fullAvg10: number; someAvg60?: number };
   /** Issue #2499: when this meter last saw its OOM kill count grow (memory.events `oom_kill`, else /proc/vmstat). Absent: not seen. */
   memOomKillAt?: string;
+  /** Issue #2622 part 6: the page allocation failures of order 4 or more the kernel logged in the last 10 minutes (kernel-log.ts). Absent: none, or not read. */
+  memAllocFailures?: AllocFailures;
   /** Issue #2622: what holds its jobs' memory: each job's scope, a cgroup limit over it, or nothing. Absent: not Linux. */
   jobMemoryLimit?: 'scope' | 'machine' | 'none';
 }
@@ -162,15 +165,16 @@ function fields(t: string | undefined): Map<string, number> {
 
 const clamp = (v: number): number => Math.min(1, Math.max(0, v));
 
-/** A PSI file's `some` and `full` avg10 (issue #2499); undefined when it does not say both. */
-export function pressureOf(t: string | undefined): { someAvg10: number; fullAvg10: number } | undefined {
-  const avg = (kind: string): number | undefined => {
-    const v = new RegExp(`^${kind} avg10=(\\d+(?:\\.\\d+)?)\\b`, 'm').exec(t ?? '')?.[1];
+/** A PSI file's `some` and `full` avg10 (issue #2499), and `some` avg60 (issue #2622 part 5); undefined when it does not say both avg10. */
+export function pressureOf(t: string | undefined): { someAvg10: number; fullAvg10: number; someAvg60?: number } | undefined {
+  const avg = (kind: string, of = 'avg10'): number | undefined => {
+    const v = new RegExp(`^${kind} (?:\\S+ )*?${of}=(\\d+(?:\\.\\d+)?)\\b`, 'm').exec(t ?? '')?.[1];
     return v === undefined ? undefined : Number(v);
   };
   const some = avg('some');
   const full = avg('full');
-  return some !== undefined && full !== undefined ? { someAvg10: some, fullAvg10: full } : undefined;
+  const some60 = avg('some', 'avg60');
+  return some !== undefined && full !== undefined ? { someAvg10: some, fullAvg10: full, ...(some60 !== undefined ? { someAvg60: some60 } : {}) } : undefined;
 }
 
 /** An OOM kill count (issue #2499): `oom_kill` of one cgroup's `memory.events`, or of the kernel's. */
@@ -198,8 +202,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const platform = d.platform ?? process.platform;
   const now = d.now ?? Date.now;
   const cgroup = (name: string) => join(root, 'sys/fs/cgroup', name);
-  let last: { at: number; busy: number; total: number } | undefined;
-  let busyFrac: number | undefined;
+  let last: { at: number; busy: number; total: number } | undefined; let busyFrac: number | undefined;
   const env = d.env ?? process.env;
   const pod = inCluster(env) ? podLimits(env) : undefined;
   const wsl = !pod && platform === 'linux' && /microsoft/i.test(text(join(root, 'proc/version')) ?? '');
@@ -208,10 +211,9 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const nodeFloor = nodeFloorOf(node);
   let host: { at: number; reading: HostMemory } | undefined;
   const kills = oomWatch();
-  let periods = new Map<string, { periods: number; throttled: number }>();
-  let throttledFrac: number | undefined;
-  let hostAskedAt: number | undefined;
-  let hostAsking = false;
+  const allocFailures = platform === 'linux' ? allocFailureReader(join(root, 'dev/kmsg'), join(root, 'proc/uptime')) : () => undefined;
+  let periods = new Map<string, { periods: number; throttled: number }>(); let throttledFrac: number | undefined;
+  let hostAskedAt: number | undefined; let hostAsking = false;
   /** Each job scope's CPU time at the read before, for its cores busy since. */
   let jobCpu = new Map<string, { at: number; usec: number }>();
 
@@ -392,7 +394,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       last = { at, ...t };
       if (platform === 'linux') throttledFrac = throttle();
     }
-    const mem = memory(at);
+    const mem = memory(at); const fails = allocFailures();
     const bootId = platform === 'linux' ? text(join(root, 'proc/sys/kernel/random/boot_id'))?.trim() : undefined;
     const l = (d.loadavg ?? loadavg)();
     return {
@@ -400,7 +402,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       ...(busyFrac !== undefined ? { cpuBusyFrac: busyFrac } : {}),
       ...(throttledFrac !== undefined ? { cpuThrottledFrac: throttledFrac } : {}),
       ...(platform !== 'win32' && l.length === 3 ? { load: [l[0]!, l[1]!, l[2]!] as [number, number, number] } : {}),
-      ...mem,
+      ...mem, ...(fails ? { memAllocFailures: fails } : {}),
       ...(bootId ? { bootId } : {}),
       ...(q !== undefined || pod ? { container: true as const } : {}),
       ...(wsl ? { wsl: true as const, ...hostNow(at) } : {}),

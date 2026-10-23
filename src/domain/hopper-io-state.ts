@@ -50,7 +50,7 @@ export type HopperIoMachine = HopperIoState['machines'][number];
 
 /**
  * What the snapshot is made from: the instance's machines and lanes (GET /api/machines), its queue (GET /api/queue), its
- * open questions and parked jobs (GET /api/questions), its installed version and channel (GET /api/update).
+ * open questions, a parked job's too (GET /api/questions, issue #2634), its installed version and channel (GET /api/update).
  * `machineKey`: an opaque, stable key for a machine id, never the id itself (the cloud link derives it, issue #464).
  */
 export interface HopperIoStateInputs {
@@ -61,8 +61,6 @@ export interface HopperIoStateInputs {
   lanes: readonly Pick<Lane, 'machineId' | 'state'>[];
   queue: { waiting: readonly unknown[]; running: readonly unknown[]; locked: readonly unknown[]; gate: QueueGate };
   questions: readonly { id: string; jobId: string; status: QuestionStatus; tier: string }[];
-  /** The parked jobs: a parked job's question waits in Parked, not on the owner (issue #565). */
-  parked: readonly { id: string; status: string; questionId?: string }[];
   machineKey: (machineId: string) => string;
   /** The plugin id of a configured executor instance, by its name; undefined: no such instance. */
   executorPlugin: (executor: string) => string | undefined;
@@ -102,14 +100,13 @@ export function projectHopperIoState(i: HopperIoStateInputs): HopperIoState {
       ...(why ? { notTaking: why } : {}),
     };
   });
-  const parkedOn = new Set(i.parked.filter((j) => j.status === 'parked' && j.questionId).map((j) => `${j.id} ${j.questionId}`));
   return {
     schema: 2,
     sentAt: i.sentAt,
     instance: { version: i.installed ? i.installed.commit.slice(0, 8) : 'unknown', channel: i.channel },
     queue: { waiting: i.queue.waiting.length, running: i.queue.running.length, locked: i.queue.locked.length, gate: i.queue.gate.mode },
     attention: {
-      questionsAwaitingOwner: i.questions.filter((q) => q.status === 'open' && q.tier === 'human' && !parkedOn.has(`${q.jobId} ${q.id}`)).length,
+      questionsAwaitingOwner: i.questions.filter((q) => q.status === 'open' && q.tier === 'human').length,
       jobsLocked: i.queue.locked.length,
       machinesOffline: i.machines.filter((m) => !m.online).length,
     },

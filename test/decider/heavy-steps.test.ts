@@ -3,8 +3,8 @@
 // image build — runs only when its host's memory holds it over the floor, and at most as many JVM builds as the host holds
 // at their worst; the rest wait, and the wait says why.
 import { describe, expect, it } from 'vitest';
-import { HEAVY_RAMP_MS, heavyAdmits, heavyHostOf, type HeavyStep } from '../../src/decider/heavy-steps.ts';
-import { HEAVY_SHIMS, heavyKindOf, heavyShimCases } from '../../src/domain/heavy-steps.ts';
+import { HEAVY_RAMP_MS, HEAVY_SHED_EVERY_MS, heavyAdmits, heavyHostOf, heavyPressure, heavyShed, type HeavyStep } from '../../src/decider/heavy-steps.ts';
+import { HEAVY_SHIMS, heavyKindOf, heavyNeedOf, heavyShimCases } from '../../src/domain/heavy-steps.ts';
 import type { MachineSnapshot } from '../../src/domain/types.ts';
 import { NOW, machine } from './support.ts';
 
@@ -126,5 +126,69 @@ describe('the heavy-step gate (issue #2622 part 3)', () => {
     const h = heavyHostOf(eight, [eight], at)!;
     expect(heavyAdmits(h, [step('a', 'build', 3, ago(HEAVY_RAMP_MS + 1))], 'build', 3 * GIB, at)).toMatchObject({ ok: false });
     expect(heavyAdmits(h, [step('a', 'build', 3, ago(HEAVY_RAMP_MS + 1))], 'install', 1 * GIB, at)).toEqual({ ok: true });
+  });
+});
+
+describe('the need of a heavy step from history (issue #2622 part 4)', () => {
+  it('is the most of the recent recorded peaks; with none, the estimate of its kind', () => {
+    expect(heavyNeedOf('build', [3 * GIB])).toEqual({ bytes: 3 * GIB, recorded: true });
+    expect(heavyNeedOf('install', [1 * GIB, 2.5 * GIB, 2 * GIB])).toEqual({ bytes: 2.5 * GIB, recorded: true });
+    expect(heavyNeedOf('build', [])).toEqual({ bytes: 3 * GIB, recorded: false });
+    expect(heavyNeedOf('install', [0])).toEqual({ bytes: 1 * GIB, recorded: false });
+  });
+});
+
+// Issue #2622 part 5: shed on pressure. Under memory pressure no new heavy step starts, and the newest one that runs is
+// paused until the pressure clears; one change a host each HEAVY_SHED_EVERY_MS, and the oldest step keeps running.
+describe('the shed on memory pressure (issue #2622 part 5)', () => {
+  const pressedVm = (available: number, r: Partial<NonNullable<MachineSnapshot['resources']>> = {}): MachineSnapshot =>
+    machine({ maxLanes: 8, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: available * GIB, ...r } });
+  const hostOf = (m: MachineSnapshot) => heavyHostOf(m, [m], at)!;
+  const psi = (someAvg60: number) => ({ memPressure: { someAvg10: someAvg60, fullAvg10: 0, someAvg60 } });
+
+  it('a host is under pressure with under 2 GiB available, PSI some avg60 over 10, or swap over 50% while tasks wait on memory', () => {
+    expect(heavyPressure(hostOf(pressedVm(1.5)))).toBe('local is under memory pressure: 1.5 GiB available, under 2 GiB');
+    expect(heavyPressure(hostOf(pressedVm(6, psi(14))))).toBe('local is under memory pressure: its tasks waited on memory 14% of the last 60 s, over 10%');
+    expect(heavyPressure(hostOf(pressedVm(6, { swapTotalBytes: 8 * GIB, swapUsedBytes: 5 * GIB, ...psi(2) }))))
+      .toBe('local is under memory pressure: its swap is 63% used, over 50%, and its tasks wait on memory');
+    // Swap that stays used while no task waits on memory is no pressure: Linux does not read it back by itself.
+    expect(heavyPressure(hostOf(pressedVm(6, { swapTotalBytes: 8 * GIB, swapUsedBytes: 5 * GIB, ...psi(0) })))).toBeUndefined();
+    expect(heavyPressure(hostOf(pressedVm(6, psi(10))))).toBeUndefined();
+    expect(heavyPressure(hostOf(pressedVm(10)))).toBeUndefined();
+  });
+
+  it('a small machine is under pressure only under a quarter of its memory', () => {
+    const four = machine({ maxLanes: 2, resources: { cores: 2, memTotalBytes: 4 * GIB, memAvailableBytes: 1.5 * GIB } });
+    expect(heavyPressure(hostOf(four))).toBeUndefined();
+  });
+
+  it('under pressure no heavy step starts, not even the first one; with a step paused, none starts either', () => {
+    expect(heavyAdmits(hostOf(pressedVm(6, psi(20))), [], 'install', 1 * GIB, at)).toEqual({
+      ok: false, reason: 'local is under memory pressure: its tasks waited on memory 20% of the last 60 s, over 10%; a heavy step starts when it clears',
+    });
+    const paused = { ...step('a', 'build', 3, ago(HEAVY_RAMP_MS + 1)), paused: ago(1000) };
+    expect(heavyAdmits(hostOf(pressedVm(8)), [paused], 'install', 1 * GIB, at)).toEqual({
+      ok: false, reason: 'local has a heavy step paused for memory pressure; a heavy step starts when it runs again',
+    });
+  });
+
+  it('under pressure the newest step that runs is paused, never the only one, then one more each HEAVY_SHED_EVERY_MS', () => {
+    const host = hostOf(pressedVm(1.5));
+    const held = [step('a', 'build', 3, ago(5 * 60_000)), step('c', 'build', 3, ago(60_000)), step('b', 'build', 3, ago(3 * 60_000))];
+    expect(heavyShed(host, held, at)).toEqual({ pause: 'c', reason: 'local is under memory pressure: 1.5 GiB available, under 2 GiB: the newest heavy step is paused until it clears' });
+    const once = held.map((s) => (s.id === 'c' ? { ...s, paused: NOW } : s));
+    expect(heavyShed(host, once, at + HEAVY_SHED_EVERY_MS - 1, at)).toBeUndefined();
+    expect(heavyShed(host, once, at + HEAVY_SHED_EVERY_MS, at)).toMatchObject({ pause: 'b' });
+    const twice = once.map((s) => (s.id === 'b' ? { ...s, paused: NOW } : s));
+    expect(heavyShed(host, twice, at + 10 * HEAVY_SHED_EVERY_MS, at)).toBeUndefined();
+    expect(heavyShed(host, [step('a', 'build', 3)], at)).toBeUndefined();
+  });
+
+  it('when the pressure clears, the paused steps run again, the oldest first, one each HEAVY_SHED_EVERY_MS', () => {
+    const host = hostOf(pressedVm(8));
+    const held = [step('a', 'build', 3, ago(5 * 60_000)), { ...step('c', 'build', 3, ago(60_000)), paused: ago(40_000) }, { ...step('b', 'build', 3, ago(3 * 60_000)), paused: ago(10_000) }];
+    expect(heavyShed(host, held, at, at - 10_000)).toBeUndefined();
+    expect(heavyShed(host, held, at, at - HEAVY_SHED_EVERY_MS)).toEqual({ resume: 'b' });
+    expect(heavyShed(host, held.slice(0, 1), at)).toBeUndefined();
   });
 });

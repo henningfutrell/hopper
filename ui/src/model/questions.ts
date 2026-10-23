@@ -1,17 +1,8 @@
 // Which open questions wait on the owner: the nav badge counts them, seen or not (issue #499); the Questions view
-// marks the unseen ones seen. A parked job's question is not among them: it is in Parked, with its job (issue #565).
+// marks the unseen ones seen. A parked job's question is among them (issue #2634), and is in Parked with its job too.
 // And how the raising machine is named (issue #485), and which question a sign-in from Accounts settles (issue #1128).
 import { summaryOf } from './card-text.ts';
-import type { DomainEvent, Job, Question, RaisedBy } from './wire.ts';
-
-/** Its job is parked on it (issue #501): it waits in Parked with the job, out of Questions, until the job is picked up. */
-export const parkedOn = (q: Pick<Question, 'id' | 'jobId'>, jobs: ReadonlyMap<string, Job>): boolean => {
-  const job = jobs.get(q.jobId);
-  return job?.status === 'parked' && job.questionId === q.id;
-};
-
-/** The questions Questions shows, counts and the Attention panel lists: every one but a parked job's (issue #565). */
-export const notParked = <T extends Pick<Question, 'id' | 'jobId'>>(qs: readonly T[], jobs: ReadonlyMap<string, Job>): T[] => qs.filter((q) => !parkedOn(q, jobs));
+import type { DomainEvent, Question, RaisedBy } from './wire.ts';
 
 /**
  * A question's first line, for a compact row: the first line of its summary, so a Markdown heading is skipped (issue

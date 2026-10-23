@@ -3,7 +3,7 @@
 // slot renewed, and lets the slot go when the command ends. A hopper it cannot ask never stops the command. The real
 // script runs against a stand-in hopper on loopback.
 import { execFile } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -100,5 +100,30 @@ describe('hopper-heavy (issue #2622 part 3)', () => {
     const r = await heavy([], h.url);
     expect(r.code).toBe(2);
     expect(r.stderr).toContain('usage: sh "$HOPPER_HEAVY" COMMAND [ARGS...]');
+  });
+});
+
+// Issue #2622 part 5: under memory pressure the hopper's renew answer says to pause the step; the client stops the
+// command's whole process group (SIGSTOP), keeps its slot, and lets it go on (SIGCONT) at the first renew with no pause.
+describe('hopper-heavy pauses its step under memory pressure (issue #2622 part 5)', () => {
+  it('stops the command while the hopper says pause, and lets it go on after', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hopper-heavy-pause-'));
+    dirs.push(dir);
+    const states: string[] = [];
+    const state = (): string => { try { return readFileSync(`/proc/${readFileSync(join(dir, 'pid'), 'utf8').trim()}/stat`, 'utf8').split(') ')[1]![0]!; } catch { return '?'; } };
+    const h = await hopper((call, n) => {
+      if (call.op === 'take') return { body: { slot: 's1', renewS: 0.4 } };
+      if (call.op !== 'renew') return { body: { ok: true } };
+      states.push(state());
+      return { body: n <= 2 ? { ok: true, pause: 'local is under memory pressure: 1.5 GiB available, under 2 GiB: the newest heavy step is paused until it clears' } : { ok: true } };
+    });
+    // The command's child, not the command itself: the whole group stops.
+    const r = await heavy(['sh', '-c', `sleep 30 & echo $! > ${join(dir, 'pid')}; i=0; while [ $i -lt 25 ]; do sleep 0.1; i=$((i+1)); done; kill $!; echo done`], h.url);
+    expect(r).toMatchObject({ code: 0, stdout: 'done\n' });
+    expect(r.stderr).toContain('hopper-heavy: sh paused: local is under memory pressure: 1.5 GiB available, under 2 GiB');
+    expect(r.stderr).toContain('hopper-heavy: sh runs again: the memory pressure cleared');
+    // At the second renew the group was stopped by the first one's answer; at the third, by the second's.
+    expect(states.slice(1, 3)).toEqual(['T', 'T']);
+    expect(states[3]).not.toBe('T');
   });
 });

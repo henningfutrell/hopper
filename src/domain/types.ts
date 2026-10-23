@@ -336,8 +336,13 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
   label: string;
   /** Hard ceiling on lanes this machine may run: in the engine, the lanes lane tuning applied in active mode (issue #688). */
   maxLanes: number;
-  /** The lanes it is configured with, when lane tuning applied others in active mode (issue #688). Absent: `maxLanes`. */
-  configuredLanes?: number;
+  /**
+   * The lanes it is configured with, when lane tuning applied others in active mode (issue #688). Absent: `maxLanes`.
+   * `hostPool`: the host pool it shares one kernel with (issue #2622 part 7), every lane of the pool's machines and the
+   * kernel's memory; set by the engine for a job's run (src/engine/job-run.ts `machineOf`), so the job's default memory limit
+   * shares the kernel's memory by every lane on it. Absent: no pool.
+   */
+  configuredLanes?: number; hostPool?: { lanes: number; memTotalBytes: number };
   /** Lanes kept for jobs pinned to it (issue #372): jobs with no machine pin use at most its lane cap less these. Absent: 0. */
   reservedLanes?: number;
   /** How many lanes specialty jobs may elbow in past its lane cap at once (issue #762). Absent: 1. 0: none. `windows`: a Windows machine (issue #1350), the only kind that takes a job with a Windows label. `usageLimits`: its own usage limits (issue #1860), its lane cap goes by these, not by the user's; absent: the user's. */

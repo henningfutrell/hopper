@@ -904,7 +904,11 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   MemoryHigh=<bytes> -p CPUQuota=<percent>%`, in the trial run too: a systemd that refuses them makes no scope, and the
   job runs without one. With no `jobMemoryMaxGiB` the scope still gets a **default memory limit** (issue #2622,
   `scopeLimitsOf` in `src/domain/job-limits.ts`): the machine's memory less its memory floor, shared by its lanes, to
-  0.1 GiB, and never less than a job's memory (`memoryPerJobGiB`, default 2 GiB); none with no memory reading.
+  0.1 GiB, and never less than a job's memory (`memoryPerJobGiB`, default 2 GiB); none with no memory reading. On a
+  **host pool** (part 7: seats on one kernel, such as several machines in one WSL VM) it is the kernel's memory less its
+  floor, shared by every lane of the pool's machines, when that is less: 4 seats of 2 lanes on a 14 GiB VM get 2 GiB a
+  job, not 6.3. The engine gives the job's run its machine with the pool (`hostPool`, `hostPoolOf` in
+  `src/decider/memory-floor.ts`, from `machineOf` in `src/engine/job-run.ts`).
   `MemoryHigh` is 90% of `MemoryMax`: past it the kernel reclaims and slows the job before the OOM killer stops a process
   of it. A print agent's turn scope gets the same limits.
 - **The job's container runtime** (issue #1295, `src/client/job-runtime.ts`; "Each job its own container runtime"
@@ -12908,9 +12912,11 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   end; the deferred cleanup is of ended jobs: none touches a parked job. Restart recovery leaves it as it is.
   Credential files left in the scratch dir are not renewed while parked (no process reads them) and are
   written again at the re-queue's start.
-- **Its question.** Stays open, in **Parked** with its job, not in Questions (issue #565): neither Questions, its
-  badge nor the Attention panel shows it, and `GET /api/sections` counts it in `parked`, not `questions`
-  (`GET /api/questions` still lists it). Picked up with it still open, it is back in Questions. While its job is parked it never
+- **Its question.** Stays open, in **Parked** with its job (issue #565), and in Questions too (issue #2634): it still
+  blocks its job, and since every wait on a person parks its job (issue #2335) most open questions are a parked job's.
+  Questions, its badge, Needs you and the Attention panel show it, and `GET /api/sections` counts it in `questions`
+  as its job is counted in `parked`; the cloud link's `questionsAwaitingOwner` counts it too. One answer, from either
+  place, clears it from both. While its job is parked it never
   expires and is not renotified (`QuestionService`: `expire`, `renotify` and `armHuman` skip it). An answer
   or a close is kept as `pendingAnswer`; the job stays parked. Dismissing it cancels the job, as for any job
   on its question.
@@ -13507,7 +13513,7 @@ Verification: `test/integration/auto-park.test.ts` (parked by a person, picked u
 up is 409, it stays parked with one `job.unparked`, and the answer resumes it; a job auto-parked on its proposal: 409),
 `test/integration/thread-ask.test.ts`, `test/ui/auto-park.test.ts`, `test/ui/parked-view.test.ts`.
 
-### The heavy-step gate (issue #2622 part 3, 2026-10-23)
+### The heavy-step gate (issue #2622 parts 3, 4, 5, 2026-10-23)
 
 Admission counts a lane's memory when the lane opens. On one WSL VM (14 GB) lanes were admitted while their agents were
 light, about 0.4 GB each; within 2 minutes four of them started a JVM build, each up to ~5 GB, and the VM ran out of
@@ -13520,7 +13526,7 @@ memory. Nothing gated the build itself. Now a **heavy step** asks first.
   (under the build defaults), an install 1 GiB, a browser run or an image build 2 GiB.
 - **How a job asks** (`src/github-proxy/heavy-script.ts`): `sh "$HOPPER_HEAVY" <command>`, in the job's credentials dir
   beside its proxy token, asks `POST /job/heavy` (`op: take`, the command and its first arguments). Its answer is a slot
-  (run, and renew it every 20 s), a wait (ask again in 5 s; the client prints why, once per reason), or light (run with no
+  (run, and renew it every 10 s), a wait (ask again in 5 s; the client prints why, once per reason), or light (run with no
   slot). When the command ends, the client lets the slot go (`op: release`); its exit code is the command's. A hopper it
   cannot ask, or one that says no, never stops the command: it runs, and the client says so. Inside a heavy step
   (`HOPPER_HEAVY_HELD`) a heavy command runs as it is: it holds its step's slot already.
@@ -13541,16 +13547,63 @@ memory. Nothing gated the build itself. Now a **heavy step** asks first.
   a job that stopped renewing (it died, its machine went away) holds no slot after its lease. Only the job that took a slot
   renews or lets it go. The route records nothing and changes no job, question, webhook or setting.
 
-Not built in this part: memory demand from a job's or a repository's history before the heavy step, the shed on
-pressure (available under 2 GB, PSI `some avg60` over 10, swap over 50%: pause the newest heavy step), Windows' held
-memory and guest allocation-failure bursts as signals, a job limit sized by the host pool's lanes.
+- **Demand from history** (part 4, `heavyNeedOf`). A step's need is what its repository's recent jobs took at their peak:
+  the most of the `memoryPeakBytes` that `job.resources_used` recorded (each job's scope's `memory.peak` at its reap) for
+  the last 10 jobs of its repository (`HEAVY_HISTORY_JOBS`, the job's `source.repo`, in any case) in the last 30 days
+  (`HEAVY_HISTORY_DAYS`). So a 3 GiB history reserves 3 GiB, for the 2 minutes the reading does not show the step yet, and
+  in the step's own need. With no peak recorded, or a history that cannot be read, the need is its kind's estimate
+  (`HEAVY_STEP_GIB`). The read goes through the read pool (`memoryPeaks`, `src/store/events.ts`), before the gate looks at
+  its slots: the gate does not wait between its look and its new slot. The wait names the recorded peak: `and this step
+  needs 6 GiB (its repository's recorded peak) over its floor of 1.4 GiB`. A job's peak holds its agent too (about 0.4
+  GiB): the reserve is a little high, never low. The JVM build cap stays at 5 GiB a build.
+
+- **The shed on memory pressure** (part 5, `heavyPressure`, `heavyShed`, pure). A host is under pressure when it has less
+  than 2 GiB available (`HEAVY_SHED_AVAILABLE_GIB`; a quarter of its memory on a host of less than 8 GiB), when its tasks
+  waited on memory over 10% of the last 60 s (PSI `some avg60`, `MEMORY_PRESSURE_60_PERCENT`), or when its swap is over 50%
+  used (`HEAVY_SHED_SWAP_PERCENT`) while some task waits on memory (`some avg60` 1% or more): Linux reads swapped memory back
+  only when it is used, so swap alone stays full after a burst and would hold every step for good. On a host pool each
+  signal is the most of its machines'. Under pressure no heavy step starts, not even the first: `local is under memory
+  pressure: its tasks waited on memory 25% of the last 60 s, over 10%; a heavy step starts when it clears`. At each renew
+  the gate reads the host again: the newest step that runs is **paused**, never the last one that runs, so the oldest goes on
+  and frees its memory; while the pressure lasts, one more each 30 s (`HEAVY_SHED_EVERY_MS`). The renew's answer says
+  `pause` and why; the client stops the command's process group (SIGSTOP: it runs the command in a group of its own, so a
+  build's JVM stops too, not only its wrapper), keeps renewing its slot, and prints why. When the pressure clears, the paused
+  step that started first runs again (SIGCONT, at the first renew with no `pause`), one each 30 s; while one is paused no new
+  step starts. The client renews every 10 s, so a pause reaches the newest step within 30 s of a reading that shows the
+  pressure. A paused step keeps its memory: a pause stops the growth, and the oldest step's end frees memory.
+- **Job admission** (part 5): a machine whose `some avg60` is over 10% takes no new job either (`memoryShort`,
+  `src/decider/memory-floor.ts`), beside the `some avg10` at 20% of issue #2499. The readings carry `someAvg60`: the client's
+  meter and an ssh target's probe parse it from the same PSI line.
+
+- **Host signals** (part 6). Windows' own free memory was already in admission (issue #868: a WSL machine's memory
+  available is at most Windows' free memory, `src/decider/memory-floor.ts`), and in the heavy-step host. Guest
+  allocation-failure bursts are a machine alert now: "The allocation failure watch" below.
+
+- **The pool's job limit** (part 7). A job's default memory limit is shared by every lane of its host pool, not only its
+  machine's: "The job's scope" above.
+- **The slots on the Machines page** (part 7). The gate also keeps, in memory, each job's step that waits, while its job
+  asks again (within 15 s, `HEAVY_WAIT_SEEN_MS`; it asks every 5 s), since its first ask. `GET /api/machines` gives each
+  machine its `heavySteps` (`HeavyStepView`, `src/domain/heavy-steps.ts`): the steps that hold a slot, then those that
+  wait, each with its job, kind, command, since when, the memory it keeps, `paused` or `waiting`, and why. A machine's
+  card lists them, one line each (`heavyStepLines`, `ui/src/model/machine-list.ts`): `job j3 waits to run gradlew build
+  (JVM build), for 10s: local runs 2 JVM builds, and holds at most 2 at once …`. No event is recorded: the route still
+  records nothing, and a step's wait or pause is shown while it lasts.
 
 Tests: `test/decider/heavy-steps.test.ts` (which commands are heavy; the host; 4 builds at once on a 14 GiB VM run 2 and
 available stays over the floor; the ramp; the first step; an 8 GiB machine), `test/engine/heavy-gate.test.ts` (slots,
 release, lease, only the job's own, light), `test/github-proxy/heavy-script.test.ts` (the client: wait then run, light, a
 hopper that says no or cannot be reached, nested, usage), `test/client/heavy-shims.test.ts` (the shims and the guards for
 real, the terminal line), `test/integration/heavy-gate.test.ts` (three builds at once through the real daemon: two run, the
-third waits with the reason, then runs).
+third waits with the reason, then runs). Part 4: `heavyNeedOf` in `test/decider/heavy-steps.test.ts`, the reserve and its
+wait in `test/engine/heavy-gate.test.ts`, the read in `test/store/memory-peaks.test.ts`, and a repository that peaked at 6
+GiB through the real daemon in `test/integration/heavy-gate.test.ts`. Part 5: `heavyPressure` and `heavyShed` in
+`test/decider/heavy-steps.test.ts`; pressure that stops new steps and pauses the newest within 30 s, then clears, in
+`test/engine/heavy-gate.test.ts`; the client stopping and continuing the command's process group in
+`test/github-proxy/heavy-script.test.ts`; the wait and the pause through the real daemon in
+`test/integration/heavy-gate.test.ts`; `someAvg60` in `test/client/resources.test.ts` and
+`test/adapters/machine-resources.test.ts`; admission in `test/decider/memory-floor.test.ts`. Part 7: the pool's job limit
+and the run's machine with its pool in `test/plugins/job-limits.test.ts`; the gate's view in
+`test/engine/heavy-gate.test.ts`; the card's lines in `test/ui/machine-list.test.ts`.
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
@@ -14158,7 +14211,7 @@ server takes. The structural home for #537 (proposals) and #538 (research report
 subscribes to them like any), and for a review section its review kind.
 `GET /api/sections` (`src/http/sections.ts`) answers each with `open`, `waiting` (of those, what waits on a person) and
 `high` (of those, a high-priority job's), each counted by the section's own open rule: an open question at the human
-tier, its job not parked on it; a pending login; an open problem or hand-off; a review item open or revising, waiting
+tier, a parked job's too (issue #2634); a pending login; an open problem or hand-off; a review item open or revising, waiting
 at the human stage; a parked job. The UI
 lists the same kinds (`ui/src/model/sections.ts`, checked against the server's `SectionKind` at typecheck): every
 section's nav entry and its badge follow one rule (`sectionBadges`, `useSectionBadges`): what is open and waits on a
@@ -15363,6 +15416,25 @@ told. Kept in memory, as the memory alert: after a restart of the hopper a machi
 and notifiers take it (the Grok Bot notifier posts both). Nothing is configured: a machine a person keeps offline is told
 once, then not again until it was online. The service starts each **joined container** again itself (`docs/deploy.md`
 "The user service"); the watch is for one it cannot start, or a machine that is no joined container.
+
+**The allocation failure watch** (issue #2622 part 6). A WSL VM whose memory is full and fragmented fails the large
+allocations hv_sock needs to set up a channel (`page allocation failure: order:7 ... vmbus_alloc_ring ... hvs_probe`), and
+`wsl.exe` and interop hang next (`UtilAcceptVsock: accept4 failed 110`). On one host 251 of them came in four hours before
+a 30-minute stall. The meter reads the kernel log (`src/client/kernel-log.ts`): `/dev/kmsg`, non-blocking, from where it
+read before (the whole buffer at its first read), and keeps each page allocation failure of order 4 or more
+(`ALLOC_FAILURE_MIN_ORDER`) with its time since boot. An ssh target's probe prints its uptime and each failure `dmesg` holds
+(`af <s> <order>`). The reading says those of the last 10 minutes by `/proc/uptime`, and the highest order of them
+(`ResourceReading.memAllocFailures`). A kernel log it may not read (`kernel.dmesg_restrict`) says none. At each record the
+**allocation failure watch** (`src/machines/alloc-failure-watch.ts`) is shown every machine. A **burst**, 3 failures or more
+in the 10 minutes (`ALLOC_FAILURE_BURST`), is told once, `machine.allocation_failures` (`machineId`, `label`, `count`,
+`maxOrder`, `since`), and once more when the 10 minutes have none, `machine.allocation_failures_ended`. A machine offline
+or with no reading keeps what was told. Kept in memory, as the offline watch. On the Machines page a burst is the warning
+badge `allocation failures` with a line that says what to do (drain it, or stop builds there), and the memory line says
+the count. It holds no job: the memory floor and the heavy-step shed act on the memory that is short; the burst says that
+`wsl.exe` may hang next. Tests: `test/client/kernel-log.test.ts` (the kernel log over a fake root: the window, small orders,
+none to read), `test/adapters/machine-resources.test.ts` (the probe's lines, a client's checked),
+`test/machines/alloc-failure-watch.test.ts` (told once, ended, offline, the UI's same burst), `test/ui/machine-list.test.ts`
+and `test/ui/machine-history.test.ts`.
 
 **Not built yet** (the issue's second step): soft and hard CPU and memory thresholds per machine, a machine taking
 fewer new lanes above soft and no new job above hard (like the disk hold), off by default until the graphs have shown
@@ -20948,6 +21020,14 @@ runs, and a parked job with such a copy can resume on any machine.
   machine lacked. A job that resumes elsewhere holds no pane on any machine, so the decider holds it off a machine a person
   drained and one with an address problem, as a new job (`opensPane`, `src/decider/assign.ts`); a job that resumes in its
   own pane still returns there. After three such moves (`MAX_NO_WAY_MOVES`) it fails as before.
+  **The remote out of reach** (issue #2639). A restore during a network outage could not fetch its checkpoint's base, said
+  `the checkpoint's base … is not on the remote`, and failed; the failure assessor ran its item again as a new job, so
+  the work after the last push, the session and the job's approvals were lost. The restore now asks the remote
+  (`git ls-remote origin HEAD`) when the base is not fetched: when the remote does not answer, it prints
+  `hopper: the remote is out of reach: …` (`RESTORE_REMOTE_OUT_OF_REACH`, the executor's failure says `remoteOutOfReach`),
+  and the job goes back to the queue as above — `the remote out of reach there` in its reason, counted apart from the
+  no-way moves, three at most — and that machine is held for ten minutes, so the same checkpoint is restored after the
+  hold, on that machine or another. A base the remote answers without is not on it: the job fails as before.
 - **The route.** `GET /job/checkpoint/:part` (`src/http/job-checkpoint.ts`) serves only the job's own checkpoint, only
   while it runs resuming elsewhere: 401 a token that is no running job's, 409 a job not resuming elsewhere now, 404 a part
   it does not hold. It changes nothing and records nothing.
@@ -34337,6 +34417,9 @@ and end are the newest the pass sees: the measured steps from the track, the sch
 (`src/domain/delivery-forecast.ts`: an ungated step ends at its scheduled end, a gated one at its gate clearance; the step
 the change is in has no end). `scheduledPlace` is now the last of those. `GET /api/delivery-ledger?job=|repo=` and
 `hopper forecast --ledger [--job|--repo]` answer the rows and `forecastAccuracy` of them.
+Issue #2638: the pass offers every row of the window, but the store writes only a row that is new, gets its first
+prediction, or gets a new actual time; it reads the kept rows once to compare. With ~7k rows, a full upsert held the event
+loop 2-4 s every 10 minutes; an unchanged ledger now costs that one read and no write.
 
 Decisions: the first prediction is kept, because the accuracy must measure what the hopper told a person, not a forecast
 moved by the clock; a step the first forecast could not time takes the first one that could. The ledger is written by a

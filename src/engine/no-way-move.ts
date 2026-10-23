@@ -5,7 +5,9 @@
 // the decider places it on another machine. Before, it ended failed after 3 attempts there. So does a job that reopens its
 // session in a new pane (issue #2427: parked, continued or released): it waits for a machine that reaches the hopper, its
 // work kept, and never runs with no way to push it. A job moved so `MAX_NO_WAY_MOVES` times fails as before (the known
-// cause no-way-to-hopper).
+// cause no-way-to-hopper). A restore that could not fetch its checkpoint's base, the remote not answering (issue #2639: a
+// network outage), is moved the same way, counted apart: the machine held, the same checkpoint restored after the hold.
+// Before, it failed, and the failure assessor ran its item again as a new job, its checkpoint and approvals lost.
 // A run that ends failed because its session had no way to the hopper (issue #2427: no HOPPER_URL, so it could not push)
 // does not fail when it can resume: its checkpoint is taken once more, its last commits in it, and it resumes on another
 // machine from it, as the lost-machine move takes a job (`moveNoWay`). Before, its commits stayed on that machine only.
@@ -19,17 +21,22 @@ import { moveLost } from './lost-move.ts';
 export const NO_WAY_MOVE = 'no way to the hopper there';
 /** Why a machine whose job's pane had no way to the hopper is held. */
 export const NO_WAY_PANE = 'a job\'s pane there found no HOPPER_URL or no readable token file to restore its checkpoint';
+/** The words of the move of a job whose restore found the remote out of reach (issue #2639), counted apart. */
+export const REMOTE_MOVE = 'the remote out of reach there';
+/** Why a machine whose job's restore found the remote out of reach is held: the next restore there is after the hold. */
+export const REMOTE_PANE = 'a job\'s restore there could not fetch its checkpoint\'s base: the remote is out of reach';
 /** How many times one job is moved so before it fails. */
 export const MAX_NO_WAY_MOVES = 3;
 
 /**
- * The reason `job` goes back to the queue from machine `machineId`, where it got no way to the hopper (`why`); undefined
- * when it does not: it neither resumes elsewhere nor reopens in a new pane, or it was moved so `MAX_NO_WAY_MOVES` times already.
+ * The reason `job` goes back to the queue from machine `machineId`, where it got no way to the hopper (`why`), or, with
+ * `words` `REMOTE_MOVE`, where its restore found the remote out of reach (issue #2639); undefined when it does not: it
+ * neither resumes elsewhere nor reopens in a new pane, or it was moved so `MAX_NO_WAY_MOVES` times already.
  */
-export function noWayMove(c: Pick<EngineContext, 'store'>, job: Job, machineId: string, why: string): string | undefined {
+export function noWayMove(c: Pick<EngineContext, 'store'>, job: Job, machineId: string, why: string, words = NO_WAY_MOVE): string | undefined {
   if (!job.parked?.elsewhere && !reopensPane(job)) return undefined;
-  const moves = c.store.events.recent(100, ['job.requeued'], job.id).filter((e) => String((e.data as { reason?: unknown }).reason).includes(NO_WAY_MOVE));
-  return moves.length >= MAX_NO_WAY_MOVES ? undefined : `machine ${machineId}: ${NO_WAY_MOVE}: ${why}`;
+  const moves = c.store.events.recent(100, ['job.requeued'], job.id).filter((e) => String((e.data as { reason?: unknown }).reason).includes(words));
+  return moves.length >= MAX_NO_WAY_MOVES ? undefined : `machine ${machineId}: ${words}: ${why}`;
 }
 
 /** The words the park of a run that failed with no way to the hopper holds in its `why`. */

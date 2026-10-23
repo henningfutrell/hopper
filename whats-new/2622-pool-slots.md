@@ -1,0 +1,2 @@
+- When several machines run on one computer, each job's memory limit is now shared among all of their jobs, so together they cannot take more memory than the computer has.
+- The Machines page now shows which big builds and installs run, are paused or wait on each machine, and why.

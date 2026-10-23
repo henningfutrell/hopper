@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ResourceReading } from '../../src/domain/types.ts';
+import { ADMIN_ID } from '../../src/domain/users.ts';
 import { run, running, start, stopGitProxies } from '../support/git-proxy.ts';
 
 afterEach(stopGitProxies);
@@ -14,8 +15,8 @@ const VM: ResourceReading = { cores: 8, cpuBusyFrac: 0.1, load: [1, 1, 1], memTo
 // A stand-in JVM build: it logs when it starts and ends, and runs for a second.
 const GRADLEW = '#!/bin/sh\necho "start $1 $(date +%s%N)" >> "$LOG"\nsleep 1\necho "end $1 $(date +%s%N)" >> "$LOG"\n';
 
-async function atWork() {
-  const t = await start({ localResources: () => VM });
+async function atWork(reading: () => ResourceReading = () => VM) {
+  const t = await start({ localResources: reading });
   const r = await running(t);
   const heavy = join(t.root, r.env.HOPPER_HEAVY!);
   const token = readFileSync(join(t.root, r.env.HOPPER_TOKEN_FILE!), 'utf8').trim();
@@ -55,7 +56,7 @@ describe('the heavy-step gate (issue #2622 part 3)', () => {
     const { ask } = await atWork();
     expect(await (await ask({ op: 'take', argv: ['npm', 'run', 'lint'] })).json()).toEqual({ light: 'npm run lint is no heavy step' });
     const taken = await (await ask({ op: 'take', argv: ['npm', 'ci'] })).json() as { slot: string; renewS: number };
-    expect(taken.renewS).toBe(20);
+    expect(taken.renewS).toBe(10);
     expect(await (await ask({ op: 'renew', slot: taken.slot })).json()).toEqual({ ok: true });
     expect(await (await ask({ op: 'release', slot: taken.slot })).json()).toEqual({ ok: true });
     expect(await (await ask({ op: 'release', slot: taken.slot })).json()).toEqual({ ok: false });
@@ -68,5 +69,31 @@ describe('the heavy-step gate (issue #2622 part 3)', () => {
     expect(await stranger.text()).toContain('no: the token is not a job\'s of this hopper');
     const bad = await ask({ op: 'take', argv: [] });
     expect(bad.status).toBe(400);
+  });
+});
+
+describe('the heavy-step gate reserves what history says (issue #2622 part 4)', () => {
+  it('an earlier job of the repository peaked at 6 GiB: its next step reserves 6 GiB, and a second one waits for it', async () => {
+    const { t, ask } = await atWork();
+    const store = t.app.user(ADMIN_ID).store;
+    const earlier = store.jobs.create({ executor: 'holder', payload: {} }, 50, { source: 'github', kind: 'issue', key: 'earlier', repo: 'Octo/Tools' });
+    store.events.append({ type: 'job.resources_used', jobId: earlier.id, data: { memoryPeakBytes: 6 * GIB } });
+    expect(await (await ask({ op: 'take', argv: ['npm', 'ci'] })).json()).toHaveProperty('slot');
+    const second = await (await ask({ op: 'take', argv: ['npm', 'ci'] })).json() as { wait: string };
+    expect(second.wait).toBe('local has 10 GiB available, 6 GiB of it kept for 1 heavy step started lately, and this step needs 6 GiB (its repository\'s recorded peak) over its floor of 1.4 GiB');
+  });
+});
+
+describe('the heavy-step gate sheds on memory pressure (issue #2622 part 5)', () => {
+  it('under memory pressure a new step waits, and the renew of the newest step says to pause it; then it runs again', async () => {
+    let reading = VM;
+    const { ask } = await atWork(() => reading);
+    const older = await (await ask({ op: 'take', argv: ['npm', 'ci'] })).json() as { slot: string };
+    const newest = await (await ask({ op: 'take', argv: ['npm', 'ci'] })).json() as { slot: string };
+    reading = { ...VM, memAvailableBytes: 1.5 * GIB };
+    const why = 'local is under memory pressure: 1.5 GiB available, under 2 GiB';
+    expect(await (await ask({ op: 'take', argv: ['npm', 'ci'] })).json()).toEqual({ wait: `${why}; a heavy step starts when it clears`, retryS: 5 });
+    expect(await (await ask({ op: 'renew', slot: newest.slot })).json()).toEqual({ ok: true, pause: `${why}: the newest heavy step is paused until it clears` });
+    expect(await (await ask({ op: 'renew', slot: older.slot })).json()).toEqual({ ok: true });
   });
 });

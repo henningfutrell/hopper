@@ -18,4 +18,6 @@ export interface UserReads extends InfraPlanReads {
   jobs(filter?: JobFilter): Promise<Job[]>;
   /** As `events.between`. */
   eventsBetween(types: readonly EventType[], since: string): Promise<DomainEvent[]>;
+  /** The memory peaks `job.resources_used` recorded for the jobs of `repo` (`owner/name`, any case) since `since`, newest first, at most `limit` (issue #2622 part 4). */
+  memoryPeaks(repo: string, since: string, limit: number): Promise<number[]>;
 }

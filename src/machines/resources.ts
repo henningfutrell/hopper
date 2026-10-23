@@ -4,8 +4,10 @@
 // marked `hopper-res `; a client target's from its `/release` answer, checked before it is believed. An ssh target's probe
 // also prints each cgroup on its own path with a memory limit, and its user manager's (issue #2499): a seat's container
 // or a slice's MemoryMax; the tightest is its memory, as this machine's meter reads it. It prints `um` when its user manager
-// runs (issue #2622): each job's scope there then holds the job's memory.
+// runs (issue #2622): each job's scope there then holds the job's memory. It prints its uptime and each page allocation
+// failure dmesg holds (issue #2622 part 6, `af <seconds since boot> <order>`): the large ones of the last 10 minutes count.
 import { nodeFloorOf } from '../client/node-floor.ts';
+import { allocFailuresIn, ALLOC_FAILURE_MIN_ORDER, uptimeOf } from '../client/kernel-log.ts';
 import { pressureOf, type OomCount } from '../client/resources.ts';
 import { WINDOWS_LINK_URL, type JobMemoryLimit, type JobUseNow, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
 
@@ -18,6 +20,7 @@ export const RESOURCES_COMMAND = `if [ -r /proc/stat ]; then { p=$(sed -n 's/^0:
   + ` t() { for d in $ds; do f=/sys/fs/cgroup\${d%/}; [ -r $f/cpu.max ] && read q r < $f/cpu.max && [ "$q" != max ] && echo ct$1 $d $(sed -n 's/^nr_periods //p;s/^nr_throttled //p' $f/cpu.stat); done; };`
   + ` head -n1 /proc/stat; t 0; sleep 1; head -n1 /proc/stat; t 1; cat /proc/loadavg;`
   + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; echo boot $(cat /proc/sys/kernel/random/boot_id); cat /proc/pressure/memory; sed -n 's/^oom_kill /oom /p' /proc/vmstat;`
+  + ` echo up $(cut -d' ' -f1 /proc/uptime); dmesg | sed -nE 's/^\\[ *([0-9.]+)\\].*page allocation failure: order:([0-9]+).*/af \\1 \\2/p' | tail -n 500;`
   + ` m=$(printf '%s\\n' $ds | grep -m1 '/user@[0-9]*\\.service$') && x= || { m=/user.slice/user-$u.slice/user@$u.service; x=$m; };`
   + ` [ -d /sys/fs/cgroup$m ] && echo um;`
   + ` for d in $ds $x; do f=/sys/fs/cgroup\${d%/}; [ -r $f/memory.max ] || continue; echo cg $d $(cat $f/memory.max) $(cat $f/memory.current) $(sed -n 's/^inactive_file //p' $f/memory.stat); sed "s|^|cgp $d |" $f/memory.pressure; sed -n "s|^oom_kill |cgo $d |p" $f/memory.events; done;`
@@ -53,7 +56,7 @@ export function readResources(stdout: string): ResourceReading | undefined {
   const boot = bootOf(lines.map((l) => /^boot (\S+)\s*$/.exec(l)?.[1]).find((b) => b));
   const throttled = throttleOf(lines);
   const scopes = jobScopesOf(lines);
-  const held = { jobMemoryLimit: lines.some((l) => l.trim() === 'um') ? 'scope' as const : limited ? 'machine' as const : 'none' as const };
+  const held = { jobMemoryLimit: lines.some((l) => l.trim() === 'um') ? 'scope' as const : limited ? 'machine' as const : 'none' as const, ...allocFailuresOf(lines) };
   const use = Object.fromEntries(scopes.filter((s) => Object.keys(s.use).length).map((s) => [s.id, s.use]));
   const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...(Object.keys(use).length ? { jobUse: use } : {}) } : {};
   const cpu = {
@@ -95,6 +98,14 @@ function cgroupLimitOf(lines: string[], kernelTotal: number): { dir: string; tot
     if (!tightest || available < tightest.available) tightest = { dir: m[1]!, total, available };
   }
   return tightest;
+}
+
+/** Issue #2622 part 6: the large page allocation failures of the last 10 minutes, by the uptime the probe printed. */
+function allocFailuresOf(lines: string[]): Pick<ResourceReading, 'memAllocFailures'> {
+  const up = uptimeOf(lines.find((l) => l.startsWith('up '))?.slice(3).concat(' '));
+  const fails = lines.flatMap((l) => { const m = /^af (\d+(?:\.\d+)?) (\d+)\s*$/.exec(l); return m ? [{ atS: Number(m[1]), order: Number(m[2]) }] : []; });
+  const recent = up !== undefined ? allocFailuresIn(fails, up) : undefined;
+  return recent ? { memAllocFailures: recent } : {};
 }
 
 /** The lines RESOURCES_COMMAND printed, without their mark. */
@@ -191,14 +202,24 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
     ...(typeof r.memOomKillAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{1,3})?Z$/.test(r.memOomKillAt) && Number.isFinite(Date.parse(r.memOomKillAt))
       ? { memOomKillAt: r.memOomKillAt } : {}),
     ...(JOB_MEMORY_LIMITS.includes(r.jobMemoryLimit as JobMemoryLimit) ? { jobMemoryLimit: r.jobMemoryLimit as JobMemoryLimit } : {}),
+    ...allocFailuresOfClient(r.memAllocFailures),
   };
 }
 
-/** A client's memory pressure (issue #2499), when both shares read as 0..100. */
+/** A client's large page allocation failures (issue #2622 part 6), when a count of 1 or more and an order of 4..10. */
+function allocFailuresOfClient(v: unknown): Pick<ResourceReading, 'memAllocFailures'> {
+  if (typeof v !== 'object' || v === null) return {};
+  const { count: n, maxOrder } = v as Record<string, unknown>;
+  return Number.isInteger(n) && (n as number) >= 1 && Number.isInteger(maxOrder) && (maxOrder as number) >= ALLOC_FAILURE_MIN_ORDER && (maxOrder as number) <= 10
+    ? { memAllocFailures: { count: n as number, maxOrder: maxOrder as number } } : {};
+}
+
+/** A client's memory pressure (issue #2499), when both shares read as 0..100; its avg60 (issue #2622 part 5) when that does too. */
 function pressureOfClient(v: unknown): Pick<ResourceReading, 'memPressure'> {
   if (typeof v !== 'object' || v === null) return {};
-  const { someAvg10: some, fullAvg10: full } = v as Record<string, unknown>;
-  return count(some) && count(full) && some <= 100 && full <= 100 ? { memPressure: { someAvg10: some, fullAvg10: full } } : {};
+  const { someAvg10: some, fullAvg10: full, someAvg60: some60 } = v as Record<string, unknown>;
+  return count(some) && count(full) && some <= 100 && full <= 100
+    ? { memPressure: { someAvg10: some, fullAvg10: full, ...(count(some60) && some60 <= 100 ? { someAvg60: some60 } : {}) } } : {};
 }
 
 /** A client's job scope memory (issue #2499): each entry whose key reads as a job id and whose value as bytes; none, when none does. */

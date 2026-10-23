@@ -126,12 +126,12 @@ describe('a machine\'s resources', () => {
   it('says its memory pressure: the limited cgroup\'s, else the kernel\'s', () => {
     put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
     put('proc/pressure/memory', 'some avg10=1.50 avg60=0.80 avg300=0.10 total=12345\nfull avg10=0.25 avg60=0.10 avg300=0.00 total=678\n');
-    expect(meter().read()).toMatchObject({ memPressure: { someAvg10: 1.5, fullAvg10: 0.25 } });
+    expect(meter().read()).toMatchObject({ memPressure: { someAvg10: 1.5, fullAvg10: 0.25, someAvg60: 0.8 } });
     put('proc/self/cgroup', '0::/machine.slice/seat.scope\n');
     put('sys/fs/cgroup/machine.slice/seat.scope/memory.max', `${4 * GIB}\n`);
     put('sys/fs/cgroup/machine.slice/seat.scope/memory.current', `${3 * GIB}\n`);
     put('sys/fs/cgroup/machine.slice/seat.scope/memory.pressure', 'some avg10=42.00 avg60=30.00 avg300=9.00 total=99\nfull avg10=12.00 avg60=8.00 avg300=1.00 total=9\n');
-    expect(meter().read()).toMatchObject({ memTotalBytes: 4 * GIB, memPressure: { someAvg10: 42, fullAvg10: 12 } });
+    expect(meter().read()).toMatchObject({ memTotalBytes: 4 * GIB, memPressure: { someAvg10: 42, fullAvg10: 12, someAvg60: 30 } });
   });
 
   // Issue #2499 part 7: a seat at its cgroup limit has processes killed for memory (memory.events oom_kill) while its

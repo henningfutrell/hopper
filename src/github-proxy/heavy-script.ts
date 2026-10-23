@@ -2,6 +2,7 @@
 // a package install, a Playwright browser install or test run, an image build. It asks the hopper for a slot (`POST
 // /job/heavy`, src/http/job-heavy.ts), waits while the hopper says why it must, runs the command with the slot renewed, and
 // lets the slot go when the command ends. A hopper it cannot ask, or one that says no, never stops the command: it runs.
+// Part 5: a renew answer that says `pause` stops the command's process group (SIGSTOP) until a renew answers none (SIGCONT).
 // Kept in the job's credentials dir beside its proxy token, run as `sh "$HOPPER_HEAVY" COMMAND [ARGS...]`, and by the
 // shims on the job's PATH (src/domain/heavy-steps.ts): a POSIX sh line that runs the client, a Node module with no
 // dependency, as `hopper-requirements`'s. Its token goes in a header, never on a command line.
@@ -69,13 +70,21 @@ else {
   }
 }
 
-const renew = slot ? setInterval(() => { ask({ op: 'renew', slot: slot.slot }).catch(() => {}); }, (slot.renewS || 20) * 1000) : undefined;
+// The command runs in a process group of its own, so a pause stops all of it: a build's JVM, not only its wrapper script.
+const child = spawn(argv[0], argv.slice(1), { stdio: 'inherit', detached: true, env: { ...process.env, HOPPER_HEAVY_HELD: '1' } });
+const group = (sig) => { try { process.kill(-child.pid, sig); } catch { /* it ended */ } };
+let paused = false;
+const renew = slot ? setInterval(() => {
+  ask({ op: 'renew', slot: slot.slot }).then((a) => {
+    if (a.pause && !paused) { paused = true; group('SIGSTOP'); say(name + ' paused: ' + a.pause); }
+    else if (!a.pause && paused) { paused = false; group('SIGCONT'); say(name + ' runs again: the memory pressure cleared'); }
+  }, () => {});
+}, (slot.renewS || 10) * 1000) : undefined;
 const release = async () => {
   if (renew) clearInterval(renew);
   if (slot) await ask({ op: 'release', slot: slot.slot }).catch(() => {});
 };
-const child = spawn(argv[0], argv.slice(1), { stdio: 'inherit', env: { ...process.env, HOPPER_HEAVY_HELD: '1' } });
-for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { child.kill(sig); });
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(sig, () => { group(sig); if (paused) group('SIGCONT'); });
 child.on('error', async (e) => { say(name + ': ' + e.message); await release(); process.exit(127); });
 child.on('exit', async (code, signal) => {
   await release();

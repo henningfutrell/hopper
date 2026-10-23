@@ -3207,6 +3207,46 @@ Version 1 (`docs/schemas/machine.back_online.v1.json`). A machine told by `machi
 }
 ```
 
+## `machine.allocation_failures`
+
+Version 1 (`docs/schemas/machine.allocation_failures.v1.json`). A machine's kernel logged a burst of large page allocation failures (issue #2622 part 6): `count` failures of order 4 or more in the last 10 minutes, the highest of order `maxOrder`; `since` is when the watch saw the burst. Memory there is full and fragmented: in a WSL VM, wsl.exe and interop hang next. Once per burst; after a restart of the hopper, a burst still on is told again.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `since` | string | yes |
+| `count` | number | yes |
+| `maxOrder` | number | yes |
+
+```json
+{
+  "machineId": "local",
+  "label": "this machine",
+  "count": 14,
+  "maxOrder": 7,
+  "since": "2026-10-23T10:02:00.000Z"
+}
+```
+
+## `machine.allocation_failures_ended`
+
+Version 1 (`docs/schemas/machine.allocation_failures_ended.v1.json`). A machine told by `machine.allocation_failures` logged none in the last 10 minutes (issue #2622 part 6): `since` is when the burst was seen.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `since` | string | yes |
+
+```json
+{
+  "machineId": "local",
+  "label": "this machine",
+  "since": "2026-10-23T10:02:00.000Z"
+}
+```
+
 ## `machine.disk_over_budget`
 
 Version 1 (`docs/schemas/machine.disk_over_budget.v1.json`). The hopper's own disk use on a machine (`usedBytes`: each work tree's `.worktrees`, its job worktrees and scratch dirs, and the repository checkouts in its workspace, `paths` each) is over the disk budget (`budgetBytes`), after the sweep reaped every ended job's scratch dir it could, whatever its age (issue #1120). What is left is work not pushed, live jobs' work, the repository checkouts (the sweep never removes one), or more than the budget allows. Once while it stays over.

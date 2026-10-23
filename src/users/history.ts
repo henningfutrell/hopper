@@ -13,6 +13,7 @@ import { createDiskGauges } from '../machines/disk-gauges.ts';
 import { createDiskWatch, toldOf } from '../machines/disk-watch.ts';
 import { createMemoryWatch } from '../machines/memory-alert.ts';
 import { createOfflineWatch } from '../machines/offline-watch.ts';
+import { createAllocFailureWatch } from '../machines/alloc-failure-watch.ts';
 import { createWindowsLinkWatch, type WindowsLinkWatch } from '../machines/windows-link-watch.ts';
 import { createUsageRecorder, type UsageRecorder } from '../usage/history.ts';
 
@@ -36,6 +37,7 @@ export function createHistoryRecorders(o: {
   const memory = createMemoryWatch({ alert: () => o.store.settings.getMemoryAlert(), tell: (e) => { o.store.events.append(e); } });
   const windowsLink = createWindowsLinkWatch({ tell: (e) => { o.store.events.append(e); } });
   const offline = createOfflineWatch({ tell: (e) => { o.store.events.append(e); } });
+  const allocFailures = createAllocFailureWatch({ tell: (e) => { o.store.events.append(e); } });
   const disk = createDiskWatch({ told: () => toldOf(o.store.events.recent(DISK_EVENTS_READ, ['machine.disk_low', 'machine.disk_ok'])), tell: (e) => { o.store.events.append(e); } });
   const drains = createDrainWatch({
     drains: () => o.store.settings.getMachineDrains(), queued: () => o.store.jobs.list({ status: ['queued'] }), lanes: () => o.store.lanes.list(),
@@ -44,7 +46,7 @@ export function createHistoryRecorders(o: {
   const diskMeasures = () => o.store.diskMeasures.all();
   const gauges = createDiskGauges({ measures: diskMeasures, clock: o.clock });
   const observe = (machines: readonly MachineSnapshot[], at: string) => {
-    memory.observe(machines, at); windowsLink.observe(machines, at); offline.observe(machines, at); drains.observe(machines, at); disk.observe(machines, at); gauges.observe(machines);
+    memory.observe(machines, at); windowsLink.observe(machines, at); offline.observe(machines, at); allocFailures.observe(machines, at); drains.observe(machines, at); disk.observe(machines, at); gauges.observe(machines);
   };
   const machineHistory = createResourceRecorder({
     machines: o.machines, lanes: () => o.store.lanes.list(), history: o.store.machineHistory, retentionDays, clock: o.clock, logger: o.logger, observe, diskMeasures,

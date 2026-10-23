@@ -5,6 +5,7 @@
 // Feature: the delivery ledger
 //   Scenario: a change run end to end has a predicted and an actual time for every step, and the accuracy report its error
 //   Scenario: a later pass keeps the first prediction
+//   Scenario: a pass over an unchanged ledger writes no row; a pass after a change writes only the rows it changed (issue #2638)
 //   Scenario: the error over time, per day or week in the owner's time zone (part 7)
 //   Scenario: a bad query is refused
 import { afterEach, describe, expect, it } from 'vitest';
@@ -120,6 +121,21 @@ describe('the delivery ledger', () => {
     const coding = (await ledgerOf(a, 'job=c1')).rows.find((r) => r.step === 'coding')!;
     expect(coding).toMatchObject({ predictedEnd: new Date(T + 31 * MIN).toISOString(), actualStart: new Date(T + 5 * MIN).toISOString() });
     expect(coding.actualEnd).toBeUndefined();
+  });
+
+  it('a pass over an unchanged ledger writes no row; a pass after a change writes only the rows it changed (issue #2638)', async () => {
+    const { a, add } = await boot();
+    const first = recordDeliveryLedger(a.user().store, new Date(T + 30_000));
+    expect(first).toBeGreaterThan(0);
+    const before = (await ledgerOf(a, `repo=${encodeURIComponent(REPO)}`)).rows;
+    expect(before).toHaveLength(first);
+    expect(recordDeliveryLedger(a.user().store, new Date(T + 30_000))).toBe(0);
+    expect(recordDeliveryLedger(a.user().store, new Date(T + 60_000))).toBe(0);
+    expect((await ledgerOf(a, `repo=${encodeURIComponent(REPO)}`)).rows).toEqual(before);
+    // c1 starts: its queued step ends and its coding step starts; no other row changes.
+    add('job.started', T + 2 * MIN, { attempts: 1 }, 'c1');
+    expect(recordDeliveryLedger(a.user().store, new Date(T + 3 * MIN))).toBe(2);
+    expect(recordDeliveryLedger(a.user().store, new Date(T + 3 * MIN))).toBe(0);
   });
 
   it('refuses a bad query (400) and answers an empty ledger', async () => {

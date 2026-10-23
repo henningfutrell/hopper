@@ -23,8 +23,9 @@ export interface DeliveryLedgerRow {
 
 /** The delivery ledger kept (issue #2554 part 6, tenant migration 99): a step's first prediction stays, its actual times are the newest. */
 export interface DeliveryLedgerRepository {
-  /** Keeps each row: its prediction only when the step has none yet (made at `at`), its actual times when it has them. */
-  record(rows: readonly DeliveryLedgerRow[], at: string): void;
+  /** Keeps each row: its prediction only when the step has none yet (made at `at`), its actual times when it has them.
+   *  Writes only the rows that change what is kept (issue #2638), and answers how many it wrote. */
+  record(rows: readonly DeliveryLedgerRow[], at: string): number;
   /** The rows of one change (`key`) or of one repository, else every row; by change, then step order. */
   list(q?: { key?: string; repo?: string }): DeliveryLedgerRow[];
 }
