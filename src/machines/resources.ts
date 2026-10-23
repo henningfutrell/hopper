@@ -1,15 +1,16 @@
 // A machine's resources (issue #560, design.md "Machine resources over time"): this machine's from its meter
 // (src/client/resources.ts) at every list; an ssh target's from what RESOURCES_COMMAND prints in its probe —
-// two /proc/stat cpu lines a second apart, the load averages, the memory lines and the core count, each line
+// two /proc/stat cpu lines a second apart, the load averages, the memory lines, the memory pressure and the core count, each line
 // marked `hopper-res `; a client target's from its `/release` answer, checked before it is believed.
 import { nodeFloorOf } from '../client/node-floor.ts';
+import { pressureOf } from '../client/resources.ts';
 import { WINDOWS_LINK_URL, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
 
 const MARK = 'hopper-res ';
 
 /** What an ssh target's probe runs: nothing printed where there is no /proc (the reading is then absent). */
 export const RESOURCES_COMMAND = `if [ -r /proc/stat ]; then { head -n1 /proc/stat; sleep 1; head -n1 /proc/stat; cat /proc/loadavg;`
-  + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; echo boot $(cat /proc/sys/kernel/random/boot_id); nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
+  + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; echo boot $(cat /proc/sys/kernel/random/boot_id); cat /proc/pressure/memory; nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
 
 /** Busy and total jiffies of a `cpu` line: iowait counts as idle; guest time is already in user. */
 function jiffies(line: string): { busy: number; total: number } | undefined {
@@ -35,6 +36,7 @@ export function readResources(stdout: string): ResourceReading | undefined {
   const swapFree = mem.get('SwapFree');
   const free = mem.get('MemFree');
   const wsl = lines.some((l) => l.trim() === 'wsl');
+  const psi = pressureOf(lines.join('\n'));
   const boot = bootOf(lines.map((l) => /^boot (\S+)\s*$/.exec(l)?.[1]).find((b) => b));
   return {
     cores,
@@ -44,6 +46,7 @@ export function readResources(stdout: string): ResourceReading | undefined {
     ...(swapTotal !== undefined && swapFree !== undefined ? { swapTotalBytes: swapTotal, swapUsedBytes: Math.max(0, swapTotal - swapFree) } : {}),
     ...(wsl ? { wsl: true as const, ...(free !== undefined ? { vmHeldBytes: Math.max(0, total - free) } : {}) } : {}),
     ...boot,
+    ...(psi ? { memPressure: psi } : {}),
   };
 }
 
@@ -76,7 +79,15 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
     ...bootOf(r.bootId),
     ...(count(r.kernelMemTotalBytes) && count(r.kernelMemAvailableBytes) && r.kernelMemTotalBytes > 0 && r.kernelMemAvailableBytes <= r.kernelMemTotalBytes
       ? { kernelMemTotalBytes: r.kernelMemTotalBytes, kernelMemAvailableBytes: r.kernelMemAvailableBytes } : {}),
+    ...pressureOfClient(r.memPressure),
   };
+}
+
+/** A client's memory pressure (issue #2499), when both shares read as 0..100. */
+function pressureOfClient(v: unknown): Pick<ResourceReading, 'memPressure'> {
+  if (typeof v !== 'object' || v === null) return {};
+  const { someAvg10: some, fullAvg10: full } = v as Record<string, unknown>;
+  return count(some) && count(full) && some <= 100 && full <= 100 ? { memPressure: { someAvg10: some, fullAvg10: full } } : {};
 }
 
 /** A client's job scope memory (issue #2499): each entry whose key reads as a job id and whose value as bytes; none, when none does. */

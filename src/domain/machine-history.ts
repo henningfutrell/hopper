@@ -45,7 +45,16 @@ export interface ResourceReading {
   /** Issue #2499: under a cgroup limit (`container`), the kernel's own memory, total and available, as /proc/meminfo says. */
   kernelMemTotalBytes?: number;
   kernelMemAvailableBytes?: number;
+  /**
+   * Issue #2499: its **memory pressure** (PSI), as `memory.pressure` of the limited cgroup or `/proc/pressure/memory` says
+   * it: the share of the last 10 s, in percent, that some task (`someAvg10`) or every task (`fullAvg10`) waited on memory.
+   * Absent: not read (no PSI, Windows, macOS, an older client).
+   */
+  memPressure?: MemoryPressure;
 }
+
+/** A memory pressure reading (issue #2499): the share of the last 10 s, 0..100, that some task and every task waited on memory. */
+export interface MemoryPressure { someAvg10: number; fullAvg10: number }
 
 /**
  * The Windows link (issue #712): what a client in WSL found when Windows, through PowerShell, opened the hopper's address
