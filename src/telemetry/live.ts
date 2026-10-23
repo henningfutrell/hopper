@@ -1,5 +1,5 @@
-// What runs now (issue #1486, design.md "Telemetry: what runs now"): the sandboxes that run at the same time and the
-// store's open connections, read at each collection. The part that holds them adds a reader and drops it when it stops;
+// What runs now (issue #1486, design.md "Telemetry: what runs now"): the sandboxes that run at the same time, the
+// store's open connections, and the machines' disk use and state (issue #2494), read at each collection. The part that holds them adds a reader and drops it when it stops;
 // telemetry off, no reader is read. Readers of the same gauge are summed by their attributes.
 import { metrics, type BatchObservableResult } from '@opentelemetry/api';
 import { SCOPE } from './instruments.ts';
@@ -10,6 +10,8 @@ export interface LivePoint { value: number; attributes: Record<string, string> }
 const GAUGES = {
   'hopper.sandboxes': 'Sandboxes now, by kind (need, playground), place (local, machine) and state.',
   'hopper.db.connections': 'The store\'s open connections: one per open store.',
+  'hopper.disk.bytes': 'What the machines online take on disk, by kind: the hopper\'s own places, each cache kind, each kind of container storage (issue #2494).',
+  'hopper.machines.disk': 'The machines online with a disk reading, by its state: ok, low, critical (issue #2494).',
 } as const;
 export type LiveGauge = keyof typeof GAUGES;
 

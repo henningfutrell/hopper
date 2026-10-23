@@ -26,6 +26,8 @@ const SHARE: Readonly<Record<MachineResource, string>> = {
   lanes: 'lanes_busy::float8 / NULLIF(lanes_max, 0)',
   pressure: 'mem_pressure',
   throttle: 'cpu_throttled',
+  hopper: 'hopper_disk / NULLIF(disk_total, 0)',
+  caches: 'cache_disk / NULLIF(disk_total, 0)',
 };
 
 /**
@@ -82,12 +84,12 @@ export function createMachineHistoryRepository(c: StoreContext): MachineHistoryR
         for (const s of samples) {
           added += c.db.run(`
             INSERT INTO machine_samples (at, machine_id, cores, cpu_busy, load1, mem_total, mem_available, swap_total, swap_used, disk_free, disk_total,
-              vm_held, host_mem_free, host_mem_total, waiting_mem, mem_pressure, cpu_throttled, lanes_busy, lanes_max)
-            VALUES (?::timestamptz, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+              vm_held, host_mem_free, host_mem_total, waiting_mem, mem_pressure, cpu_throttled, hopper_disk, cache_disk, lanes_busy, lanes_max)
+            VALUES (?::timestamptz, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
           s.at, s.machineId, s.cores ?? null, s.cpuBusyFrac ?? null, s.load1 ?? null, s.memTotalBytes ?? null, s.memAvailableBytes ?? null,
           s.swapTotalBytes ?? null, s.swapUsedBytes ?? null, s.diskFreeBytes ?? null, s.diskTotalBytes ?? null,
           s.vmHeldBytes ?? null, s.hostMemFreeBytes ?? null, s.hostMemTotalBytes ?? null, s.waitingMemBytes ?? null,
-          s.memPressureFrac ?? null, s.cpuThrottledFrac ?? null, s.lanesBusy, s.lanesMax).changes;
+          s.memPressureFrac ?? null, s.cpuThrottledFrac ?? null, s.hopperDiskBytes ?? null, s.cacheDiskBytes ?? null, s.lanesBusy, s.lanesMax).changes;
         }
         return added;
       });
