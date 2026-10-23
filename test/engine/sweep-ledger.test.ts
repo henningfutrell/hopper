@@ -87,4 +87,12 @@ describe('the sweep and the resource ledger (issue #2504)', () => {
     expect(r.surveyed[0]).toEqual(['/k', '/v', '/w']);
     expect(r.ledger.map((e) => [e.jobId, e.state, e.reason])).toEqual([['old', 'reaped', 'not found on the machine'], ['done', 'kept', undefined]]);
   });
+  it("records an ended job's processes and containers it finds, closes the processes with the reap, and the containers once gone (part 9)", async () => {
+    const r = rig({ surveys: [{ ...none, processes: ['old'], containers: ['old'] }], found: { ...none, containers: [] } });
+    await r.sweep.run(true);
+    expect(r.reaps).toEqual([{ jobId: 'old' }]);
+    expect(r.ledger.map((e) => [e.kind, e.locator, e.state])).toEqual([['job_processes', 'HOPPER_JOB_ID=old', 'reaped'], ['job_containers', 'hopper.job=old', 'live']]);
+    await r.sweep.run(true);
+    expect(r.ledger[1]).toMatchObject({ state: 'reaped', reason: 'not found on the machine' });
+  });
 });

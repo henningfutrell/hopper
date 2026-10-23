@@ -1,0 +1,1 @@
+- A job's page now also shows processes and containers that stayed on its machine after the job ended, and Failures lists them when they stay too long.
