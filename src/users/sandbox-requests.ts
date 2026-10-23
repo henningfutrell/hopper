@@ -32,6 +32,8 @@ export interface SandboxLauncher {
   ran(step: string): boolean;
   /** The need boxes another live hopper runs now, by name (issue #1954): the vault's reconcile pass leaves their tokens bound. */
   elsewhere(): ReadonlySet<string>;
+  /** Puts a template's egress hosts in the egress proxy (issue #2639 part 4): an approval of a new host waits for it. */
+  allowEgress: Sandboxes['allowEgress'];
   sagas: { begin(step: string, userId: string): string; abort(saga: string, reason: string): boolean };
 }
 

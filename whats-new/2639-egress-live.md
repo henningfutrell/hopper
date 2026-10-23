@@ -1,0 +1,1 @@
+- When a person approves a new address for a sandbox, sandboxes that already run can reach it at once.
