@@ -4,7 +4,7 @@
 // facts its card says now; on one machine's graph, the usage that limits it and its lane changes (issue #688). Pure.
 import { describe, expect, it } from 'vitest';
 import type { LaneChange, ResourceSeries, UsageSeries } from '../../src/domain/types.ts';
-import { allMachineLines, machineLines, resourcesText, sparkValues } from '../../ui/src/model/machine-history.ts';
+import { allMachineLines, jobsUseText, machineLines, resourcesText, sparkValues } from '../../ui/src/model/machine-history.ts';
 
 const GIB = 1e9;
 const at = (h: number) => new Date(Date.parse('2026-10-08T00:00:00.000Z') + h * 3_600_000).toISOString();
@@ -92,6 +92,16 @@ describe('a machine row', () => {
     expect(resourcesText({ ...r, hostMemFreeBytes: 3 * GIB, hostMemTotalBytes: 32 * GIB })!.memory)
       .toBe('7.0 GB used of 20 GB (35%) · VM holds 19 GB · Windows 3.0 GB free of 32 GB');
     expect(resourcesText(r)!.memory).toBe('7.0 GB used of 20 GB (35%) · VM holds 19 GB');
+  });
+
+  // Issue #2498: what the hopper's own jobs use there now, beside the machine's whole use.
+  it('a machine\'s jobs: their memory now, their CPU cores busy and their OOM kills, all its job scopes together', () => {
+    const r = { cores: 8, memTotalBytes: 16 * GIB, memAvailableBytes: 4 * GIB };
+    expect(jobsUseText({ ...r, jobMemoryBytes: { j1: 2 * GIB, j2: 1.5 * GIB }, jobUse: { j1: { cpuCores: 1.25, oomKills: 1 }, j2: { cpuCores: 0.5, oomKills: 0 } } }))
+      .toBe('2 jobs use 3.5 GB · 1.8 cores busy · 1 OOM kill');
+    expect(jobsUseText({ ...r, jobMemoryBytes: { j1: 2 * GIB } })).toBe('1 job uses 2.0 GB');
+    expect(jobsUseText(r)).toBeNull();
+    expect(jobsUseText(undefined)).toBeNull();
   });
 
   it('memory held and host memory are named lines', () => {

@@ -48,6 +48,8 @@ export interface ResourceReading {
   nodeFloor?: string;
   /** Issue #2499: each job scope's memory in use (`hopper-job-<id>.scope`, less the page cache it could drop). Absent: none read. */
   jobMemoryBytes?: Record<string, number>;
+  /** Issue #2498: what each job scope used so far, and its CPU cores busy since the read before. Absent: none read. */
+  jobUse?: Record<string, JobUseNow>;
   /** Issue #2499: its kernel's boot id, so machines on one host are one pool. Absent: not read. */
   bootId?: string;
   /** Issue #2499: under a cgroup limit, the kernel's own memory (/proc/meminfo), total and available. */
@@ -58,6 +60,13 @@ export interface ResourceReading {
   /** Issue #2499: when this meter last saw its OOM kill count grow (memory.events `oom_kill`, else /proc/vmstat). Absent: not seen. */
   memOomKillAt?: string;
 }
+
+/**
+ * What a running job's scope used so far (issue #2498): its peak memory (cgroup `memory.peak`), its CPU time (`cpu.stat`
+ * `usage_usec`), the OOM kills in it (`memory.events` `oom_kill`), and its CPU cores busy since the read before (none at
+ * its first read); each absent where its cgroup has none.
+ */
+export interface JobUseNow { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; cpuCores?: number }
 
 /** A host's physical memory, free and total. */
 export interface HostMemory { freeBytes: number; totalBytes: number }
@@ -178,6 +187,8 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   let killAt: number | undefined;
   let hostAskedAt: number | undefined;
   let hostAsking = false;
+  /** Each job scope's CPU time at the read before, for its cores busy since. */
+  let jobCpu = new Map<string, { at: number; usec: number }>();
 
   /** The Windows host's memory as last read, and a new read in the background when a minute has gone. */
   const hostNow = (at: number): Pick<ResourceReading, 'hostMemFreeBytes' | 'hostMemTotalBytes'> => {
@@ -268,11 +279,33 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     return killAt !== undefined ? { memOomKillAt: new Date(killAt).toISOString() } : {};
   };
 
-  type Memory = Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes' | 'kernelMemTotalBytes' | 'kernelMemAvailableBytes' | 'memPressure' | 'memOomKillAt'>;
+  /** What each scope used so far (issue #2498); a scope with nothing read is left out. */
+  const jobUseOf = (scopes: readonly { id: string; dir: string }[], at: number): Pick<ResourceReading, 'jobUse'> => {
+    const next = new Map<string, { at: number; usec: number }>();
+    const use = Object.fromEntries(scopes.flatMap(({ id, dir }) => {
+      const peak = limit(cgroup(join(dir, 'memory.peak')));
+      const usec = fields(text(cgroup(join(dir, 'cpu.stat')))).get('usage_usec');
+      const oom = fields(text(cgroup(join(dir, 'memory.events')))).get('oom_kill');
+      const before = jobCpu.get(id);
+      let cores: number | undefined;
+      if (usec !== undefined && before && at - before.at < MIN_CPU_INTERVAL_MS) next.set(id, before);
+      else if (usec !== undefined) {
+        next.set(id, { at, usec });
+        if (before && usec >= before.usec) cores = (usec - before.usec) / 1000 / (at - before.at);
+      }
+      const u: JobUseNow = { ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}), ...(cores !== undefined ? { cpuCores: cores } : {}) };
+      return Object.keys(u).length ? [[id, u] as const] : [];
+    }));
+    jobCpu = next;
+    return Object.keys(use).length ? { jobUse: use } : {};
+  };
+
+  type Memory = Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes' | 'jobUse' | 'kernelMemTotalBytes' | 'kernelMemAvailableBytes' | 'memPressure' | 'memOomKillAt'>;
   const memory = (at: number): Memory => {
     const parts = platform === 'linux' ? ownCgroup() : [];
     const scopes = platform === 'linux' ? jobScopes(parts) : [];
-    const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])) } : {};
+    const use = jobUseOf(scopes, at);
+    const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...use } : {};
     const limited = platform === 'linux' ? cgroupMemory(parts) : undefined;
     const info = platform === 'linux' ? fields(text(join(root, 'proc/meminfo'))) : new Map<string, number>();
     const kib = (k: string) => (info.has(k) ? info.get(k)! * 1024 : undefined);

@@ -205,6 +205,24 @@ describe('a machine\'s resources', () => {
       expect(r).toMatchObject({ memTotalBytes: 14 * GIB, memAvailableBytes: 10 * GIB, jobMemoryBytes: { j1: 2 * GIB } });
       expect(meter({ uid: 1001 }).read()).not.toHaveProperty('jobMemoryBytes');
     });
+
+    // Issue #2498: what a running job's scope uses now — its peak memory, CPU time, OOM kills, and the CPU cores busy
+    // since the read before (none at its first read) — so its parts list and Machines show it while it runs.
+    it('each scope\'s peak memory, CPU time, OOM kills and cores busy since the read before', () => {
+      put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+      put('proc/self/cgroup', '0::/\n');
+      scope('j1', 2 * GIB, 0);
+      const dir = `${USER}/app.slice/hopper-job-j1.scope`;
+      put(`${dir}/memory.peak`, `${3 * GIB}\n`);
+      put(`${dir}/cpu.stat`, 'usage_usec 60000000\nuser_usec 1\n');
+      put(`${dir}/memory.events`, 'low 0\nhigh 0\nmax 4\noom 1\noom_kill 1\n');
+      scope('j2', 1 * GIB, 0);
+      const m = meter({ uid: 1000 });
+      expect(m.read().jobUse).toEqual({ j1: { memoryPeakBytes: 3 * GIB, cpuSeconds: 60, oomKills: 1 } });
+      put(`${dir}/cpu.stat`, 'usage_usec 90000000\n');
+      m.advance(20_000, [cpu(0, 0), cpu(0, 0)]);
+      expect(m.read().jobUse).toEqual({ j1: { memoryPeakBytes: 3 * GIB, cpuSeconds: 90, oomKills: 1, cpuCores: 1.5 } });
+    });
   });
 
   it('a cgroup with no limits (`max`) reads the host', () => {

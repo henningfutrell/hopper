@@ -3,10 +3,12 @@
 // stands, what is next) and a one-line summary; what waits on the person first. Pure.
 import { describe, expect, it } from 'vitest';
 import { jobBom, type JobBomInput } from '../../src/domain/job-bom.ts';
+import { liveUseOf } from '../../src/domain/job-resources.ts';
 import type { Artifact } from '../../src/domain/artifacts.ts';
 import type { Question } from '../../src/domain/questions.ts';
 import type { DomainEvent, Job, JobRun, JobStatus } from '../../src/domain/types.ts';
 
+const GIB = 1024 ** 3;
 const ISSUE = 'https://github.com/acme/app/issues/7';
 const PR = 'https://github.com/acme/app/pull/12';
 
@@ -163,7 +165,6 @@ describe('a job\'s parts list (issue #935)', () => {
 });
 
 describe('a job\'s parts list, part 2 (issue #935)', () => {
-  const GIB = 1024 ** 3;
   const run = (over: Partial<JobRun> = {}): JobRun => ({
     jobId: 'j1', machineId: 'm1', startedAt: '2026-10-01T00:10:00.000Z', endedAt: '2026-10-01T00:40:00.000Z', end: 'finished', samples: 30, lanesBusyAvg: 2,
     cpu: { avg: 0.2, peak: 0.4 }, memoryBytes: { avg: 2 * GIB, peak: 3 * GIB }, usage: { session: 0.1, week: 0.02 }, ...over,
@@ -298,5 +299,26 @@ describe('what a job used (issue #2498)', () => {
     const bom = jobBom(input({ events: [event('job.resources_used', { memoryPeakBytes: 300 * 1024 ** 2, cpuSeconds: 12.4 }, { machineId: 'm1' })] }));
     expect(part(bom, 'resources')).toMatchObject({ label: 'Peak memory 300 MiB, CPU 12s', detail: 'on m1' });
     expect(part(jobBom(input({ events: [] })), 'resources')).toBeUndefined();
+  });
+
+  // While it runs (part 3): what its scope uses now, as its machine's meter last read it.
+  it('a running job: one part with its memory now, its peak and its CPU cores busy, from its machine\'s reading', () => {
+    const live = liveUseOf([
+      { id: 'm1', resources: { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB, jobMemoryBytes: { j1: 2 * GIB, other: GIB }, jobUse: { j1: { memoryPeakBytes: 3 * GIB, cpuSeconds: 75, oomKills: 1, cpuCores: 1.46 } } } },
+      { id: 'm2', resources: { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB } },
+      { id: 'm3' },
+    ], 'j1');
+    expect(live).toEqual([{ machineId: 'm1', memoryBytes: 2 * GIB, use: { memoryPeakBytes: 3 * GIB, cpuSeconds: 75, oomKills: 1, cpuCores: 1.46 } }]);
+    expect(part(jobBom(input({ live })), 'resources-now:m1')).toEqual({
+      id: 'resources-now:m1', group: 'machines', kind: 'resources', label: 'Memory 2 GiB now, peak 3 GiB, CPU 1.5 cores', status: 'running',
+      at: '2026-10-01T02:10:00.000Z', detail: 'CPU 1m 15s so far, 1 OOM kill, on m1', href: '#machines',
+    });
+  });
+
+  it('a job no machine reads: no part now; a reading with only its memory says only that', () => {
+    expect(liveUseOf([{ id: 'm1', resources: { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB } }], 'j1')).toEqual([]);
+    expect(jobBom(input({ live: [] })).parts.find((p) => p.id.startsWith('resources-now'))).toBeUndefined();
+    const live = [{ machineId: 'm1', memoryBytes: 300 * 1024 ** 2 }];
+    expect(part(jobBom(input({ live })), 'resources-now:m1')).toMatchObject({ label: 'Memory 300 MiB now', detail: 'on m1' });
   });
 });

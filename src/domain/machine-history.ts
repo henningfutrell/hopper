@@ -37,6 +37,8 @@ export interface ResourceReading {
    * own wait, parked, queued to resume) still holds it: its **waiting memory**. Absent: none read (no systemd, an ssh target, an older client).
    */
   jobMemoryBytes?: Record<string, number>;
+  /** Issue #2498: what each job scope used so far, by job id, and its CPU cores busy now. Absent: none read, as above. */
+  jobUse?: Record<string, JobUseNow>;
   /**
    * Issue #2499: its kernel's boot id (`/proc/sys/kernel/random/boot_id`). Machines whose readings name one are on one host:
    * a **host pool**. Absent: not read (Windows, macOS, an older client).
@@ -61,6 +63,13 @@ export interface ResourceReading {
 
 /** A memory pressure reading (issue #2499): the share of the last 10 s, 0..100, that some task and every task waited on memory. */
 export interface MemoryPressure { someAvg10: number; fullAvg10: number }
+
+/**
+ * What a running job's scope used so far (issue #2498), as its machine's meter read it: its peak memory (cgroup
+ * `memory.peak`), its CPU time (`cpu.stat` `usage_usec`), the OOM kills in it (`memory.events` `oom_kill`), and its CPU
+ * cores busy since the read before; each absent where its cgroup has none, or at its first read for the cores.
+ */
+export interface JobUseNow { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; cpuCores?: number }
 
 /**
  * The Windows link (issue #712): what a client in WSL found when Windows, through PowerShell, opened the hopper's address

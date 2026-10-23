@@ -97,6 +97,14 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...r, memOomKillAt: 5 })).toEqual(r);
   });
 
+  it('a client\'s job scope use (issue #2498): each sane field kept per job id, the rest dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    const use = { memoryPeakBytes: 3 * GIB, cpuSeconds: 60.5, oomKills: 1, cpuCores: 1.5 };
+    expect(resourcesOf({ ...r, jobUse: { j1: use } })).toEqual({ ...r, jobUse: { j1: use } });
+    expect(resourcesOf({ ...r, jobUse: { j1: { memoryPeakBytes: -1, cpuSeconds: 2, extra: 1 }, 'x y': use, j2: 'a', j3: {} } })).toEqual({ ...r, jobUse: { j1: { cpuSeconds: 2 } } });
+    expect(resourcesOf({ ...r, jobUse: [use] })).toEqual(r);
+  });
+
   it('a client\'s Node version (issue #2479): kept when it reads as one, its floor judged here, not taken from the client', () => {
     const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
     expect(resourcesOf({ ...r, node: 'v26.12.1', nodeFloor: '99.0.0' })).toEqual({ ...r, node: 'v26.12.1' });

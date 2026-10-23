@@ -1,6 +1,7 @@
 // Read models for the HTTP edge.
 import { credentialHeld } from '../domain/machine-credentials.ts';
 import { cleanupLeftoversOf, machineLeftoversOf, type MachineCleanupLeftovers } from '../domain/resource-ledger.ts';
+import { liveUseOf, type LiveUse } from '../domain/job-resources.ts';
 import { isLocked } from '../domain/locked.ts';
 import type { InFlight, WorkItemLedger, WorkItemState } from '../domain/work-items.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
@@ -58,6 +59,8 @@ export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading
 export interface Queries {
   getQueue(): QueueView;
   getMachines(): Promise<MachineView[]>;
+  /** What a job's scope uses now (issue #2498), on each machine whose last reading has it. */
+  getLiveUse(jobId: string): Promise<LiveUse[]>;
   getUsage(): Promise<UsageReading[]>;
   /** Every reading, every usage source's state, the limits, and the lane effect per machine (the decider's steps 1-2). */
   getUsageReport(): Promise<UsageReport>;
@@ -115,6 +118,9 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string) => H
         const held = credentialHeld(m.infraCredentials, acceptance, strict);
         return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}), ...(leftovers ? { leftovers } : {}), ...(cleanupLeftovers ? { cleanupLeftovers } : {}), ...(acceptance ? { credentialAcceptance: acceptance } : {}), ...(held ? { credentialHeld: true } : {}) };
       });
+    },
+    async getLiveUse(jobId) {
+      return liveUseOf(await c.machines.list(), jobId);
     },
     getUsage,
     getUsageSources,

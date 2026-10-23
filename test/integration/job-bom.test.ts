@@ -2,7 +2,7 @@
 // the rest, grouped, each with its status and page —, a plain-words header and summary, and its events newest first.
 // Real database and HTTP server.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { JobBom } from '../../src/domain/types.ts';
+import type { JobBom, ResourceReading } from '../../src/domain/types.ts';
 import { lanes, startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 let t: TestApp | undefined;
@@ -14,10 +14,10 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function start(): Promise<TestApp> {
+async function start(localResources?: () => ResourceReading): Promise<TestApp> {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  t = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(2) }, seams: { levels: [] } });
+  t = await startTestApp({ dbPath: db.dbPath, plugins: { machines: lanes(2) }, seams: { levels: [], ...(localResources ? { localResources } : {}) } });
   return t;
 }
 
@@ -75,6 +75,23 @@ describe('GET /api/jobs/:id/bom (issue #935)', () => {
     const usage = bom.parts.find((p) => p.id === 'usage');
     expect(usage).toMatchObject({ group: 'work', label: 'Usage: 5.8% of session', status: 'recorded' });
     expect(usage!.detail).toMatch(/^1 run, 30 samples: CPU 20% on average/);
+  });
+
+  // Issue #2498 part 3: while it runs, what its scope uses now, as its machine's meter last read it.
+  it('answers what a running job\'s scope uses now on its machine', async () => {
+    const GIB = 1024 ** 3;
+    let jobId = '';
+    const a = await start(() => ({
+      cores: 8, memTotalBytes: 16 * GIB, memAvailableBytes: 8 * GIB,
+      ...(jobId ? { jobMemoryBytes: { [jobId]: 2 * GIB }, jobUse: { [jobId]: { memoryPeakBytes: 3 * GIB, cpuSeconds: 90, cpuCores: 2 } } } : {}),
+    }));
+    const asks = await a.pull({ op: 'ask', message: 'Which store?' }, { key: 'item-8' });
+    await a.waitForQuestion(asks.id, (x) => x.status === 'open');
+    jobId = asks.id;
+    const bom = (await a.api<JobBom>('GET', `/api/jobs/${asks.id}/bom`)).body;
+    expect(bom.parts.find((p) => p.id.startsWith('resources-now:'))).toMatchObject({
+      group: 'machines', label: 'Memory 2 GiB now, peak 3 GiB, CPU 2 cores', status: 'running', detail: expect.stringMatching(/^CPU 1m 30s so far, on /),
+    });
   });
 
   it('answers 404 for a job it does not know', async () => {
