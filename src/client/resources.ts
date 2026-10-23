@@ -7,7 +7,8 @@
 // may sit on a cgroup above the process's own (issue #2499): a seat's container, or a systemd unit's MemoryMax.
 // Each job scope's memory is read too (issue #2499): one outside the limited cgroup is taken off its memory available.
 // It names its kernel by its boot id and, under a cgroup limit, says the kernel's own memory (issue #2499): the hopper
-// counts the machines on one host as one pool. It says its memory pressure (PSI): the limited cgroup's, else the kernel's.
+// counts the machines on one host as one pool. It says its memory pressure (PSI): the limited cgroup's, else the kernel's,
+// and when it last saw a process killed for memory (an OOM kill): the limited cgroup's memory.events, else /proc/vmstat.
 // In WSL (issue #868) the VM keeps its page cache, which Windows cannot use: the meter adds the memory the VM holds
 // (MemTotal less MemFree) and, through WSL interop, Windows' own free memory, read in the background once a minute.
 // In a Kubernetes pod (issue #1289) it is never WSL, whatever the node's kernel, and always a container: its limits are
@@ -54,6 +55,8 @@ export interface ResourceReading {
   kernelMemAvailableBytes?: number;
   /** Issue #2499: the share of the last 10 s, in percent, that some task and every task waited on memory (PSI). Absent: not read. */
   memPressure?: { someAvg10: number; fullAvg10: number };
+  /** Issue #2499: when this meter last saw its OOM kill count grow (memory.events `oom_kill`, else /proc/vmstat). Absent: not seen. */
+  memOomKillAt?: string;
 }
 
 /** A host's physical memory, free and total. */
@@ -171,6 +174,8 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const node = d.node ?? process.version;
   const nodeFloor = nodeFloorOf(node);
   let host: { at: number; reading: HostMemory } | undefined;
+  let kills: { of: string; count: number } | undefined;
+  let killAt: number | undefined;
   let hostAskedAt: number | undefined;
   let hostAsking = false;
 
@@ -249,8 +254,22 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     }));
   };
 
-  type Memory = Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes' | 'kernelMemTotalBytes' | 'kernelMemAvailableBytes' | 'memPressure'>;
-  const memory = (): Memory => {
+  /**
+   * Issue #2499: the OOM kill count of the limited cgroup (its subtree), else the kernel's. A count that grew since the read
+   * before is a kill now; the first read, or one of another cgroup, has no count before it.
+   */
+  const oomKillAt = (limitedDir: string | undefined, at: number): Pick<ResourceReading, 'memOomKillAt'> => {
+    const of = limitedDir !== undefined ? cgroup(join(limitedDir, 'memory.events')) : join(root, 'proc/vmstat');
+    const count = fields(text(of)).get('oom_kill');
+    if (count !== undefined) {
+      if (kills?.of === of && count > kills.count) killAt = at;
+      kills = { of, count };
+    }
+    return killAt !== undefined ? { memOomKillAt: new Date(killAt).toISOString() } : {};
+  };
+
+  type Memory = Pick<ResourceReading, 'memTotalBytes' | 'memAvailableBytes' | 'swapTotalBytes' | 'swapUsedBytes' | 'container' | 'vmHeldBytes' | 'jobMemoryBytes' | 'kernelMemTotalBytes' | 'kernelMemAvailableBytes' | 'memPressure' | 'memOomKillAt'>;
+  const memory = (at: number): Memory => {
     const parts = platform === 'linux' ? ownCgroup() : [];
     const scopes = platform === 'linux' ? jobScopes(parts) : [];
     const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])) } : {};
@@ -261,7 +280,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     const available = kib('MemAvailable');
     // Issue #2499: the limited cgroup's memory pressure, else the kernel's.
     const psi = platform === 'linux' ? pressureOf((limited ? text(cgroup(join(limited.dir, 'memory.pressure'))) : undefined) ?? text(join(root, 'proc/pressure/memory'))) : undefined;
-    const pressure = psi ? { memPressure: psi } : {};
+    const pressure = { ...(psi ? { memPressure: psi } : {}), ...(platform === 'linux' ? oomKillAt(limited?.dir, at) : {}) };
     if (limited) {
       // A scope outside the limited cgroup is not in its use, but takes the same machine's memory.
       const outside = scopes.filter((s) => limited.dir !== '' && s.dir !== limited.dir && !s.dir.startsWith(`${limited.dir}/`)).reduce((n, s) => n + s.bytes, 0);
@@ -288,7 +307,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
       if (last && t.total > last.total) busyFrac = clamp((t.busy - last.busy) / (t.total - last.total));
       last = { at, ...t };
     }
-    const mem = memory();
+    const mem = memory(at);
     const bootId = platform === 'linux' ? text(join(root, 'proc/sys/kernel/random/boot_id'))?.trim() : undefined;
     const l = (d.loadavg ?? loadavg)();
     return {

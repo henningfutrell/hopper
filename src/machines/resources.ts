@@ -80,6 +80,8 @@ export function resourcesOf(v: unknown): ResourceReading | undefined {
     ...(count(r.kernelMemTotalBytes) && count(r.kernelMemAvailableBytes) && r.kernelMemTotalBytes > 0 && r.kernelMemAvailableBytes <= r.kernelMemTotalBytes
       ? { kernelMemTotalBytes: r.kernelMemTotalBytes, kernelMemAvailableBytes: r.kernelMemAvailableBytes } : {}),
     ...pressureOfClient(r.memPressure),
+    ...(typeof r.memOomKillAt === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{1,3})?Z$/.test(r.memOomKillAt) && Number.isFinite(Date.parse(r.memOomKillAt))
+      ? { memOomKillAt: r.memOomKillAt } : {}),
   };
 }
 

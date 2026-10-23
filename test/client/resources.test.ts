@@ -134,6 +134,34 @@ describe('a machine\'s resources', () => {
     expect(meter().read()).toMatchObject({ memTotalBytes: 4 * GIB, memPressure: { someAvg10: 42, fullAvg10: 12 } });
   });
 
+  // Issue #2499 part 7: a seat at its cgroup limit has processes killed for memory (memory.events oom_kill) while its
+  // reading can still show memory available. The meter says when it last saw that count grow: the hopper starts no job
+  // there for a while after. The first read has no count before it, so it says none.
+  it('says when it last saw a process killed for memory: the limited cgroup\'s memory.events, else the kernel\'s', () => {
+    put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
+    put('proc/vmstat', 'nr_free_pages 1\noom_kill 3\n');
+    const m = meter();
+    expect(m.read()).not.toHaveProperty('memOomKillAt');
+    m.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
+    expect(m.read()).not.toHaveProperty('memOomKillAt');
+    put('proc/vmstat', 'nr_free_pages 1\noom_kill 4\n');
+    m.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
+    expect(m.read().memOomKillAt).toBe(new Date(1_060_000).toISOString());
+    m.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
+    expect(m.read().memOomKillAt).toBe(new Date(1_060_000).toISOString());
+
+    put('proc/self/cgroup', '0::/machine.slice/seat.scope\n');
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.max', `${4 * GIB}\n`);
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.current', `${3 * GIB}\n`);
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.events', 'low 0\nhigh 0\nmax 21000\noom 5\noom_kill 5\n');
+    const seat = meter();
+    expect(seat.read()).not.toHaveProperty('memOomKillAt');
+    put('sys/fs/cgroup/machine.slice/seat.scope/memory.events', 'low 0\nhigh 0\nmax 23000\noom 6\noom_kill 6\n');
+    put('proc/vmstat', 'oom_kill 4\n');
+    seat.advance(30_000, [cpu(0, 0), cpu(0, 0)]);
+    expect(seat.read()).toMatchObject({ memTotalBytes: 4 * GIB, memOomKillAt: new Date(1_030_000).toISOString() });
+  });
+
   it('no pressure file (an older kernel, PSI off): no memory pressure', () => {
     put('proc/meminfo', `MemTotal: ${14 * GIB / KIB} kB\nMemAvailable: ${10 * GIB / KIB} kB`);
     expect(meter().read()).not.toHaveProperty('memPressure');
