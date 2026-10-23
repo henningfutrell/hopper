@@ -6,7 +6,8 @@
 //   POST /job/heavy   `Authorization: Bearer <the job's proxy token>`; JSON, by `op`:
 //     take     `{ argv }` — the command and its first arguments: `{ slot, renewS }` (run, and renew it), `{ wait, retryS }`
 //              (ask again then; why it waits), or `{ light }` (no heavy step, or no memory reading: run, no slot).
-//     renew    `{ slot }`: `{ ok }`, false when the slot is not the job's or was let go.
+//     renew    `{ slot }`: `{ ok }`, false when the slot is not the job's or was let go; `pause` (part 5): the step is paused
+//              for memory pressure, and why, until a renew answers none.
 //     release  `{ slot }`: `{ ok }`.
 //
 // Only while the job is at work: 401 the token is no job's, or its job is not at work; 400 a bad call. It changes no job,
@@ -41,7 +42,7 @@ export function jobHeavyRoutes(app: FastifyInstance, o: { tenants: Tenants }): v
     const call = b.data;
     reply.header('cache-control', 'no-store');
     if (call.op === 'take') return reply.send(await t.heavyGate.take(job, call.argv));
-    if (call.op === 'renew') return reply.send({ ok: t.heavyGate.renew(job, call.slot) });
+    if (call.op === 'renew') return reply.send(await t.heavyGate.renew(job, call.slot));
     return reply.send({ ok: t.heavyGate.release(job, call.slot) });
   });
 }

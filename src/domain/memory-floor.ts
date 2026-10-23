@@ -15,6 +15,11 @@ export const MEMORY_FLOOR_MIN_GIB = 1;
  */
 export const MEMORY_PRESSURE_PERCENT = 20;
 /**
+ * Issue #2622 part 5: a machine whose tasks waited on memory over this share of the last 60 s (PSI `some` avg60), in percent,
+ * takes no new job either, and its heavy steps shed (src/decider/heavy-steps.ts): a minute of it is no short burst.
+ */
+export const MEMORY_PRESSURE_60_PERCENT = 10;
+/**
  * Issue #2499: a machine whose memory pressure is at or above this share, in percent, pauses the job that started there
  * last, as a machine below its floor does. Twice the admission's share, so a machine that only takes no new job pauses none.
  */

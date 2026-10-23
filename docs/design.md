@@ -13507,7 +13507,7 @@ Verification: `test/integration/auto-park.test.ts` (parked by a person, picked u
 up is 409, it stays parked with one `job.unparked`, and the answer resumes it; a job auto-parked on its proposal: 409),
 `test/integration/thread-ask.test.ts`, `test/ui/auto-park.test.ts`, `test/ui/parked-view.test.ts`.
 
-### The heavy-step gate (issue #2622 parts 3, 4, 2026-10-23)
+### The heavy-step gate (issue #2622 parts 3, 4, 5, 2026-10-23)
 
 Admission counts a lane's memory when the lane opens. On one WSL VM (14 GB) lanes were admitted while their agents were
 light, about 0.4 GB each; within 2 minutes four of them started a JVM build, each up to ~5 GB, and the VM ran out of
@@ -13520,7 +13520,7 @@ memory. Nothing gated the build itself. Now a **heavy step** asks first.
   (under the build defaults), an install 1 GiB, a browser run or an image build 2 GiB.
 - **How a job asks** (`src/github-proxy/heavy-script.ts`): `sh "$HOPPER_HEAVY" <command>`, in the job's credentials dir
   beside its proxy token, asks `POST /job/heavy` (`op: take`, the command and its first arguments). Its answer is a slot
-  (run, and renew it every 20 s), a wait (ask again in 5 s; the client prints why, once per reason), or light (run with no
+  (run, and renew it every 10 s), a wait (ask again in 5 s; the client prints why, once per reason), or light (run with no
   slot). When the command ends, the client lets the slot go (`op: release`); its exit code is the command's. A hopper it
   cannot ask, or one that says no, never stops the command: it runs, and the client says so. Inside a heavy step
   (`HOPPER_HEAVY_HELD`) a heavy command runs as it is: it holds its step's slot already.
@@ -13551,9 +13551,26 @@ memory. Nothing gated the build itself. Now a **heavy step** asks first.
   needs 6 GiB (its repository's recorded peak) over its floor of 1.4 GiB`. A job's peak holds its agent too (about 0.4
   GiB): the reserve is a little high, never low. The JVM build cap stays at 5 GiB a build.
 
-Not built yet: the shed on
-pressure (available under 2 GB, PSI `some avg60` over 10, swap over 50%: pause the newest heavy step), Windows' held
-memory and guest allocation-failure bursts as signals, a job limit sized by the host pool's lanes.
+- **The shed on memory pressure** (part 5, `heavyPressure`, `heavyShed`, pure). A host is under pressure when it has less
+  than 2 GiB available (`HEAVY_SHED_AVAILABLE_GIB`; a quarter of its memory on a host of less than 8 GiB), when its tasks
+  waited on memory over 10% of the last 60 s (PSI `some avg60`, `MEMORY_PRESSURE_60_PERCENT`), or when its swap is over 50%
+  used (`HEAVY_SHED_SWAP_PERCENT`) while some task waits on memory (`some avg60` 1% or more): Linux reads swapped memory back
+  only when it is used, so swap alone stays full after a burst and would hold every step for good. On a host pool each
+  signal is the most of its machines'. Under pressure no heavy step starts, not even the first: `local is under memory
+  pressure: its tasks waited on memory 25% of the last 60 s, over 10%; a heavy step starts when it clears`. At each renew
+  the gate reads the host again: the newest step that runs is **paused**, never the last one that runs, so the oldest goes on
+  and frees its memory; while the pressure lasts, one more each 30 s (`HEAVY_SHED_EVERY_MS`). The renew's answer says
+  `pause` and why; the client stops the command's process group (SIGSTOP: it runs the command in a group of its own, so a
+  build's JVM stops too, not only its wrapper), keeps renewing its slot, and prints why. When the pressure clears, the paused
+  step that started first runs again (SIGCONT, at the first renew with no `pause`), one each 30 s; while one is paused no new
+  step starts. The client renews every 10 s, so a pause reaches the newest step within 30 s of a reading that shows the
+  pressure. A paused step keeps its memory: a pause stops the growth, and the oldest step's end frees memory.
+- **Job admission** (part 5): a machine whose `some avg60` is over 10% takes no new job either (`memoryShort`,
+  `src/decider/memory-floor.ts`), beside the `some avg10` at 20% of issue #2499. The readings carry `someAvg60`: the client's
+  meter and an ssh target's probe parse it from the same PSI line.
+
+Not built yet: Windows' held memory and guest allocation-failure bursts as signals, a job limit sized by the host pool's
+lanes, the slots on the Machines page.
 
 Tests: `test/decider/heavy-steps.test.ts` (which commands are heavy; the host; 4 builds at once on a 14 GiB VM run 2 and
 available stays over the floor; the ramp; the first step; an 8 GiB machine), `test/engine/heavy-gate.test.ts` (slots,
@@ -13562,7 +13579,12 @@ hopper that says no or cannot be reached, nested, usage), `test/client/heavy-shi
 real, the terminal line), `test/integration/heavy-gate.test.ts` (three builds at once through the real daemon: two run, the
 third waits with the reason, then runs). Part 4: `heavyNeedOf` in `test/decider/heavy-steps.test.ts`, the reserve and its
 wait in `test/engine/heavy-gate.test.ts`, the read in `test/store/memory-peaks.test.ts`, and a repository that peaked at 6
-GiB through the real daemon in `test/integration/heavy-gate.test.ts`.
+GiB through the real daemon in `test/integration/heavy-gate.test.ts`. Part 5: `heavyPressure` and `heavyShed` in
+`test/decider/heavy-steps.test.ts`; pressure that stops new steps and pauses the newest within 30 s, then clears, in
+`test/engine/heavy-gate.test.ts`; the client stopping and continuing the command's process group in
+`test/github-proxy/heavy-script.test.ts`; the wait and the pause through the real daemon in
+`test/integration/heavy-gate.test.ts`; `someAvg60` in `test/client/resources.test.ts` and
+`test/adapters/machine-resources.test.ts`; admission in `test/decider/memory-floor.test.ts`.
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 

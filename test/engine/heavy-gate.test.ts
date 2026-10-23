@@ -122,7 +122,7 @@ describe('the heavy-step gate sheds on memory pressure (issue #2622 part 5)', ()
       ok: true, pause: 'local is under memory pressure: its tasks waited on memory 25% of the last 60 s, over 10%: the newest heavy step is paused until it clears',
     });
     expect(gate.held().map((s) => [s.jobId, s.paused !== undefined])).toEqual([['j1', false], ['j2', true]]);
-    m.resources = reading(6);
+    m.resources = reading(10);
     pass(30_000);
     expect(await gate.take(at(3), ['npm', 'install'])).toMatchObject({ wait: 'local has a heavy step paused for memory pressure; a heavy step starts when it runs again' });
     expect(await gate.renew(at(2), newest.slot)).toEqual({ ok: true });

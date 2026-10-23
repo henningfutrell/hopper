@@ -1,0 +1,1 @@
+- When a machine runs short of memory, no new build or install starts there, and the newest one stops for a while until the memory is free again.
