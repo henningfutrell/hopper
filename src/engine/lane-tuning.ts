@@ -1,5 +1,5 @@
 // Lane tuning (issue #688, design.md "Lane tuning"): every machine's lane recommendation from its lane load over the
-// lane tuning window, the usage it burns now and the usage limits, by the decider's rules (src/decider/lane-tuning.ts).
+// lane tuning window, the usage it burns now and the usage limits, what its memory holds (issue #2499), by the decider's rules (src/decider/lane-tuning.ts).
 // A recommendation that changes is recorded as `lanes.recommended`. The hopper applies none by itself: an admin applies
 // one — the machine's configured lanes set through `machineLanes`, the path an edit of the machine takes, and
 // `lanes.applied` with its reason —, dismisses it until it moves (`lanes.dismissed`), or undoes the last one applied
@@ -10,6 +10,7 @@ import { laneEffect, machinePolicy } from '../decider/usage.ts';
 import { jobCostGroups, jobCostKind, jobCostProfiles } from '../decider/job-costs.ts';
 import { laneActions, laneProgress, recommendLanes } from '../decider/lane-tuning.ts';
 import { withJevLanes } from '../decider/lane-calls.ts';
+import { memoryLaneCaps } from '../decider/memory-floor.ts';
 import { expectedCost } from '../decider/placement-cost.ts';
 import type { UserStore } from '../domain/ports.ts';
 import {
@@ -87,9 +88,12 @@ export function createLaneTuning(c: EngineContext, calls: LaneCallDeps): LaneTun
     const from = new Date(now.getTime() - LANE_TUNING_WINDOW_DAYS * DAY_MS);
     const loads = c.store.machineHistory.laneLoad({ from, to: now, pressure: RESOURCE_PRESSURE });
     const progress = laneProgress(c.store.machineHistory.jobRuns({ from, to: now }));
+    const memory = memoryLaneCaps(machines);
     const machinesOut: LaneRecommendation[] = machines.map((m) => {
+      const mem = memory.get(m.id);
       const rules = recommendLanes({
         machine: m, loads, progress, usedFrac: laneEffect(m, readings, policy, at).usedFrac, soft: machinePolicy(m, policy).softLimit, hard: machinePolicy(m, policy).hardLimit, tuning: tuningOf(c.store, m.id),
+        ...(mem ? { memory: mem } : {}),
       });
       const r = withJevLanes(rules, jev.get(m.id));
       return { ...r, ...laneActions(r, dismissals[m.id], changes.find((x) => x.machineId === m.id)) };

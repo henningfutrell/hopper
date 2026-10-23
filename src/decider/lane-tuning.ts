@@ -1,7 +1,7 @@
 // Lane tuning (issue #688, design.md "Lane tuning"): the deterministic rules. Lane headroom from a machine's lane
 // load and lane progress — the most lanes in use its history shows without resource pressure or slow progress, plus what
 // each lane's measured cost leaves room for —, and the lane recommendation: the headroom below the soft limit, never more than the configured lanes near it
-// or past it, within the machine's bounds. What an admin can do with a recommendation: apply it, undo the last one
+// or past it, never more than its memory holds (issue #2499), within the machine's bounds. What an admin can do with a recommendation: apply it, undo the last one
 // applied; a dismissed one is not offered again until it moves. Pure, like the rest of the decider.
 import {
   LANE_TUNING_WINDOW_DAYS, type JobRun, type LaneChange, type LaneDismissal, type LaneLoad, type LaneProgress, type LaneRecommendation, type LaneTuning,
@@ -140,6 +140,8 @@ export interface LaneTuningInput {
   soft: number;
   hard: number;
   tuning: LaneTuning;
+  /** Issue #2499: how many jobs the machine's memory holds (`memoryLaneCaps`); absent: not known. */
+  memory?: { lanes: number; why: string };
 }
 
 const clamp = (n: number, t: LaneTuning): number => Math.min(t.maxLanes, Math.max(t.minLanes, n));
@@ -176,6 +178,10 @@ export function recommendLanes(o: LaneTuningInput): LaneRecommendation {
     lanes = Math.min(lanes, m.maxLanes);
     const limit = usage === 'hard' ? `the hard limit ${pct(o.hard)}` : `the soft limit ${pct(o.soft)}`;
     reason += `; usage ${pct(o.usedFrac)} ${USAGE_TEXT[usage]} ${limit}: no lanes added; high-priority work keeps its lanes`;
+  }
+  if (o.memory && o.memory.lanes < lanes) {
+    lanes = o.memory.lanes;
+    reason += `; ${o.memory.why}: no more than ${lanesText(lanes)}`;
   }
   const bounded = clamp(lanes, tuning);
   if (bounded !== lanes) reason += `; kept within the bounds ${tuning.minLanes} to ${tuning.maxLanes}`;
