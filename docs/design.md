@@ -904,7 +904,11 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   MemoryHigh=<bytes> -p CPUQuota=<percent>%`, in the trial run too: a systemd that refuses them makes no scope, and the
   job runs without one. With no `jobMemoryMaxGiB` the scope still gets a **default memory limit** (issue #2622,
   `scopeLimitsOf` in `src/domain/job-limits.ts`): the machine's memory less its memory floor, shared by its lanes, to
-  0.1 GiB, and never less than a job's memory (`memoryPerJobGiB`, default 2 GiB); none with no memory reading.
+  0.1 GiB, and never less than a job's memory (`memoryPerJobGiB`, default 2 GiB); none with no memory reading. On a
+  **host pool** (part 7: seats on one kernel, such as several machines in one WSL VM) it is the kernel's memory less its
+  floor, shared by every lane of the pool's machines, when that is less: 4 seats of 2 lanes on a 14 GiB VM get 2 GiB a
+  job, not 6.3. The engine gives the job's run its machine with the pool (`hostPool`, `hostPoolOf` in
+  `src/decider/memory-floor.ts`, from `machineOf` in `src/engine/job-run.ts`).
   `MemoryHigh` is 90% of `MemoryMax`: past it the kernel reclaims and slows the job before the OOM killer stops a process
   of it. A print agent's turn scope gets the same limits.
 - **The job's container runtime** (issue #1295, `src/client/job-runtime.ts`; "Each job its own container runtime"
@@ -13589,7 +13593,15 @@ memory. Nothing gated the build itself. Now a **heavy step** asks first.
   available is at most Windows' free memory, `src/decider/memory-floor.ts`), and in the heavy-step host. Guest
   allocation-failure bursts are a machine alert now: "The allocation failure watch" below.
 
-Not built yet: a job limit sized by the host pool's lanes, the slots on the Machines page.
+- **The pool's job limit** (part 7). A job's default memory limit is shared by every lane of its host pool, not only its
+  machine's: "The job's scope" above.
+- **The slots on the Machines page** (part 7). The gate also keeps, in memory, each job's step that waits, while its job
+  asks again (within 15 s, `HEAVY_WAIT_SEEN_MS`; it asks every 5 s), since its first ask. `GET /api/machines` gives each
+  machine its `heavySteps` (`HeavyStepView`, `src/domain/heavy-steps.ts`): the steps that hold a slot, then those that
+  wait, each with its job, kind, command, since when, the memory it keeps, `paused` or `waiting`, and why. A machine's
+  card lists them, one line each (`heavyStepLines`, `ui/src/model/machine-list.ts`): `job j3 waits to run gradlew build
+  (JVM build), for 10s: local runs 2 JVM builds, and holds at most 2 at once …`. No event is recorded: the route still
+  records nothing, and a step's wait or pause is shown while it lasts.
 
 Tests: `test/decider/heavy-steps.test.ts` (which commands are heavy; the host; 4 builds at once on a 14 GiB VM run 2 and
 available stays over the floor; the ramp; the first step; an 8 GiB machine), `test/engine/heavy-gate.test.ts` (slots,
@@ -13603,7 +13615,9 @@ GiB through the real daemon in `test/integration/heavy-gate.test.ts`. Part 5: `h
 `test/engine/heavy-gate.test.ts`; the client stopping and continuing the command's process group in
 `test/github-proxy/heavy-script.test.ts`; the wait and the pause through the real daemon in
 `test/integration/heavy-gate.test.ts`; `someAvg60` in `test/client/resources.test.ts` and
-`test/adapters/machine-resources.test.ts`; admission in `test/decider/memory-floor.test.ts`.
+`test/adapters/machine-resources.test.ts`; admission in `test/decider/memory-floor.test.ts`. Part 7: the pool's job limit
+and the run's machine with its pool in `test/plugins/job-limits.test.ts`; the gate's view in
+`test/engine/heavy-gate.test.ts`; the card's lines in `test/ui/machine-list.test.ts`.
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 

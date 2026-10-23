@@ -143,7 +143,7 @@ describe('the heavy-step gate\'s view (issue #2622 part 7)', () => {
     pass(HEAVY_RETRY_S * 1000);
     await gate.take(at(3), ['./gradlew', 'build']);
     expect(gate.view().map((s) => [s.jobId, s.machineId, s.kind, s.command, s.waiting === true])).toEqual([
-      ['j1', 'local', 'build', './gradlew test', false], ['j2', 'local', 'build', './gradlew test', false], ['j3', 'local', 'build', './gradlew build', true],
+      ['j1', 'local', 'build', 'gradlew test', false], ['j2', 'local', 'build', 'gradlew test', false], ['j3', 'local', 'build', 'gradlew build', true],
     ]);
     const wait = gate.view().find((s) => s.waiting)!;
     expect(wait.since).toBe(NOW);

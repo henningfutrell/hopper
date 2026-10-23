@@ -4,6 +4,8 @@
 import { unhealthyLaneLines } from './lane-health.ts';
 import { credentialCard, offNetwork } from './machines.ts';
 import type { ResourceReading } from '../../../src/domain/types.ts';
+import { duration } from './format.ts';
+import type { HeavyKind } from '../../../src/domain/heavy-steps.ts';
 import type { MachineView } from './wire.ts';
 
 export type MachinesMode = 'cards' | 'list';
@@ -64,4 +66,22 @@ export function machineRow(m: MachineView): { lanes: string; cpu: string; memory
     disk: m.disk && m.disk.totalBytes > 0 ? `${pct(m.disk.freeBytes / m.disk.totalBytes)} free` : '—',
     version: m.client?.release ?? '—',
   };
+}
+
+const HEAVY_KINDS: Readonly<Record<HeavyKind, string>> = { build: 'JVM build', install: 'install', browser: 'browser', image: 'image build' };
+const gibText = (bytes: number): string => `${Math.round((bytes / 1024 ** 3) * 10) / 10} GiB`;
+
+/**
+ * Issue #2622 part 7: a machine's heavy steps, one line each, as the heavy-step gate holds them: which job runs, is paused
+ * or waits, its command, kind and the memory kept for it, for how long, and why it is paused or waits.
+ */
+export function heavyStepLines(m: MachineView, now: number): string[] {
+  return (m.heavySteps ?? []).map((s) => {
+    const kept = s.bytes !== undefined ? `, ${gibText(s.bytes)} kept${s.recorded ? ', its repository\'s recorded peak' : ''}` : '';
+    const what = `${s.command} (${HEAVY_KINDS[s.kind]}${kept})`;
+    const since = (iso: string): string => `for ${duration((now - Date.parse(iso)) / 1000)}`;
+    if (s.waiting) return `job ${s.jobId} waits to run ${what}, ${since(s.since)}: ${s.reason ?? ''}`;
+    if (s.paused) return `job ${s.jobId} is paused: ${what}, ${since(s.paused)}: ${s.reason ?? ''}`;
+    return `job ${s.jobId} runs ${what}, ${since(s.since)}`;
+  });
 }

@@ -12,6 +12,7 @@ import { scopeLimitsOf } from '../../src/domain/job-limits.ts';
 import { hostPoolOf } from '../../src/decider/memory-floor.ts';
 import { machineOf } from '../../src/engine/job-run.ts';
 import type { EngineContext } from '../../src/engine/context.ts';
+import type { MachineSnapshot } from '../../src/domain/types.ts';
 import { turnCommand } from '../../src/executors/print-agent.ts';
 import { LOCAL, contextFor, jobWith, setup } from '../herdr/support.ts';
 
@@ -116,23 +117,23 @@ describe('the default job limits (issue #2622)', () => {
 // Issue #2622 part 7: four seats of 2 lanes each on one 14 GiB WSL kernel. Each seat sized its jobs by its own 2 lanes
 // (6.3 GiB each, 50 GiB for 8 jobs). The default limit is the host pool's memory shared by every lane of its machines.
 describe('the default job limits on a host pool (issue #2622 part 7)', () => {
-  const seat = (id: string, lanes = 2) => ({ ...LOCAL, id, maxLanes: lanes, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 8 * GIB, wsl: true, bootId: 'boot-1' } });
+  const seat = (id: string, lanes = 2): MachineSnapshot => ({ ...LOCAL, id, maxLanes: lanes, resources: { cores: 8, memTotalBytes: 14 * GIB, memAvailableBytes: 8 * GIB, wsl: true, bootId: 'boot-1' } });
 
   it('the pool\'s lanes share the kernel\'s memory less its floor, never below a job\'s memory', () => {
     const seats = ['a', 'b', 'c', 'd'].map((id) => seat(id));
     expect(hostPoolOf(seats[0]!, seats)).toEqual({ lanes: 8, memTotalBytes: 14 * GIB });
-    expect(scopeLimitsOf({ ...seats[0]!, hostPool: hostPoolOf(seats[0]!, seats) })).toEqual({ memoryMaxGiB: 2 });
+    expect(scopeLimitsOf({ ...seats[0]!, hostPool: hostPoolOf(seats[0]!, seats)! })).toEqual({ memoryMaxGiB: 2 });
     const two = [seat('a', 1), seat('b', 1)];
-    expect(scopeLimitsOf({ ...two[0]!, hostPool: hostPoolOf(two[0]!, two) })).toEqual({ memoryMaxGiB: 6.3 });
+    expect(scopeLimitsOf({ ...two[0]!, hostPool: hostPoolOf(two[0]!, two)! })).toEqual({ memoryMaxGiB: 6.3 });
   });
 
   it('a machine alone is no pool, and a container seat keeps its own smaller share', () => {
     const alone = seat('a', 2);
-    expect(hostPoolOf(alone, [alone, { ...seat('b'), resources: { ...seat('b').resources, bootId: 'boot-2' } }])).toBeUndefined();
+    expect(hostPoolOf(alone, [alone, { ...seat('b'), resources: { ...seat('b').resources!, bootId: 'boot-2' } }])).toBeUndefined();
     expect(scopeLimitsOf(alone)).toEqual({ memoryMaxGiB: 6.3 });
-    const box = { ...seat('box', 1), resources: { cores: 2, memTotalBytes: 4 * GIB, memAvailableBytes: 3 * GIB, container: true, bootId: 'boot-1', kernelMemTotalBytes: 14 * GIB, kernelMemAvailableBytes: 8 * GIB } };
+    const box: MachineSnapshot = { ...seat('box', 1), resources: { cores: 2, memTotalBytes: 4 * GIB, memAvailableBytes: 3 * GIB, container: true, bootId: 'boot-1', kernelMemTotalBytes: 14 * GIB, kernelMemAvailableBytes: 8 * GIB } };
     expect(hostPoolOf(box, [box])).toEqual({ lanes: 1, memTotalBytes: 14 * GIB });
-    expect(scopeLimitsOf({ ...box, hostPool: hostPoolOf(box, [box]) })).toEqual({ memoryMaxGiB: 3 });
+    expect(scopeLimitsOf({ ...box, hostPool: hostPoolOf(box, [box])! })).toEqual({ memoryMaxGiB: 3 });
   });
 
   it('the job\'s run gets its machine with its host pool', async () => {
@@ -143,6 +144,6 @@ describe('the default job limits on a host pool (issue #2622 part 7)', () => {
 
   it('give way to its jobMemoryMaxGiB', () => {
     const seats = ['a', 'b'].map((id) => seat(id, 4));
-    expect(scopeLimitsOf({ ...seats[0]!, jobLimits: { memoryMaxGiB: 6 }, hostPool: hostPoolOf(seats[0]!, seats) })).toEqual({ memoryMaxGiB: 6 });
+    expect(scopeLimitsOf({ ...seats[0]!, jobLimits: { memoryMaxGiB: 6 }, hostPool: hostPoolOf(seats[0]!, seats)! })).toEqual({ memoryMaxGiB: 6 });
   });
 });

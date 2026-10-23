@@ -95,6 +95,16 @@ export function poolsOf<T extends { machine: MachineSnapshot }>(ms: readonly T[]
 }
 
 /**
+ * Issue #2622 part 7: the host pool machine `m` is in, among `all` the user's machines: every lane of its machines, and the
+ * kernel's memory (the most a reading of it says). Undefined: `m` is in no pool, or no reading names the kernel's memory.
+ */
+export function hostPoolOf(m: MachineSnapshot, all: readonly MachineSnapshot[]): { lanes: number; memTotalBytes: number } | undefined {
+  const pool = poolsOf(all.map((machine) => ({ machine }))).find((p) => p.some((s) => s.machine.id === m.id));
+  const totals = pool?.flatMap(({ machine: { resources: r } }) => (r ? kernelOf(r).map((k) => k.total) : [])) ?? [];
+  return pool && totals.length ? { lanes: pool.reduce((n, s) => n + s.machine.maxLanes, 0), memTotalBytes: Math.max(...totals) } : undefined;
+}
+
+/**
  * Issue #2499: join the machines on one kernel (the same `bootId`) into a host pool. The kernel's memory is a reading's
  * own when it is not in a container, else the kernel's as it says it; the lowest of them counts, and Windows' free memory
  * when one of them reads it lower. A pool is two machines or more, or one in a container: else its own room says it all.

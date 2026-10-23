@@ -23,6 +23,7 @@ import { moveNoWay, noWayMove } from './no-way-move.ts';
 import { moveLost, type Lost } from './lost-move.ts';
 import { nudgeCheck } from './nudge-check.ts';
 import { runNotes } from './notes.ts';
+import { hostPoolOf } from '../decider/memory-floor.ts';
 import { recordOutcome } from './outcome.ts';
 import { recordPark, releaseParked } from './park.ts';
 import { requeuePreempted } from './preemption.ts';
@@ -120,10 +121,15 @@ function progressReporter(c: EngineContext, jobId: string, laneId: LaneId): NonN
 
 export const progressOf = (c: EngineContext, e: RunEntry, d: JobRunData): NonNullable<RunEntry['progress']> => (e.progress ??= progressReporter(c, d.jobId, d.laneId));
 
-/** The machine snapshot of the lane's machine; undefined once it is no longer attached. */
+/** The machine snapshot of the lane's machine, with its host pool; undefined once it is no longer attached. */
 export async function machineOf(c: EngineContext, laneId: LaneId): Promise<MachineSnapshot | undefined> {
   const lane = c.store.lanes.list().find((l) => l.id === laneId);
-  return lane ? (await c.machines.list()).find((m) => m.id === lane.machineId) : undefined;
+  if (!lane) return undefined;
+  const all = await c.machines.list();
+  const m = all.find((x) => x.id === lane.machineId);
+  // Issue #2622 part 7: with its host pool, so the job's default memory limit shares the kernel by every lane on it.
+  const hostPool = m && hostPoolOf(m, all);
+  return m && hostPool ? { ...m, hostPool } : m;
 }
 
 /** Every string inside a value passed through `mask`. */
