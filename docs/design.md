@@ -972,7 +972,9 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   `Executor.machineShell` — what jobs left there (the survey: the `hopper-job-*` scopes, the
   `HOPPER_JOB_ID`s of its processes, and the scratch dirs and the job worktrees in `.worktrees`
   (`.worktrees/<name>/<job id>`, issue #1188; and the layout before's) under the work trees of the newest 2000 jobs, with their ages; a
-  client target's `POST /survey {roots}`), and reaps:
+  client target's `POST /survey {roots}`; the programs it starts do not grow with what it finds — one `stat` per work tree
+  for the scratch dirs and one for the job worktrees, one `tr` for every process — because the sh of Git for Windows starts a
+  program slowly, and a native Windows client with about 520 dirs ran past the survey's 60 s, issue #2490), and reaps:
   - the scope and processes of every job the hopper knows that is not live (live: claimed, running,
     waiting on an answer, or led by an operator);
   - an ended job's scratch dir once it is `scratchMaxAgeHours` old (a machine option, default 24), or at
