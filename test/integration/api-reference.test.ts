@@ -100,7 +100,8 @@ describe('GET /docs/openapi.json', () => {
       });
       expect(res.text, `${method} ${path}`).not.toMatch(/no such route/);
     }
-  });
+    // One request per documented operation, in a row: more than 200 of them took more than 15 s under CI load (issue #2536).
+  }, 60_000);
 });
 
 describe('across the LAN', () => {
