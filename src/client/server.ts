@@ -44,7 +44,7 @@ import { DISCOVER_TIMEOUT_MS, discoverArgv } from './discover.ts';
 import { reachOf } from './reach.ts';
 import { CHECKPOINT_TIMEOUT_MS, checkpointOf } from './checkpoint.ts';
 import { runArgv } from './run.ts';
-import { readReap, REAP_TIMEOUT_MS, reapArgv, scriptArgvOf } from './reap.ts';
+import { readReap, REAP_TIMEOUT_MS, reapArgv, scriptArgvOf, SURVEY_TIMEOUT_MS } from './reap.ts';
 import { leftoverArgvOf, LEFTOVER_REMOVE_TIMEOUT_MS, LEFTOVERS_TIMEOUT_MS } from './leftovers.ts';
 import { defaultRuntimeSockets, runtimeRoute, type RuntimeSockets } from './runtime.ts';
 import { level, runClaude } from './level.ts';
@@ -230,7 +230,7 @@ async function fixed(path: '/reap' | '/survey' | '/credential' | '/work-tree' | 
   const call = path === '/credential' ? credentialOf(parsed) : path === '/reach' ? reachOf(parsed) : path === '/checkpoint' ? checkpointOf(parsed)
     : path === '/leftovers' || path === '/leftover-remove' ? leftoverArgvOf(path, parsed) : scriptArgvOf(path, parsed);
   if (typeof call === 'string') return answer(400, { error: call });
-  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : path === '/reap' ? REAP_TIMEOUT_MS : path === '/leftovers' ? LEFTOVERS_TIMEOUT_MS : path === '/leftover-remove' ? LEFTOVER_REMOVE_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
+  const timeout = path === '/checkpoint' ? CHECKPOINT_TIMEOUT_MS : path === '/reap' ? REAP_TIMEOUT_MS : path === '/survey' ? SURVEY_TIMEOUT_MS : path === '/leftovers' ? LEFTOVERS_TIMEOUT_MS : path === '/leftover-remove' ? LEFTOVER_REMOVE_TIMEOUT_MS : SCRIPT_TIMEOUT_MS;
   answer(200, Array.isArray(call) ? await runArgv(call, timeout) : await runArgv(call.argv, timeout, call.input));
 }
 

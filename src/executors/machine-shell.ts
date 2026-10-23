@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import type { MachineShell } from '../domain/ports.ts';
 import { CREDENTIAL_KEPT, credentialArgv } from '../client/credential.ts';
-import { readReap, readSurvey, REAP_TIMEOUT_MS, reapArgv, surveyArgv } from '../client/reap.ts';
+import { readReap, readSurvey, REAP_TIMEOUT_MS, reapArgv, SURVEY_TIMEOUT_MS, surveyArgv } from '../client/reap.ts';
 import { DISCOVER_TIMEOUT_MS, discoverArgv } from '../client/discover.ts';
 import { REACH_TIMEOUT_MS, reachArgv, readReach } from '../client/reach.ts';
 import { CHECKPOINT_TIMEOUT_MS, checkpointArgv, readCheckpoint } from '../client/checkpoint.ts';
@@ -85,7 +85,7 @@ const argvOf = (call: Call): string[] => ('reap' in call ? reapArgv(call.reap.jo
     : 'leftovers' in call ? leftoversArgv(call.leftovers.roots) : 'leftoverRemove' in call ? leftoverRemoveArgv(call.leftoverRemove.path)
     : credentialArgv(call.credential.jobId, call.credential.dir, call.credential.file, call.credential.make));
 /** A discovery asks each tool with a timeout of its own, so it may take longer than the other scripts. */
-const timeoutOf = (call: Call): number => ('discover' in call ? DISCOVER_TIMEOUT_MS : 'reach' in call ? REACH_TIMEOUT_MS : 'checkpoint' in call ? CHECKPOINT_TIMEOUT_MS : 'reap' in call ? REAP_TIMEOUT_MS
+const timeoutOf = (call: Call): number => ('discover' in call ? DISCOVER_TIMEOUT_MS : 'reach' in call ? REACH_TIMEOUT_MS : 'checkpoint' in call ? CHECKPOINT_TIMEOUT_MS : 'reap' in call ? REAP_TIMEOUT_MS : 'survey' in call ? SURVEY_TIMEOUT_MS
   : 'leftovers' in call ? LEFTOVERS_TIMEOUT_MS : 'leftoverRemove' in call ? LEFTOVER_REMOVE_TIMEOUT_MS : TIMEOUT_MS);
 /** What the call's script reads on stdin: a credential's content, never an argument. */
 const inputOf = (call: Call): string => ('credential' in call ? call.credential.content : '');

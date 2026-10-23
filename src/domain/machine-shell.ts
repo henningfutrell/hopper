@@ -2,6 +2,7 @@
 // from it) for its size.
 import type { DiscoveryFacts } from './blast-radius.ts';
 import type { CheckpointCapture } from './checkpoints.ts';
+import type { ContainerStorage, SurveyedCache } from './hopper-disk.ts';
 import type { Leftover } from './leftovers.ts';
 import type { KeptReason } from './kept-work.ts';
 
@@ -56,6 +57,10 @@ export interface Survey {
   usage?: { path: string; bytes: number }[];
   /** Jobs with a container or a volume labelled with their id there (issue #1120); absent (a client older than this), none known. */
   containers?: string[];
+  /** Each cache place in the home there (issue #2494); absent or empty: not measured (a client older than this, no `timeout`). */
+  caches?: SurveyedCache[];
+  /** Each container runtime's storage there by kind (issue #2494); absent or empty: no runtime answered, or not measured. */
+  storage?: ContainerStorage[];
 }
 
 /**
