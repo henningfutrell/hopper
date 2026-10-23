@@ -301,6 +301,16 @@ describe('what a job used (issue #2498)', () => {
     expect(part(jobBom(input({ events: [] })), 'resources')).toBeUndefined();
   });
 
+  it('the most disk one reap found its scratch dir and worktrees held (part 4)', () => {
+    const bom = jobBom(input({ events: [
+      event('job.resources_used', { memoryPeakBytes: 1024 ** 3, cpuSeconds: 60, diskBytes: 2.5 * 1024 ** 3 }, { machineId: 'm1' }),
+      event('job.resources_used', { diskBytes: 700 * 1024 ** 2 }, { machineId: 'm2' }),
+    ] }));
+    expect(part(bom, 'resources')).toMatchObject({ label: 'Peak memory 1 GiB, CPU 1m, disk 2.5 GiB', detail: 'on m1 and m2' });
+    expect(part(jobBom(input({ events: [event('job.resources_used', { diskBytes: 700 * 1024 ** 2 }, { machineId: 'm2' })] })), 'resources'))
+      .toMatchObject({ label: 'Disk 700 MiB' });
+  });
+
   // While it runs (part 3): what its scope uses now, as its machine's meter last read it.
   it('a running job: one part with its memory now, its peak and its CPU cores busy, from its machine\'s reading', () => {
     const live = liveUseOf([

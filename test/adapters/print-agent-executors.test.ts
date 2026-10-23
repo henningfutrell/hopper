@@ -15,6 +15,7 @@ import type { SessionTokenUse } from '../../src/domain/token-usage.ts';
 import { createPrintAgentExecutor, type PrintAgent } from '../../src/executors/index.ts';
 import { STATUS_NOTE_NUDGE } from '../../src/executors/herdr/index.ts';
 import { userSystemd } from '../support/systemd.ts';
+import { withoutUse } from '../support/reap-said.ts';
 import { useStandInPodman } from '../support/stand-in-podman.ts';
 
 const FAKE = join(import.meta.dirname, 'fake-print-agent.mjs');
@@ -224,9 +225,10 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
       if (bwrapRuns) await vi.waitFor(() => expect(running()).toBe(false), { timeout: 5000 });
       else await vi.waitFor(() => expect(running()).toBe(true), { timeout: 5000 });
       const job = { ...ctx.job, status: 'finished' as const, executorState: saved.at(-1)! };
-      // Where the turn ran in the job's scope, which the leftover keeps up, the reap says what it used too (issue #2498).
+      // Where the turn ran in the job's scope, which the leftover keeps up, the reap says what it used too (issue #2498); the
+      // disk of its scratch dir always (part 4).
       const said = await ex.cleanup!(job);
-      expect(said).toEqual({ kept: [], ...(said?.used ? { used: expect.objectContaining({ cpuSeconds: expect.any(Number) }) } : {}) });
+      expect(withoutUse(said)).toEqual({ kept: [] });
       expect(running()).toBe(false);
       expect(existsSync(scratch)).toBe(false);
       expect(() => lstatSync(`/tmp/hopper-${ID}`)).toThrow();

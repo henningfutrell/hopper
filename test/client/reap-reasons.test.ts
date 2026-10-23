@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { KEPT_REASONS as SAID, readReap, reapArgv } from '../../src/client/reap.ts';
+import { withoutUse } from '../support/reap-said.ts';
 import { KEPT_REASONS } from '../../src/domain/kept-work.ts';
 
 const JOB = 'job-2494-reasons';
@@ -27,7 +28,7 @@ const commit = (dir: string, name: string, text: string): void => {
 
 const reap = () => {
   const [file, ...args] = reapArgv(JOB, scratch);
-  return readReap(execFileSync(file!, args, { encoding: 'utf8', timeout: 30000 }));
+  return withoutUse(readReap(execFileSync(file!, args, { encoding: 'utf8', timeout: 30000 })));
 };
 
 beforeEach(() => {
