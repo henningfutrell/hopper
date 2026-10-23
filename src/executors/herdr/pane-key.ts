@@ -10,6 +10,9 @@ import type { StartDeps } from './start.ts';
  */
 export const paneKeyOf = (ctx: ExecutionContext, pane: number): string => `${ctx.job.id.slice(0, 8)} · ${ctx.job.attempts}.${pane}`;
 
+/** Whether a tab's label, `<lane> · <pane key>`, names the job (issue #2676): the pane key's first part is its id's start. */
+export const labelNamesJob = (label: string, jobId: string): boolean => label.split(' · ')[1] === jobId.slice(0, 8);
+
 /** The panes each run opened, for the pane key: a start tried again, or a pane herdr restored, opens the next. */
 const panesOpened = new WeakMap<ExecutionContext, number>();
 

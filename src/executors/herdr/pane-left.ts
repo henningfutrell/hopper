@@ -3,6 +3,7 @@
 import type { Executor } from '../../domain/ports.ts';
 import type { Job } from '../../domain/types.ts';
 import { HerdrError, type HerdrClient } from './client.ts';
+import { ownPane } from './pane-ends.ts';
 import { heldOf, paneStateOf, samePane, type HeldPane, type Scratch, type Where } from './panes.ts';
 
 /** A job that holds its pane: at work, or waiting on its pane. */
@@ -23,7 +24,10 @@ export function paneLeft(herdrOn: (w: Where) => HerdrClient, exitAndClose: (pane
       const now = !job.parked && !job.waitReleased && AT_WORK.includes(job.status) ? paneStateOf(job) : undefined;
       if (now && samePane({ ...now, paneId: old.paneId }, old)) {
         if (now.paneId === old.paneId) throw new Error(`pane ${old.paneId} is still the one job ${job.id} works in`);
-        await herdrOn(old).closePane(old.paneId).catch((e: unknown) => { if (!(e instanceof HerdrError && e.code === 'pane_not_found')) throw e; });
+        // Only while it is the job's own (issue #2676): its id may name another job's pane by now.
+        const herdr = herdrOn(old);
+        if (!(await ownPane(herdr, heldOf(old, job.id)))) return;
+        await herdr.closePane(old.paneId).catch((e: unknown) => { if (!(e instanceof HerdrError && e.code === 'pane_not_found')) throw e; });
         return;
       }
       const open = await exitAndClose(heldOf(old, job.id), 'none');

@@ -17872,6 +17872,22 @@ matching '"'`, and every job there failed after it ran. Only the reap held a `\"
 before a reset (`CONF_SH`, `src/client/job-runtime.ts`). Its printf formats are now in single quotes. Every fixed script
 a client runs is held to the round trip (`test/client/windows-command-line.test.ts`).
 
+**A job's end acts only on its own pane** (issue #2676). A job's executor state names its pane by herdr's id, and herdr
+gives ids again once its server starts again (a lane's machine, or a lane box, that started again): the next job on the
+lane had the pane whose id an ended job's state still named. That job's cleanup (a cancel while it waited, a deferred
+cleanup tried again) sent ctrl+c to that pane and closed it, and the next job's Claude ended with exit code 143. Now the
+end of a pane — at a cleanup, a park, a run's end, or the end of the pane a moved job left — first asks whose the pane
+is (`ownPane`, `src/executors/herdr/pane-ends.ts`): the job's while its agent runs in it or its tab's label names the job
+(the pane key). Another job's pane, or none, gets no key and stays open; the reap, which acts by the job's id, runs all
+the same. A pane whose herdr is not reached gets no key either, and the cleanup is tried again. A cancel of a job no
+runner holds also clears the lane id an earlier attempt left on it.
+
+**A Windows client's script is not on its command line** (issue #2676). The sh of Git for Windows cut the reap script
+near 8 KiB on a native Windows client's command line: `sh: -c: line 2: syntax error: unexpected end of file` (the error
+of issue #2427 was the same cut, at another place in the script of that time). There the client puts a `sh -c` script in
+the variable `HOPPER_CLIENT_SCRIPT` and gives sh only a short `-c` that takes it out of the environment and runs it
+(`CLIENT_SCRIPT_SH`, `src/client/spawn.ts`); the script's arguments stay on the command line.
+
 **Never a GitHub sign-in.** The protocol line on GitHub (`GITHUB_PROXY_LINE`) says: when the hopper cannot be reached,
 never start or ask for a GitHub sign-in to get around it; end failed with the reason. A herdr-claude job that reports a
 GitHub login again right after it was steered fails (`GITHUB_LOGIN_AGAIN`); before, that login went to the Logins.

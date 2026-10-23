@@ -85,6 +85,8 @@ export interface HerdrClient extends MachineShell {
   waitOutput(paneId: string, text: string, timeoutMs: number): Promise<boolean>;
   /** Every pane of the session (issue #1128): the ones no job holds too. */
   listPanes(): Promise<HerdrPane[]>;
+  /** The label of the tab the pane is in (issue #2676: whose pane it is, by the pane key); null when no pane has that id. */
+  tabLabel(paneId: string): Promise<string | null>;
   /** Rejects `pane_not_found` for a pane already gone. */
   closePane(paneId: string): Promise<void>;
   /** True while the machine's link is down (issue #752): a client target not dialled in. Absent: the machine has no link. */
