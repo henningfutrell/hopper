@@ -8850,6 +8850,12 @@ Version 1 (`docs/schemas/push_requirements.evaluated.v1.json`). A running job ev
           "measured": {
             "changedLines": 76
           },
+          "ci": {
+            "checks": [
+              "coverage*"
+            ],
+            "minutes": 47
+          },
           "passed": false,
           "problem": "changedLines 76 is under its minimum 80"
         }
@@ -8987,5 +8993,33 @@ Version 1 (`docs/schemas/push_requirements.summarized.v1.json`). After a job's p
   "repo": "octo/identity",
   "number": 41,
   "head": "4f1c2a9e8b7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b"
+}
+```
+
+## `push_requirements.ci_missed`
+
+Version 1 (`docs/schemas/push_requirements.ci_missed.v1.json`). A CI run of the job's pull request `pullRequest` of `repo` failed on a check that a requirement that applied to its head commit `head` stands for (issue #2555 part 5): the job's evaluation of `head` should have caught it. `checks`: the CI checks that failed and that a check's `ci.checks` names; `requirements`: those requirements' ids; `minutes`: the most billed minutes any of their checks names for such a CI run, absent when none names any. Recorded once for each pull request and head commit. Counted by `GET /api/push-requirements/metrics`.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `pullRequest` | string | yes |
+| `head` | string | yes |
+| `checks` | string[] | yes |
+| `requirements` | string[] | yes |
+| `minutes` | number | no |
+
+```json
+{
+  "repo": "octo/identity",
+  "pullRequest": "https://github.com/octo/identity/pull/41",
+  "head": "4f1c2a9e8b7d6c5b4a3f2e1d0c9b8a7f6e5d4c3b",
+  "checks": [
+    "coverage (changed files)"
+  ],
+  "requirements": [
+    "kotlin-coverage"
+  ],
+  "minutes": 47
 }
 ```

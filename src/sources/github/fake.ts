@@ -61,7 +61,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
       url: `https://github.com/${repo}/pull/${number}`, createdAt: o.createdAt, isDraft: o.isDraft ?? false, conflicting: o.conflicting ?? false,
       headCommittedAt: o.headCommittedAt ?? o.createdAt, ...(o.checks ? { checks: o.checks } : {}), ...(o.commits ? { commits: o.commits } : {}), ...(o.files ? { files: o.files } : {}),
     };
-    pulls.push({ ...pr, state: 'open', body, repo, issue, closes, headRef: o.headRef ?? `branch-${number}`, base: o.base ?? 'dev', ...(o.crossReferenced === false ? { crossReferenced: false as const } : {}) }); if (o.diff) diffs.set(pr.url, o.diff);
+    pulls.push({ ...pr, state: 'open', body, repo, issue, closes, headRef: o.headRef ?? `branch-${number}`, base: o.base ?? 'dev', ...(o.headOid ? { headOid: o.headOid } : {}), ...(o.crossReferenced === false ? { crossReferenced: false as const } : {}) }); if (o.diff) diffs.set(pr.url, o.diff);
     return { ...pr };
   };
   const openPull = (repo: string, n: number, o: PullRequestInput, closes: boolean, says = closes ? 'Closes' : 'Part of'): OpenPullRequest => {

@@ -88,6 +88,24 @@
                     "type": "number"
                   }
                 },
+                "ci": {
+                  "type": "object",
+                  "properties": {
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "minutes": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "checks"
+                  ],
+                  "additionalProperties": false
+                },
                 "passed": {
                   "type": "boolean"
                 },

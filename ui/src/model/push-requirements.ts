@@ -1,6 +1,6 @@
 // The default push requirements in the UI (issue #2555), pure: the panel's summary, its note, and the check of the JSON a
 // person edits. The hopper reads the requirements themselves (POST /ui/api/push-requirements says what it refuses).
-import type { PushRequirement } from './wire.ts';
+import type { PushRequirement, PushRequirementMetrics } from './wire.ts';
 
 export const PUSH_REQUIREMENTS_NOTE = 'Checks that a job runs in its work tree before it pushes, so a CI gate that would fail, fails there first. '
   + 'A repository lists its own in .hopper/requirements.yaml. The requirements here apply to every repository, below its own file: '
@@ -10,6 +10,15 @@ export const PUSH_REQUIREMENTS_NOTE = 'Checks that a job runs in its work tree b
 export const pushRequirementsSummary = (requirements: readonly PushRequirement[]): string => (requirements.length === 0
   ? 'No default requirements. Only a repository\'s own requirements apply.'
   : `${requirements.length} default requirement${requirements.length === 1 ? '' : 's'}: ${requirements.map((q) => q.id).join(', ')}.`);
+
+const runs = (n: number): string => `${n} CI run${n === 1 ? '' : 's'}`;
+
+/** What the requirements caught and missed in the last `days` days (part 5), in one line. */
+export function pushRequirementMetricsLine(m: PushRequirementMetrics & { days: number }): string {
+  const caught = m.caught === 0 ? 'No CI run caught' : `${runs(m.caught)} caught before the push, ${m.minutesSaved} billed minutes saved${m.unpriced > 0 ? ` (${m.unpriced} with no minutes set)` : ''}`;
+  const missed = m.missed === 0 ? 'no CI run missed' : `${runs(m.missed)} failed on a check a requirement should have caught (${m.minutesMissed} billed minutes)`;
+  return `Last ${m.days} days: ${caught}; ${missed}.`;
+}
 
 /** The editor's text for the saved requirements: the same shape as a requirements file, in JSON. */
 export const requirementsText = (requirements: readonly PushRequirement[]): string => JSON.stringify({ requirements }, null, 2);
