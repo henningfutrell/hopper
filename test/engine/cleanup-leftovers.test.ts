@@ -10,19 +10,21 @@ const ago = (min: number) => new Date(NOW - min * 60_000).toISOString();
 const entry = (jobId: string, state: LedgerEntry['state'], reason?: string): LedgerEntry =>
   ({ jobId, machineId: 'm1', kind: 'scratch_dir', locator: `/w/.worktrees/@scratch/${jobId}`, createdAt: ago(300), state, ...(reason ? { reason } : {}) });
 
-function rig(ledger: LedgerEntry[], jobs: Partial<Job>[]) {
+function rig(ledger: LedgerEntry[], jobs: Partial<Job>[], listed = ['m1'], configured: string[] | undefined = []) {
+  const closed: unknown[][] = [];
   const events: { type: string; jobId?: string; data: unknown }[] = [];
   const logs: string[] = [];
   const store = {
-    resourceLedger: { open: () => ledger.filter((e) => e.state === 'live' || e.state === 'failed') },
+    resourceLedger: { open: () => ledger.filter((e) => e.state === 'live' || e.state === 'failed'), close: (...a: unknown[]) => { closed.push(a); } },
     jobs: { get: (id: string) => jobs.find((j) => j.id === id) },
     events: {
       recent: (_n: number, types: string[], jobId?: string) => events.filter((e) => types.includes(e.type) && e.jobId === jobId),
       append: (e: { type: string; jobId?: string; data: unknown }) => { events.push(e); return e; },
     },
   };
-  const check = () => createLeftoverCheck({ store: store as never, clock: { now: () => new Date(NOW) } }, (l) => logs.push(l));
-  return { events, logs, check };
+  const machines = { list: () => Promise.resolve(listed.map((id) => ({ id }))) };
+  const check = () => createLeftoverCheck({ store: store as never, clock: { now: () => new Date(NOW) }, machines: machines as never, configuredMachines: () => configured }, (l) => logs.push(l));
+  return { events, logs, check, closed };
 }
 
 describe('the leftover check (issue #2504)', () => {
@@ -34,11 +36,11 @@ describe('the leftover check (issue #2504)', () => {
   ];
   const ledger = [entry('old', 'failed', '/w/.worktrees/@scratch/old/containers is still there'), entry('new', 'live'), entry('run', 'live'), entry('clean', 'reaped')];
 
-  it('records each leftover past the grace period once, with its entries', () => {
+  it('records each leftover past the grace period once, with its entries', async () => {
     const r = rig(ledger, jobs);
     const check = r.check();
-    check();
-    check();
+    await check();
+    await check();
     expect(r.events).toEqual([{
       type: 'job.cleanup_leftover', jobId: 'old',
       data: { endedAt: ago(90), graceMinutes: 60, entries: [{ machineId: 'm1', kind: 'scratch_dir', locator: '/w/.worktrees/@scratch/old', state: 'failed', reason: '/w/.worktrees/@scratch/old/containers is still there' }] },
@@ -46,17 +48,33 @@ describe('the leftover check (issue #2504)', () => {
     expect(r.logs).toEqual([`hopper: job old ended at ${ago(90)} and its cleanup left /w/.worktrees/@scratch/old on m1 (failed)`]);
   });
 
-  it('does not record it again after a restart', () => {
+  it('does not record it again after a restart', async () => {
     const r = rig(ledger, jobs);
-    r.check()();
-    r.check()();
+    await r.check()();
+    await r.check()();
     expect(r.events.map((e) => e.jobId)).toEqual(['old']);
   });
 
-  it('says a check that failed, and throws nothing', () => {
+  it('says a check that failed, and throws nothing', async () => {
     const r = rig(ledger, jobs);
-    const check = createLeftoverCheck({ store: { resourceLedger: { open: () => { throw new Error('no database'); } } } as never, clock: { now: () => new Date(NOW) } }, (l) => r.logs.push(l));
-    expect(() => check()).not.toThrow();
+    const check = createLeftoverCheck({ store: { resourceLedger: { open: () => { throw new Error('no database'); } } } as never, clock: { now: () => new Date(NOW) }, machines: { list: () => Promise.resolve([]) }, configuredMachines: () => [] }, (l) => r.logs.push(l));
+    await expect(check()).resolves.toBeUndefined();
     expect(r.logs).toEqual(['hopper: the leftover check failed: no database']);
+  });
+
+  it('tells a leftover on a retired machine, then closes its entries retired (part 12)', async () => {
+    const r = rig(ledger, jobs, []);
+    await r.check()();
+    expect(r.events.map((e) => [e.type, e.jobId])).toEqual([['job.cleanup_leftover', 'old']]);
+    expect(r.closed).toEqual([['old', 'scratch_dir', '/w/.worktrees/@scratch/old', 'retired', new Date(NOW).toISOString(), 'its machine m1 is retired: it is no longer configured, so no reap reaches it']]);
+    expect(r.logs.at(-1)).toBe('hopper: job old: its cleanup leftover /w/.worktrees/@scratch/old is on m1, a retired machine: closed retired');
+  });
+
+  it('closes nothing on a machine still listed or configured, nor while the plugins config has an error (part 12)', async () => {
+    for (const [listed, configured] of [[['m1'], []], [[], ['m1']], [[], undefined]] as const) {
+      const r = rig(ledger, jobs, [...listed], configured && [...configured]);
+      await r.check()();
+      expect(r.closed).toEqual([]);
+    }
   });
 });
