@@ -33886,3 +33886,24 @@ promotion set; times shown in the owner's time zone in the UI; accuracy over tim
 cutoff, across a day and the end of daylight saving time), `test/domain/delivery-forecast.test.ts` (shape, order,
 `low` history, expedite, slipping, the gate wait, the same output twice), `test/domain/forecast-accuracy.test.ts` (a
 change run end to end, its ledger and the error per step and per repository).
+
+**Part 2 (2026-10-23): the measured steps and the read.** `src/domain/delivery-history.ts` reads a **delivery track**
+for each job from its events: `queued` from `job.queued` to the first `job.started`, `coding` to the first
+`job.finished`, `pr_checks` to `job.pull_request_merged`, `landing` the merge itself (no time), `landing_checks` from
+the merge to the `landing_batch.promoted` of the first batch run whose `landing_batch.started` `merges` names the pull
+request (from `pr.create` through the hopper, `job.pull_request_followed` or the merge). After that the change is in
+`promotion_set`. `stepHistory` gives each step's durations from the ended steps of a repository's tracks.
+`GET /api/delivery-forecast?job=|issue=|pr=` (`src/http/delivery-forecast.ts`) and `hopper forecast --job|--issue|--pr`
+answer the forecast of that change, from the tracks of the last 30 days (`HISTORY_DAYS`). With no promotion set schedule
+yet, the forecast's `schedule` is absent and the scheduled steps are `unknown`; there are no delivery gates and no
+expedite. A failed, cancelled or rejected job with no merge carries no change: 409.
+
+Decisions: no event ends a pull request's checks, so `pr_checks` holds the checks and the wait for the merge, and
+`landing` takes no time. A job's own ended steps count as history when they are in the window.
+
+Left: the promotion set schedule setting per repository with the gate owners; the expedite flag; the delivery ledger in
+the database; a promotion set lookup; the UI in the owner's time zone; accuracy over time.
+
+Verification: `test/domain/delivery-history.test.ts` (each step from its events, the batch run's merges, the history per
+repository), `test/integration/delivery-forecast.test.ts` (the shape of the answer for a job, an issue and a pull request,
+the order of the ends, 400, 404, 409), `test/cli/forecast.test.ts`.

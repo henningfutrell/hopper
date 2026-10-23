@@ -14,7 +14,8 @@ export interface ForecastInput {
   /** Measured durations in ms of each measured step, of the change's repository. */
   history: Partial<Record<DeliveryStep, readonly number[]>>;
   minSamples?: number;
-  schedule: PromotionSetSchedule;
+  /** Absent: the repository has no promotion set schedule, and the scheduled steps are `unknown`. */
+  schedule?: PromotionSetSchedule;
   /** The delivery gates: steps that end only by a person's act, each with its owner. */
   gates: Partial<Record<DeliveryStep, { owner: string }>>;
   expedite?: boolean;
@@ -62,7 +63,8 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const MINUTE = 60_000;
 
 /** A scheduled step's end from its start: a cutoff (or at once, out of cadence) or the schedule's minutes. */
-function scheduledEnd(step: DeliveryStep, startMs: number, s: PromotionSetSchedule, outOfCadence: boolean): number | undefined {
+function scheduledEnd(step: DeliveryStep, startMs: number, s: PromotionSetSchedule | undefined, outOfCadence: boolean): number | undefined {
+  if (!s) return undefined;
   if (step === 'promotion_set') return outOfCadence ? startMs : nextCutoff(s, startMs);
   return startMs + (step === 'test_gate' ? s.testGateAfterMinutes : s.productionAfterMinutes) * MINUTE;
 }
@@ -70,7 +72,7 @@ function scheduledEnd(step: DeliveryStep, startMs: number, s: PromotionSetSchedu
 /** One path from the current step, and the current step's own end at p90 before the clock moved it. */
 function pathOf(f: ForecastInput, expedite: boolean): { path: DeliveryPath; currentEndP90?: number } {
   const now = Date.parse(f.now);
-  const outOfCadence = expedite && f.schedule.expedite === 'out_of_cadence';
+  const outOfCadence = expedite && f.schedule?.expedite === 'out_of_cadence';
   let t50: number | undefined = Date.parse(f.current.since);
   let t90 = t50;
   let currentEndP90: number | undefined;
@@ -101,7 +103,7 @@ function pathOf(f: ForecastInput, expedite: boolean): { path: DeliveryPath; curr
     sf.basis = SCHEDULED_STEPS.includes(step) ? 'scheduled' : 'measured';
     if (step === 'promotion_set') {
       if (outOfCadence) sf.outOfCadence = true;
-      else Object.assign(sf, { set: promotionSetOf(f.schedule, iso(t50))?.set, setP90: promotionSetOf(f.schedule, iso(t90))?.set });
+      else Object.assign(sf, { set: promotionSetOf(f.schedule!, iso(t50))?.set, setP90: promotionSetOf(f.schedule!, iso(t90))?.set });
     }
     if (step === f.current.step) {
       currentEndP90 = e90;
