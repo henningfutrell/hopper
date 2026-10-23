@@ -1,7 +1,7 @@
 // The retention per job status (issue #2494, design.md "The sweep"): how long an ended job's scratch dir and job worktrees
 // stay on its machine. Set for the status, counted from the job's end; not set, the sweep's scratch age, as before.
 import { describe, expect, it } from 'vitest';
-import { retainsAtEnd, retentionOver } from '../../src/domain/retention.ts';
+import { retainedUntilOf, retainsAtEnd, retentionOver } from '../../src/domain/retention.ts';
 import type { Job } from '../../src/domain/types.ts';
 
 const HOUR = 3600_000;
@@ -41,5 +41,16 @@ describe('the retention per job status (issue #2494)', () => {
     expect(retainsAtEnd({ retainHours: { failed: 24 } }, 'finished')).toBe(false);
     expect(retainsAtEnd({ retainHours: { finished: 0 } }, 'finished')).toBe(false);
     expect(retainsAtEnd({ retainHours: { failed: 24 } }, 'running')).toBe(false);
+  });
+
+  it('the ledger keeps the reap\'s kept dirs until the retention ends; a timed-out job\'s until the dir is old enough (issue #2504 part 5)', () => {
+    const end = new Date(NOW - HOUR).toISOString();
+    const at = (h: number) => new Date(NOW - HOUR + h * HOUR).toISOString();
+    expect(retainedUntilOf({ retainHours: { failed: 24 } }, { status: 'failed', finishedAt: end }, NOW)).toBe(at(24));
+    expect(retainedUntilOf({ retainHours: { failed: 24 } }, { status: 'failed' }, NOW)).toBe(new Date(NOW + 24 * HOUR).toISOString());
+    expect(retainedUntilOf(undefined, { status: 'failed', finishedAt: end }, NOW)).toBeUndefined();
+    expect(retainedUntilOf({ retainHours: { failed: 0 } }, { status: 'failed', finishedAt: end }, NOW)).toBeUndefined();
+    expect(retainedUntilOf(undefined, { status: 'failed', finishedAt: end, liveness: { outputAt: end } }, NOW)).toBe(at(24));
+    expect(retainedUntilOf({ scratchMaxAgeHours: 6 }, { status: 'failed', finishedAt: end, liveness: { outputAt: end } }, NOW)).toBe(at(6));
   });
 });

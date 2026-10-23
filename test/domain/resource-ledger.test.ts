@@ -1,7 +1,7 @@
 // Issue #2504: a job's resource ledger — what the hopper made for a job on a machine, from its executor's saved state, closed
 // as each reap says — and the job's cleanup status read from it. Pure.
 import { describe, expect, it } from 'vitest';
-import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, goneClosures, ledgerEntriesOf, machineLeftoversOf, reapClosures, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
+import { CLEANUP_GRACE_MINUTES, cleanupLeftoversOf, cleanupStatusOf, goneClosures, ledgerEntriesOf, ledgerParts, machineLeftoversOf, reapClosures, retainedEntriesOf, type LedgerEntry } from '../../src/domain/resource-ledger.ts';
 
 const AT = '2026-10-22T10:00:00.000Z';
 const SCRATCH = '/w/.worktrees/@scratch/j1';
@@ -90,6 +90,24 @@ describe('cleanupStatusOf', () => {
     expect(cleanupStatusOf(ended, [entry('scratch_dir', SCRATCH, { state: 'kept' }), entry('job_scope', 's', { state: 'reaped' })])).toBe('kept_work');
     expect(cleanupStatusOf(ended, [entry('scratch_dir', SCRATCH, { state: 'reaped' })])).toBe('done');
   });
+
+  it('says retained while every live entry is kept for its retention (part 5)', () => {
+    const kept = entry('scratch_dir', SCRATCH, { retainedUntil: AT });
+    expect(cleanupStatusOf(ended, [kept, entry('job_scope', 's', { state: 'reaped' })])).toBe('retained');
+    expect(cleanupStatusOf(ended, [kept, entry('job_worktree', TREE)])).toBe('pending');
+    expect(cleanupStatusOf(ended, [kept, entry('job_worktree', TREE, { state: 'failed', reason: 'x' })])).toBe('failed');
+    const parts = ledgerParts(ended, [kept]);
+    expect(parts[0]).toMatchObject({ id: 'cleanup', status: 'open', label: 'Cleanup: work kept for its retention' });
+    expect(parts[1]?.detail).toBe(`${SCRATCH}: still there, kept until ${AT}`);
+  });
+});
+
+describe('retainedEntriesOf (issue #2504 part 5)', () => {
+  it('names each entry the retention keeps: not the scope, not one closed reaped or kept', () => {
+    const all = [entry('scratch_dir', SCRATCH), entry('job_worktree', TREE, { state: 'failed', reason: 'x' }), entry('container_runtime', RUNTIME),
+      entry('job_scope', 's'), entry('job_worktree', '/w/.worktrees/b/j1', { state: 'kept' }), entry('scratch_dir', '/v/.worktrees/@scratch/j1', { state: 'reaped' })];
+    expect(retainedEntriesOf(all).map((e) => e.locator)).toEqual([SCRATCH, TREE, RUNTIME]);
+  });
 });
 
 describe('cleanupLeftoversOf (issue #2504)', () => {
@@ -113,6 +131,16 @@ describe('cleanupLeftoversOf (issue #2504)', () => {
 
   it('never names a reaped or kept entry', () => {
     expect(cleanupLeftoversOf([of('j1', 'reaped'), of('j1', 'kept')], (id) => jobs[id], NOW)).toEqual([]);
+  });
+
+  it('names an entry kept for a retention only once the grace period after the retention passed (part 5)', () => {
+    const until = (min: number) => ({ ...of('j1'), retainedUntil: ago(min) });
+    expect(cleanupLeftoversOf([until(-600)], (id) => jobs[id], NOW)).toEqual([]);
+    expect(cleanupLeftoversOf([until(CLEANUP_GRACE_MINUTES - 1)], (id) => jobs[id], NOW)).toEqual([]);
+    const over = until(CLEANUP_GRACE_MINUTES);
+    expect(cleanupLeftoversOf([over], (id) => jobs[id], NOW)).toEqual([{ jobId: 'j1', endedAt: jobs.j1!.finishedAt, entries: [over] }]);
+    const scope = entry('job_scope', 's', { jobId: 'j1', state: 'failed', reason: 'x' });
+    expect(cleanupLeftoversOf([until(-600), scope], (id) => jobs[id], NOW)).toEqual([{ jobId: 'j1', endedAt: jobs.j1!.finishedAt, entries: [scope] }]);
   });
 });
 

@@ -108,4 +108,15 @@ describe('the resource ledger (issue #2504)', () => {
     store.jobs.update(job.id, { finishedAt: new Date(Date.now() - 2 * 3600_000).toISOString() });
     expect(await counts()).toEqual({ jobs: 1, entries: 1, failed: 1 });
   });
+
+  it('keeps when an entry is kept for its retention, and a later close keeps it as the record (part 5)', async () => {
+    const { a, job } = await ended((id) => ({ kept: [], left: [`/w/.worktrees/@scratch/${id}/containers`] }));
+    const store = a.user().store, scratch = `/w/.worktrees/@scratch/${job.id}`, until = '2026-10-23T00:00:00.000Z';
+    store.resourceLedger.retain(job.id, 'scratch_dir', scratch, until);
+    expect(store.resourceLedger.open()).toMatchObject([{ kind: 'scratch_dir', state: 'failed', retainedUntil: until }]);
+    store.resourceLedger.close(job.id, 'scratch_dir', scratch, 'reaped', new Date().toISOString());
+    expect(store.resourceLedger.forJob(job.id).find((e) => e.kind === 'scratch_dir')).toMatchObject({ state: 'reaped', retainedUntil: until });
+    store.resourceLedger.retain(job.id, 'scratch_dir', scratch, '2026-10-24T00:00:00.000Z');
+    expect(store.resourceLedger.forJob(job.id).find((e) => e.kind === 'scratch_dir')?.retainedUntil).toBe(until);
+  });
 });
