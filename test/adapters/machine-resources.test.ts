@@ -90,6 +90,13 @@ describe('resources a client answers', () => {
     expect(resourcesOf({ ...r, memPressure: { someAvg10: 2 } })).toEqual(r);
   });
 
+  it('a client\'s CPU throttle (issue #2499 part 9): kept when it is a share 0..1, else dropped', () => {
+    const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
+    expect(resourcesOf({ ...r, cpuThrottledFrac: 0.62 })).toEqual({ ...r, cpuThrottledFrac: 0.62 });
+    expect(resourcesOf({ ...r, cpuThrottledFrac: 1.2 })).toEqual(r);
+    expect(resourcesOf({ ...r, cpuThrottledFrac: 'a' })).toEqual(r);
+  });
+
   it('a client\'s last process killed for memory (issue #2499 part 7): kept when it reads as a time, else dropped', () => {
     const r = { cores: 4, memTotalBytes: 8 * GIB, memAvailableBytes: 2 * GIB };
     expect(resourcesOf({ ...r, memOomKillAt: '2026-10-22T10:00:00.000Z' })).toEqual({ ...r, memOomKillAt: '2026-10-22T10:00:00.000Z' });
