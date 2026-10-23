@@ -375,10 +375,11 @@ export const gb = (bytes: number): string => {
   return `${n >= 10 ? Math.round(n) : n.toFixed(1)} GB`;
 };
 
-/** A machine's disk (issue #401) as its card says it, with the warning when it runs low; null when it was not read. */
+/** A machine's disk (issue #401) as its card says it, with the warning when it runs low or critical (issue #2494); null when it was not read. */
 export function diskText(disk: MachineSnapshot['disk']): string | null {
   if (!disk) return null;
   const text = `${gb(disk.freeBytes)} free of ${gb(disk.totalBytes)} (${Math.round((disk.freeBytes / disk.totalBytes) * 100)}%)`;
+  if (disk.critical) return `${text}: critical, no job runs here until it frees`;
   return disk.low ? `${text}: low, jobs may fail as it fills` : text;
 }
 

@@ -169,6 +169,8 @@
         "machine.back_online",
         "machine.disk_over_budget",
         "machine.disk_within_budget",
+        "machine.disk_low",
+        "machine.disk_ok",
         "machine.leftover_kept",
         "machine.leftover_removed",
         "machine.drained",

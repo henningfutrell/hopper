@@ -3226,6 +3226,48 @@ Version 1 (`docs/schemas/machine.disk_within_budget.v1.json`). A machine told ov
 }
 ```
 
+## `machine.disk_low`
+
+Version 1 (`docs/schemas/machine.disk_low.v1.json`). A machine's disk (the filesystem its home is on) turned low by its thresholds (issue #2494, `diskLowBelowGiB` / `diskLowBelowPercent`, default 5 GiB / 10%): `freeBytes` of `totalBytes` free. It takes no new job, and the sweep reaps every ended job's scratch dir there at once, whatever its age. `critical`: below its critical thresholds (`diskCriticalBelowGiB` / `diskCriticalBelowPercent`, default 1 GiB / 2%), where it takes no job at all, a job back to its pane included. Once when it turns low, and once more when it turns critical; after a restart of the hopper, not again. `label` is its name on the Machines view. Webhooks and notifiers take it.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `freeBytes` | number | yes |
+| `totalBytes` | number | yes |
+| `critical` | boolean | yes |
+
+```json
+{
+  "machineId": "seat-l1",
+  "label": "seat l1",
+  "freeBytes": 4000000000,
+  "totalBytes": 250000000000,
+  "critical": false
+}
+```
+
+## `machine.disk_ok`
+
+Version 1 (`docs/schemas/machine.disk_ok.v1.json`). A machine told by `machine.disk_low` has its disk no longer low (issue #2494): `freeBytes` of `totalBytes` free now. It takes jobs again.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `label` | string | yes |
+| `freeBytes` | number | yes |
+| `totalBytes` | number | yes |
+
+```json
+{
+  "machineId": "seat-l1",
+  "label": "seat l1",
+  "freeBytes": 40000000000,
+  "totalBytes": 250000000000
+}
+```
+
 ## `machine.leftover_kept`
 
 Version 1 (`docs/schemas/machine.leftover_kept.v1.json`). A person keeps a leftover on Machines (issue #1116): a dir in a work tree's `.hopper-scratch` (the layout before issue #1188) whose job the hopper does not know, or a repository mirror there, at `path` on `machineId`. Nothing is removed; the listing shows it kept. `person` and `via` say who and the way.

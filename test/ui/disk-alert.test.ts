@@ -16,7 +16,7 @@ describe('the header\'s disk alert (issue #2494)', () => {
 
   it('counts the machines with a low disk, naming each with its free space', () => {
     expect(diskAlert([m('l1', 3, { low: true }), m('l2', 50), m('l4', 4, { low: true })])).toEqual({
-      n: 2, critical: false, words: 'disks low', title: 'Disk low: seat l1 (3 GB free), seat l4 (4 GB free). A machine with a low disk takes no new job.',
+      n: 2, critical: false, words: 'disks low', title: 'Disk low: seat l1 (3.0 GB free), seat l4 (4.0 GB free). A machine with a low disk takes no new job.',
     });
   });
 
