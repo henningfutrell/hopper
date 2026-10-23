@@ -8174,6 +8174,8 @@ whose job's end was reported after the listing (the listing does not know that e
 Nor for an item whose job was made, or ended, after the pass started (issue #2570): another hopper on the same database
 made it from the same Run again while this pass read GitHub, and the listing knows nothing of it. Its end is reported by
 the time this pass reaches the item, so "reported after the listing" alone does not catch it; the pass's start does.
+The job's transaction stamps its creation before it commits, so a pass can start between the stamp and the commit and not
+see the job (issue #2617). Its end report is written after the commit, so a job changed after the pass started counts too.
 A loop whose items each wait on real I/O already (a shell, git, a GitHub call: the sweep, the tends, the failure sweep's
 runs) needs no yield. The engine's Decision is one step and never yields. The rule needs no second connection pool; an
 asynchronous pool for the HTTP reads is a separate path of the same issue. It is checked in review: a new loop over a list
