@@ -72,6 +72,8 @@ describe('the memory floor (issue #2291)', () => {
     const [paused] = await a.events('types=job.memory_paused');
     expect(paused!.jobId).toBe(second.id);
     expect(paused!.data).toMatchObject({ availableBytes: GIB, floorBytes: 1.4 * GIB });
+    // Issue #2737: the job says why it was paused, for the Queue.
+    expect((await a.job(second.id)).memoryPaused).toMatchObject({ machineId: 'local', why: 'local has 1 GiB available, below its floor of 1.4 GiB' });
     await waitFor(async () => (await a.job(second.id)).waitReason?.startsWith('waiting for memory:') === true, { what: 'the paused job waiting for memory', timeoutMs: 8000 });
     expect((await a.job(first.id)).status).toBe('running');
     expect((await a.api('GET', '/api/health')).status).toBe(200);
@@ -85,5 +87,23 @@ describe('the memory floor (issue #2291)', () => {
     expect(types).toEqual(expect.arrayContaining(['job.memory_paused', 'job.parked', 'job.unparked', 'job.finished']));
     expect(types).not.toContain('job.failed');
     expect(back.memoryPaused).toBeUndefined();
+  });
+
+  it('below the floor the job of the lowest priority is paused, though another started later (issue #2737)', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING, WORKING] });
+    const memory = { availableGiB: 9 };
+    const a = await boot(herdr, memory);
+    const low = await a.pull({}, { ...item(1), priority: 10 });
+    await waitFor(async () => (await a.job(low.id)).agentSession !== undefined, { what: 'the low job running with its session' });
+    const high = await a.pull({}, { ...item(2), priority: 75 });
+    await waitFor(async () => (await a.job(high.id)).agentSession !== undefined, { what: 'the high job running with its session' });
+
+    memory.availableGiB = 1;
+    await waitFor(async () => (await a.events('types=job.memory_paused')).length > 0, { what: 'a memory pause', timeoutMs: 8000 });
+    const [paused] = await a.events('types=job.memory_paused');
+    expect(paused!.jobId).toBe(low.id);
+    expect(paused!.data).toMatchObject({ reason: expect.stringMatching(/; .+ has the lowest priority there \(10\)$/) });
+    expect((await a.job(low.id)).memoryPaused).toMatchObject({ priority: 10 });
+    expect((await a.job(high.id)).status).toBe('running');
   });
 });

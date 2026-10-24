@@ -88,7 +88,8 @@ describe('a memory pause (issue #2291)', () => {
   it('below the floor, the job that started last there is paused', () => {
     const d = decide(inputs({ machines: [vm(1)], ...two }), 'd1');
     expect(d.memoryPause).toEqual([{
-      jobId: 'r2', laneId: 'local/lane-2', machineId: 'local', availableBytes: 1 * GIB, floorBytes: 1.4 * GIB,
+      jobId: 'r2', laneId: 'local/lane-2', machineId: 'local', availableBytes: 1 * GIB, floorBytes: 1.4 * GIB, priority: 50,
+      why: 'local has 1 GiB available, below its floor of 1.4 GiB',
       reason: 'pauses r2 on local/lane-2: local has 1 GiB available, below its floor of 1.4 GiB; r2 started there last',
     }]);
     expect(d.reasons).toContain(d.memoryPause![0]!.reason);

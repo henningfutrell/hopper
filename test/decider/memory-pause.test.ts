@@ -27,7 +27,8 @@ describe('a memory pause on a host pool (issue #2499)', () => {
   it('below the kernel\'s floor, the job that started last on any machine of the pool is paused, though each has memory of its own', () => {
     const d = decide(inputs({ machines: [seat('a', 1), seat('b', 1)], ...twoSeats }), 'd1');
     expect(d.memoryPause).toEqual([{
-      jobId: 'r2', laneId: 'b/lane-1', machineId: 'b', availableBytes: 1 * GIB, floorBytes: 1.4 * GIB,
+      jobId: 'r2', laneId: 'b/lane-1', machineId: 'b', availableBytes: 1 * GIB, floorBytes: 1.4 * GIB, priority: 50,
+      why: 'the host of a, b has 1 GiB available, below its floor of 1.4 GiB',
       reason: 'pauses r2 on b/lane-1: the host of a, b has 1 GiB available, below its floor of 1.4 GiB; r2 started there last',
     }]);
   });
@@ -59,7 +60,8 @@ describe('a memory pause on memory pressure (issue #2499)', () => {
   it('a machine whose tasks waited on memory 40% of the last 10 s or more pauses the job that started there last', () => {
     const d = decide(inputs({ machines: [pressed(45)], ...two }), 'd1');
     expect(d.memoryPause).toEqual([{
-      jobId: 'r2', laneId: 'local/lane-2', machineId: 'local', availableBytes: 3 * GIB, floorBytes: 1 * GIB,
+      jobId: 'r2', laneId: 'local/lane-2', machineId: 'local', availableBytes: 3 * GIB, floorBytes: 1 * GIB, priority: 50,
+      why: "local's memory is under pressure: its tasks waited on memory 45% of the last 10 s, at or above 40%",
       reason: "pauses r2 on local/lane-2: local's memory is under pressure: its tasks waited on memory 45% of the last 10 s, at or above 40%; r2 started there last",
     }]);
   });
@@ -70,5 +72,31 @@ describe('a memory pause on memory pressure (issue #2499)', () => {
 
   it('a floor of 0 turns the pressure pause off too', () => {
     expect(decide(inputs({ machines: [pressed(80, { memoryFloor: { floorGiB: 0 } })], ...two }), 'd1').memoryPause).toBeUndefined();
+  });
+});
+
+describe('a memory pause takes the lowest priority first (issue #2737)', () => {
+  const low = machine({ maxLanes: 8, resources: { cores: 8, memTotalBytes: 4 * GIB, memAvailableBytes: 0.5 * GIB } });
+
+  it('the job of the lowest priority there is paused, though another started there later', () => {
+    const d = decide(inputs({
+      machines: [low], parkingExecutors: ['test'],
+      lanes: [busy(1, 'r1'), busy(2, 'r2')],
+      running: [run('r1', 'local/lane-1', 30, { priority: 10 }), run('r2', 'local/lane-2', 5, { priority: 75 })],
+    }), 'd1');
+    expect(d.memoryPause).toEqual([{
+      jobId: 'r1', laneId: 'local/lane-1', machineId: 'local', availableBytes: 0.5 * GIB, floorBytes: 1 * GIB, priority: 10,
+      why: 'local has 0.5 GiB available, below its floor of 1 GiB',
+      reason: 'pauses r1 on local/lane-1: local has 0.5 GiB available, below its floor of 1 GiB; r1 has the lowest priority there (10)',
+    }]);
+  });
+
+  it('of the jobs of the lowest priority, the one that started there last', () => {
+    const d = decide(inputs({
+      machines: [low], parkingExecutors: ['test'],
+      lanes: [busy(1, 'r1'), busy(2, 'r2'), busy(3, 'r3')],
+      running: [run('r1', 'local/lane-1', 30, { priority: 10 }), run('r2', 'local/lane-2', 20, { priority: 10 }), run('r3', 'local/lane-3', 5, { priority: 75 })],
+    }), 'd1');
+    expect(d.memoryPause?.[0]?.reason).toBe('pauses r2 on local/lane-2: local has 0.5 GiB available, below its floor of 1 GiB; r2 has the lowest priority there (10) and started there last of them');
   });
 });
