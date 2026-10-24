@@ -1,9 +1,10 @@
 // @vitest-environment happy-dom
 // Issue #2374: one canonical home per workflow. Views that showed the same data merged into one nav entry with tabs, each
-// tab a filter of that one workflow: Approvals (Access requests, Pending approvals), Failures (Failures with Stuck, Parked),
+// tab a filter of that one workflow: Approvals (Access requests, Pending approvals),
 // Jobs (Jobs, Queue order), Ask hopper (Run a job, Ask a question), Activity (Events, Decisions), Machines (Machines,
 // Accounts, Logins), Usage (Usage, Resources). Every old hash opens its new home; an entry's badge sums its tabs'. Search
 // keeps its route, which the command palette opens (issue #2661); Your reports and Version history are in the user menu.
+// Issue #2713: Parked is an entry of its own, no longer a tab of Failures, and the Failures badge never counts a parked job.
 import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -72,19 +73,19 @@ afterEach(async () => {
 });
 
 describe('the nav groups after the merge', () => {
-  it('Dashboard and Needs you pinned; Waiting on you, Work, Fleet, Infra and Admin; no group of one; 24 entries at most', async () => {
+  it('Dashboard and Needs you pinned; Waiting on you, Work, Fleet, Infra and Admin; no group of one; 25 entries at most', async () => {
     const nav = '../../ui/src/app/nav.tsx';
     const { NAV_GROUPS, NAV_PINNED } = (await import(nav)) as { NAV_PINNED: readonly string[]; NAV_GROUPS: readonly { id: string; label: string; views: readonly string[] }[] };
     expect(NAV_PINNED).toEqual(['dashboard', 'needs-you']);
     expect(NAV_GROUPS.map((g) => [g.id, g.label, g.views])).toEqual([
-      ['waiting', 'Waiting on you', ['intake', 'questions', 'proposals', 'approvals', 'failures', 'tagged']],
+      ['waiting', 'Waiting on you', ['intake', 'questions', 'proposals', 'approvals', 'failures', 'parked', 'tagged']],
       ['jobs', 'Work', ['jobs', 'pull-requests', 'research', 'ask', 'artifacts', 'activity']],
       ['sources-machines', 'Fleet', ['machines', 'usage', 'sources']],
       ['infra', 'Infra', ['infra', 'topology', 'vault']],
       ['settings', 'Admin', ['users-access', 'skills', 'plugins', 'settings']],
     ]);
     for (const g of NAV_GROUPS) expect(g.views.length).toBeGreaterThan(1);
-    expect(NAV_PINNED.length + NAV_GROUPS.reduce((t, g) => t + g.views.length, 0)).toBeLessThanOrEqual(24);
+    expect(NAV_PINNED.length + NAV_GROUPS.reduce((t, g) => t + g.views.length, 0)).toBeLessThanOrEqual(25);
   });
 
   it('every tab of a merged page is reached by one hash: its home and the tab', async () => {
@@ -92,7 +93,6 @@ describe('the nav groups after the merge', () => {
     const { PAGE_TABS } = (await import(nav)) as { PAGE_TABS: Record<string, readonly { id: string; label: string }[]> };
     expect(Object.fromEntries(Object.entries(PAGE_TABS).map(([home, tabs]) => [home, tabs.map((t) => t.id)]))).toEqual({
       approvals: ['access-requests', 'pending-approvals'],
-      failures: ['failures', 'parked'],
       jobs: ['jobs', 'queue'],
       ask: ['direct-jobs', 'direct-queries'],
       activity: ['events', 'decisions'],
@@ -107,8 +107,8 @@ describe('an old hash', () => {
     ['#resources', '#usage/resources', '#usage', '#usage/resources'],
     ['#access-requests', '#approvals/access-requests', '#approvals', '#approvals/access-requests'],
     ['#pending-approvals', '#approvals/pending-approvals', '#approvals', '#approvals/pending-approvals'],
-    ['#stuck', '#failures', '#failures', '#failures/failures'],
-    ['#parked', '#failures/parked', '#failures', '#failures/parked'],
+    ['#stuck', '#failures', '#failures', undefined],
+    ['#failures/parked', '#parked', '#parked', undefined],
     ['#events', '#activity/events', '#activity', '#activity/events'],
     ['#decisions', '#activity/decisions', '#activity', '#activity/decisions'],
     ['#accounts', '#machines/accounts', '#machines', '#machines/accounts'],
@@ -164,7 +164,6 @@ describe('the badges of a merged page', () => {
     expect(entryBadge('#jobs')!.getAttribute('title')).toBe('2 jobs waiting to be ordered');
     expect(tabBadge('#jobs/queue')?.textContent).toBe('2');
     expect(tabBadge('#jobs/jobs')).toBeNull();
-    expect(entryBadge('#failures')?.textContent).toBe('1');
   });
 
   it('a collapsed group sums its entries\' badges, the merged ones too', async () => {
@@ -173,8 +172,17 @@ describe('the badges of a merged page', () => {
     expect(badge.getAttribute('title')).toBe('Jobs: 2 jobs waiting to be ordered');
   });
 
-  it('on the Failures page, the Parked tab shows the parked jobs\' count', async () => {
+  it('one parked job and no failed job: the Parked entry shows 1, the Failures entry no badge (issue #2713)', async () => {
     await boot('#failures');
-    await vi.waitFor(() => expect(tabBadge('#failures/parked')?.textContent).toBe('1'));
+    await vi.waitFor(() => expect(entryBadge('#parked')?.textContent).toBe('1'));
+    expect(entryBadge('#failures')).toBeNull();
+    expect(document.querySelector('[data-slot="page-tabs"]')).toBeNull();
+    expect(document.querySelector('a[href="#failures/parked"]')).toBeNull();
+  });
+
+  it('a collapsed Waiting on you sums the Parked badge once', async () => {
+    await boot('#dashboard', '["waiting"]');
+    const badge = await vi.waitFor(() => { const b = document.querySelector('aside [data-nav-group="waiting"] [data-slot="nav-group-badge"]'); expect(b?.textContent).toBe('1'); return b!; });
+    expect(badge.getAttribute('title')).toContain('Parked');
   });
 });

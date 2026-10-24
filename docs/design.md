@@ -1518,7 +1518,6 @@ page** (`PAGE_TABS`, `ui/src/app/routes.ts`; `ui/src/app/page-tabs.tsx`), whose 
 | Entry | Tabs (the first by default) |
 |---|---|
 | Approvals | Access requests, Pending approvals |
-| Failures | Failures (Stuck work first in it), Parked |
 | Jobs | Jobs, Queue order |
 | Ask hopper | Run a job (direct jobs), Ask a question (direct queries) |
 | Activity | Events, Decisions |
@@ -1527,10 +1526,12 @@ page** (`PAGE_TABS`, `ui/src/app/routes.ts`; `ui/src/app/page-tabs.tsx`), whose 
 
 - **The hash names the tab**: `#<entry>/<tab>`, and with none the first tab, which then reads the rest of the hash as
   its own section (`#jobs/in-flight`). A tab is a view that was its own entry before; it is never a second home.
-- **Every old hash opens the new home** (`canonicalHash`): `#access-requests`, `#pending-approvals`, `#parked`,
+- **Every old hash opens the new home** (`canonicalHash`): `#access-requests`, `#pending-approvals`,
   `#events`, `#decisions`, `#accounts`, `#logins`, `#direct-jobs`, `#direct-queries`, `#resources`, `#queue` open their
   tab, `#stuck` opens Failures, what follows the old view kept (`#direct-queries/<id>` → `#ask/direct-queries/<id>`). The
-  page replaces the hash with the canonical one, so a copied link names the new home. Links the hopper sent out earlier
+  page replaces the hash with the canonical one, so a copied link names the new home. Parked (issue #2713) is no tab: it is
+  an entry of its own in Waiting on you, after Failures, with its own badge, and `#failures/parked` opens `#parked`. A
+  parked job waits on a person; it did not fail, so the Failures page and its badge never count one. Links the hopper sent out earlier
   (a notifier's `#logins`, a promotion's `#direct-jobs/<id>`) keep working by this rule.
 - **Badges**: each tab shows its own badge; the entry's badge is their sum (`mergedBadge`, the same sum as a collapsed
   group's, each tab's title as it is). A collapsed group sums the entries' badges as before, so no count is lost or
@@ -1538,7 +1539,8 @@ page** (`PAGE_TABS`, `ui/src/app/routes.ts`; `ui/src/app/page-tabs.tsx`), whose 
 - **No entry**: Search, which the command palette opens (issue #2661: its button is in the header at every width, so the
   navigation drawer no longer lists Search); Your reports and Version history, in the user menu. Their routes stay (`#search`,
   `#reports`, `#settings/version-history`).
-- **Fits**: with every group open the sidebar holds 24 entries (with Plugins, Vault and Users & access, issue #2373) and needs no scroll at 1440×900; its rows are tighter
+- **Fits**: with every group open the sidebar holds 25 entries (with Plugins, Vault and Users & access, issue #2373, and
+  Parked, issue #2713) and needs no scroll at 1440×900; its group headings are 18 px high, and its rows are tighter
   than the drawer's, whose rows stay a touch target's height.
 
 **Question history** (issue #37): every question stays in the `questions` table with its text,
@@ -12997,7 +12999,8 @@ question (`waiting_answer` keeps its waiting pane and Claude in it) and from a j
   its question and answer as context. Only for a role that operates. The Dashboard's Waiting panel and the Queue view list parked jobs in their own group
   (`/api/queue` `parked`); the Waiting card says how many are parked; they are never running and on no lane.
 - **The Parked section** (issue #565, `ui/src/views/parked.tsx`). Parked jobs have their own place, a section like
-  Questions, Logins and Failures (`SECTIONS.parked`, events `job.parked` and `job.unparked`): one compact row per
+  Questions, Logins and Failures, with its own nav entry in Waiting on you (issue #2713; a tab of Failures before), never
+  counted in Failures (`SECTIONS.parked`, events `job.parked` and `job.unparked`): one compact row per
   job — its issue title and number, the machine it resumes on, how long it has been parked, its open question's first
   line, whether its agent session resumes or it starts fresh —, high-priority jobs first, then the longest parked
   (`parkedOrder`). Expanded, the full question and **Answer and pick up**: the answer (`POST

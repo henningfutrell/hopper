@@ -6,7 +6,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { SECTION_KINDS } from '@/model/sections';
 
-export const VIEWS = ['dashboard', 'needs-you', 'intake', 'questions', 'proposals', 'approvals', 'failures', 'tagged', 'jobs', 'pull-requests', 'research', 'ask', 'artifacts', 'activity', 'machines', 'usage', 'sources', 'infra', 'topology', 'vault', 'users-access', 'skills', 'plugins', 'settings'] as const;
+export const VIEWS = ['dashboard', 'needs-you', 'intake', 'questions', 'proposals', 'approvals', 'failures', 'parked', 'tagged', 'jobs', 'pull-requests', 'research', 'ask', 'artifacts', 'activity', 'machines', 'usage', 'sources', 'infra', 'topology', 'vault', 'users-access', 'skills', 'plugins', 'settings'] as const;
 /** The routes: every view in the navigation, and those with no nav entry — the job view (timeline entries link to it),
  *  Search (the command palette opens it) and Your reports (the user menu links to it). */
 const ROUTES = [...VIEWS, 'job', 'search', 'reports'] as const;
@@ -16,7 +16,7 @@ export const NAV_PINNED = ['dashboard', 'needs-you'] as const satisfies readonly
 /** The nav groups, in nav order, each with its entries in order. Their ids stay when a label changes (issue #2374:
  *  Work, Fleet and Admin keep `jobs`, `sources-machines` and `settings`), so a collapsed group stays collapsed. A view of the navigation neither pinned nor in a group, or a group of one entry, fails the typecheck. */
 export const NAV_GROUPS = [
-  { id: 'waiting', label: 'Waiting on you', views: ['intake', 'questions', 'proposals', 'approvals', 'failures', 'tagged'] },
+  { id: 'waiting', label: 'Waiting on you', views: ['intake', 'questions', 'proposals', 'approvals', 'failures', 'parked', 'tagged'] },
   { id: 'jobs', label: 'Work', views: ['jobs', 'pull-requests', 'research', 'ask', 'artifacts', 'activity'] },
   { id: 'sources-machines', label: 'Fleet', views: ['machines', 'usage', 'sources'] },
   { id: 'infra', label: 'Infra', views: ['infra', 'topology', 'vault'] },
@@ -28,7 +28,6 @@ void everyViewGrouped;
 /** The merged pages and their tabs, the first the default. A tab's id is the view it was before the merge. */
 export const PAGE_TABS = {
   approvals: [{ id: 'access-requests', label: 'Access requests' }, { id: 'pending-approvals', label: 'Pending approvals' }],
-  failures: [{ id: 'failures', label: 'Failures' }, { id: 'parked', label: 'Parked' }],
   jobs: [{ id: 'jobs', label: 'Jobs' }, { id: 'queue', label: 'Queue order' }],
   ask: [{ id: 'direct-jobs', label: 'Run a job' }, { id: 'direct-queries', label: 'Ask a question' }],
   activity: [{ id: 'events', label: 'Events' }, { id: 'decisions', label: 'Decisions' }],
@@ -41,7 +40,8 @@ export type Tab = (typeof PAGE_TABS)[MergedPage][number]['id'];
 const everySectionShown: Exclude<(typeof SECTION_KINDS)[number], (typeof VIEWS)[number] | Tab> extends never ? true : never = true;
 void everySectionShown;
 
-/** Old view names and the hash each became, so an old link still opens it. Stuck work is first in Failures (issue #1010). */
+/** Old view names and the hash each became, so an old link still opens it. Stuck work is first in Failures (issue #1010).
+ *  #parked is a view again (issue #2713), no longer the Failures tab. */
 const MOVED: Record<string, string> = {
   'not-taken': 'intake', overview: 'dashboard', stuck: 'failures',
   ...Object.fromEntries(Object.entries(PAGE_TABS).flatMap(([home, tabs]) => tabs.filter((t) => t.id !== home).map((t) => [t.id, `${home}/${t.id}`]))),
@@ -52,6 +52,8 @@ export function canonicalHash(raw: string): string {
   const [head = '', ...rest] = raw.split('/');
   const to = MOVED[head];
   if (to !== undefined) return [to, ...rest].join('/');
+  // Parked was a tab of Failures (issue #565) until it became its own entry (issue #2713): #failures/parked opens it.
+  if (head === 'failures' && rest[0] === 'parked') return ['parked', ...rest.slice(1)].join('/');
   // #ask/question was the Ask a question tab before Ask hopper became a merged page (issue #2375).
   return head === 'ask' && rest[0] === 'question' ? ['ask', 'direct-queries', ...rest.slice(1)].join('/') : raw;
 }

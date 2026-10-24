@@ -138,7 +138,7 @@ export function ParkedRows({ heading = true }: { heading?: boolean }) {
           <StatusBadge status="parked" title="Out of its lane, its pane and agent ended: its work tree, branch and agent session are kept on its machine until it is picked up." />
           {job.resumeOn && <span>on {machineName(job.resumeOn, machines)}</span>}
           {job.pendingAnswer !== undefined && job.parked?.from === 'waiting_answer' && <span>answered, resumes with it</span>}
-          {job.pendingAnswer === undefined && job.parked?.from === 'waiting_answer' && <a href="#failures/parked" className="text-question hover:underline">question open →</a>}
+          {job.pendingAnswer === undefined && job.parked?.from === 'waiting_answer' && <a href="#parked" className="text-question hover:underline">question open →</a>}
           <span className="ml-auto">for <Since iso={job.parked?.at ?? job.updatedAt} /></span>
         </div>
         {job.parked?.why && <div data-slot="parked-why" className="text-xs text-muted-foreground">{job.parked.why}</div>}
