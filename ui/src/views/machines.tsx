@@ -51,7 +51,7 @@ function CleanupProblems({ problems }: { problems: CleanupProblem[] }) {
   return (
     <Panel title="Sandbox boxes not removed" icon={Box}>
       <div role="alert" className="grid gap-2 text-sm">
-        <p className="text-xs text-muted-foreground">A sandbox never joins as a machine, so the hopper burns each box an older build launched. It could not remove these boxes. It tries again every few seconds. To remove one by hand: <code className="font-mono">podman rm -f &lt;box&gt;</code>, then <code className="font-mono">podman volume rm &lt;box&gt;-home</code>.</p>
+        <p className="text-xs text-muted-foreground">A sandbox never joins as a machine, so the hopper burns each box an older build launched. It could not remove these boxes. It tries again every few seconds.</p>
         <ul className="grid gap-1.5">
           {problems.map((p) => (
             <li key={p.container} className="text-xs break-words">

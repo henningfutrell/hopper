@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076); whether a job's pushed commit holds a requirements file, in the same quarantine (`push-requirements-at.ts`, issue #2555) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says, a block's label change kept as GitHub outbox rows in that event's transaction (part 8), and its kill points for the crash harness (issue #1954) | engine, http, store, plugins, decider |
-| `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
+| `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs, intake-vs-jobs and cleanup-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts`, `src/domain/drift-intake.ts` and `src/domain/drift-cleanup.ts` (issue #2715), of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); each write that makes something found before it is made again, and a **kill point** after each write (`once.ts`, issues #1589, #1954); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block, or a direct query's look-only line and hints (issue #2184, `item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
@@ -1041,6 +1041,16 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   reaps that job again only once `STUCK_RETRY_MS` (6 hours) passed (issue #1613): each pass would only fail the same way,
   and the reset of its container storage is slow. A scope or a process of the job is stopped at each pass all the same.
   Kept in memory: after a restart, the first pass tries it again and tells it again.
+  Issue #2715: with each `hopper-left <path>` the reap names why (`hopper-left-why <cause> <path>`): `mount` (a file
+  system mounted in it, from `/proc/self/mountinfo`), `process` (a process whose cwd, exe or root is in it), `userns`
+  (files of another user in it: the job's user namespace, which `podman unshare` could not enter) or `permission`. The
+  ledger entry's reason carries it (`<path> is still there: <cause>`), and a cleanup that keeps failing is drift for
+  the cleanup watcher ("Component watchers"), never a person's todo. A client older than this names no cause.
+- **Loose entries in the scratch area** (issue #2715). `.worktrees/@scratch` holds only job scratch dirs, each named by
+  its job's id (a UUID). A job that wrote a file beside its own dir left it there, and no sweep judged it. The reap, in
+  the work tree it reaps in and unless it keeps, removes each entry of the scratch area that is not named as a job's
+  (and not `.gitignore`) once nothing in it changed for `LOOSE_GRACE_DAYS` (7), and names each (`hopper-loose-removed
+  <path>`). A dir named as a job's stays: the sweep judges it against the jobs it knows.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
   running at once in one repository stepped on each other — branches, the index lock, uncommitted
   files, builds; seen live with four jobs in one repository on one machine, and a job-rules line asking
@@ -5859,11 +5869,21 @@ client target runs a client the hopper did not release.
   the answer is `{code, stdout, stderr}`. The scripts live in `server.ts`.
 - **Keeping it current** (`src/machines/client-release.ts`): each probe of a client target (every 30 s)
   asks `POST /release` after `status server`; when it is not the hopper's id, the hopper loads its
-  release — never while a job runs on that machine (a running job's herdr calls must not meet a
-  restarting client; it loads after). Each outcome is one log line per machine: `runs the hopper's
-  release`, `loaded release <id> (was <id>)`, `loaded the bridge`, `loading it once no job runs there`, a
+  release — never while a job is at work on that machine (a running job's herdr calls must not meet a
+  restarting client; it loads after). A job on a lane is at work; one that only waits in its pane (a
+  question, a wait) is not: its pane is herdr's, which runs apart from the client. Each outcome is one log
+  line per machine: `runs the hopper's release`, `loaded release <id> (was <id>)`, `loaded the bridge`,
+  `loading it once no job is at work there`, `no new job goes there until the jobs at work end`, a
   failed load, `cannot update`, or a client older than releases (it answers no release: still online; add
   it again with Add machine).
+- **The update hold** (issue #2715). A machine that always had a job at work kept its client for a week: the
+  hopper loaded no release there, so the reap fixes of issues #2490 and #2685 never ran on it, and 105 scratch
+  dirs of ended jobs stayed. Now a client that runs another release than the hopper's for
+  `CLIENT_UPDATE_HOLD_MS` (an hour, counted in memory from the first probe that found it behind) while jobs are at
+  work there holds jobs off: its probe says `client.updateHold {since}`, and the decider places no job there, new or
+  back to its pane (`updateHolds`, `src/decider/assign.ts`); the wait reason and the lane's idle reason say so, and
+  Machines shows it on the client release. The jobs at work end, the release is loaded, the client restarts, and
+  the machine takes jobs again. An hour, so a hopper that updates often does not drain its machines at each update.
 - **Clients with a fixed file list** (issue #545). A client released before manifests checks a load
   against the list of names fixed in its own `release.ts` (exactly those names, an id hashed over them in
   order) and refuses anything else: on 2026-10-09 a client of seven files refused the hopper's ten, stayed
@@ -14981,7 +15001,7 @@ only the key's JWK SHA-256 thumbprint (RFC 7638, `jkt`) in the grant's body; the
   - A device grant request with a proof on the ask (`POST /ui/auth/device-grant`) binds its grant to the proof's key.
     The person sees "bound to the asking agent's key" before they approve. The poll then needs a proof of that key: a
     device code alone, or with another key's proof, takes nothing (401) and the request stands.
-  - A mint names `jkt` (`POST /ui/api/api-tokens` `mint`, `hopper token mint --jkt`): the thumbprint the agent shows. A
+  - A mint names `jkt` (`POST /ui/api/api-tokens` `mint`, `hopper token mint --jkt=<thumbprint>`; a thumbprint can start with `-`, so the CLI takes it after `=`): the thumbprint the agent shows. A
     `jkt` on an ask with a proof must be the proof's (400).
   - An unbound grant's refresh with a proof binds it to the proof's key. The refresh token a person copied to the agent
     is then worth nothing to anyone without the key, from the agent's first refresh on.
@@ -23937,6 +23957,15 @@ need no GitHub connection; only their drift issues do.
   A source that fails its syncs is not drift here: the source sync tells the owner of it already (`source.stalled`), and
   the cause is mostly outside the hopper. An item of these kinds is an issue's URL or a source's name, hashed in the issue
   as every item is.
+
+**The cleanup: cleanup vs ended jobs** (`cleanup-jobs`, issue #2715; `src/component-watchers/store-watchers.ts`, every 5
+minutes; the comparison `src/domain/drift-cleanup.ts`, pure). A thing an ended job left on a machine is a hopper bug, not
+a person's chore. It reads the resource ledger's cleanup leftovers ("The resource ledger", `cleanupLeftoversOf`): each
+ended job whose entry still failed once the grace period after its end passed is one item, its key the job's id, in one
+kind per cause the reap named — `cleanup_mount`, `cleanup_process`, `cleanup_userns`, `cleanup_permission`,
+`cleanup_cause_unknown` (no cause: an older client, or a failure before issue #2715), `cleanup_reap_failed` (the reap
+did not run to its end). An entry whose machine is offline, or that no executor reaches, is no drift: the machine shows
+it, and bringing a machine online is the one act a person has. No path and no machine goes in an item.
 
 **The integration branch: default branches vs checks** (`branch-checks`; `src/component-watchers/branch-stack.ts`, every
 15 minutes; the comparison `src/domain/drift-branches.ts`, pure). The hopper merges jobs into each job repository's

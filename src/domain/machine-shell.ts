@@ -22,7 +22,15 @@ export interface Reaped {
   /** Why it kept each it kept (issue #2494); none from a client older than that. */
   reasons?: Record<string, KeptReason[]>;
   pushed?: string[]; left?: string[]; removed?: ContainersRemoved; used?: ResourceUse;
+  /** Why each dir in `left` is still there (issue #2715); none from a client older than that. */
+  leftWhy?: Record<string, LeftCause>;
 }
+
+/**
+ * Why a dir a reap set out to remove is still there (issue #2715): a file system mounted in it, a process that still runs in
+ * it, files of the job's user namespace that podman could not remove, or a permission the hopper's user does not have.
+ */
+export type LeftCause = 'mount' | 'process' | 'userns' | 'permission';
 
 /**
  * What a job's scope used (issue #2498), as `job.resources_used` records it: its peak memory (cgroup `memory.peak`), its CPU

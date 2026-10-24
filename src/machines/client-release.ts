@@ -3,8 +3,11 @@
 // hopper's, the hopper loads its release onto it down its signed link and the client restarts to
 // run it. A client released before manifests checks a fixed list of file names: it gets the bridge to the
 // hopper's release instead (client-bridge.ts), its list read from its own refusal of an empty release.
-// Never while a job runs on that machine: a running job's herdr calls must not meet a client
-// that is restarting. A load that has not taken after three tries is not tried again: the probe says why
+// Never while a job is at work on that machine: a running job's herdr calls must not meet a client
+// that is restarting. A job that waits in its pane (a question, a wait it parked on) is not at work. A client behind
+// the hopper's release for `CLIENT_UPDATE_HOLD_MS` holds every job off the machine (`client.updateHold`, issue #2715):
+// the jobs at work end, the release is loaded, and the machine takes jobs again — so a busy machine gets the fixes of
+// its client too (its reap, its survey). A load that has not taken after three tries is not tried again: the probe says why
 // (`client.update.problem`), and Machines shows it with the line that reinstalls the client. A client older
 // than releases answers no release: it stays online and is reported once, to be added again with Add machine.
 // Each line is logged once per machine. Each probe names the jobs running there; a client cut off from the hopper
@@ -18,19 +21,26 @@ import { bridgeRelease, fixedNamesOf } from './client-bridge.ts';
 
 interface Logger { info(line: string): void; warn(line: string): void }
 
-/** `jobs`: the jobs running on the machine now; while any runs, no release is loaded. */
-export type ClientReleaseKeeper = (t: ClientTransport, jobs: () => string[]) => Promise<MachineProbe>;
+/**
+ * `jobs`: the jobs on the machine now, their waiting panes included (the client stops them when cut off); `atWork`: those
+ * of them at work on a lane, absent the same as `jobs`. While any is at work, no release is loaded.
+ */
+export type ClientReleaseKeeper = (t: ClientTransport, jobs: () => string[], atWork?: () => string[]) => Promise<MachineProbe>;
+
+/** How long a client may run another release than the hopper's while jobs are at work there before it holds new jobs off (issue #2715). */
+export const CLIENT_UPDATE_HOLD_MS = 60 * 60_000;
 
 /** Loads of the hopper's release onto a client still on another, before the hopper stops and says so. */
 const MAX_LOADS = 3;
 
-/** A machine's loads since its client last ran another release: how many, and why the last one failed. */
-interface Tries { from: string; loads: number; failed?: string }
+/** A machine's loads since its client last ran another release: how many, why the last one failed, and since when (ms) it is behind. */
+interface Tries { from: string; loads: number; failed?: string; since: number }
 
 /** What the client said, without the `client <machine>: ` the transport puts first. */
 const cause = (e: unknown, machine: string): string => (e instanceof Error ? e.message : String(e)).replace(`client ${machine}: `, '');
 
-export function createClientReleaseKeeper(o: { release: ClientRelease; logger: Logger }): ClientReleaseKeeper {
+export function createClientReleaseKeeper(o: { release: ClientRelease; logger: Logger; now?: () => number }): ClientReleaseKeeper {
+  const now = o.now ?? Date.now;
   const said = new Map<string, string>();
   const say = (machine: string, line: string, warn = false): void => {
     if (said.get(machine) === line) return;
@@ -56,7 +66,7 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
     say(t.machine, `hopper: client ${t.machine}: runs release ${running}, which checks a fixed file list: loaded the bridge to release ${ours}; it restarts twice to run it`);
   }
 
-  return async (t, jobs) => {
+  return async (t, jobs, atWork = jobs) => {
     if (!(await probeClient(t))) return { online: false };
     let answer: Awaited<ReturnType<typeof clientRunningRelease>>;
     try {
@@ -75,14 +85,20 @@ export function createClientReleaseKeeper(o: { release: ClientRelease; logger: L
       return { online: true, client: { release: running, current: true, ...vault }, ...home };
     }
     let tried = tries.get(t.machine);
-    if (tried?.from !== running) tries.set(t.machine, tried = { from: running, loads: 0 });
+    if (tried?.from !== running) tries.set(t.machine, tried = { from: running, loads: 0, since: tried?.since ?? now() });
     if (tried.loads >= MAX_LOADS) {
       const problem = tried.failed ?? `its client still runs release ${running} after ${tried.loads} loads of the hopper's ${ours}: whatever runs it did not start the new files`;
       say(t.machine, `hopper: client ${t.machine}: cannot update: ${problem}; reinstall it (Machines shows the line)`, true);
       return { online: true, client: { release: running, current: false, update: { problem }, ...vault }, ...home };
     }
-    if (jobs().length > 0) {
-      say(t.machine, `hopper: client ${t.machine}: runs release ${running}, the hopper's is ${ours}; loading it once no job runs there`);
+    if (atWork().length > 0) {
+      if (now() - tried.since < CLIENT_UPDATE_HOLD_MS) {
+        say(t.machine, `hopper: client ${t.machine}: runs release ${running}, the hopper's is ${ours}; loading it once no job is at work there`);
+        return { online: true, client: { release: running, current: false, ...vault }, ...home };
+      }
+      const since = new Date(tried.since).toISOString();
+      say(t.machine, `hopper: client ${t.machine}: runs release ${running} since ${since}, the hopper's is ${ours}; no new job goes there until the jobs at work end and it is loaded`);
+      return { online: true, client: { release: running, current: false, updateHold: { since }, ...vault }, ...home };
     } else {
       tried.loads += 1;
       try {
