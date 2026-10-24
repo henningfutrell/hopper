@@ -157,8 +157,11 @@ function headroomOf(room: MemoryRoom): { bytes: number; floorBytes: number } {
 
 export const memoryHeadroom = (room: MemoryRoom): number => headroomOf(room).bytes;
 
-/** Issue #2499: how many more jobs of a job's memory the machine's memory holds now: its lane cap as its memory reads it. */
-export const memoryLanes = (room: MemoryRoom): number => Math.floor(memoryHeadroom(room) / room.perJobBytes);
+/**
+ * Issue #2499: how many more jobs of a job's memory the machine's memory holds now: its lane cap as its memory reads it.
+ * With a job's expected cost (issue #2737), jobs of what that job needs: a job's memory, or its expected peak when that is more.
+ */
+export const memoryLanes = (room: MemoryRoom, cost?: ExpectedCost): number => Math.floor(memoryHeadroom(room) / needOf(room, cost));
 
 /** The Decision's note of what a machine's memory holds (issue #2499). */
 export function headroomNote(id: string, room: MemoryRoom): string {

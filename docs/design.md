@@ -13238,7 +13238,10 @@ never a hold, read from a machine reading taken before the burst took its memory
   and 9 lanes of 2 GiB each did not fit a 14 GiB VM. So of the machines a job may go to, after placement pressure, the one
   with the most **real room** goes first: its lane room, only as far as its **memory room** holds jobs (its memory over its
   floor, the lower of its own and its host pool's, less what is kept, divided by a job's memory; none under memory
-  pressure). Then the one with the most memory over its floor, then the most lane room, then the lowest id. A machine with
+  pressure). A job whose expected memory peak (from its cost history) is more than a job's memory counts its real room in
+  jobs of its own peak (issue #2737): a machine with many free lanes and little memory holds one such job, and a machine
+  with fewer lanes and more memory may hold as many. So a heavy job goes where its peak fits most often, not where the
+  most small jobs would fit. Then the one with the most memory over its floor, then the most lane room, then the lowest id. A machine with
   no memory room counted is judged by its lanes alone. Each place in the Decision lowers the machine's memory room, so a
   burst spreads over the machines by what they hold now. The Decision's reasons name each machine's memory room:
   `b: memory for 5 more jobs (10.6 GiB over its floor of 1.4 GiB)`. A machine with free lanes, a waiting job and no memory
