@@ -162,7 +162,7 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     // The job's way to the hopper (issues #563, #652: no GitHub token, git through the hopper), HOPPER_JOB_ID, the scratch dir and JOB_TOOL_ENV (issue #1502) with Gradle's idle timeout (issue #2489) come from the hopper; a payload cannot move them.
     const credentials = await ctx.credentials?.(scratch);
     const limits = scopeLimitsOf(ctx.machine);
-    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id, ...jobToolEnv(p.env, limits) }).map(([k, v]) => shellQuote(`${k}=${v}`));
+    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id, ...jobToolEnv(p.env, limits, jobTmpOf(ctx.job.id)) }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
     // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.

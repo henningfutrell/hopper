@@ -6,6 +6,9 @@ import type { JobUseNow, ResourceReading } from './machine-history.ts';
 import type { ResourceUse } from './machine-shell.ts';
 import type { DomainEvent } from './types.ts';
 
+/** Each heap abort of the job's Node processes (issue #2722), beside what it used. */
+export { heapAborts } from './heap-aborts.ts';
+
 const memoryText = (bytes: number): string =>
   bytes >= 1024 ** 3 ? `${Math.round((bytes / 1024 ** 3) * 10) / 10} GiB` : `${Math.round(bytes / 1024 ** 2)} MiB`;
 

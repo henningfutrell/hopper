@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "command": {
+      "type": "string"
+    },
+    "heapLimitBytes": {
+      "type": "number"
+    },
+    "rssPeakBytes": {
+      "type": "number"
+    },
+    "abortedAt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "command"
+  ],
+  "additionalProperties": false
+}

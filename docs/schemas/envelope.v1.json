@@ -75,6 +75,7 @@
         "job.pod_removed",
         "job.processes_stopped",
         "job.resources_used",
+        "job.heap_aborted",
         "job.cleanup_leftover",
         "job.parked",
         "job.unparked",

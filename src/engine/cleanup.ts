@@ -15,6 +15,7 @@ import { closeLedger, closePanesByHand, retainLedger } from './resource-ledger.t
 import { retainedUntilOf, retainsAtEnd } from '../domain/retention.ts';
 import type { SweepSettings } from '../domain/machines.ts';
 import { nowIso, type EngineContext } from './context.ts';
+import { heapAbortedOf } from '../domain/heap-aborts.ts';
 
 export type Cleanup = (jobId: string) => Promise<void>;
 
@@ -111,6 +112,8 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
         }
         // What the job's scope used (issue #2498), as its reap read it before it stopped the scope.
         if (reaped?.used) c.store.events.append({ type: 'job.resources_used', jobId, ...(machineId ? { machineId } : {}), data: reaped.used });
+        // Each heap abort of its Node processes (issue #2722), as the reap read the report each wrote.
+        for (const h of reaped?.heap ?? []) c.store.events.append({ type: 'job.heap_aborted', jobId, ...(machineId ? { machineId } : {}), data: heapAbortedOf(h) });
         // Its resource ledger (issue #2504) closed as the reap said: reaped, kept with the work, or failed with why.
         // A reap that kept the scratch dir for a time (part 5) closes the scope only; the sweep judges the rest after.
         if (said) closeLedger(c.store, jobId, said, nowIso(c), retainedUntil === undefined, panes);
