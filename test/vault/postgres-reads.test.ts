@@ -24,14 +24,15 @@ const minted = async (): Promise<string> => {
 };
 const exists = async (r: string): Promise<boolean> => (await dbs.admin('SELECT 1 FROM pg_roles WHERE rolname = $1', [r])).rowCount === 1;
 const refusal = async (r: string, sql: string | string[], db?: string): Promise<string> => {
-  const c = await dbs.connectAs(r, PASSWORD, db ?? dbs.a);
+  let c: Awaited<ReturnType<ReadDatabases['connectAs']>> | undefined;
   try {
+    c = await dbs.connectAs(r, PASSWORD, db ?? dbs.a);
     for (const s of [sql].flat()) await c.query(s);
     return 'no refusal';
   } catch (e) {
     return (e as Error).message;
   } finally {
-    await c.end().catch(() => {});
+    await c?.end().catch(() => {});
   }
 };
 
@@ -95,7 +96,7 @@ describe('a read (issue #2231)', () => {
   it('answers the SELECT as CSV with a header', async () => {
     const r = await minted();
     expect(await reader.read(dbs.credential, { role: r, password: PASSWORD, sql: 'SELECT id, email, note FROM app.users ORDER BY id;' }))
-      .toEqual({ csv: 'id,email,note\n1,a@example.test,\n2,b@example.test,"say ""hi"", twice"\n', rows: 2, bytes: 70 });
+      .toEqual({ csv: 'id,email,note\n1,a@example.test,\n2,b@example.test,"say ""hi"", twice"\n', rows: 2, bytes: 69 });
   });
 
   it('runs one SELECT only, in a read-only transaction', async () => {
