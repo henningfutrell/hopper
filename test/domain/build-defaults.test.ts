@@ -55,3 +55,31 @@ describe('Node heap in a job with a memory limit (issue #2721)', () => {
     expect(heapOf(buildDefaultsEnv({}, { memoryMaxGiB: 2 }))).toBeGreaterThanOrEqual(1536);
   });
 });
+
+// Issue #2737: the build JVMs and their workers take their sizes from the job's own limits, not from a fixed 2 GiB and 2
+// workers: the build JVM's heap is half the job's memory limit, and Gradle gets a worker for each GiB of the other half, at
+// most one for each CPU of its CPU quota, and at least one. With no memory limit, the fixed defaults stay.
+describe('build JVMs sized from the job limits (issue #2737)', () => {
+  const idle = '-Dorg.gradle.daemon.idletimeout=300000';
+  const gradleOf = (heap: string, workers: number): string =>
+    `-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx${heap} -Dorg.gradle.workers.max=${workers} -Dkotlin.compiler.execution.strategy=in-process ${idle}`;
+
+  it('gives the build JVM half the memory limit, and a worker for each GiB of the other half', () => {
+    expect(buildDefaultsEnv({}, { memoryMaxGiB: 9 })).toMatchObject({ GRADLE_OPTS: gradleOf('4608m', 4), MAVEN_OPTS: '-Xmx4608m' });
+    expect(buildDefaultsEnv({}, { memoryMaxGiB: 2 })).toMatchObject({ GRADLE_OPTS: gradleOf('1024m', 1), MAVEN_OPTS: '-Xmx1024m' });
+  });
+
+  it('gives no more workers than the CPU quota holds CPUs, and at least one', () => {
+    expect(buildDefaultsEnv({}, { memoryMaxGiB: 9, cpuPercent: 200 })).toMatchObject({ GRADLE_OPTS: gradleOf('4608m', 2) });
+    expect(buildDefaultsEnv({}, { memoryMaxGiB: 9, cpuPercent: 50 })).toMatchObject({ GRADLE_OPTS: gradleOf('4608m', 1) });
+    expect(buildDefaultsEnv({}, { memoryMaxGiB: 1 })).toMatchObject({ GRADLE_OPTS: gradleOf('512m', 1) });
+  });
+
+  it('keeps the payload\'s own options after the sized ones, so they win', () => {
+    expect(buildDefaultsEnv({ MAVEN_OPTS: '-Xmx3g' }, { memoryMaxGiB: 9 })).toMatchObject({ MAVEN_OPTS: '-Xmx4608m -Xmx3g' });
+  });
+
+  it('keeps the fixed defaults with a CPU quota but no memory limit', () => {
+    expect(buildDefaultsEnv({}, { cpuPercent: 100 })).toMatchObject({ MAVEN_OPTS: '-Xmx2g' });
+  });
+});
