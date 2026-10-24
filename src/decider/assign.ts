@@ -334,17 +334,17 @@ function elbowsIn(s: MachineStateWithCredentialHold, job: Job): boolean {
 
 /**
  * Of two machines, the better pick for `job`: most placement pressure, then most real room — its lane room, only as far as
- * its memory holds jobs —, then most memory over its floor (issue #2499), then most lane room, then lowest id. A machine
+ * its memory holds jobs of what `job` needs (its expected peak, issue #2737) —, then most memory over its floor (issue #2499), then most lane room, then lowest id. A machine
  * with no memory room counted (no reading, floor off) is judged by its lanes alone.
  */
-function better(a: MachineStateWithCredentialHold, b: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): MachineStateWithCredentialHold {
+function better(a: MachineStateWithCredentialHold, b: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput, cost?: ExpectedCost): MachineStateWithCredentialHold {
   const pa = a.executors.get(job.spec.executor)!.pressure;
   const pb = b.executors.get(job.spec.executor)!.pressure;
   if (pa !== pb) return pb > pa ? b : a;
   const ra = roomForJob(a, job, pl);
   const rb = roomForJob(b, job, pl);
   if (a.memory && b.memory) {
-    const real = (s: MachineStateWithCredentialHold, r: number): number => Math.min(r, memoryLanes(s.memory!));
+    const real = (s: MachineStateWithCredentialHold, r: number): number => Math.min(r, memoryLanes(s.memory!, cost));
     if (real(a, ra) !== real(b, rb)) return real(b, rb) > real(a, ra) ? b : a;
     const ha = memoryHeadroom(a.memory);
     const hb = memoryHeadroom(b.memory);
@@ -386,7 +386,7 @@ export function assign(ordered: Candidate[], states: MachineState[], policy: Dec
     }
     const { options: fit, note: costed } = fitting(awayFrom(able, avoid[job.id]), costs?.[job.id]);
     const { options, note: jev } = jevPicked(fit, picks?.[job.id]);
-    const pick = (pl && isHigh(job, pl) ? holdingBestFree(options, pl) : undefined) ?? options.reduce((a, b) => better(a, b, job, pl));
+    const pick = (pl && isHigh(job, pl) ? holdingBestFree(options, pl) : undefined) ?? options.reduce((a, b) => better(a, b, job, pl, costs?.[job.id]));
     const pressure = pick.executors.get(ex)!.pressure;
     const picked = pickLane(pick.machine.id, pick.machine.maxLanes, pick.slots, pick.freeIdle, job, pl);
     const lane = picked ? picked.lane : takeIdle(pick.freeIdle, avoid[job.id]);
