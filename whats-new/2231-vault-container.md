@@ -1,0 +1,1 @@
+- Database reads now also work when the vault runs in a container of its own.

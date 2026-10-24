@@ -17,7 +17,7 @@ export const DATABASE_SKILL = 'database';
 export interface DatabaseUser {
   template(name: string): TemplateView | undefined;
   sandbox(template: string, job: Job, about?: { purpose: string; plan?: string }): SandboxRequestView;
-  databases?: { readDatabase(ask: DatabaseReadAsk): Promise<DatabaseReadAnswer> };
+  databases: { readDatabase(ask: DatabaseReadAsk): Promise<DatabaseReadAnswer> };
 }
 
 /** The fields of the ask: `asset` (read), `template`, `database`, `sql`, `why`. */
@@ -38,7 +38,6 @@ const LATER = ' Add --wait to have the hopper tell you when the read can run.\n'
 export async function databaseAsk<A>(u: DatabaseUser, job: Job, f: DatabaseFields, say: DatabaseSay<A>): Promise<A> {
   if (f.asset === undefined) return say.loaded(`${DATABASE_TEXT}\n`);
   if (f.asset !== 'read') return say.no(400, `database takes read, not ${f.asset}: ${READ}`);
-  if (!u.databases) return say.no(503, 'this hopper reads no database: its vault runs in a container of its own, which reads none yet');
   if (!f.template || !f.database) return say.no(400, `name the template and the database: ${READ}`);
   if (!ASSET_NAME.test(f.database)) return say.no(400, `${f.database.slice(0, 80)}: a database is named <cluster>/<namespace>/<database>, as its minting credential mints for it`);
   const asset: Asset = { kind: 'database', name: f.database };

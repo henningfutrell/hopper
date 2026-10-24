@@ -40,8 +40,8 @@ export interface Vault extends Pick<VaultService, 'forStep' | 'saveTemplate' | '
   releaseMints(box: string): Promise<void>;
   /** Unbinds each token a sandbox that ended left bound (issue #1371), and drops each database read role past its TTL (issue #2231): at start, then every few minutes. */
   reconcileMints(): Promise<void>;
-  /** A job's database read (issue #2231), where the minting credential is opened. Absent: the vault runs in its own container, which reads no database yet. */
-  readDatabase?(ask: DatabaseReadAsk): Promise<DatabaseReadAnswer>;
+  /** A job's database read (issue #2231): Access decides here; the role is minted, used and dropped where the minting credential is opened. */
+  readDatabase(ask: DatabaseReadAsk): Promise<DatabaseReadAnswer>;
   /**
    * A job on a box loaded a skill whose credential its template does not give (issue #583, the skill broker proved who
    * asks): a person is asked — a credential request, opened or joined — or the job is told they declined.

@@ -34743,9 +34743,18 @@ credential's `engine`, `sqlserver`, port 1433 by default).
   server's own clock) and each read user in the database whose login is gone or old. A login left while the hopper is
   stopped stays until it starts again; only the hopper had its password.
 
-**What is left (later parts).** A vault in its own container (issue #586) reads no database yet (`Vault.readDatabase`
-absent). The route to the in-cluster databases and to the private SQL Server (below). The live proof on the target
-clusters.
+**Part 3: the vault in a container of its own** (issue #586). Access decides each read in the hopper, as for a mint. Only
+the read Access allowed crosses: the op `database-read` (`src/vault/wire.ts`) carries the job, the template, the database,
+the SQL, the read's id and Access's decision. The vault container opens the minting credential, mints the database read
+role, runs the read and drops the role (`readAllowed`, `src/vault/database-reads.ts`), and answers the rows and its events,
+which the hopper appends. A minting credential kept in a vault backend is read in the hopper, as for a mint. A vault
+container out of reach answers 503, recorded as `database.read_refused`. The sweep crosses too (`database-sweep`, at each
+reconcile pass). So the vault container, not the hopper, needs the route to the database. Tests:
+`test/integration/database-read.test.ts` runs the read with the vault in the hopper and in its own container, and the
+sweep through the container; `test/vault/database-reads.test.ts` hands a read Access allowed to another vault.
+
+**What is left (later parts).** The route to the in-cluster databases and to the private SQL Server (below). The live
+proof on the target clusters.
 
 **The route to an in-cluster database is a person's decision.** The hopper must open a TCP connection to the database
 to mint and to read. A database inside a cluster with no route from where the hopper runs needs one of these, each a

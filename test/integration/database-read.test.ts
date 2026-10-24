@@ -3,15 +3,19 @@
 // asks for a template with read on the database; a person approves it, as every database read is high radius; then each
 // `database read` mints a database read role, runs the job's SELECT with it, answers CSV and drops the role. A write is refused;
 // no password reaches an answer or an event; the read and its SQL are on the job's timeline. OpenFGA is a double at its
-// seam.
+// seam. Part 3: the same with the vault in a container of its own (issue #586), which holds the minting credential and
+// runs the read; Access still decides it in the hopper, and the events reach the hopper's log.
 //
 // Feature: a database read
-//   Scenario: the first read waits for a person's approval of the template; then a read answers CSV, a write is refused,
-//     each database read role is gone after its read, and no password is in an answer or an event
+//   Scenario Outline: the first read waits for a person's approval of the template; then a read answers CSV, a write is
+//     refused, each database read role is gone after its read, and no password is in an answer or an event
+//     Examples: the vault in the hopper; the vault in its own container
+//   Scenario: with the vault in its own container, the sweep drops a database read role a stopped hopper left
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { DomainEvent, VaultView } from '../../src/domain/types.ts';
 import { boot, runningJob, skill, stopAll } from '../support/read-only-check.ts';
 import { readDatabases, type ReadDatabases } from '../support/database-read.ts';
+import { createPostgresReader } from '../../src/vault/postgres-reads.ts';
 
 const DB = 'lab/apps/orders';
 let dbs: ReadDatabases;
@@ -23,8 +27,8 @@ const readRoles = async (): Promise<string[]> =>
   (await dbs.admin("SELECT rolname FROM pg_roles WHERE rolname LIKE 'hopper\\_read\\_%' AND pg_has_role($1, oid, 'USAGE')", [dbs.credential.user])).rows.map((r: { rolname: string }) => r.rolname);
 
 describe('a database read (issue #2231)', () => {
-  it('waits for a person first, then answers CSV through a database read role that is gone after it', async () => {
-    const b = await boot([]);
+  it.each([['in the hopper', false], ['in its own container', true]])('with the vault %s, waits for a person first, then answers CSV through a database read role that is gone after it', async (_where, container) => {
+    const b = await boot([], { container });
     const set = await b.a.ui('/ui/api/vault', { action: 'set', name: 'ORDERS_DB', value: JSON.stringify(dbs.credential), mints: { kind: 'database', name: DB } }, { token: b.token });
     expect(set.status, JSON.stringify(set.body)).toBe(200);
     expect((await b.a.ui('/ui/api/sandbox-approvals', { yolo: true }, { token: b.token })).status).toBe(200);
@@ -83,5 +87,18 @@ describe('a database read (issue #2231)', () => {
     expect(r.stdout).toBe(`no: template ${name} has no read on database ${DB}. Ask for one: sh "$HOPPER_SKILL" sandbox-template --needs "read/database/${DB}" --why "…"\n`);
     expect(await readRoles()).toEqual([]);
     expect((await b.a.events()).filter((e: DomainEvent) => e.type === 'database.role_minted')).toEqual([]);
+  }, 60_000);
+
+  it('with the vault in its own container, the sweep drops a database read role a stopped hopper left', async () => {
+    const b = await boot([], { container: true });
+    const set = await b.a.ui('/ui/api/vault', { action: 'set', name: 'ORDERS_DB', value: JSON.stringify(dbs.credential), mints: { kind: 'database', name: DB } }, { token: b.token });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    const left = `hopper_read_${process.pid.toString(16).padStart(16, '0')}`;
+    await createPostgresReader().mint(dbs.credential, { role: left, password: 'pw-of-a-role-left', validUntil: new Date(Date.now() + 1000) });
+    await new Promise((r) => setTimeout(r, 1500));
+    await b.a.user().vault.reconcileMints();
+    expect(await readRoles()).toEqual([]);
+    expect((await b.a.events()).filter((e: DomainEvent) => e.type === 'database.role_dropped').map((e: DomainEvent) => e.data))
+      .toEqual([{ asset: { kind: 'database', name: DB }, credential: 'ORDERS_DB', role: left, reason: 'expired' }]);
   }, 60_000);
 });

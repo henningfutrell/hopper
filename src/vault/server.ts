@@ -22,6 +22,7 @@ import type { MintBinding, MintTarget } from '../domain/minting.ts';
 import type { ClusterDiscovery } from '../domain/cluster-discovery.ts';
 import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, vaultOps, type VaultOp } from './wire.ts';
 import type { AgentCredentialAsk, PodCredentialAsk } from './agent-credential.ts';
+import type { AllowedDatabaseRead } from './database-reads.ts';
 
 const digest = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
 
@@ -129,5 +130,7 @@ function run(vault: VaultService, op: VaultOp, b: Record<string, unknown>): unkn
     case 'agent-credential': return vault.agentCredential((b as { ask: AgentCredentialAsk }).ask);
     case 'pod-credential': return vault.podCredential((b as { ask: PodCredentialAsk }).ask);
     case 'delivered-to': return vault.deliveredTo(body.jobId);
+    case 'database-read': return vault.readAllowed((b as { read: AllowedDatabaseRead }).read);
+    case 'database-sweep': return vault.sweepDatabaseRoles();
   }
 }
