@@ -1,5 +1,5 @@
 // Preemption in the UI (issue #1525), pure: the summary of the setting, the change a save sends, and the line a job
-// shows while it waits after a job of higher priority took its lane.
+// shows while it waits after a job of higher priority took its lane, or after its machine's memory paused it (issue #2737).
 import type { Job, PreemptionSettings } from './wire.ts';
 
 /** The longest minimum run time, a day in minutes, as the daemon allows it. */
@@ -36,4 +36,15 @@ export function preemptedLine(job: Pick<Job, 'status' | 'preempted'>, by: Job | 
   const p = job.preempted;
   if (!p || !['queued', 'held', 'parked'].includes(job.status)) return undefined;
   return `Preempted by ${labelOf(by, p.by)} (priority ${p.byPriority}; this job ${p.priority}). It resumes from where it stopped when a lane is free.`;
+}
+
+const gib = (bytes: number): string => `${Math.round((bytes / 1024 ** 3) * 10) / 10} GiB`;
+
+/** What a queued or parked job paused for memory shows (issue #2737): why, its priority, and that it resumes. Undefined for any other. */
+export function memoryPausedLine(job: Pick<Job, 'status' | 'memoryPaused'>): string | undefined {
+  const p = job.memoryPaused;
+  if (!p || !['queued', 'held', 'parked'].includes(job.status)) return undefined;
+  const why = p.why ?? `${p.machineId} had ${gib(p.availableBytes)} available, its floor ${gib(p.floorBytes)}`;
+  const priority = p.priority !== undefined ? ` This job had the lowest priority there (${p.priority}).` : '';
+  return `Paused for memory: ${why}.${priority} It resumes from where it stopped when the memory holds it.`;
 }

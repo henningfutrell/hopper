@@ -15,7 +15,7 @@ import { useNow } from '@/hooks/use-now';
 import { canRerun, machineName, ownWaitOf, waitCheckText, waitOnLink, waitingRows } from '@/model/board';
 import { ago, between } from '@/model/format';
 import { REVIEW_KINDS, REVIEW_UI } from '@/model/reviews';
-import { preemptedLine } from '@/model/preemption';
+import { memoryPausedLine, preemptedLine } from '@/model/preemption';
 import { act, useHopper } from '@/store';
 import { giveBack, useGivingBack } from '@/store/give-back';
 import { useCanAdmin, useCanOperate, useJobBoard } from '@/store/selectors';
@@ -103,10 +103,10 @@ export function LockedRows({ heading = true }: { heading?: boolean }) {
   </>;
 }
 
-/** A job preempted (issue #1525): which job took its lane, and that it resumes from where it stopped. */
+/** A job preempted (issue #1525), or paused for memory (issue #2737): why, and that it resumes from where it stopped. */
 function PreemptedLine({ job, className }: { job: Job; className?: string }) {
   const by = useHopper((s) => (job.preempted ? s.jobs[job.preempted.by] : undefined));
-  const line = preemptedLine(job, by);
+  const line = preemptedLine(job, by) ?? memoryPausedLine(job);
   return line ? <div data-slot="preempted" className={`text-xs text-warn/90 [overflow-wrap:anywhere] ${className ?? ''}`}>{line}</div> : null;
 }
 

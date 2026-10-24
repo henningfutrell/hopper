@@ -13265,6 +13265,13 @@ never a hold, read from a machine reading taken before the burst took its memory
   available, below its floor of 1.4 GiB; r2 started there last`. One pause at a time for the pool: a recent pause on any
   of its machines holds the next, and a pool pauses none when one of its machines pauses in the same Decision. The event
   carries the pool's memory available and floor, and the job's own machine.
+  Issue #2737: the pause takes the job of the **lowest priority** there (on any machine of the pool), and of those the one
+  that started there last, so high-priority work runs on while lower work makes room: `pauses r1 on local/lane-1: local has
+  0.5 GiB available, below its floor of 1 GiB; r1 has the lowest priority there (10)`, `… and started there last of them`
+  when more than one has it; with one priority among them, `r2 started there last` as before. The job's mark also keeps its
+  `priority` and the pause's `why` (the reason's middle part), and the Queue shows it on the job while it is queued or parked:
+  `Paused for memory: local has 0.5 GiB available, below its floor of 1 GiB. This job had the lowest priority there (10). It
+  resumes from where it stopped when the memory holds it.` A mark from the build before has only the bytes, and says them.
 - **The API stays up.** The hopper runs on the machine it guards, so keeping the machine off its memory limit is what
   keeps `/api/health` and the UI answering; the held-loop health port (issue #1383) still tells a held event loop apart.
 - **Settings.** Plain options of the `local`, `ssh` and `client` machine sources (`memoryFloorShape`), read at every
@@ -13272,7 +13279,7 @@ never a hold, read from a machine reading taken before the burst took its memory
   Not on a container target, whose memory is not read.
 - **Persisted state.** No schema change: `memoryPaused` is in the job's JSON, `memoryPause`, `parkingExecutors` and
   `memoryPausedAt` in the Decision's. A build before this ignores them; a job it shows as queued resumes as a parked job
-  picked up does.
+  picked up does. Issue #2737 adds only optional fields to both (`priority`, `why`), which a build before ignores.
 - **Not built.** A cap on JVM or Gradle memory inside jobs (`org.gradle.jvmargs`, `--max-workers`): the hopper does not
   know a job's build tool, and the floor bounds every kind of job. Per-job memory accounting by process tree is not read
   (as in "Machine resources over time").
@@ -13288,6 +13295,11 @@ below it none, a floor of 0), `test/decider/placement-cost.test.ts`, `test/plugi
 `test/integration/memory-floor.test.ts` (the real daemon over the fake herdr: a burst of 7 queued jobs on 8 lanes starts
 2, the rest wait for memory while `/api/health` answers; below the floor the newest job is paused, queued again, and
 resumes its own session once the memory holds it).
+Issue #2737: `test/decider/memory-burst.test.ts` runs Decision after Decision against a model of two machines' memory
+(a 14 GiB WSL VM whose Windows holds 1 GiB more, and a 16 GiB machine): 16 jobs that each take their 3 GiB peak three
+minutes after they start all run, and neither machine falls below its floor; a job that takes 4 GiB over its peak makes
+its machine pause the job of the lowest priority, which starts again on that machine only after the extra memory is freed.
+`test/integration/memory-floor.test.ts` pauses the low job through the daemon, though the high one started later.
 
 ### Wait release: jobs on their own wait hold no agent while a job waits for memory (issue #2303, 2026-10-21)
 
