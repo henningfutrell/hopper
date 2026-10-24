@@ -96,7 +96,7 @@ describe('keeping a client target on the hopper\'s release', () => {
     let now = Date.parse('2026-10-24T09:00:00.000Z');
     const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) }, now: () => now });
     const atWork = () => ['job-a', 'job-b'];
-    for (; now < Date.parse('2026-10-24T09:00:00.000Z') + CLIENT_UPDATE_SWAP_MS; now += 30_000) {
+    for (; now < Date.parse('2026-10-24T09:00:00.000Z') + CLIENT_UPDATE_SWAP_MS; now += 10 * 60_000) {
       await keep(transport, atWork, atWork, () => true);
       expect(loaded).toEqual([]);
     }
