@@ -15000,7 +15000,7 @@ only the key's JWK SHA-256 thumbprint (RFC 7638, `jkt`) in the grant's body; the
   - A device grant request with a proof on the ask (`POST /ui/auth/device-grant`) binds its grant to the proof's key.
     The person sees "bound to the asking agent's key" before they approve. The poll then needs a proof of that key: a
     device code alone, or with another key's proof, takes nothing (401) and the request stands.
-  - A mint names `jkt` (`POST /ui/api/api-tokens` `mint`, `hopper token mint --jkt`): the thumbprint the agent shows. A
+  - A mint names `jkt` (`POST /ui/api/api-tokens` `mint`, `hopper token mint --jkt=<thumbprint>`; a thumbprint can start with `-`, so the CLI takes it after `=`): the thumbprint the agent shows. A
     `jkt` on an ask with a proof must be the proof's (400).
   - An unbound grant's refresh with a proof binds it to the proof's key. The refresh token a person copied to the agent
     is then worth nothing to anyone without the key, from the agent's first refresh on.
