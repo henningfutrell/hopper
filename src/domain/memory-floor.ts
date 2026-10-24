@@ -1,6 +1,7 @@
 // The memory floor (issue #2291, design.md "The memory floor"): a machine takes a new job, or a job back, only while its
 // memory available, less what the jobs it started lately have yet to take and what the new job needs, stays at or above
-// its floor. Below the floor the decider pauses the job that started there last, on the Park button's path, one at a time.
+// its floor. Below the floor the decider pauses the job of the lowest priority there (issue #2737), of those the one that
+// started there last, on the Park button's path, one at a time.
 import type { JobId, LaneId, MachineId } from './types.ts';
 
 /** A machine's own memory floor (its `memoryFloorGiB` and `memoryPerJobGiB` options). Absent fields: the defaults. A floor of 0: off. */
@@ -49,11 +50,17 @@ export interface MemoryPausePlan {
   /** The memory available the decider read, and the floor, in bytes. */
   availableBytes: number;
   floorBytes: number;
+  /** Issue #2737: the job's priority, the lowest there, and why the machine's memory holds no more running job. */
+  priority: number;
+  why: string;
   reason: string;
 }
 
-/** Set on a job when a memory pause names it; kept while it is parked and queued again, cleared when it runs again. */
-export interface JobMemoryPaused { at: string; machineId: MachineId; availableBytes: number; floorBytes: number }
+/**
+ * Set on a job when a memory pause names it; kept while it is parked and queued again, cleared when it runs again. `priority`
+ * and `why` (issue #2737): as the pause's plan says them; absent on a pause of a build before.
+ */
+export interface JobMemoryPaused { at: string; machineId: MachineId; availableBytes: number; floorBytes: number; priority?: number; why?: string }
 
 /** The wait reason of a job no machine's memory holds now (issue #2303 reads it). */
 export const MEMORY_WAIT = 'waiting for memory';

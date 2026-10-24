@@ -3,7 +3,7 @@
 // parked job shows: which job took its lane, and that it resumes from where it stopped.
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { preemptedLine, preemptionPatch, preemptionSummary } from '../../ui/src/model/preemption.ts';
+import { memoryPausedLine, preemptedLine, preemptionPatch, preemptionSummary } from '../../ui/src/model/preemption.ts';
 
 const preempted = { at: '2026-10-16T12:00:00Z', by: 'h', byPriority: 75, priority: 50, machineId: 'laptop' };
 
@@ -29,5 +29,15 @@ describe('preemption model', () => {
     expect(preemptedLine({ status: 'parked', preempted } as Job, undefined)).toBe('Preempted by job h (priority 75; this job 50). It resumes from where it stopped when a lane is free.');
     expect(preemptedLine({ status: 'running', preempted } as Job, by)).toBeUndefined();
     expect(preemptedLine({ status: 'queued' } as Job, by)).toBeUndefined();
+  });
+
+  it('a queued or parked job paused for memory says why, and that it resumes (issue #2737)', () => {
+    const memoryPaused = { at: '2026-10-24T12:00:00Z', machineId: 'laptop', availableBytes: 1024 ** 3, floorBytes: 1.4 * 1024 ** 3, priority: 10, why: 'laptop has 1 GiB available, below its floor of 1.4 GiB' };
+    expect(memoryPausedLine({ status: 'queued', memoryPaused } as Job)).toBe('Paused for memory: laptop has 1 GiB available, below its floor of 1.4 GiB. This job had the lowest priority there (10). It resumes from where it stopped when the memory holds it.');
+    // A pause from a build before #2737 kept only the bytes.
+    expect(memoryPausedLine({ status: 'parked', memoryPaused: { at: memoryPaused.at, machineId: 'laptop', availableBytes: 1024 ** 3, floorBytes: 1.4 * 1024 ** 3 } } as Job))
+      .toBe('Paused for memory: laptop had 1 GiB available, its floor 1.4 GiB. It resumes from where it stopped when the memory holds it.');
+    expect(memoryPausedLine({ status: 'running', memoryPaused } as Job)).toBeUndefined();
+    expect(memoryPausedLine({ status: 'queued' } as Job)).toBeUndefined();
   });
 });
