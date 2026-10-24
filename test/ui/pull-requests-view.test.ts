@@ -67,6 +67,7 @@ describe('Pull requests view', () => {
     expect(waitsText(card({ waits: 'conflicts' }))).toBe('conflicts with its base branch');
     expect(waitsText(card({ waits: 'ready' }))).toBe('ready, merging');
     expect(waitsText(card({ waits: 'merge held' }))).toBe('ready, waits for another pull request to merge first');
+    expect(waitsText(card({ waits: 'needs merge', repo: 'zed/tool' }))).toBe('needs merge in zed/tool');
     expect(waitsText(card({ waits: 'checks not started' }))).toBe('waiting for checks to start');
     expect(waitsText(card({ waits: 'checks failing' }))).toBe('checks failed');
     expect(waitsText(card({ waits: 'checks unknown', checksWhy: 'the GitHub App lacks Checks: read' }))).toBe('checks unknown: the GitHub App lacks Checks: read');
@@ -112,6 +113,8 @@ describe('Pull requests view', () => {
     expect(doingText(card({ waits: 'merge refused', yolo: true }))).toBe('the hopper tries the merge again on each sync');
     expect(doingText(card({ waits: 'checks unknown', yolo: true }))).toBe('nothing: the hopper may not read its checks, so a person merges it');
     expect(doingText(card({ waits: 'yolo off' }))).toBe('nothing: yolo mode is off, so a person merges it');
+    expect(doingText(card({ waits: 'needs merge' })))
+      .toBe('nothing: the hopper merges in a repository that is not a job repository only when a person names it on in Settings → Yolo mode, so a person merges it there');
     expect(doingText(card({ waits: 'draft' }))).toBe('nothing: the hopper does not tend a draft, so a person marks it ready');
   });
 

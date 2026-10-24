@@ -2,6 +2,7 @@
 // pull request ready for review, merged, closed without a merge, or abandoned (issue #428) — and the pull request it links to.
 import { describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
+import type { YoloModeView } from '../../src/domain/types.ts';
 import { afterDone, partsOf } from '../../ui/src/model/job.ts';
 
 const PR = 'https://github.com/owner/repo/pull/12';
@@ -32,6 +33,29 @@ describe('after done', () => {
     const abandoned = { label: 'abandoned', tone: 'warn', url: PR, title: 'its issue was closed as not planned; its pull request is not merged' };
     expect(afterDone(followed({ pullRequest: PR, follow: 'abandoned' }))).toEqual(abandoned);
     expect(afterDone(followed({ pullRequest: PR, follow: 'abandoned', part: true }, { partlyDone: PR }))).toEqual(abandoned);
+  });
+});
+
+describe('a pull request in a repository the hopper does not merge in (issue #2752)', () => {
+  const OTHER = 'https://github.com/zed/tool/pull/24';
+  const yolo = (o: Partial<YoloModeView> = {}): YoloModeView => ({ on: true, repos: {}, choices: { repos: ['owner/repo'] }, ...o });
+  const issue = { source: 'github', kind: 'github', key: 'k', repo: 'owner/repo', number: 3 };
+  const open = (pullRequest: string) => followed({ pullRequest, follow: 'open' }, { source: issue });
+  const needs = { label: 'needs merge in zed/tool', tone: 'warn', url: OTHER, title: 'the hopper does not merge pull requests in zed/tool: a person merges it there, or names zed/tool on in Settings → Yolo mode' };
+
+  it('needs merge in that repository, not PR ready, when no person named it on', () => {
+    expect(afterDone(open(OTHER), yolo())).toEqual(needs);
+    expect(afterDone(open(OTHER), yolo({ repos: { 'zed/tool': false } }))).toEqual(needs);
+  });
+
+  it('PR ready when a person named it on, or the pull request is in a job repository, or yolo mode is not known', () => {
+    expect(afterDone(open(OTHER), yolo({ repos: { 'zed/tool': true } }))).toMatchObject({ label: 'PR ready' });
+    expect(afterDone(open(PR), yolo({ on: false }))).toMatchObject({ label: 'PR ready' });
+    expect(afterDone(open(OTHER))).toMatchObject({ label: 'PR ready' });
+  });
+
+  it('a part in that repository: needs merge too, so the next part waits on a person', () => {
+    expect(afterDone(followed({ pullRequest: OTHER, follow: 'open', part: true }, { source: issue, partlyDone: OTHER }), yolo())).toEqual(needs);
   });
 });
 
