@@ -58,7 +58,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 function wanted(e: DomainEvent): boolean {
   if (e.type === 'source.stalled' || e.type === 'connected_account.expired' || e.type === 'artifact.created' || e.type === 'source.request_opened') return true;
   if (e.type === 'work_item.person_asked' || e.type === 'vault.run_card_opened') return true;
-  if (e.type === 'job.finished' || e.type === 'job.failed') return true;
+  if (e.type === 'job.finished' || e.type === 'job.failed' || e.type === 'step_schedule.run_failed') return true; // a scheduled run that failed, as a failed job (issue #2716)
   if (e.type === 'auth.pending' || e.type === 'auth.expired' || e.type === 'infra.out_of_band_recorded') return true;
   if (e.type === 'infra.plan_recorded' || e.type === 'infra.plan_approved') return true;
   if (e.type === 'machine.memory_low' || e.type === 'machine.memory_recovered') return true;

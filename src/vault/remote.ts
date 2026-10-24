@@ -119,7 +119,7 @@ export function remoteVault(o: {
       if (o.local.view().secrets.find((s) => s.name === ask.name)?.backend) return o.local.forStep(ask);
       const r = await call<{ value: string } | { refused: string }>('step-deliver', { ask });
       if (!('problem' in r)) return r.result;
-      o.store.events.append({ type: 'vault.step_refused', jobId: ask.job, data: { name: ask.name, host: ask.host, job: ask.job, reason: r.problem } });
+      o.store.events.append({ type: 'vault.step_refused', ...(ask.job !== undefined ? { jobId: ask.job } : {}), data: { name: ask.name, host: ask.host, ...(ask.job !== undefined ? { job: ask.job } : { schedule: ask.schedule }), reason: r.problem } });
       return { refused: r.problem };
     },
     mint: (ask, machineKey) => o.local.mint(ask, machineKey, mintFrom),

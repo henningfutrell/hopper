@@ -113,10 +113,21 @@ export const labelFilter = (labels: Record<string, string> | undefined): string 
     ? `&filters=${encodeURIComponent(JSON.stringify({ label: Object.entries(labels).map(([k, v]) => `${k}=${v}`) }))}`
     : '';
 
+/** A tar name as ustar keeps it: its prefix (folders, at most 155 bytes) and its name (at most 100). Throws when it does not fit. */
+export function tarNameParts(full: string): [prefix: string, name: string] {
+  if (Buffer.byteLength(full) <= 100) return ['', full];
+  for (let at = full.indexOf('/'); at !== -1; at = full.indexOf('/', at + 1)) {
+    const prefix = full.slice(0, at), name = full.slice(at + 1);
+    if (Buffer.byteLength(prefix) <= 155 && Buffer.byteLength(name) <= 100 && name !== '') return [prefix, name];
+  }
+  throw new Error(`the path ${full} is too long for a tar: at most 155 bytes of folders and 100 of name`);
+}
+
 /**
  * A tar of a few small files, each a plain name with its mode: a build's context (issue #716), a box step's own files
  * (issue #1004), a need box's files (issue #1007). Written here, not taken from a library: one ustar header per file and
- * the file, padded to 512-byte blocks, is all these need. A name that ends in `/` with no data is a directory.
+ * the file, padded to 512-byte blocks, is all these need. A name that ends in `/` with no data is a directory. A step
+ * schedule's files (issue #2716) keep their repository paths: a long one uses the ustar prefix.
  */
 export function filesTar(files: readonly { name: string; data?: string | Buffer; mode: number }[]): Buffer {
   const parts: Buffer[] = [];
@@ -126,7 +137,10 @@ export function filesTar(files: readonly { name: string; data?: string | Buffer;
     const header = Buffer.alloc(512);
     const field = (at: number, len: number, value: string): void => { header.write(value, at, len, 'ascii'); };
     const octal = (n: number, len: number): string => `${n.toString(8).padStart(len - 1, '0')}\0`;
-    field(0, 100, f.name);
+    // A name over 100 bytes goes in two: its folders in the ustar prefix, the rest in the name (issue #2716).
+    const [prefix, name] = tarNameParts(f.name);
+    field(0, 100, name);
+    if (prefix) field(345, 155, prefix);
     field(100, 8, octal(f.mode, 8));
     field(108, 8, octal(0, 8));
     field(116, 8, octal(0, 8));

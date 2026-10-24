@@ -8224,7 +8224,8 @@ Version 1 (`docs/schemas/vault.step_delivered.v1.json`). A vault secret was give
 |---|---|---|
 | `name` | string | yes |
 | `host` | string | yes |
-| `job` | string | yes |
+| `job` | string | no |
+| `schedule` | string | no |
 | `backend` | string | no |
 
 ```json
@@ -8243,7 +8244,8 @@ Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows s
 |---|---|---|
 | `name` | string | yes |
 | `host` | string | yes |
-| `job` | string | yes |
+| `job` | string | no |
+| `schedule` | string | no |
 | `backend` | string | no |
 | `reason` | string | yes |
 
@@ -8253,6 +8255,164 @@ Version 1 (`docs/schemas/vault.step_refused.v1.json`). A running job's Windows s
   "host": "build-host",
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
   "reason": "job f3b1c2d4 has no vault grant: a person grants it the vault on the Vault page, then ask again"
+}
+```
+
+## `step_schedule.saved`
+
+Version 1 (`docs/schemas/step_schedule.saved.v1.json`). A person saved a step schedule (issue #2716): the hopper runs `script`, a file in the folder `input` of `repo` at its default branch, in a new sandbox of `template` each day at `daily` (UTC), for at most `timeoutSeconds`. `granted`: it keeps its vault grant; a save that changes the template, the repository, the folder or the script takes the grant back. `by` who saved it.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `template` | string | yes |
+| `repo` | string | yes |
+| `input` | string | yes |
+| `script` | string | yes |
+| `daily` | string | yes |
+| `timeoutSeconds` | integer | yes |
+| `by` | string | yes |
+| `granted` | boolean | yes |
+
+```json
+{
+  "name": "nightly-backup",
+  "template": "backup",
+  "repo": "acme/ops",
+  "input": "backup",
+  "script": "backup/step.sh",
+  "daily": "02:00",
+  "timeoutSeconds": 1800,
+  "by": "Pat",
+  "granted": false
+}
+```
+
+## `step_schedule.removed`
+
+Version 1 (`docs/schemas/step_schedule.removed.v1.json`). A person removed a step schedule and its runs (issue #2716).
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "name": "nightly-backup",
+  "by": "Pat"
+}
+```
+
+## `step_schedule.granted`
+
+Version 1 (`docs/schemas/step_schedule.granted.v1.json`). A person granted a step schedule the vault (issue #2716), after Access allowed it (OpenFGA `vault_grant#can_grant`, the key `schedule:<name>`): its runs get the vault secrets its `template` gives, copied into their sandbox, never more.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `by` | string | yes |
+| `template` | string | yes |
+
+```json
+{
+  "name": "nightly-backup",
+  "by": "Pat",
+  "template": "backup"
+}
+```
+
+## `step_schedule.revoked`
+
+Version 1 (`docs/schemas/step_schedule.revoked.v1.json`). A person took a step schedule's vault grant back (issue #2716): its runs of a template that gives vault secrets fail until a person grants it again.
+
+| field | type | required |
+|---|---|---|
+| `name` | string | yes |
+| `by` | string | yes |
+
+```json
+{
+  "name": "nightly-backup",
+  "by": "Pat"
+}
+```
+
+## `step_schedule.run_started`
+
+Version 1 (`docs/schemas/step_schedule.run_started.v1.json`). A run of a step schedule started (issue #2716): its due time came (`trigger` `due`, `due` that time) or a person ran it now (`now`). Its sandbox `box` of `template` runs `script` of `repo` at `commit`, the default branch's head when the run read it; `secrets` the names of the vault secrets copied in, never a value.
+
+| field | type | required |
+|---|---|---|
+| `schedule` | string | yes |
+| `run` | string | yes |
+| `due` | string | yes |
+| `trigger` | `due` \| `now` | yes |
+| `box` | string | yes |
+| `template` | string | yes |
+| `repo` | string | yes |
+| `commit` | string | yes |
+| `script` | string | yes |
+| `secrets` | string[] | no |
+
+```json
+{
+  "schedule": "nightly-backup",
+  "run": "7d3c1e2a-0000-4000-8000-000000002716",
+  "due": "2026-10-25T02:00:00.000Z",
+  "trigger": "due",
+  "box": "hopper-need-backup-7d3c1e2a",
+  "template": "backup",
+  "repo": "acme/ops",
+  "commit": "3f2a9c0d1e4b5a6c7d8e9f001122334455667788",
+  "script": "backup/step.sh",
+  "secrets": [
+    "BACKUP_BUCKET_KEY"
+  ]
+}
+```
+
+## `step_schedule.run_finished`
+
+Version 1 (`docs/schemas/step_schedule.run_finished.v1.json`). A run of a step schedule ended with exit code 0 (issue #2716): `seconds` how long it took.
+
+| field | type | required |
+|---|---|---|
+| `schedule` | string | yes |
+| `run` | string | yes |
+| `exit` | integer | yes |
+| `seconds` | integer | yes |
+| `problem` | string | no |
+
+```json
+{
+  "schedule": "nightly-backup",
+  "run": "7d3c1e2a-0000-4000-8000-000000002716",
+  "exit": 0,
+  "seconds": 412
+}
+```
+
+## `step_schedule.run_failed`
+
+Version 1 (`docs/schemas/step_schedule.run_failed.v1.json`). A run of a step schedule failed (issue #2716): its script exited non-zero, it timed out, or the hopper could not start it (`exit` 125 and `problem`: the template not ready, no vault grant, the files not read). `outcome` `interrupted`: a hopper stopped while it ran, and it is not run again. The notifiers send it; Needs you lists its schedule until a run of it succeeds.
+
+| field | type | required |
+|---|---|---|
+| `schedule` | string | yes |
+| `run` | string | yes |
+| `exit` | integer | yes |
+| `seconds` | integer | yes |
+| `problem` | string | no |
+| `outcome` | `failed` \| `interrupted` | yes |
+
+```json
+{
+  "schedule": "nightly-backup",
+  "run": "7d3c1e2a-0000-4000-8000-000000002716",
+  "exit": 1,
+  "seconds": 37,
+  "outcome": "failed"
 }
 ```
 

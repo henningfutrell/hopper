@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 import { get } from '@/lib/api';
 import type { PendingApprovalsView } from '../../../src/domain/types.ts';
+import type { StepSchedulesView } from '../../../src/domain/step-schedules.ts';
 import type { HeaderBadgeSettings, LandingBatchesView, OutOfBandView, PlanView, PullRequestsView, ToolAccountsReport, YoloModeView } from '@/model/wire';
 import { useHopper } from './index';
 
@@ -44,6 +45,8 @@ export const useOutOfBand = (): { changes: OutOfBandView[] } | undefined => useP
 export const useYoloMode = (): YoloModeView | undefined => usePolled('/api/yolo-mode', ['yolo_mode.']);
 /** The landing batches (issue #1333): Needs you's stuck landing passes. What is stuck is found by the pass, with no event: polled. */
 export const useLandingBatches = (): LandingBatchesView | undefined => usePolled('/api/landing-batches', ['landing_batch.']);
+/** The step schedules (issue #2716): Needs you's failed scheduled runs, read again after each schedule's event. */
+export const useStepSchedules = (): StepSchedulesView | undefined => usePolled('/api/step-schedules', ['step_schedule.']);
 /** Pending approvals (issue #2088): the page and its nav count. The daemon reads GitHub on its own schedule, with no event: polled only. */
 export const usePendingApprovals = (): PendingApprovalsView | undefined => usePolled('/api/pending-approvals');
 /** The tool accounts (issue #1128): the Accounts view and its badge. A usage source reads with no event: polled only. */

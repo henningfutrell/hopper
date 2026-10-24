@@ -37,6 +37,7 @@ import { RESOURCE_LEDGER_TABLE } from './resource-ledger.ts';
 import { observeTemplatesChecked } from './migration-observe-checked.ts';
 import { DISK_MEASURE_TABLE } from './disk-measures.ts';
 import { DELIVERY_LEDGER_TABLE } from './delivery-ledger.ts';
+import { STEP_SCHEDULE_TABLES } from './step-schedules.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -201,4 +202,6 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 99: The delivery ledger (issue #2554 part 6): each step of each change, its first prediction and its actual times. A
   // table only: the build before runs on it, and never reads it.
   DELIVERY_LEDGER_TABLE,
+  // 100: The step schedules and their runs (issue #2716). Tables only: the build before runs on them, and never reads them.
+  STEP_SCHEDULE_TABLES,
 ];

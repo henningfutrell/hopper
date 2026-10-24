@@ -108,6 +108,8 @@ export function withVaultGrants(v: Vault, o: {
     },
     // A Windows sandbox step's secret (issue #731): the same grant, for the job whose step it is.
     async forStep(a) {
+      // A step schedule's run (issue #2716): its schedule's grant is the hopper's to check, before it asks.
+      if (a.job === undefined) return v.forStep(a);
       const job = jobs.get(a.job);
       if (job && !vaultGrants.get(grantKeyOf(job))) {
         ask(job, a.name, a.template !== undefined ? { box: a.host, template: a.template } : { windowsHost: a.host });

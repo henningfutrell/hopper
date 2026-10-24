@@ -77,6 +77,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/pending-approvals/` | Pending approvals (issue #2088, "Pending approvals"): what GitHub shows of the waiting runs a connection can approve — the repositories it reaches, those of the intake orgs not archived, their waiting runs and pending deployments — with each connected account's own connection, conditional GETs (`github.ts`, `@octokit/request`, `src/repo-checks/conditional.ts`); one user's read on its schedule, kept in memory, the view (`service.ts`); the rows, the intake orgs and the stale mark are `src/domain/pending-approvals.ts`, the route `src/http/ui/pending-approvals.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
+| `src/step-schedules/` | step schedules (issue #2716, "Step schedules"): one user's schedules of a box step run with no job — saved, granted the vault, run now, removed, each run claimed in the database once per due time and run by its `scheduled-run` saga in a need box of its template through the sandbox module, its output kept masked (`service.ts`, `saga.ts`); the folder of a repository at its default branch, read with the user's own connection (`github.ts`); the schedules, the runs and the due times are `src/domain/step-schedules.ts`, the rows `src/store/step-schedules.ts` (tenant migration 100), the routes `src/http/ui/step-schedules.ts`, the CLI `src/cli-operator-schedule.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the built-in library skills a job may also load by name (`work`, and `orchestrate`, its alias, issue #2145), the skill library's own files and version, and the check of a repository's own copy a job says it follows (`library.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); the bastion ask (`bastion-skill.ts`, issue #2146); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill and its conditional skills (issue #1924, "Conditional skills"), chosen at its first start and kept, and their done criteria for the done check, with the deletes the job's approved text allows (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
@@ -34839,3 +34840,82 @@ round trip can still lose its processes. Its failure then names the sweep and ru
 
 **Verification:** `test/engine/sweep-live.test.ts` (a job with an answer pending is not reaped, a parked one is; a job
 started after the pass read the jobs is not reaped; the event and the log line; the failure text and its cause).
+
+## Step schedules (issue #2716, 2026-10-24)
+
+**The problem.** A box step ran only from a job: a job asked, the hopper ran one command in a need box of the job's
+approved template. A task that must run each day on its own — the phrase-drill database backup, which must not depend on
+one workstation, or the scheduled read-only infra check that issue #871 leaves for later — had nothing that ran it.
+
+**A step schedule** (`StepSchedule`, `src/domain/step-schedules.ts`) is a person's: a name, a template, a repository, a
+folder of it (`input`) and a script in that folder, a daily time in UTC (`HH:MM`), and a timeout. The hopper runs
+`sh ./<script>` in a new need box of the template at each due time, with no job and no agent. The folder is read at the
+repository's default branch when the run starts, with the user's own GitHub connection (the account of the repository,
+`src/step-schedules/github.ts`: the default branch, its head commit, the trees down to the folder, the folder's tree,
+each blob, at most 1000 files and 32 MiB), and put in the box's work directory at its repository paths, as
+`hopper-step box --input <path> --script <path>/<script>` puts a job's inputs. The tar keeps a path over 100 bytes in the
+ustar prefix (`tarNameParts`, `src/sandbox/socket-http.ts`).
+
+- **Saved** (`POST /ui/api/step-schedules` `save`, `hopper schedule save`; operator, a box action). The template must be
+  there, and must hold no profile the vault mints (an AWS role, a cluster or a namespace): a scheduled run gets no minted
+  credential (409, `NO_MINT_ON_SCHEDULE`; not built). A due time before the save never runs.
+- **When it runs** (`dueNow`). Each 30 s each hopper looks at the user's schedules. The newest due time at or before now,
+  after the save, is due unless a run of it is there. A hopper that was down across several due times runs the newest
+  once when it starts; the older ones are not run.
+- **Once, and one at a time.** A run is claimed in the user's database before anything runs (`scheduled_runs`, tenant
+  migration 100): a unique index on the schedule and due time of due runs, and one on the schedule of the runs not ended.
+  So two hoppers on one database claim it once between them, and **run now** (`run`, `hopper schedule run`) is refused
+  (409) while a run of the schedule has not ended. A claim no saga took within a minute (a hopper that stopped between
+  the two) ends `interrupted`, so the schedule is not held for good.
+- **The `scheduled-run` saga** (`src/step-schedules/saga.ts`), one per run, begun at the claim, runs it on whichever host
+  holds it. A run whose need box started in the sandbox runs ledger before a stop is **not run again**: it ends
+  `interrupted` with `STEP_INTERRUPTED`, as a need step does (issue #1568), because the script may have had its effect.
+  The need box's sweep leaves a box another live hopper's `scheduled-run` saga holds, as it leaves a need step's.
+- **The run.** The template must be ready, as for a job's box step (`templateWait`): an approval for some jobs only does
+  not cover a schedule. Its vault secrets — what the template gives, but a shared secret and its agent credential — go in
+  only when a person granted the schedule the vault: read for that run only through the vault's step delivery (the ask
+  names the `schedule` in place of a job: no job need be at work), copied into the box as files, never in its
+  environment, each value masked in the kept output. Then the sandbox module's `needStep` runs the box, as a box step's
+  (`run.jobId` is `schedule:<name>` in the sandbox runs ledger and the trace). The output is kept, at most 1 MiB, with
+  the start, end, outcome (`succeeded`, `failed`, `interrupted`), exit code and problem; the newest 30 runs of each
+  schedule are kept.
+- **The schedule's vault grant** (`grant`, `hopper schedule grant`). A person's act, after Access as a job's vault grant
+  (OpenFGA `vault_grant#can_grant`, the key `schedule:<name>`); a delegate approver is refused, since nothing waits.
+  `revoke` takes it back. A save that changes the template, the repository, the folder or the script takes it back: a
+  person grants what runs now. A time or a timeout keeps it.
+- **A failed run.** A script that exits non-zero, a timeout, or a run the hopper could not start (exit 125 and the
+  problem: the template not ready, no grant, the files not read, the schedule removed) is `step_schedule.run_failed`.
+  The Grok Bot routine sends it as it sends `job.failed` (`error` the problem, or the exit code). Needs you's
+  **Schedules** row lists each schedule whose newest run did not succeed, with why and `hopper schedule runs <name>`,
+  until a run of it succeeds (`GET /api/step-schedules` `failed`).
+- **Reads.** `GET /api/step-schedules` (each schedule, its next due time, its newest run), `GET /api/step-schedules/:name`
+  (its runs with their output), `hopper schedule list` and `hopper schedule runs <name>`. `remove` (409 while a run has
+  not ended) removes the schedule and its runs.
+
+**Decisions:**
+- **The grant is the schedule's, not a job's.** The vault's law gives only to a job a person granted it; a schedule has
+  no job, so the person's grant is kept on the schedule, decided by Access as a job's is. It covers what the schedule
+  runs: a save that changes that drops it.
+- **A claim in the database, then a saga.** The two unique indexes make "once per due time" and "never two at once" the
+  database's, across restarts and hosts; the saga gives the run's lease and the resume on another host, and the ledger
+  check makes a resume never run the script twice.
+- **No minted credential, and daily times only.** The backup needs vault secrets only. Minting for a run with no job is
+  its own change to the vault's mint (which checks a job at work); a cron expression is not needed yet.
+- **No page of its own.** The command line and the API are the acceptance; Needs you's row links to Vault.
+
+**Residual risk, stated.** A run executes what the repository's default branch holds when it starts: whoever can push
+there changes what runs with the schedule's vault secrets. The person who grants a schedule trusts that branch, as the
+repository's own review guards it. The script holds the secret values in its box, and can send one to an egress host the
+template names, as a box step can (issue #1875).
+
+**Not built.** A minted credential for a scheduled run; a cron expression; a UI page for schedules; the scheduled
+read-only infra check of issue #871 (it can use a schedule once a run can mint).
+
+Tests: `test/domain/step-schedules.test.ts` (due times, a missed one once, what a save may hold, what changes what runs),
+`test/step-schedules/service.test.ts` (the real database: claimed once however often a hopper looks, two hoppers claim
+once, after a restart a due time that ran is not run again and a missed one runs once, a run whose box started is not
+run again, never two at once, the folder at its paths, the secrets only after the grant and masked, failures, the grant
+taken back), `test/integration/step-schedules.test.ts` (the real daemon, saga coordinator and CLI: save, list, grant, run
+now, a run that cannot read its files fails and is listed for Needs you, revoke, remove), `test/vault/step-delivery-schedule.test.ts`,
+`test/sandbox/files-tar-prefix.test.ts`, `test/cli-operator-schedule.test.ts`, `test/plugins/grokbot-step-schedules.test.ts`,
+`test/ui/step-schedules-needs-you.test.ts`.

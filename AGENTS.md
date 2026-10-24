@@ -60,7 +60,9 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   never grants. One exception, the user's own setting: the **standing read grant** (issue #1472, off by default), an admin's
   toggle with the sandbox approvals, grants a job on a box of a template whose needs the read policy holds entirely as reads,
   with no vault secret, and records it as `vault.granted` by the setting; a template with a write, sync or apply, a read
-  outside the policy or a secret still waits for a person's grant, and turned off it grants no job that has not asked yet. Only a box's jobs get the vault's helper (`HOPPER_SECRET`). A running job's skill request (issue #582, `docs/design.md` "Skills: what the
+  outside the policy or a secret still waits for a person's grant, and turned off it grants no job that has not asked yet. A **step schedule**'s runs (issue #2716, `docs/design.md` "Step schedules") have no job: they get the
+  vault secrets their template gives only after a person's **schedule grant**, after Access (`vault_grant#can_grant`), never by a
+  delegate approver; a save that changes what the schedule runs takes it back; a scheduled run gets no minted credential. Only a box's jobs get the vault's helper (`HOPPER_SECRET`). A running job's skill request (issue #582, `docs/design.md` "Skills: what the
   hopper can set up for a box"): `POST /job/skill`, with the job's proxy token, answers the skill catalog, a skill, or a no
   with its reason, after Access for a link; it records only the request and its answer. When the skill needs a
   credential the box's template does not give (issue #583, `docs/design.md` "The dynamic vault"), it opens a credential

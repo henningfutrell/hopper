@@ -36,6 +36,8 @@ export interface SandboxLauncher {
   /** Puts a template's egress hosts in the egress proxy (issue #2639 part 4): an approval of a new host waits for it. */
   allowEgress: Sandboxes['allowEgress'];
   sagas: { begin(step: string, userId: string): string; abort(saga: string, reason: string): boolean };
+  /** The `scheduled-run` saga of a step schedule's run (issue #2716), begun once per run. */
+  scheduleSagas: { begin(run: string, userId: string): string; abort(saga: string, reason: string): boolean };
 }
 
 /** A job not ended: waiting to start (issue #1471), starting, or at work. */
