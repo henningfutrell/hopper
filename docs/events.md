@@ -1177,6 +1177,22 @@ Version 1 (`docs/schemas/job.oom_killed.v1.json`). The kernel's OOM killer ended
 }
 ```
 
+## `job.scope_not_stopped`
+
+Version 1 (`docs/schemas/job.scope_not_stopped.v1.json`). The job's reap could not stop the job's scope on its machine (`machineId`, issue #2722 part 6, design.md "No misleading state after a failed process"): `systemctl --user stop` of `hopper-job-<id>.scope` did not go through — a process that writes its core dump cannot be killed until it is written, so the stop times out. `state`: the scope's state then (`failed`, `deactivating`); `processes`: the processes still in its cgroup, absent where the reap could not read it. A failed scope is reset, so it does not stay listed. The sweep reaps it again while the machine still has it. A failed part of the job; the job itself does not fail for it.
+
+| field | type | required |
+|---|---|---|
+| `state` | string | yes |
+| `processes` | number | no |
+
+```json
+{
+  "state": "failed",
+  "processes": 1
+}
+```
+
 ## `job.cleanup_leftover`
 
 Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Machines counts it while an entry stays, and the cleanup worker tries again (it is no stuck work on Failures, issue #2684). An entry on a retired machine (no machine source lists it, the plugins config does not name it) is then closed `retired` in the ledger (part 12), and the leftover ends.

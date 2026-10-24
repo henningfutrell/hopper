@@ -79,6 +79,7 @@
         "job.heap_retry",
         "job.core_dumped",
         "job.oom_killed",
+        "job.scope_not_stopped",
         "job.cleanup_leftover",
         "job.parked",
         "job.unparked",

@@ -13847,6 +13847,32 @@ run again. A heap retry is the failure assessor's own run again, not a new decis
 when it runs. Not for a job with no scope (macOS, WSL with no systemd): it has no memory limit to raise, and Node's own
 default heap there is from the machine's whole memory.
 
+### No misleading state after a failed process (issue #2722 part 6, 2026-10-24)
+
+A job whose check aborted could still end green. The agent saw `tsc` end with exit code 134, read it as a check that
+passed or as a fault of the machine, and ended the job done; the reap then recorded the heap abort, but the job's parts
+list still said "Done", "Nothing: it is done." And a scope whose stop timed out (a process that writes its core dump
+cannot be killed until the core is written) was stopped silently: the reap went on, and the scope stayed.
+
+- **The header says it** (`failedProcessHeader`, `src/domain/failed-processes.ts`, pure). A job that ended well
+  (`finished`) with a failed part of a failed process — a heap abort, a core dump, an OOM kill — says it after where it
+  stands: "Done, but a process of the job failed: tsc ran out of heap". What is next becomes "Make sure that its checks
+  ran and passed: a failed process can make a check look green." A failed job, and a job with no such part, are as
+  before. The job itself does not fail: the agent may have gone around the process, as part 3 says.
+- **A scope that did not stop** (`SCOPE_STOP_SH`, `src/client/reap-use.ts`). When `systemctl --user stop` of the job's
+  scope fails, the reap reads the scope's state (`ActiveState`) and the processes still in its cgroup (`cgroup.procs`),
+  and says `hopper-scope-left <state> <processes>`; nothing when the scope is gone (`inactive`). A `failed` scope is
+  reset (`systemctl --user reset-failed`), so it does not stay listed as a unit with nothing to stop. The cleanup records
+  `job.scope_not_stopped` (`state`, `processes`). The parts list shows it as a failed part under machines, "Its scope did
+  not stop (failed, 2 processes in it)", and the header says it after where the job stands; what is next stays as it
+  was. The sweep reaps the scope again while the survey still finds it (`planSweep`, as before).
+
+Not built: the same note on the Jobs graph and the dashboard's cards (their routes read no events of a job), and a check
+by the hopper of the job's own checks. A hung wait after a failed process is the wait checks' case already: a wait on its
+own command whose command ended is nudged, then ended ("A wait on its own command"); a heavy step's slot ends with its
+renewals.
+
+
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
 **Replaced** (issue #1380 part 3, "A source that expires marks only the source" below): a connection that ends ends no
