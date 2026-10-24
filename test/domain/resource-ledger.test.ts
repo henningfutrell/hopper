@@ -52,6 +52,16 @@ describe('reapClosures', () => {
     expect(closed.find((c) => c.entry.kind === 'job_worktree')?.state).toBe('reaped');
   });
 
+  // Issue #2715: the reason names the cause the reap found, not only that the dir is still there.
+  it('names why the dir stays, as the reap found it', () => {
+    const scratch = entry('scratch_dir', SCRATCH);
+    const why = (cause: 'mount' | 'process' | 'userns' | 'permission') => reapClosures([scratch], { kept: [], left: [SCRATCH], leftWhy: { [SCRATCH]: cause } })[0]?.reason;
+    expect(why('mount')).toBe(`${SCRATCH} is still there: a file system is mounted in it`);
+    expect(why('process')).toBe(`${SCRATCH} is still there: a process still runs in it`);
+    expect(why('userns')).toBe(`${SCRATCH} is still there: it holds files of the job's user namespace that podman could not remove`);
+    expect(why('permission')).toBe(`${SCRATCH} is still there: the hopper's user may not remove files in it`);
+  });
+
   it('reaps the container runtime with kept work, as the reap resets it, and fails it while its storage stays (part 4)', () => {
     const runtime = entry('container_runtime', RUNTIME);
     expect(reapClosures([runtime], { kept: [SCRATCH] }).map((c) => c.state)).toEqual(['reaped']);

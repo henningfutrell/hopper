@@ -34,8 +34,8 @@ interface Logger { info(line: string): void; warn(line: string): void }
 /** What one probe of an attached machine found: online or not, and for a client target, its client release. */
 export interface MachineProbe {
   online: boolean;
-  /** A client target: the release its client runs (absent when it predates releases), whether it is the hopper's, and why it cannot be updated (issue #545). */
-  client?: { release?: string; current: boolean; update?: { problem: string } };
+  /** A client target: the release its client runs (absent when it predates releases), whether it is the hopper's, why it cannot be updated (issue #545), and since when it holds jobs off to be updated (issue #2715). */
+  client?: { release?: string; current: boolean; update?: { problem: string }; updateHold?: { since: string } };
   /** The machine's home, where `~` in a job's work tree resolves there (issue #323). Absent: it did not say. */
   home?: string;
   /** The disk its home is on (issue #401). Absent: not read. */

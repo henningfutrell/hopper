@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schedule": {
+      "type": "string"
+    },
+    "run": {
+      "type": "string"
+    },
+    "due": {
+      "type": "string"
+    },
+    "trigger": {
+      "type": "string",
+      "enum": [
+        "due",
+        "now"
+      ]
+    },
+    "box": {
+      "type": "string"
+    },
+    "template": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "commit": {
+      "type": "string"
+    },
+    "script": {
+      "type": "string"
+    },
+    "secrets": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schedule",
+    "run",
+    "due",
+    "trigger",
+    "box",
+    "template",
+    "repo",
+    "commit",
+    "script"
+  ],
+  "additionalProperties": false
+}

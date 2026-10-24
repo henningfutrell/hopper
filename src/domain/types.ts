@@ -372,9 +372,11 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
    * A client target: once probed online, the client release it runs (absent: it predates releases) and whether that is
    * the hopper's (issue #70); `update` when the hopper's release has not taken there after its tries, and why (issue #545);
    * `vault`: the vault's helper its client wrote, given to each job there as HOPPER_SECRET (issue #558); `door`: its
-   * client door, the loopback URL there its jobs reach the hopper at, given to each as HOPPER_URL (issue #695).
+   * client door, the loopback URL there its jobs reach the hopper at, given to each as HOPPER_URL (issue #695);
+   * `updateHold`: it ran another release than the hopper's too long while jobs were at work there, so it takes no job until
+   * they end and the hopper's is loaded (issue #2715, src/machines/client-release.ts).
    */
-  client?: { release?: string; current?: boolean; update?: { problem: string }; vault?: string; door?: string };
+  client?: { release?: string; current?: boolean; update?: { problem: string }; updateHold?: { since: string }; vault?: string; door?: string };
   /**
    * The disk its home is on, as last read (issue #401); `low` by its thresholds, and then it takes no new job (issue #410).
    * `critical` (issue #2494) by its critical thresholds: it takes no job at all, a job back to its pane included. Absent: not read (a container target, a client older than this).

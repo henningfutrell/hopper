@@ -2,6 +2,8 @@
 // the hopper's mirror, as the shrink guard reads a push (push-lines.ts): the base branch is fetched into the mirror when it
 // lacks it, the push's own pack is indexed in a quarantine, removed after, the pushed commit's tree is listed, and the files
 // it changes from where it leaves the base, as the job's own client lists them. Nothing a job pushes enters the mirror.
+// The base's tip holding a requirements file counts as the commit holding one (issue #2712): a branch made before its
+// repository kept the file still meets it, and a push whose own commit git cannot read is then refused, not let through.
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { requirementsFileDir } from '../domain/push-requirements.ts';
@@ -11,8 +13,8 @@ import { runGitWithInput } from './push-lines.ts';
 
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 
-/** The commit of a push: whether it holds a requirements file, and the files it changes against its base (every file of
- * its tree when the base is not on GitHub). */
+/** The commit of a push: whether it or its base's tip holds a requirements file, and the files it changes against its
+ * base (every file of its tree when the base is not on GitHub; none when the commit cannot be read but the base holds one). */
 export interface PushTree { file: boolean; files: string[] }
 /** The commit `new` of a push to `repo`; undefined: git cannot say. */
 export type HoldsRequirements = (repo: string, remote: () => Promise<GitRemote>, push: { base: string; new: string; pack: Buffer }) => Promise<PushTree | undefined>;
@@ -38,23 +40,27 @@ export function createHoldsRequirements(o: { dir: string; log(line: string): voi
       const fetched = await run(['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', '--filter=blob:none', 'origin', base]);
       if (fetched.code !== 0) return problem(said(fetched));
     }
+    const baseTree = SHA.test(base) ? await run(['ls-tree', '-r', '--name-only', '-z', base]) : undefined;
+    const baseFile = baseTree?.code === 0 && baseTree.stdout.split('\0').some((f) => requirementsFileDir(f) !== undefined);
+    /** Git cannot read the commit: when the base holds requirements, the push still needs an evaluation. */
+    const unread = (why: string): PushTree | undefined => { problem(why); return baseFile ? { file: true, files: [] } : undefined; };
     const quarantine = join(path, `hopper-quarantine-${process.pid}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(join(quarantine, 'pack'), { recursive: true, mode: 0o700 });
     const q = { GIT_OBJECT_DIRECTORY: quarantine, GIT_ALTERNATE_OBJECT_DIRECTORIES: join(path, 'objects') };
     try {
       if (push.pack.length > 0) {
         const indexed = await runGitWithInput(['--git-dir', path, 'index-pack', '--stdin', '--fix-thin'], { ...env, ...q }, push.pack);
-        if (indexed.code !== 0) return problem(`index-pack: ${said(indexed)}`);
+        if (indexed.code !== 0) return unread(`index-pack: ${said(indexed)}`);
       }
       const tree = await run(['ls-tree', '-r', '--name-only', '-z', push.new], q);
-      if (tree.code !== 0) return problem(`ls-tree: ${said(tree)}`);
+      if (tree.code !== 0) return unread(`ls-tree: ${said(tree)}`);
       const all = tree.stdout.split('\0').filter((f) => f !== '');
-      const file = all.some((f) => requirementsFileDir(f) !== undefined);
+      const file = baseFile || all.some((f) => requirementsFileDir(f) !== undefined);
       if (!SHA.test(base)) return { file, files: all };
       const from = await run(['merge-base', base, push.new], q);
-      if (from.code !== 0) return problem(`merge-base: ${said(from)}`);
+      if (from.code !== 0) return unread(`merge-base: ${said(from)}`);
       const changed = await run(['diff', '--name-only', '--no-renames', '-z', from.stdout.trim(), push.new], q);
-      if (changed.code !== 0) return problem(`diff: ${said(changed)}`);
+      if (changed.code !== 0) return unread(`diff: ${said(changed)}`);
       return { file, files: changed.stdout.split('\0').filter((f) => f !== '') };
     } finally {
       rmSync(quarantine, { recursive: true, force: true });

@@ -11,14 +11,16 @@
     "job": {
       "type": "string"
     },
+    "schedule": {
+      "type": "string"
+    },
     "backend": {
       "type": "string"
     }
   },
   "required": [
     "name",
-    "host",
-    "job"
+    "host"
   ],
   "additionalProperties": false
 }

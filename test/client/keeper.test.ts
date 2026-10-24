@@ -1,6 +1,7 @@
 // The hopper keeps its client targets on its own client release (issue #70): each probe asks the client
-// which release it runs and loads the hopper's when it differs — never while a job runs on that
-// machine, so no herdr call of a running job meets a client restarting. An old client, one that
+// which release it runs and loads the hopper's when it differs — never while a job is at work on that
+// machine, so no herdr call of a running job meets a client restarting; behind an hour while jobs are at work, it holds
+// new jobs off until they end (issue #2715). An old client, one that
 // predates releases, stays online and is reported once: it is added again with Add machine.
 import { execFile } from 'node:child_process';
 import { chmodSync, cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -12,7 +13,7 @@ import { readRelease } from '../../src/client/release.ts';
 import { mintToken } from '../../src/client/signature.ts';
 import type { ClientTransport } from '../../src/executors/client.ts';
 import { bridgeRelease } from '../../src/machines/client-bridge.ts';
-import { createClientReleaseKeeper } from '../../src/machines/client-release.ts';
+import { CLIENT_UPDATE_HOLD_MS, createClientReleaseKeeper } from '../../src/machines/client-release.ts';
 import * as field from '../fixtures/client-835e17bd3c9c6ac3/release.ts';
 import { startClient as startFieldClient } from '../fixtures/client-835e17bd3c9c6ac3/server.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
@@ -51,6 +52,33 @@ describe('keeping a client target on the hopper\'s release', () => {
     expect(probe).toMatchObject({ online: true, client: { current: false } });
     expect(loaded).toEqual([]);
     expect(readRelease(install).id).not.toBe(HOPPERS.id);
+  });
+
+  it('a job that only waits in its pane is not at work: the release is loaded (issue #2715)', async () => {
+    const { install, loaded, transport } = await olderClient();
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} } });
+    await keep(transport, () => ['job-waiting'], () => []);
+    await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
+    expect(readRelease(install)).toEqual(HOPPERS);
+  });
+
+  it('behind for an hour while jobs are at work: it holds new jobs off, and loads once they end (issue #2715)', async () => {
+    const { loaded, transport } = await olderClient();
+    const lines: string[] = [];
+    let now = Date.parse('2026-10-24T09:00:00.000Z'), atWork = ['job-busy'];
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) }, now: () => now });
+    expect((await keep(transport, () => atWork, () => atWork)).client).not.toHaveProperty('updateHold');
+    now += CLIENT_UPDATE_HOLD_MS - 1;
+    expect((await keep(transport, () => atWork, () => atWork)).client).not.toHaveProperty('updateHold');
+    now += 1;
+    const held = await keep(transport, () => atWork, () => atWork);
+    expect(held).toMatchObject({ online: true, client: { current: false, updateHold: { since: '2026-10-24T09:00:00.000Z' } } });
+    expect(lines.join('\n')).toMatch(/no new job goes there until the jobs at work end and it is loaded/);
+    expect(loaded).toEqual([]);
+    atWork = [];
+    expect((await keep(transport, () => atWork, () => atWork)).client).not.toHaveProperty('updateHold');
+    await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
+    expect(loaded).toEqual([HOPPERS.id]);
   });
 
   it('once no job runs there: the hopper\'s release is loaded, and the load is logged', async () => {

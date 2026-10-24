@@ -50,6 +50,7 @@ const WATCHER_WORDS: Record<string, { words: string; says: string; truth: string
   'intake-jobs': { words: 'intake vs jobs', says: 'intake', truth: 'job record or sync timer' },
   'branch-checks': { words: 'default branches vs checks', says: 'branch', truth: 'checks' },
   'stack-health': { words: 'stack health', says: 'stack', truth: 'healthy stack' },
+  'cleanup-jobs': { words: 'cleanup vs ended jobs', says: 'resource ledger', truth: 'job record' },
 };
 /** Each kind of drift in plain words. */
 const KIND_WORDS: Record<string, string> = {
@@ -70,6 +71,12 @@ const KIND_WORDS: Record<string, string> = {
   service_down: 'a service of the stack is down or unhealthy',
   part_unreadable: 'a part of the stack does not answer',
   database_strain: 'the database is under strain',
+  cleanup_mount: 'a cleanup failed: a file system is mounted in a dir',
+  cleanup_process: 'a cleanup failed: a process still runs in a dir',
+  cleanup_userns: 'a cleanup failed: files of a job\'s user namespace stay',
+  cleanup_permission: 'a cleanup failed: the hopper\'s user may not remove files',
+  cleanup_cause_unknown: 'a cleanup failed: its cause is not known (an older client)',
+  cleanup_reap_failed: 'a cleanup failed: the reap did not run to its end',
 };
 
 /** The states in which an item can be stuck: read first. */

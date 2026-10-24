@@ -27,7 +27,7 @@ import { createIssueDrafts, type IssueDrafter, type IssueDrafts } from '../issue
 import { ISSUE_DRAFT_TIMEOUT_MS } from '../domain/issue-drafts.ts';
 import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
 import {
-  branchChecksWatcher, createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, stackHealthWatcher, type ComponentWatchers,
+  branchChecksWatcher, cleanupJobsWatcher, createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, stackHealthWatcher, type ComponentWatchers,
 } from '../component-watchers/index.ts';
 import type { StackResources } from '../domain/stack-resources.ts';
 import { createLandingBatchGitHub } from '../landing-batches/github.ts';
@@ -37,7 +37,7 @@ import { batchClosingIssues, MERGE_STANDS } from '../domain/work-item-landing.ts
 import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { LOGIN_SCRIPT, LOGIN_SCRIPT_FILE, LOGIN_SCRIPT_VARIABLE } from '../logins/script.ts';
-import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { RELAY_CLIENT, RELAY_CLIENT_FILE, RELAY_SCRIPT, RELAY_SCRIPT_FILE, RELAY_SCRIPT_VARIABLE } from '../sandbox/relay-script.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { jobSkillsOf } from '../skill-library/index.ts'; import { conditionalSkillsCredentials } from '../domain/conditional-skills.ts'; import { createSkillSourceGitHub } from '../skill-library/github.ts'; import type { SkillSource } from '../skill-library/import.ts';
+import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { RELAY_CLIENT, RELAY_CLIENT_FILE, RELAY_SCRIPT, RELAY_SCRIPT_FILE, RELAY_SCRIPT_VARIABLE } from '../sandbox/relay-script.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { jobSkillsOf } from '../skill-library/index.ts'; import { conditionalSkillsCredentials } from '../domain/conditional-skills.ts'; import { createSkillSourceGitHub } from '../skill-library/github.ts'; import type { SkillSource } from '../skill-library/import.ts'; import { createScheduleSourceGitHub, type ScheduleSourceGitHub } from '../step-schedules/github.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
@@ -97,8 +97,8 @@ export interface UserGitHubProxy {
   infraPlans: InfraPlans;
   /** The out-of-band changes (issue #871): what this user's jobs' checks report, a person's marks, the controller identities. The infrastructure topology (issue #1781). */
   outOfBand: OutOfBandChanges; topology: Topology;
-  /** A library skill's folder read from a repository (issue #1911): this user's own connection, the account of the repository. */
-  skillSource: SkillSource;
+  /** A library skill's folder read from a repository (issue #1911); a step schedule's folder (issue #2716): this user's own connection, the account of the repository. */
+  skillSource: SkillSource; scheduleSource(repo: string): ScheduleSourceGitHub | { problem: string };
 }
 
 export interface UserGitHubProxyOptions {
@@ -259,10 +259,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         login: (repo) => o.accounts.account(keyOf(repo)),
       },
       reports,
-      skillSource: (repo) => {
-        const key = keyOf(repo);
-        return !o.accounts.account(key) ? { problem: notMineAt(key, notMine) } : createSkillSourceGitHub({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused) });
-      },
+      skillSource: (repo) => { const key = keyOf(repo); return !o.accounts.account(key) ? { problem: notMineAt(key, notMine) } : createSkillSourceGitHub({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused) }); },
+      scheduleSource: (repo) => { const key = keyOf(repo); return !o.accounts.account(key) ? { problem: notMineAt(key, notMine) } : createScheduleSourceGitHub({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused) }); },
       reads: (repo) => {
         const key = keyOf(repo);
         return !o.accounts.account(key) ? { problem: notMineAt(key, notMine) } : createProxyApi({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused), kind: 'per_job_read' });
@@ -288,7 +286,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // The hopper's own records (issue #1077, the next part): they need no GitHub connection, only their drift issues do.
         ledgerJobsWatcher({ ledger: o.store.workItems, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
         lanesJobsWatcher({ lanes: o.store.lanes, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
-        intakeJobsWatcher({ sources: o.sources, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
+        intakeJobsWatcher({ sources: o.sources, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }), cleanupJobsWatcher({ ledger: o.store.resourceLedger, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }), // issue #2715
         // The integration branch's health, and the stack's (issue #1077, the last part).
         branchChecksWatcher({
           repositories: () => o.accounts.jobRepositories('github'), now: () => o.clock.now().toISOString(),

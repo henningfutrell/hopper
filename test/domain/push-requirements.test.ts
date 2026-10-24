@@ -158,6 +158,10 @@ describe('an evaluation', () => {
     const lint = { id: 'lint', checks: [{ name: 'lint', exit: 0 }] };
     const fails = (coverageRun: { exit: number; measured?: Record<string, number> }) => judgeEvaluation(plan, [{ id: 'kotlin-coverage', checks: [{ name: 'changed-files coverage', ...coverageRun }] }, lint]);
     expect(fails({ exit: 1, measured: { changedLines: 90, changedBranches: 90 } }).passed).toBe(false);
+    // Any exit but 0 fails, 2 too (issue #2712: a gate that cannot run where the job runs): never a pass or a skip.
+    for (const exit of [1, 2, 127]) {
+      expect(fails({ exit, measured: { changedLines: 90, changedBranches: 90 } }).requirements[0]).toMatchObject({ status: 'failed', checks: [{ exit, passed: false, problem: `it exited ${exit}` }] });
+    }
     const missed = fails({ exit: 0, measured: { changedLines: 78, changedBranches: 71 } });
     expect(missed.passed).toBe(false);
     expect(missed.requirements[0]!.checks![0]!.problem).toBe('changedLines 78 is under its minimum 80');

@@ -11,7 +11,7 @@ import { signedOutFor } from './signed-out.ts';
 import { addressHolds, credentialHolds, herdrHolds, notReady, offNetwork, workTreeHolds } from './machine-holds.ts';
 import type { CapBand } from './usage.ts';
 import {
-  diskHolds, diskWord, drainedHolds, eligible, fitsLane, freeOf, homeless, leavingHolds, leftHolds, pinOf, problemHits, room, roomFor, templateHolds,
+  diskHolds, diskWord, drainedHolds, eligible, updateHolds, fitsLane, freeOf, homeless, leavingHolds, leftHolds, pinOf, problemHits, room, roomFor, templateHolds,
   unpinnedCap, type MachineState, type MachineStateWithCredentialHold,
 } from './assign.ts';
 
@@ -46,6 +46,7 @@ function causeOf(s: MachineStateWithCredentialHold, job: Job, pl: PriorityLanesI
   if (!windowsFits(m, job)) return 'is not a Windows machine';
   if (leavingHolds(m, job)) return 'is leaving';
   if (drainedHolds(m, job)) return `is drained since ${m.drained!.at}`;
+  if (updateHolds(m)) return `holds jobs off until its client is updated (behind since ${m.client!.updateHold!.since})`;
   if (leftHolds(m, job)) return 'is the lost machine the job moved off';
   if (homeless(m)) return 'has not answered a probe: its home is not known';
   if (diskHolds(m, job)) return `has ${diskWord(m)} disk (${freeOf(m)})`;

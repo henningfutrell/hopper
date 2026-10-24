@@ -555,7 +555,7 @@ export interface UserStore {
   connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;
   /** The token ledger (issue #2302): each model's token use in each agent session of each job; the resource ledger (issue #2504): what the hopper made for each job on a machine. */
   usageHistory: UsageHistoryRepository; tokenLedger: import('./token-usage.ts').TokenLedgerRepository; resourceLedger: import('./resource-ledger.ts').ResourceLedgerRepository;
-  machineHistory: MachineHistoryRepository; diskMeasures: import('./hopper-disk.ts').DiskMeasureRepository; deliveryLedger: import('./forecast-accuracy.ts').DeliveryLedgerRepository; // each machine's last disk measure (issue #2494); each step of each change, predicted and actual (issue #2554 part 6)
+  machineHistory: MachineHistoryRepository; diskMeasures: import('./hopper-disk.ts').DiskMeasureRepository; deliveryLedger: import('./forecast-accuracy.ts').DeliveryLedgerRepository; stepSchedules: import('./step-schedules.ts').StepScheduleRepository; // each machine's last disk measure (issue #2494); each step of each change, predicted and actual (issue #2554 part 6); the step schedules and their runs (issue #2716)
   /** `plugins`, `rules` and `job-rules`. */
   config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */

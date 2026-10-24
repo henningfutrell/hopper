@@ -28,7 +28,7 @@ export function secretFacts(s: VaultSecret): Fact[] {
     ...(s.scope ? [{ label: 'Scope', value: s.scope }] : []),
     { label: 'Set by', value: `${s.setBy} · ${when(s.createdAt)}` },
     ...(s.changedAt !== s.createdAt ? [{ label: 'Changed by', value: `${s.changedBy} · ${when(s.changedAt)}` }] : []),
-    ...(s.lastUsed ? [{ label: s.mints ? 'Last minted' : 'Last delivered', value: `${s.lastUsed.machine} · job ${s.lastUsed.job.slice(0, 8)} · ${when(s.lastUsed.at)}` }] : []),
+    ...(s.lastUsed ? [{ label: s.mints ? 'Last minted' : 'Last delivered', value: `${s.lastUsed.machine} · ${s.lastUsed.job !== undefined ? `job ${s.lastUsed.job.slice(0, 8)}` : `schedule ${s.lastUsed.schedule}`} · ${when(s.lastUsed.at)}` }] : []),
   ];
 }
 

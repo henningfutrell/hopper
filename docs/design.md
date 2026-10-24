@@ -67,7 +67,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076); whether a job's pushed commit holds a requirements file, in the same quarantine (`push-requirements-at.ts`, issue #2555) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
 | `src/work-items/` | the work-item ledger's fallback read (issue #1067, "The work-item ledger"): every 5 minutes, the issues of quiet items no job or person acts on and not done (every one at the start, issue #1105), read in one batched call with the user's own connection, a close or a reopen recorded as an event (`fallback-read.ts`); which items and the event are `src/domain/work-items.ts`; the item reconciler (`reconcile.ts`, issue #1891, "The item lifecycle"): every 5 minutes under its sweep lease, the items whose next check is due corrected by an event, as `src/domain/item-lifecycle.ts` says, a block's label change kept as GitHub outbox rows in that event's transaction (part 8), and its kill points for the crash harness (issue #1954) | engine, http, store, plugins, decider |
-| `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs and intake-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts` and `src/domain/drift-intake.ts`, of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
+| `src/component-watchers/` | component watchers (issue #1077, "Component watchers"): the runner — each watcher on its interval, the drift events, the drift issue found by its drift key, filed and updated, the setting (`service.ts`); what they ask GitHub with the user's own connection through `makeRequest` — issue and pull request states by URL in one GraphQL call, the drift issues on the hopper's repository (`github.ts`); the ledger-vs-GitHub watcher (`ledger-github.ts`); the ledger-vs-jobs, lanes-vs-jobs, intake-vs-jobs and cleanup-vs-jobs watchers, which read the store and the source sync's statuses (`store-watchers.ts`); the default-branch-vs-checks watcher, and the stack-health watcher, which reads the stack resources (`branch-stack.ts`); the comparison, the drift issue's text and the settings are `src/domain/drift.ts`, the comparisons of the hopper's own records `src/domain/drift-jobs.ts`, `src/domain/drift-intake.ts` and `src/domain/drift-cleanup.ts` (issue #2715), of the default branches `src/domain/drift-branches.ts`, of the stack `src/domain/drift-stack.ts`, the routes `src/http/ui/component-watchers.ts` | engine, http, store, plugins, decider |
 | `src/landing-batches/` | Landing batches (issue #1073, "Landing batches"): the batch runner's GitHub calls with the user's own connection — the default branch, the compare of the tested branch with it, a batch run's branch, its pull request, its check runs, its merge or close, a job's pull request moved to the landing branch and the fixed note on it (issue #1143); for a red batch the pull request a commit merged, GitHub's revert of it, a check's log and the fix issue, and for merge conflicts the tested branch merged into a back-merge branch (`github.ts`, `@octokit/request`) —, and one user's runner: a pass at start and every 2 minutes, a batch run started when due, read, merged on green, closed on red, each step an event, a step that throws stopping no other, a stuck pass recorded once, and Restart batch (`runner.ts`, issue #1333); a red batch's bisect, one step a pass, and the culprit's revert and fix issue (`red.ts`); a back-merge after merge conflicts, and its issue (`back-merge.ts`); each write that makes something found before it is made again, and a **kill point** after each write (`once.ts`, issues #1589, #1954); the settings, the due rule, the check verdict and the state from the events are `src/domain/landing-batches.ts`, the batch's points, the bisect's next step and the culprit's text `src/domain/landing-bisect.ts`, the back-merge's state and text `src/domain/landing-back-merge.ts`, the canary step (`canary.ts`; its rules, state and text `src/domain/landing-canary.ts`, "Landing batches: the canary"), the routes `src/http/ui/landing-batches.ts`, the user's GitHub for it and its pass `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
 | `src/direct-jobs/` | Direct jobs (issue #901, "Direct jobs"): the `direct` job source and the service that keeps a submission and takes its job in one transaction (`index.ts`; it follows a direct job's pull request through the `DirectPullRequests` port, issue #1068), and a submission as the item its job runs — the private line, the brief, the context block, or a direct query's look-only line and hints (issue #2184, `item.ts`, pure); the record and its view are `src/domain/direct-jobs.ts` | engine, http, plugins, decider, sources |
 | `src/promotions/` | Promote to GitHub (issue #946, "Promote to GitHub"): the scan of a promotion's text for secrets and personal data, and the text cleaned of both (`scan.ts`, pure), the GitHub calls with the person's own connection — the issue, the comment, and a committed artifact's branch and file (`github.ts`, `@octokit/request`), one user's promotions — the preview, the post or the edit of what was posted, the revoke, the events (`service.ts`); what carries over and how it reads, the record, the stale artifacts and the offer are `src/domain/promotions.ts`, the rows `src/store/promotions.ts` (tenant migration 51), the routes `src/http/ui/promotions.ts`, the user's GitHub for it `src/users/github-proxy.ts` | engine, http, store, plugins, decider |
@@ -77,6 +77,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/pending-approvals/` | Pending approvals (issue #2088, "Pending approvals"): what GitHub shows of the waiting runs a connection can approve — the repositories it reaches, those of the intake orgs not archived, their waiting runs and pending deployments — with each connected account's own connection, conditional GETs (`github.ts`, `@octokit/request`, `src/repo-checks/conditional.ts`); one user's read on its schedule, kept in memory, the view (`service.ts`); the rows, the intake orgs and the stale mark are `src/domain/pending-approvals.ts`, the route `src/http/ui/pending-approvals.ts` | engine, http, store, plugins, decider |
 | `src/help/` | the help book (issue #782, "Help"): the help pages under `help/` read, ordered by the contents page, rendered, their problems, and the help skill's answer (`book.ts`) | engine, store, plugins, executors, decider |
 | `src/windows-steps/` | Windows sandbox steps (issue #731, "Windows sandbox steps"): a step's scripts on the host, encoded for PowerShell (`powershell.ts`, pure), the host over ssh and scp (`ssh-host.ts`), one user's steps — checked, kept in the database and run by their `windows-step` saga (`step-saga.ts`, issue #1611), one at a time per Windows host by the step's **host lease**, stopped at the timeout, recorded, the host's scratch swept after each, results kept an hour (`service.ts`); a box step is a need step (`src/sandbox/need-steps.ts`, issue #1349), the `windows-hosts` record read and written (`hosts.ts`), `hopper-step` and its help (`script.ts`); the host, a step's request and a step kept are `src/domain/windows-steps.ts`, the seams `WindowsStepHost` and `WindowsStepRepository` (`src/store/windows-steps.ts`), the routes `src/http/job-step.ts` and `src/http/ui/windows-hosts.ts` | engine, http, store, plugins, decider |
+| `src/step-schedules/` | step schedules (issue #2716, "Step schedules"): one user's schedules of a box step run with no job — saved, granted the vault, run now, removed, each run claimed in the database once per due time and run by its `scheduled-run` saga in a need box of its template through the sandbox module, its output kept masked (`service.ts`, `saga.ts`); the folder of a repository at its default branch, read with the user's own connection (`github.ts`); the schedules, the runs and the due times are `src/domain/step-schedules.ts`, the rows `src/store/step-schedules.ts` (tenant migration 100), the routes `src/http/ui/step-schedules.ts`, the CLI `src/cli-operator-schedule.ts` | engine, http, store, plugins, decider |
 | `src/skills/` | skills (issue #582, "Skills: what the hopper can set up for a box"): the baked-in skills, the catalog, a link's text and a skill's credential (`catalog.ts`, pure; issue #583), `hopper-skill` (`script.ts`), the broker (`broker.ts`), the built-in library skills a job may also load by name (`work`, and `orchestrate`, its alias, issue #2145), the skill library's own files and version, and the check of a repository's own copy a job says it follows (`library.ts`, issue #1909) —, a request a job waits on — its watch opened, asked again when the vault changes or the job subscribes (`waits.ts`, issue #613); a template request, its needs, its name and the read policy's and the auto-approve policy's approval (`template-request.ts`, issues #716, #1001); needs read from plain words (`needs-in-words.ts`, issue #708); the bastion ask (`bastion-skill.ts`, issue #2146); a job's token through `src/github-proxy/token.ts`, Access's decision and a box's template through its route, `src/http/job-skill.ts` | engine, http, store, plugins, executors, decider |
 | `src/run-skills/` | run skills (issue #472, "Run skills"): each run skill's plain files (`file-issue/`: `instructions.md`, `template.md`), its load and its id — a content hash, as a client release's — and the check that its files are the ones its id names (`index.ts`); the constraints of a drafted issue, one list for the skill's text and the hopper's check, the draft scope they are checked against, the masks of a draft and of its context, and the size limits (`constraints.ts`, pure, issue #475); the file-issue prompt and the answer it must give (`file-issue.ts`, pure); a file-issue run: any provider's turn, its request checked against the draft scope, its answer checked in the form asked for, masked and checked against the constraints, and the user's `claude` in print mode (`draft.ts`). Not `src/skills/` (what the hopper sets up for a box) | engine, http, store, executors, decider |
 | `src/skill-library/` | the skill library (issue #1911, "The skill library"): the built-in library skills' files (`built-in/<name>/`, each a `SKILL.md` and the files beside it) and their load, named by a content id as a run skill's; the user's skills over their store; create, edit, duplicate and remove, the work skill settings' change, each with its event; and a job's work skill and its conditional skills (issue #1924, "Conditional skills"), chosen at its first start and kept, and their done criteria for the done check, with the deletes the job's approved text allows (`index.ts`); the skills a job's work skill requires, chosen and kept with it (`index.ts`); a skill imported from a folder of a GitHub repository and refreshed (`import.ts`), read with the user's own connection (`github.ts`, the `@octokit/request` binding). Its pure rules are `src/domain/skill-library.ts`. Not `src/skills/` (what the hopper sets up for a box), not `src/run-skills/` | engine, http, store, executors, decider |
@@ -1040,6 +1041,16 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   reaps that job again only once `STUCK_RETRY_MS` (6 hours) passed (issue #1613): each pass would only fail the same way,
   and the reset of its container storage is slow. A scope or a process of the job is stopped at each pass all the same.
   Kept in memory: after a restart, the first pass tries it again and tells it again.
+  Issue #2715: with each `hopper-left <path>` the reap names why (`hopper-left-why <cause> <path>`): `mount` (a file
+  system mounted in it, from `/proc/self/mountinfo`), `process` (a process whose cwd, exe or root is in it), `userns`
+  (files of another user in it: the job's user namespace, which `podman unshare` could not enter) or `permission`. The
+  ledger entry's reason carries it (`<path> is still there: <cause>`), and a cleanup that keeps failing is drift for
+  the cleanup watcher ("Component watchers"), never a person's todo. A client older than this names no cause.
+- **Loose entries in the scratch area** (issue #2715). `.worktrees/@scratch` holds only job scratch dirs, each named by
+  its job's id (a UUID). A job that wrote a file beside its own dir left it there, and no sweep judged it. The reap, in
+  the work tree it reaps in and unless it keeps, removes each entry of the scratch area that is not named as a job's
+  (and not `.gitignore`) once nothing in it changed for `LOOSE_GRACE_DAYS` (7), and names each (`hopper-loose-removed
+  <path>`). A dir named as a job's stays: the sweep judges it against the jobs it knows.
 - **Each job its own git worktree** (issue #379). One work tree serves every job given it, so jobs
   running at once in one repository stepped on each other — branches, the index lock, uncommitted
   files, builds; seen live with four jobs in one repository on one machine, and a job-rules line asking
@@ -5858,11 +5869,21 @@ client target runs a client the hopper did not release.
   the answer is `{code, stdout, stderr}`. The scripts live in `server.ts`.
 - **Keeping it current** (`src/machines/client-release.ts`): each probe of a client target (every 30 s)
   asks `POST /release` after `status server`; when it is not the hopper's id, the hopper loads its
-  release — never while a job runs on that machine (a running job's herdr calls must not meet a
-  restarting client; it loads after). Each outcome is one log line per machine: `runs the hopper's
-  release`, `loaded release <id> (was <id>)`, `loaded the bridge`, `loading it once no job runs there`, a
+  release — never while a job is at work on that machine (a running job's herdr calls must not meet a
+  restarting client; it loads after). A job on a lane is at work; one that only waits in its pane (a
+  question, a wait) is not: its pane is herdr's, which runs apart from the client. Each outcome is one log
+  line per machine: `runs the hopper's release`, `loaded release <id> (was <id>)`, `loaded the bridge`,
+  `loading it once no job is at work there`, `no new job goes there until the jobs at work end`, a
   failed load, `cannot update`, or a client older than releases (it answers no release: still online; add
   it again with Add machine).
+- **The update hold** (issue #2715). A machine that always had a job at work kept its client for a week: the
+  hopper loaded no release there, so the reap fixes of issues #2490 and #2685 never ran on it, and 105 scratch
+  dirs of ended jobs stayed. Now a client that runs another release than the hopper's for
+  `CLIENT_UPDATE_HOLD_MS` (an hour, counted in memory from the first probe that found it behind) while jobs are at
+  work there holds jobs off: its probe says `client.updateHold {since}`, and the decider places no job there, new or
+  back to its pane (`updateHolds`, `src/decider/assign.ts`); the wait reason and the lane's idle reason say so, and
+  Machines shows it on the client release. The jobs at work end, the release is loaded, the client restarts, and
+  the machine takes jobs again. An hour, so a hopper that updates often does not drain its machines at each update.
 - **Clients with a fixed file list** (issue #545). A client released before manifests checks a load
   against the list of names fixed in its own `release.ts` (exactly those names, an id hashed over them in
   order) and refuses anything else: on 2026-10-09 a client of seven files refused the hopper's ten, stayed
@@ -14980,7 +15001,7 @@ only the key's JWK SHA-256 thumbprint (RFC 7638, `jkt`) in the grant's body; the
   - A device grant request with a proof on the ask (`POST /ui/auth/device-grant`) binds its grant to the proof's key.
     The person sees "bound to the asking agent's key" before they approve. The poll then needs a proof of that key: a
     device code alone, or with another key's proof, takes nothing (401) and the request stands.
-  - A mint names `jkt` (`POST /ui/api/api-tokens` `mint`, `hopper token mint --jkt`): the thumbprint the agent shows. A
+  - A mint names `jkt` (`POST /ui/api/api-tokens` `mint`, `hopper token mint --jkt=<thumbprint>`; a thumbprint can start with `-`, so the CLI takes it after `=`): the thumbprint the agent shows. A
     `jkt` on an ask with a proof must be the proof's (400).
   - An unbound grant's refresh with a proof binds it to the proof's key. The refresh token a person copied to the agent
     is then worth nothing to anyone without the key, from the agent's first refresh on.
@@ -23936,6 +23957,15 @@ need no GitHub connection; only their drift issues do.
   A source that fails its syncs is not drift here: the source sync tells the owner of it already (`source.stalled`), and
   the cause is mostly outside the hopper. An item of these kinds is an issue's URL or a source's name, hashed in the issue
   as every item is.
+
+**The cleanup: cleanup vs ended jobs** (`cleanup-jobs`, issue #2715; `src/component-watchers/store-watchers.ts`, every 5
+minutes; the comparison `src/domain/drift-cleanup.ts`, pure). A thing an ended job left on a machine is a hopper bug, not
+a person's chore. It reads the resource ledger's cleanup leftovers ("The resource ledger", `cleanupLeftoversOf`): each
+ended job whose entry still failed once the grace period after its end passed is one item, its key the job's id, in one
+kind per cause the reap named — `cleanup_mount`, `cleanup_process`, `cleanup_userns`, `cleanup_permission`,
+`cleanup_cause_unknown` (no cause: an older client, or a failure before issue #2715), `cleanup_reap_failed` (the reap
+did not run to its end). An entry whose machine is offline, or that no executor reaches, is no drift: the machine shows
+it, and bringing a machine online is the one act a person has. No path and no machine goes in an item.
 
 **The integration branch: default branches vs checks** (`branch-checks`; `src/component-watchers/branch-stack.ts`, every
 15 minutes; the comparison `src/domain/drift-branches.ts`, pure). The hopper merges jobs into each job repository's
@@ -34326,11 +34356,13 @@ as `hopper-relay` is — a POSIX sh line that runs a Node module with no depende
 the job's work tree: `sh "$HOPPER_REQUIREMENTS" check`.
 
 1. It reads the commit checked out (HEAD, on a branch; changes not committed are refused: an evaluation is of a commit),
-   each requirements file in the commit, and the repository from `origin`.
+   and the repository from `origin`.
 2. It asks the hopper the branch's base (`POST /job/requirements`, `op: base`): the base the git proxy judges the push
    against, as the shrink guard's — the open pull request's base, else the landing branch, else the default branch
    (`baseBranchOf`). `--base` names one.
-3. It fetches the base, and lists the files the commit changes from their merge base (`git diff --no-renames`).
+3. It fetches the base, and lists the files the commit changes from their merge base (`git diff --no-renames`). It reads
+   each requirements file of the base's tip and of the commit; the commit's file replaces the base's at the same path
+   (issue #2712: a branch made before its repository kept a requirements file still meets it).
 4. The hopper plans (`op: plan`): which requirements apply, with the job's kind of work and labels, and why each other one
    is skipped.
 5. It runs each check of each requirement that applies, here, on the job's machine, and keeps the output here.
@@ -34349,8 +34381,8 @@ in the client. One copy of the rules, in the domain, tested once; the client onl
 **The gate** (`src/users/push-requirements.ts`, the git broker's `pushRequirements`). In the git proxy, after the shrink
 guard, each branch a job's push moves to a commit is judged: the job's newest evaluation of that commit in that
 repository passed, the push goes on; it failed, the push is refused with the requirements that failed. With no
-evaluation of the commit, the commit's tree is read in the user's mirror, in the push's quarantine
-(`src/git-mirror/push-requirements-at.ts`): no requirements file, the push goes on, as before; one, the push is refused,
+evaluation of the commit, the commit's tree and the base's tip are read in the user's mirror, the commit in the push's
+quarantine (`src/git-mirror/push-requirements-at.ts`): no requirements file in either, the push goes on, as before; one, the push is refused,
 as git's own refusal: `octo/tools has push requirements, and 4f1c2a9e8b7d has no passing evaluation: run sh
 "$HOPPER_REQUIREMENTS" check in the work tree at that commit, fix what fails, and push again`. With no requirements file,
 the **default push requirements** (below) are planned against the files the commit changes from where it leaves the base,
@@ -34358,7 +34390,23 @@ read in the same quarantine (`git merge-base`, `git diff --name-only --no-rename
 job's kind of work and labels: one applies, the push is refused the same way, naming it (`the hopper's default push
 requirements apply to 4f1c2a9e8b7d (workflows), …`); none applies, the push goes on with no evaluation. A new commit (an
 amend, a rebase) needs a new evaluation. Git cannot say (no credential, git failing): the push goes on, as with the shrink guard —
-a net, not a gate a broken mirror may close on every push. A branch deleted is not judged.
+a net, not a gate a broken mirror may close on every push. But when the base's tip holds a requirements file and only the
+pushed commit cannot be read, the push is refused as for one that holds it (issue #2712). A branch deleted is not judged.
+A refusal of a failed evaluation names each failed requirement with why: `kotlin-coverage (changed-files coverage: it
+exited 2)`.
+
+**A gate that cannot run where the job runs** (issue #2712, 2026-10-24). Seen: a repository added a coverage gate to its
+requirements file, and for a day its jobs' branches that changed the files it names still reached GitHub and failed that
+gate in CI. Those branches were made before the file was on the base, so their commits held no requirements file: the
+client found no requirement, and the gate read none in the commit. Its command, run on a job machine with no JDK and no
+container runtime, exits 2. What holds now:
+- The base's requirements hold for every branch that merges into it (step 3 above, and the gate).
+- Any exit but 0 fails a check: 1, 2, 127 alike (`judgeEvaluation`). A failed check is never a pass or a skip, and the push
+  of its commit is refused with its exit code; the client prints the last 200 lines of its output.
+- A check that needs what the job's machine lacks runs where it is: its `run` can be a box step,
+  `sh "$HOPPER_STEP" box <template> --script <file>`, with the files it reads as `--input` ("Box steps"), whose exit code is the step's. The client passes the
+  job's environment to each check, so `HOPPER_STEP` is there. Not taken: the hopper picks a box for a requirement by
+  itself. The repository knows its toolchain, and a box needs the template's approval; the file names it once.
 
 **Trust.** The job runs its checks and reports their exit codes: a job that lies passes its own gate. The gate is for a
 job that works as asked, to catch in a minute what CI catches in fifteen; CI still runs every gate on the pull request.
@@ -34821,3 +34869,82 @@ round trip can still lose its processes. Its failure then names the sweep and ru
 
 **Verification:** `test/engine/sweep-live.test.ts` (a job with an answer pending is not reaped, a parked one is; a job
 started after the pass read the jobs is not reaped; the event and the log line; the failure text and its cause).
+
+## Step schedules (issue #2716, 2026-10-24)
+
+**The problem.** A box step ran only from a job: a job asked, the hopper ran one command in a need box of the job's
+approved template. A task that must run each day on its own — the phrase-drill database backup, which must not depend on
+one workstation, or the scheduled read-only infra check that issue #871 leaves for later — had nothing that ran it.
+
+**A step schedule** (`StepSchedule`, `src/domain/step-schedules.ts`) is a person's: a name, a template, a repository, a
+folder of it (`input`) and a script in that folder, a daily time in UTC (`HH:MM`), and a timeout. The hopper runs
+`sh ./<script>` in a new need box of the template at each due time, with no job and no agent. The folder is read at the
+repository's default branch when the run starts, with the user's own GitHub connection (the account of the repository,
+`src/step-schedules/github.ts`: the default branch, its head commit, the trees down to the folder, the folder's tree,
+each blob, at most 1000 files and 32 MiB), and put in the box's work directory at its repository paths, as
+`hopper-step box --input <path> --script <path>/<script>` puts a job's inputs. The tar keeps a path over 100 bytes in the
+ustar prefix (`tarNameParts`, `src/sandbox/socket-http.ts`).
+
+- **Saved** (`POST /ui/api/step-schedules` `save`, `hopper schedule save`; operator, a box action). The template must be
+  there, and must hold no profile the vault mints (an AWS role, a cluster or a namespace): a scheduled run gets no minted
+  credential (409, `NO_MINT_ON_SCHEDULE`; not built). A due time before the save never runs.
+- **When it runs** (`dueNow`). Each 30 s each hopper looks at the user's schedules. The newest due time at or before now,
+  after the save, is due unless a run of it is there. A hopper that was down across several due times runs the newest
+  once when it starts; the older ones are not run.
+- **Once, and one at a time.** A run is claimed in the user's database before anything runs (`scheduled_runs`, tenant
+  migration 100): a unique index on the schedule and due time of due runs, and one on the schedule of the runs not ended.
+  So two hoppers on one database claim it once between them, and **run now** (`run`, `hopper schedule run`) is refused
+  (409) while a run of the schedule has not ended. A claim no saga took within a minute (a hopper that stopped between
+  the two) ends `interrupted`, so the schedule is not held for good.
+- **The `scheduled-run` saga** (`src/step-schedules/saga.ts`), one per run, begun at the claim, runs it on whichever host
+  holds it. A run whose need box started in the sandbox runs ledger before a stop is **not run again**: it ends
+  `interrupted` with `STEP_INTERRUPTED`, as a need step does (issue #1568), because the script may have had its effect.
+  The need box's sweep leaves a box another live hopper's `scheduled-run` saga holds, as it leaves a need step's.
+- **The run.** The template must be ready, as for a job's box step (`templateWait`): an approval for some jobs only does
+  not cover a schedule. Its vault secrets — what the template gives, but a shared secret and its agent credential — go in
+  only when a person granted the schedule the vault: read for that run only through the vault's step delivery (the ask
+  names the `schedule` in place of a job: no job need be at work), copied into the box as files, never in its
+  environment, each value masked in the kept output. Then the sandbox module's `needStep` runs the box, as a box step's
+  (`run.jobId` is `schedule:<name>` in the sandbox runs ledger and the trace). The output is kept, at most 1 MiB, with
+  the start, end, outcome (`succeeded`, `failed`, `interrupted`), exit code and problem; the newest 30 runs of each
+  schedule are kept.
+- **The schedule's vault grant** (`grant`, `hopper schedule grant`). A person's act, after Access as a job's vault grant
+  (OpenFGA `vault_grant#can_grant`, the key `schedule:<name>`); a delegate approver is refused, since nothing waits.
+  `revoke` takes it back. A save that changes the template, the repository, the folder or the script takes it back: a
+  person grants what runs now. A time or a timeout keeps it.
+- **A failed run.** A script that exits non-zero, a timeout, or a run the hopper could not start (exit 125 and the
+  problem: the template not ready, no grant, the files not read, the schedule removed) is `step_schedule.run_failed`.
+  The Grok Bot routine sends it as it sends `job.failed` (`error` the problem, or the exit code). Needs you's
+  **Schedules** row lists each schedule whose newest run did not succeed, with why and `hopper schedule runs <name>`,
+  until a run of it succeeds (`GET /api/step-schedules` `failed`).
+- **Reads.** `GET /api/step-schedules` (each schedule, its next due time, its newest run), `GET /api/step-schedules/:name`
+  (its runs with their output), `hopper schedule list` and `hopper schedule runs <name>`. `remove` (409 while a run has
+  not ended) removes the schedule and its runs.
+
+**Decisions:**
+- **The grant is the schedule's, not a job's.** The vault's law gives only to a job a person granted it; a schedule has
+  no job, so the person's grant is kept on the schedule, decided by Access as a job's is. It covers what the schedule
+  runs: a save that changes that drops it.
+- **A claim in the database, then a saga.** The two unique indexes make "once per due time" and "never two at once" the
+  database's, across restarts and hosts; the saga gives the run's lease and the resume on another host, and the ledger
+  check makes a resume never run the script twice.
+- **No minted credential, and daily times only.** The backup needs vault secrets only. Minting for a run with no job is
+  its own change to the vault's mint (which checks a job at work); a cron expression is not needed yet.
+- **No page of its own.** The command line and the API are the acceptance; Needs you's row links to Vault.
+
+**Residual risk, stated.** A run executes what the repository's default branch holds when it starts: whoever can push
+there changes what runs with the schedule's vault secrets. The person who grants a schedule trusts that branch, as the
+repository's own review guards it. The script holds the secret values in its box, and can send one to an egress host the
+template names, as a box step can (issue #1875).
+
+**Not built.** A minted credential for a scheduled run; a cron expression; a UI page for schedules; the scheduled
+read-only infra check of issue #871 (it can use a schedule once a run can mint).
+
+Tests: `test/domain/step-schedules.test.ts` (due times, a missed one once, what a save may hold, what changes what runs),
+`test/step-schedules/service.test.ts` (the real database: claimed once however often a hopper looks, two hoppers claim
+once, after a restart a due time that ran is not run again and a missed one runs once, a run whose box started is not
+run again, never two at once, the folder at its paths, the secrets only after the grant and masked, failures, the grant
+taken back), `test/integration/step-schedules.test.ts` (the real daemon, saga coordinator and CLI: save, list, grant, run
+now, a run that cannot read its files fails and is listed for Needs you, revoke, remove), `test/vault/step-delivery-schedule.test.ts`,
+`test/sandbox/files-tar-prefix.test.ts`, `test/cli-operator-schedule.test.ts`, `test/plugins/grokbot-step-schedules.test.ts`,
+`test/ui/step-schedules-needs-you.test.ts`.

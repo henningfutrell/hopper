@@ -359,7 +359,10 @@ export function clientReleaseText(client: MachineSnapshot['client']): string | n
   if (client?.current === undefined) return null;
   if (!client.release) return 'none: older than releases, add it again: Add machine';
   if (client.current) return `${client.release} (the hopper's)`;
-  return client.update ? `${client.release} (not the hopper's, and it cannot be updated from here)` : `${client.release} (not the hopper's: loaded once no job runs there)`;
+  if (client.update) return `${client.release} (not the hopper's, and it cannot be updated from here)`;
+  // Issue #2715: behind too long while jobs were at work, it takes no new job until they end and it is updated.
+  if (client.updateHold) return `${client.release} (not the hopper's since ${client.updateHold.since}: no new job goes there until the jobs at work end and it is updated)`;
+  return `${client.release} (not the hopper's: loaded once no job is at work there)`;
 }
 
 /**

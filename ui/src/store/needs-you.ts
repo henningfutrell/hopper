@@ -1,5 +1,5 @@
 // Needs you's rows as the UI has them now (issue #897): the request cards Intake shows (issue #1193) and the labelled issues not assigned to the user (issue #1614) and the jobs a trust stamp holds (issue #655), what jobs on boxes wait for
-// in the vault, the infra plans that wait for a person, the machines signed out of their agent tool (issue #1128), the machines not ready (issue #1248), the pull requests the hopper gave up on (issue #927), the checks read problems (issue #1244), the stuck landing passes (issue #1333), the tagged items (issue #1141), the pre-sort, and each section's badge by its one rule. The nav's badges and the Needs you page read these.
+// in the vault, the infra plans that wait for a person, the machines signed out of their agent tool (issue #1128), the machines not ready (issue #1248), the pull requests the hopper gave up on (issue #927), the checks read problems (issue #1244), the stuck landing passes (issue #1333), the tagged items (issue #1141), the step schedules whose last run failed (issue #2716), the pre-sort, and each section's badge by its one rule. The nav's badges and the Needs you page read these.
 import { useMemo } from 'react';
 import { planWaitingLines, plansHigh, plansWaiting } from '@/model/infra-plans';
 import { notAssignedWaiting, requestsWaiting } from '@/model/intake';
@@ -13,7 +13,8 @@ import { notReadyLines } from '@/model/machines';
 import { budgetPausedLines } from '@/model/token-ledger';
 import { accessRequestsHigh, accessRequestsWaiting, unknownAssetLines } from '@/model/vault';
 import { useHopper } from './index';
-import { useInfraPlans, useLandingBatches, usePullRequestsView, useToolAccounts } from './polled';
+import { failedScheduleLines } from '@/model/step-schedules';
+import { useInfraPlans, useLandingBatches, usePullRequestsView, useStepSchedules, useToolAccounts } from './polled';
 import { useAwaitingSort, useSectionBadges, useServerNow } from './selectors';
 import { useVault } from './vault';
 
@@ -44,8 +45,10 @@ export function useNeedsYou(): NeedsYouRow[] {
   const landing = useLandingBatches();
   const stuckLanding = useMemo(() => stuckLandingLines(landing), [landing]);
   const budgetPaused = useMemo(() => budgetPausedLines(Object.values(jobs)), [jobs]);
+  const schedules = useStepSchedules();
+  const failedSchedules = useMemo(() => failedScheduleLines(schedules), [schedules]);
   const tagged = useHopper((s) => taggedWaiting(s.sources));
   const sorting = useAwaitingSort();
   const sections = useSectionBadges();
-  return useMemo(() => needsYouRows({ intake, access, accessHigh, unknownAssets, plans, plansHigh: planHigh, planLines, signedOut, notReady, budgetPaused, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections }), [intake, access, accessHigh, unknownAssets, plans, planHigh, planLines, signedOut, notReady, budgetPaused, gaveUp, checksUnread, stuckLanding, tagged, sorting, sections]);
+  return useMemo(() => needsYouRows({ intake, access, accessHigh, unknownAssets, plans, plansHigh: planHigh, planLines, signedOut, notReady, budgetPaused, gaveUp, checksUnread, stuckLanding, tagged, failedSchedules, sorting, sections }), [intake, access, accessHigh, unknownAssets, plans, planHigh, planLines, signedOut, notReady, budgetPaused, gaveUp, checksUnread, stuckLanding, tagged, failedSchedules, sorting, sections]);
 }

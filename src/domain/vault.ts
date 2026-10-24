@@ -157,7 +157,8 @@ export interface VaultSecret {
    */
   mints?: Asset;
   /** When it was last delivered, to which machine, for which job (issue #558, slice 3); for a minting credential, when it last minted. */
-  lastUsed?: { at: string; machine: string; job: string };
+  /** The last step it was given to: a job's, or a step schedule's run (issue #2716). */
+  lastUsed?: { at: string; machine: string } & ({ job: string; schedule?: undefined } | { schedule: string; job?: undefined });
   /** A system secret's last 4 characters (issue #658), kept when it is set: what its page shows. */
   last4?: string;
   /**

@@ -1,9 +1,12 @@
 // The watchers of the hopper's own records (issue #1077, design.md "Component watchers"): the work-item ledger against the
-// job records, the lanes against the jobs they run, and intake against the jobs and the sync timers. Each check reads the
+// job records, the lanes against the jobs they run, intake against the jobs and the sync timers, and the resource ledger
+// against the ended jobs (issue #2715). Each check reads the
 // store in one synchronous pass, so no event lands between its reads, and answers the drift (`src/domain/drift-jobs.ts`,
 // `src/domain/drift-intake.ts`). They need no GitHub connection.
 import { LANES_JOBS, LEDGER_JOBS, lanesJobsDrift, ledgerJobsDrift } from '../domain/drift-jobs.ts';
 import { INTAKE_JOBS, intakeJobsDrift } from '../domain/drift-intake.ts';
+import { CLEANUP_LEDGER, cleanupDrift } from '../domain/drift-cleanup.ts';
+import { cleanupLeftoversOf, type ResourceLedgerRepository } from '../domain/resource-ledger.ts';
 import type { IntakeOutcome } from '../domain/intake.ts';
 import type { JobRepository, LaneRepository } from '../domain/store.ts';
 import type { Job, JobStatus, SourceStatus } from '../domain/types.ts';
@@ -82,6 +85,19 @@ export function intakeJobsWatcher(o: Omit<Options, 'jobs'> & { jobs: Pick<JobRep
         }
       }
       return intakeJobsDrift(sources, jobs, o.now(), o.graceMs ?? STORE_WATCHER_GRACE_MS);
+    },
+  };
+}
+
+/** The resource ledger against the ended jobs (issue #2715): a cleanup that keeps failing is a hopper bug, told as drift. */
+export function cleanupJobsWatcher(o: Pick<Options, 'now' | 'intervalMs'> & { jobs: Pick<JobRepository, 'get'>; ledger: Pick<ResourceLedgerRepository, 'open'> }): ComponentWatcher {
+  return {
+    name: CLEANUP_LEDGER,
+    component: 'the resource ledger',
+    truth: 'the job records',
+    intervalMs: o.intervalMs ?? STORE_WATCHER_INTERVAL_MS,
+    async check() {
+      return cleanupDrift(cleanupLeftoversOf(o.ledger.open(), (id) => o.jobs.get(id), Date.parse(o.now())));
     },
   };
 }

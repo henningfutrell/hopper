@@ -196,7 +196,9 @@ describe('machine defaults', () => {
 describe('clientReleaseText (issue #70)', () => {
   it('a client target\'s release, and whether it is the hopper\'s; nothing for any other machine or before a probe', () => {
     expect(clientReleaseText({ release: '0123456789abcdef', current: true })).toBe('0123456789abcdef (the hopper\'s)');
-    expect(clientReleaseText({ release: '0123456789abcdef', current: false })).toBe('0123456789abcdef (not the hopper\'s: loaded once no job runs there)');
+    expect(clientReleaseText({ release: '0123456789abcdef', current: false })).toBe('0123456789abcdef (not the hopper\'s: loaded once no job is at work there)');
+    expect(clientReleaseText({ release: '0123456789abcdef', current: false, updateHold: { since: '2026-10-24T09:00:00.000Z' } }))
+      .toBe('0123456789abcdef (not the hopper\'s since 2026-10-24T09:00:00.000Z: no new job goes there until the jobs at work end and it is updated)');
     expect(clientReleaseText({ current: false })).toBe('none: older than releases, add it again: Add machine');
     expect(clientReleaseText({})).toBeNull();
     expect(clientReleaseText(undefined)).toBeNull();

@@ -65,6 +65,8 @@ export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: s
   if (e.type === 'source.stalled') return { ...b, sourceName: e.data.source, error: e.data.error, since: e.data.since };
   if (e.type === 'connected_account.expired') return { ...b, provider: e.data.provider, account: e.data.account, reason: e.data.reason };
   if (e.type === 'source.request_opened') return { ...b, sourceName: e.data.source, issueUrl: e.data.key, author: e.data.author, why: e.data.why };
+  // A step schedule's run that failed (issue #2716): which schedule, its exit code and why, as a failed job's error.
+  if (e.type === 'step_schedule.run_failed') return { ...b, schedule: e.data.schedule, run: e.data.run, exit: e.data.exit, outcome: e.data.outcome, error: e.data.problem ?? `the script exited ${String(e.data.exit)}` };
   // A blocked work item that waits on a person (issue #1891): why, in plain words, and the pull request it names.
   if (e.type === 'work_item.person_asked') {
     const d = e.data as { key: string; cause: BlockedCause; pullRequest?: string };

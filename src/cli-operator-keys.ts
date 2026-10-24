@@ -60,7 +60,7 @@ export function typesafeKeyCall(args: string[], stdin: () => string): Call {
 }
 
 export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>]
-                    [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]... [--jkt <thumbprint>]
+                    [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]... [--jkt=<thumbprint>]
                     [--repo <owner/name>]... [--source <name>]...
                                                      mint a grant for an agent (issue #881): its refresh token and first access
                                                      token printed once. The agent trades the refresh token at
@@ -70,7 +70,8 @@ export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset 
                                                      admin's grant with no fixed end; --box: its tokens may do a box action
                                                      (start a job, run a command, merge, update); --preset delegate-approver
                                                      with --deny prod: a delegate approver that never approves prod (issue #1138);
-                                                     --jkt: bind it to the agent's key, its JWK SHA-256 thumbprint: each refresh
+                                                     --jkt=: bind it to the agent's key, its JWK SHA-256 thumbprint,
+                                                     after = (a thumbprint can start with -): each refresh
                                                      and each use then needs a DPoP proof of that key (issue #892);
                                                      --repo, --source: limit what its tokens act on to the jobs, questions,
                                                      pull requests and items of these repositories and job sources (issue #892)
@@ -86,7 +87,7 @@ export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset 
                                                      next; its role at most --role (admin by default)
   hopper token deny <code>                           deny it: its agent is told`;
 
-const TOKEN_MINT = 'token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>] [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]... [--jkt <thumbprint>] [--repo <owner/name>]... [--source <name>]...';
+const TOKEN_MINT = 'token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>] [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]... [--jkt=<thumbprint>] [--repo <owner/name>]... [--source <name>]...';
 
 const whole = (flag: string, v: string | undefined): number | undefined => {
   if (v === undefined) return undefined;

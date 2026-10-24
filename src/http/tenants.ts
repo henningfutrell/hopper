@@ -48,6 +48,7 @@ import type { UserGitHubProxy } from '../users/github-proxy.ts';
 import type { WindowsSteps } from '../windows-steps/index.ts';
 import type { NeedSteps } from '../sandbox/need-steps.ts';
 import type { Bastions } from '../sandbox/bastions.ts';
+import type { StepSchedules } from '../step-schedules/service.ts';
 import type { SandboxRequests } from '../sandbox/requests.ts';
 import type { UsageRecorder } from '../usage/history.ts';
 import type { ResourceRecorder } from '../machines/history.ts';
@@ -117,6 +118,8 @@ export interface TenantParts {
   needSteps: NeedSteps;
   /** Bastions (issue #2146): each job's one need box that outlives a step, forwarding to its targets. */
   bastions: Bastions;
+  /** Step schedules (issue #2716): box steps a person scheduled, run with no job. */
+  stepSchedules: StepSchedules;
   /** Direct jobs (issue #901): jobs a person submits straight to the hopper, with no GitHub issue. */
   directJobs: DirectJobs;
   /** Search (issue #945): the user's index and the permission-checked search. */

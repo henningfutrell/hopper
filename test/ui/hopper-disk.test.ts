@@ -55,7 +55,7 @@ describe('the caches and container storage on a card (issue #2494)', () => {
 describe('cleanupLeftoversText (issue #2504 part 3)', () => {
   it('says how many things ended jobs left, of how many jobs, and how many removals failed', () => {
     expect(cleanupLeftoversText({ jobs: 1, entries: 1, failed: 0 })).toBe('1 thing of 1 ended job, not removed yet');
-    expect(cleanupLeftoversText({ jobs: 2, entries: 3, failed: 2 })).toBe('3 things of 2 ended jobs, 2 removals failed: see Failures');
+    expect(cleanupLeftoversText({ jobs: 2, entries: 3, failed: 2 })).toBe('3 things of 2 ended jobs, 2 removals failed: the hopper tries again, and Component watchers show why');
   });
 
   it('says what the leftovers hold on disk, and how many jobs the measure did not name (part 10)', () => {
