@@ -4,7 +4,7 @@
 // facts its card says now; on one machine's graph, the usage that limits it and its lane changes (issue #688). Pure.
 import { describe, expect, it } from 'vitest';
 import type { LaneChange, ResourceSeries, UsageSeries } from '../../src/domain/types.ts';
-import { allMachineLines, jobsUseText, machineLines, resourcesText, sparkValues } from '../../ui/src/model/machine-history.ts';
+import { allMachineLines, jobsUseText, laneMemoryText, machineLines, resourcesText, sparkValues } from '../../ui/src/model/machine-history.ts';
 
 const GIB = 1e9;
 const at = (h: number) => new Date(Date.parse('2026-10-08T00:00:00.000Z') + h * 3_600_000).toISOString();
@@ -102,6 +102,15 @@ describe('a machine row', () => {
     expect(jobsUseText({ ...r, jobMemoryBytes: { j1: 2 * GIB } })).toBe('1 job uses 2.0 GB');
     expect(jobsUseText(r)).toBeNull();
     expect(jobsUseText(undefined)).toBeNull();
+  });
+
+  // Issue #2722: a lane's memory is its job's scope's, now and at its peak, as its machine's meter last read it.
+  it('a lane: its job\'s memory now and its peak; none when the meter did not read the job\'s scope', () => {
+    const r = { cores: 8, memTotalBytes: 16 * GIB, memAvailableBytes: 4 * GIB, jobMemoryBytes: { j1: 1.2 * GIB, j2: 0.5 * GIB }, jobUse: { j1: { memoryPeakBytes: 2.5 * GIB } } };
+    expect(laneMemoryText(r, 'j1')).toEqual({ text: 'memory 1.2 GB · peak 2.5 GB', title: 'Its job uses 1.2 GB of memory now; its peak was 2.5 GB' });
+    expect(laneMemoryText(r, 'j2')).toEqual({ text: 'memory 0.5 GB', title: 'Its job uses 0.5 GB of memory now' });
+    expect(laneMemoryText(r, 'j3')).toBeNull();
+    expect(laneMemoryText(undefined, 'j1')).toBeNull();
   });
 
   it('memory held and host memory are named lines', () => {
