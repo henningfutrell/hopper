@@ -20,7 +20,7 @@ import { ProbeMarksInput } from './vault-probe-marks';
 import type { Send } from './vault';
 
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply', 'observe'];
-const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
+const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role', 'database'];
 export const sameProfile = (a: OperationProfile, b: OperationProfile) => profileText(a) === profileText(b);
 
 /** The operation profiles a template's boxes may ask for: each removable, and one more added from an operation, an asset kind and a name. */

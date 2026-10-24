@@ -95,7 +95,7 @@ export function SetForm({ secret, mintsFor, backends, local, busy, send, onDone 
         <Input className="h-9 text-sm" value={scope} maxLength={200} placeholder="k3s lab, namespace default, read-only" onChange={(e) => setScope(e.target.value)} /></label>
       <label className="block space-y-1"><Label>Mints for — the hopper mints short-lived credentials from it and never gives it out (optional)</Label>
         <Input className="h-9 font-mono text-sm" value={mintsSaid} maxLength={220} autoCapitalize="off" autoCorrect="off" spellCheck={false}
-          placeholder="cluster/lab or aws-account/123456789012" onChange={(e) => setMintsSaid(e.target.value)} />
+          placeholder="cluster/lab, aws-account/123456789012 or database/lab/apps/orders" onChange={(e) => setMintsSaid(e.target.value)} />
         {typeof mints === 'string' && <div className="text-xs text-bad">{mints}</div>}</label>
       {backends.length > 0 && <KeptIn backends={backends} kept={kept} local={local} onChange={setKept} />}
       {backend ? (
