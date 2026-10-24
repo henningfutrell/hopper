@@ -1,0 +1,1 @@
+- When a job opens a second pull request and it later gets merge conflicts, the hopper now updates it by itself, as it does the first one, and says so on it.

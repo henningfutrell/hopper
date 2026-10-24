@@ -496,7 +496,7 @@ function checkLines({ failed = [], rerun = false, rerunByHopper = false }: TendC
  * the hopper gave up (issue #1010). A `rebase` whose tend job failed: `baseAt`, the commit its base branch was at when the
  * hopper first saw the failure, and `baseMoved`, when the hopper then saw that branch at another commit.
  */
-export interface Tended { pullRequest: string; step: TendStep; nextJobId: string; retries?: number; again?: string; baseAt?: string; baseMoved?: string }
+export interface Tended { pullRequest: string; step: TendStep; nextJobId: string; retries?: number; again?: string; baseAt?: string; baseMoved?: string; companion?: true }
 
 /**
  * The reasons a job is cancelled on purpose (issue #1010): a person's cancel, or its source's — the issue gone, closed,

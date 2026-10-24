@@ -49,6 +49,8 @@ export function createWorld(): World {
         return {} as DomainEvent;
       },
       subscribe: (l: (e: DomainEvent) => void) => { listeners.add(l); return () => { listeners.delete(l); }; },
+      // No job opened a pull request through the hopper here (issue #1143 reopened): no companion pull request to read.
+      recent: () => [],
     },
     jobs: {
       get: (id: string) => jobs.get(id),

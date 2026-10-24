@@ -25695,6 +25695,57 @@ pull request in the domain, census and cadence tests, and Take into Intake over 
 closed with its note, the followed one left; none closed without merge conflicts, on a person's branch, or just moved; a refused
 close tried again).
 
+## Companion pull requests (issue #1143 reopened, 2026-10-24)
+
+**The problem.** In a job repository other than the hopper's, two pull requests sat with merge conflicts after their jobs
+finished, and nothing rebased them; comments on their issues asking for a rebase requeued nothing. Each job changed two
+repositories, so it opened two pull requests: one in the other repository that closes the issue, and one in the issue's
+own repository that records the work. The job followed the first one (`ownOpenPullRequestOf`, issues #2004, #2510). The
+second one was followed by no job, so no follow saw its merge conflicts and no tend started. It was no stray (no job named
+it in its source state), and the census skipped it: the ledger holds it as the item's pull request, from the job's own
+`pr.create` record at its end (issue #2693, `withOpened`). The tending of parts 1 to 4 only reaches a followed pull request.
+
+**A companion pull request** (`src/domain/companion-pull-requests.ts`) is an open pull request a job of an item opened
+through the hopper (`github_proxy.done` of op `pr.create`), in the item's own repository, that is not the one the item's
+newest job follows. That newest job **holds** the item's companions (`holdsCompanions`) when it ended, finished or failed,
+no tend job or rework took its pull request (`follow` not `tended` or `reworked`), no proposal handed its work on, and it is
+no failed tend.
+
+- **The read** (`src/sources/companions.ts`, the sync loop's half; `src/sources/github/companions.ts`, the source's). In a
+  round of every follow, after the census, the companions of each item whose newest job holds them, whose end is reported,
+  and whose work item is not done or dropped and whose issue is not closed, are read one by one
+  (`JobSource.readCompanions`, `GitHubApi.pullRequest`): state, merge conflicts (the hopper's mirror's answer where it has
+  one), base and head branch. What each read saw is kept on the holder (`companions` in its source state, by URL; JSON in the
+  job's body, no migration). One merged or closed is marked `ended` and read no more. A read that throws is logged and asked
+  again at the next round. No read for an item with no companion.
+- **The rebase.** A companion with merge conflicts is due as a `rebase` (`companionDue`) while its holder is the newest
+  job of its item and the holder's own followed pull request needs no tend (that one goes first). It goes through the
+  tending queue as any rebase: held behind a head that conflicts with it, the **base merge** first, else a **tend job** of
+  the item with the tend brief for the companion's URL. The queue's conflict check, the base merge and the base tip are
+  asked with the holder as if it followed the companion (`asFollowing`: its URL, base and head branch). The tend is
+  recorded as any: `follow: tended`, `tended` with `companion: true`, `job.pull_request_tended` with the companion's URL, and
+  the tend note on the companion. The tend job's push goes through the git proxy, so the **shrink guard** (issue #1096)
+  judges it. A failed companion rebase is retried once its base moves, at most three in a row (part 3), and its retry keeps
+  `companion`. A base merge that pushed marks the companion free of merge conflicts until the next read.
+- **What shows it.** The tend job runs the item again, so the item and the job's timeline show the tend and which pull
+  request it works on (`job.pull_request_tended`). The companion carries the tend note. The Pull requests card of the
+  holder names the companion while the tend job works on it, and goes back to the followed pull request after.
+- **After the tend.** The tend job's report follows the item's pull request as any job's does; it is the item's newest job,
+  so it holds the companions from then on, and the next read finds the rebased companion with no merge conflicts.
+
+**Not done, by decision.**
+
+- A companion of an item whose issue is closed, or whose work item is done or dropped, is not read: a tend is a Run again
+  of the item, and Run again reopens a closed issue (issue #2127).
+- A companion in another repository than the item's: a tend job works in its item's repository.
+- "Behind" with no merge conflicts, as for a followed pull request (part 4).
+- The pull requests a job did not open through the hopper: the census lists them (issue #1176).
+
+Tests: `test/domain/companion-pull-requests.test.ts` (which job holds which companions, what a read keeps, when a rebase
+is due, the holder as if it followed one), `test/integration/companion-pull-requests.test.ts` (over the real daemon: a
+finished job's second pull request that gets merge conflicts is rebased by a tend job, with no comment from anyone, and
+says so on it), `test/sources/pull-request-list.test.ts` (the card names the companion while it is tended).
+
 ## A job pushes to its own repository outside the job repositories (issue #1131, 2026-10-14)
 
 **The problem.** A tend job's `git push --force-with-lease` to its own pull request's branch was refused: "<repo> is not
