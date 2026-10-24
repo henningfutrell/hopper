@@ -199,6 +199,13 @@ describe('clientReleaseText (issue #70)', () => {
     expect(clientReleaseText({ release: '0123456789abcdef', current: false })).toBe('0123456789abcdef (not the hopper\'s: loaded once no job is at work there)');
     expect(clientReleaseText({ release: '0123456789abcdef', current: false, updateHold: { since: '2026-10-24T09:00:00.000Z' } }))
       .toBe('0123456789abcdef (not the hopper\'s since 2026-10-24T09:00:00.000Z: no new job goes there until the jobs at work end and it is updated)');
+    const pendingLoad = { since: '2026-10-24T09:00:00.000Z', atWork: ['a', 'b'], holdsAt: '2026-10-24T10:00:00.000Z', swapsAt: '2026-10-24T11:00:00.000Z' };
+    expect(clientReleaseText({ release: '0123456789abcdef', current: false, pendingLoad }))
+      .toBe('0123456789abcdef (not the hopper\'s since 2026-10-24T09:00:00.000Z: loaded once no job is at work there; 2 at work; no new job goes there from 2026-10-24T10:00:00.000Z; swapped in at 2026-10-24T11:00:00.000Z while jobs that ride a client restart run)');
+    expect(clientReleaseText({ release: '0123456789abcdef', current: false, updateHold: { since: pendingLoad.since }, pendingLoad: { ...pendingLoad, waitsOn: ['a'] } }))
+      .toBe('0123456789abcdef (not the hopper\'s since 2026-10-24T09:00:00.000Z: no new job goes there until the jobs at work end and it is updated; the swap waits on 1 job that does not ride a client restart: a)');
+    expect(clientReleaseText({ release: '0123456789abcdef', current: true, swapped: { at: '2026-10-24T11:00:00.000Z', from: 'fedcba9876543210' } }))
+      .toBe('0123456789abcdef (the hopper\'s; swapped in at 2026-10-24T11:00:00.000Z while jobs were at work, from fedcba9876543210)');
     expect(clientReleaseText({ current: false })).toBe('none: older than releases, add it again: Add machine');
     expect(clientReleaseText({})).toBeNull();
     expect(clientReleaseText(undefined)).toBeNull();
