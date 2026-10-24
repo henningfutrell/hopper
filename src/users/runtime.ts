@@ -230,7 +230,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Trust stamps (issue #655): every job made from here on is stamped; a job that has not ended and has none is stamped now.
   const { key: hopperLink, transport: clientTransport, named: clientNamed } = link; const backfilled = store.jobs.useStampKey(stampKeyOf(hopperLink.privateKey, user.id)); if (backfilled.length) logger.info(`hopper: ${backfilled.length} job(s) of ${user.id} had no trust stamp and were stamped by the rules`);
   // Client targets on the hopper's client release (issue #545); ssh targets on the hopper's own herdr (issue #741).
-  const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger }), keepHerdr = createOwnedHerdrKeeper({ logger });
+  const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger, now: () => clock.now().getTime() }), keepHerdr = createOwnedHerdrKeeper({ logger });
   let executorNames = (): string[] => [];
   let jobsOnMachine = (_name: string): string[] => [];
   let applyJobSources = (_built: BuiltJobSource[]): void => {};
@@ -242,7 +242,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
       ?? ((m) => ('client' in m
-        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name)).then((p) => withClientWorkTree(clientTransport(m.name, m.client.key), m.workTree, p))
+        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name), () => store.lanes.list(m.name).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []))).then((p) => withClientWorkTree(clientTransport(m.name, m.client.key), m.workTree, p))
         : 'image' in m
           // A container target (issue #865): online while a sandbox box can start for the user.
           ? (commandBoxes?.problem() ?? Promise.resolve('no sandbox module')).then((problem) => ({ online: problem === undefined }))

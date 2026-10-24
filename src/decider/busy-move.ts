@@ -21,6 +21,6 @@ export function busyMove(job: Job, machines: readonly MachineSnapshot[], lanes: 
   const from = machines.find((m) => m.id === job.resumeOn);
   if (!from?.online || inUse(lanes, from.id) < from.maxLanes) return undefined;
   const to = machines.filter((m) => m.id !== from.id && m.online && m.executors.includes(job.spec.executor) && windowsFits(m, job)
-    && m.leaving !== true && m.drained === undefined && inUse(lanes, m.id) < m.maxLanes - (m.reservedLanes ?? 0)).map((m) => m.id);
+    && m.leaving !== true && m.drained === undefined && m.client?.updateHold === undefined && inUse(lanes, m.id) < m.maxLanes - (m.reservedLanes ?? 0)).map((m) => m.id);
   return to.length ? to : undefined;
 }
