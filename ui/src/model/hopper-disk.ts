@@ -56,5 +56,5 @@ export const budgetDraft = (b: DiskBudget | null): string => (b ? String(b.bytes
 export function cleanupLeftoversText(l: MachineCleanupLeftovers): string {
   const n = (k: number, what: string): string => `${k} ${what}${k === 1 ? '' : 's'}`;
   const disk = [...(l.bytes !== undefined ? [`${size(l.bytes)} on disk`] : []), ...(l.unmeasured ? [`${n(l.unmeasured, 'job')} not measured`] : [])];
-  return `${n(l.entries, 'thing')} of ${n(l.jobs, 'ended job')}, ${l.failed > 0 ? `${n(l.failed, 'removal')} failed: see Failures` : 'not removed yet'}${disk.length ? `; ${disk.join(', ')}` : ''}`;
+  return `${n(l.entries, 'thing')} of ${n(l.jobs, 'ended job')}, ${l.failed > 0 ? `${n(l.failed, 'removal')} failed: the hopper tries again, and Component watchers show why` : 'not removed yet'}${disk.length ? `; ${disk.join(', ')}` : ''}`;
 }
