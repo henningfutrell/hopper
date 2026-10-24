@@ -24,6 +24,7 @@ import { moveLost, type Lost } from './lost-move.ts';
 import { nudgeCheck } from './nudge-check.ts';
 import { runNotes } from './notes.ts';
 import { hostPoolOf } from '../decider/memory-floor.ts';
+import { heapRetryMachine } from './heap-retry.ts';
 import { recordOutcome } from './outcome.ts';
 import { recordPark, releaseParked } from './park.ts';
 import { requeuePreempted } from './preemption.ts';
@@ -173,8 +174,10 @@ function jobRulesOf(store: EngineContext['store'], j: Job): string {
 }
 
 /** What the executor gets for job `j` on machine `m`. */
-export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, m: MachineSnapshot): ExecutionContext {
+export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, lane: MachineSnapshot): ExecutionContext {
   const { store } = c;
+  // A run again of a heap abort (issue #2722 part 4): its scope's larger memory limit, once in its chain.
+  const m = heapRetryMachine(c, j, lane);
   const executor = c.executors.get(j.spec.executor);
   const progress = progressOf(c, e, d);
   return {

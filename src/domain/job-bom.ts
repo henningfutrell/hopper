@@ -23,7 +23,7 @@ import { ownWaitOf } from './own-command.ts';
 import { phaseOf } from './phase.ts';
 import type { Question } from './questions.ts';
 import { testDatabases } from './test-databases.ts';
-import { heapAborts, processCrashes, resourcesNow, resourcesUsed, type LiveUse } from './job-resources.ts';
+import { heapAborts, heapRetries, processCrashes, resourcesNow, resourcesUsed, type LiveUse } from './job-resources.ts';
 import { ledgerParts, type LedgerEntry } from './resource-ledger.ts';
 import type { DomainEvent, Job } from './types.ts';
 
@@ -342,7 +342,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const events = [...input.events].sort((a, b) => a.seq - b.seq);
   const own = events.filter((e) => e.jobId === job.id);
   const parts = [
-    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...testDatabases(own), ...resourcesUsed(own), ...heapAborts(own), ...processCrashes(own), ...resourcesNow(input.live ?? [], now), ...code(job, own), ...outputs(job, own, input.artifacts),
+    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...testDatabases(own), ...resourcesUsed(own), ...heapAborts(own), ...heapRetries(own), ...processCrashes(own), ...resourcesNow(input.live ?? [], now), ...code(job, own), ...outputs(job, own, input.artifacts),
     ...infra(own), ...decisions(input.questions, own, input.handoff), ...ledgerParts(job, input.ledger ?? []),
   ];
   const ordered = parts.map((p, i) => ({ p, i }))
