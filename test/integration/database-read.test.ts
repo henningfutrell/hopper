@@ -41,6 +41,8 @@ describe('a database read (issue #2231)', () => {
     const ask = ['database', 'read', '--template', name, '--database', DB, '--sql', sql, '--why', 'Compare the user records'];
     const early = await skill(b.a, creds, ask);
     expect(early.code, early.stdout + early.stderr).toBe(3);
+    expect(early.stdout.split('\n')[0]).toBe(`waiting: template ${name} waits for a person to approve read on database ${DB} on Access requests. Add --wait to have the hopper tell you when the read can run.`);
+    expect(early.stdout).toMatch(/\nwatch: [0-9a-f-]+: when the answer is ready, the hopper ends this job's own wait/);
     expect(await readRoles()).toEqual([]);
 
     for (const body of [{ action: 'approve-template', name }, { action: 'approve-profile', name, operation: 'read', asset: { kind: 'database', name: DB } }]) {
@@ -69,17 +71,16 @@ describe('a database read (issue #2231)', () => {
     expect(events.filter((e) => e.type === 'database.role_dropped').map((e) => e.data.role)).toEqual(minted);
   }, 60_000);
 
-  it('mints nothing for a template no person approved for the database', async () => {
+  it('mints nothing for a template with no read on the database', async () => {
     const b = await boot([]);
     await b.a.ui('/ui/api/vault', { action: 'set', name: 'ORDERS_DB', value: JSON.stringify(dbs.credential), mints: { kind: 'database', name: DB } }, { token: b.token });
     expect((await b.a.ui('/ui/api/sandbox-approvals', { yolo: true }, { token: b.token })).status).toBe(200);
     const creds = await runningJob(b.a);
-    const jobId = b.a.user().store.jobs.list({ status: ['running'] }).at(-1)!.id;
     await skill(b.a, creds, ['sandbox-template', '--why', 'Read the lab', '--needs', 'read/cluster/lab']);
     const name = (await b.a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': b.token })).body.templates.find((t) => t.name.startsWith('asked-'))!.name;
     const r = await skill(b.a, creds, ['database', 'read', '--template', name, '--database', DB, '--sql', 'SELECT 1']);
     expect(r.code).toBe(1);
-    expect(r.stdout).toContain(`A person approves read on database ${DB} for template ${name} on Access requests`);
+    expect(r.stdout).toBe(`no: template ${name} has no read on database ${DB}. Ask for one: sh "$HOPPER_SKILL" sandbox-template --needs "read/database/${DB}" --why "…"\n`);
     expect(await readRoles()).toEqual([]);
     expect((await b.a.events()).filter((e: DomainEvent) => e.type === 'database.role_minted')).toEqual([]);
   }, 60_000);

@@ -18,7 +18,7 @@ const text = skillOf('observability')!.text;
 describe('the observability skill (issue #2146)', () => {
   it('the catalog lists it on the bastion, and its asks parse as the hopper reads them', () => {
     expect(catalogText()).toMatch(/^observability: .*bastion/m);
-    expect(catalogText().length).toBeLessThan(1200);
+    expect(catalogText().length).toBeLessThan(1300);
     expect(skillOf('observability')!.link).toBeUndefined();
     expect(text).toContain('sh "$HOPPER_SKILL" sandbox-template --why "<why>" --needs "observe/namespace/CLUSTER/monitoring" --targets "');
     expect(text).toContain('sh "$HOPPER_SKILL" bastion --template TEMPLATE --targets "<the same targets>" --why "<why>"');

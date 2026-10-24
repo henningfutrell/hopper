@@ -100,7 +100,8 @@ const READ_INSTEAD: Partial<Record<AssetKind, (name: string) => string>> = {
  */
 function uncheckable(needs: readonly OperationProfile[]): string | undefined {
   if (!needs.every((p) => p.operation === 'read')) return undefined;
-  const bad = needs.filter((p) => p.asset.kind !== 'terraform-workspace' && mintKindFor(p.asset.kind) === undefined);
+  // A database's read is the hopper's own, never a box's (issue #2231): the check has nothing to probe for it.
+  const bad = needs.filter((p) => p.asset.kind !== 'terraform-workspace' && p.asset.kind !== 'database' && mintKindFor(p.asset.kind) === undefined);
   if (bad.length === 0) return undefined;
   return bad.map((p) => {
     const instead = READ_INSTEAD[p.asset.kind]?.(p.asset.name);
@@ -234,6 +235,7 @@ function unknownOf(u: Pick<TemplateRequestUser, 'unknownAssets'>, needs: readonl
 function outsidePolicy(needs: readonly OperationProfile[], policy: ReadPolicy | undefined, extras?: AskExtras): string[] {
   return [
     ...(extras && forPerson(extras) ? ['a vault secret or an egress host is approved by a person only'] : []),
+    ...needs.filter(readsDatabase).map((p) => `${inWords(p)} is approved by a person only`),
     ...needs.filter((p) => p.operation === 'read' && !inReadPolicy(policy, p.asset)).map((p) => `the read policy does not hold ${inWords(p)}`),
     ...needs.filter((p) => p.operation !== 'read').map((p) => `${inWords(p)} ${p.operation === 'observe' ? 'port-forwards to the asset\'s pods' : 'changes the asset'}`),
   ];
@@ -253,6 +255,9 @@ const approverOf = (t: TemplateView): TemplatePreview['approvedBy'] => {
   return by === READ_POLICY_APPROVER || by === SKIP_TEMPLATE_APPROVER || by === AUTO_APPROVER || by === REMEMBERED_APPROVER ? by : 'a person';
 };
 
+/** Whether a need reads a database (issue #2231): only a person approves it. */
+const readsDatabase = (p: OperationProfile): boolean => p.asset.kind === 'database';
+
 const skipsTemplate = (u: Pick<TemplateRequestUser, 'approvals'>): boolean => (u.approvals?.() ?? NO_SKIPS).skipTemplateApproval;
 
 /**
@@ -262,8 +267,9 @@ const skipsTemplate = (u: Pick<TemplateRequestUser, 'approvals'>): boolean => (u
  * approval. Undefined: a person. A requested template holds no vault secret, so its radius comes from the needs alone.
  */
 function automaticApprover(u: Pick<TemplateRequestUser, 'policy' | 'approvals' | 'remembered'>, needs: readonly OperationProfile[], extras: AskExtras): TemplatePreview['approvedBy'] | undefined {
-  // Issue #1875: a vault secret or an egress host is a person's to approve, whatever the policies and toggles say.
-  if (forPerson(extras)) return undefined;
+  // Issue #1875: a vault secret or an egress host is a person's to approve, whatever the policies and toggles say; so is a
+  // database's read (issue #2231), which reads rows of data.
+  if (forPerson(extras) || needs.some(readsDatabase)) return undefined;
   if (outsidePolicy(needs, u.policy()).length === 0) return READ_POLICY_APPROVER;
   const level = rateTemplate({ secrets: [], profiles: [...needs] }, [], DEFAULT_BLAST_RADIUS_SETTINGS.rules).level;
   if (autoApproves(u.approvals?.(), level)) return AUTO_APPROVER;
