@@ -193,7 +193,7 @@ What a database read role gets:
 - `CONNECT` on the database, `USAGE` and `SELECT` on each schema in `schemas`, and `SELECT` on each table in `tables`. Nothing else.
 - Its password is random for each read, made in the hopper and sent to the database as a SCRAM verifier. The password itself never reaches the database's log, an event, a box or the job.
 
-The hopper must reach the database's host and port itself: it makes the role there, and runs the read there. A box needs no route to the database.
+The hopper must reach the database's host and port itself: it makes the role there, and runs the read there. When the vault runs in a container of its own, the vault container makes the role and runs the read, so it is the vault container that must reach the database. A box needs no route to the database.
 
 ### A SQL Server database's minting credential
 
