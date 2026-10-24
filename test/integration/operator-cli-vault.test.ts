@@ -123,7 +123,7 @@ describe('the vault, templates and sandbox boxes from the operator CLI (issue #7
     expect(await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'none'], aws)).toMatchObject({ code: 0 });
     expect(await mints()).toBeUndefined();
 
-    expect(await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'namespace/lab/web'], aws)).toMatchObject({ code: 2, err: expect.stringContaining('--mints namespace/lab/web: write aws-account/<account id> or cluster/<name>, or none') });
+    expect(await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'namespace/lab/web'], aws)).toMatchObject({ code: 2, err: expect.stringContaining('--mints namespace/lab/web: write aws-account/<account id>, cluster/<name> or database/<cluster>/<namespace>/<database>, or none') });
     expect(await hopper(a, ['vault', 'set', 'AWS_MINT', '--mints', 'cluster/lab', '--shared'], aws)).toMatchObject({ code: 2, err: expect.stringContaining('a shared secret mints nothing') });
   });
 

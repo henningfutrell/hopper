@@ -109,12 +109,15 @@ export function vaultCall(args: string[], stdin: () => string): Call {
   return values.shared ? shared({ ...body, ...(values.reader ? { readers: values.reader } : {}) }) : edit(body);
 }
 
-/** `--mints aws-account/<account id>|cluster/<name>|none` (issue #791): what a minting credential mints for; none: nothing. */
+/** How `--mints` is written: an AWS account, a cluster, or (issue #2231) a database. */
+const MINTS_FORMS = 'aws-account/<account id>, cluster/<name> or database/<cluster>/<namespace>/<database>';
+
+/** `--mints aws-account/<account id>|cluster/<name>|database/<name>|none` (issue #791): what a minting credential mints for; none: nothing. */
 function mintsOf(raw: string): { kind: string; name: string } | null {
   if (raw === 'none') return null;
   const i = raw.indexOf('/');
   const kind = raw.slice(0, i), name = raw.slice(i + 1);
-  if (i < 0 || !(MINTS_FOR_KINDS as readonly string[]).includes(kind) || name === '') throw new OperatorRefusal(`--mints ${raw}: write ${MINTS_FOR_KINDS.map((k) => `${k}/<${k === 'aws-account' ? 'account id' : 'name'}>`).join(' or ')}, or none`);
+  if (i < 0 || !(MINTS_FOR_KINDS as readonly string[]).includes(kind) || name === '') throw new OperatorRefusal(`--mints ${raw}: write ${MINTS_FORMS}, or none`);
   const problem = mintsForProblem({ kind, name });
   if (problem) throw new OperatorRefusal(`--mints ${raw}: ${problem}`);
   return { kind, name };
