@@ -24,10 +24,12 @@ const core = (pid: number, signal: number, cmdline: string, us: number): string 
  * A bin dir with a systemctl that names the scope's cgroup, and a journalctl that answers `cores` to a core dump query of
  * the scope's unit and `kernel` to a kernel query that greps for the scope; each call's arguments go to `journalctl.args`.
  */
-function bin(o: { cores?: string[]; kernel?: string[] }): string {
+function bin(o: { cores?: string[]; kernel?: string[]; stop?: { state: string } }): string {
   const dir = join(root, 'bin');
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'systemctl'), `#!/bin/sh\ncase "$*" in *ControlGroup*) printf '%s\\n' '${SCOPE}';; esac\nexit 0\n`);
+  // A stop that did not finish (part 6): `stop` exits 1, and the scope stays in `stop.state`.
+  const stop = o.stop ? `*" stop "*) exit 1;; *ActiveState*) printf '%s\\n' '${o.stop.state}';;` : '';
+  writeFileSync(join(dir, 'systemctl'), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${join(dir, 'systemctl.args')}'\ncase "$*" in *ControlGroup*) printf '%s\\n' '${SCOPE}';; ${stop} esac\nexit 0\n`);
   writeFileSync(join(dir, 'cores.txt'), (o.cores ?? []).map((l) => `${l}\n`).join(''));
   writeFileSync(join(dir, 'kernel.txt'), (o.kernel ?? []).map((l) => `${l}\n`).join(''));
   writeFileSync(join(dir, 'journalctl'), [
@@ -40,10 +42,11 @@ function bin(o: { cores?: string[]; kernel?: string[] }): string {
   return dir;
 }
 
-function cgroup(oomKills: number): string {
+function cgroup(oomKills: number, procs: number[] = []): string {
   const top = join(root, 'cgroup');
   mkdirSync(join(top, SCOPE), { recursive: true });
   writeFileSync(join(top, SCOPE, 'memory.events'), `oom 1\noom_kill ${oomKills}\n`);
+  writeFileSync(join(top, SCOPE, 'cgroup.procs'), procs.map((p) => `${p}\n`).join(''));
   return top;
 }
 
@@ -99,5 +102,21 @@ describe('the reap says the OOM kills in the job\'s scope (issue #2722 part 3)',
   it('nothing from a kernel log that names no process, or that the reap cannot read', () => {
     expect(readReap(reap(bin({ kernel: ['1792860571.1 box kernel: Memory cgroup out of memory: Killed process 3001 (tsc)'] }), cgroup(1)))?.oomKilled).toBeUndefined();
     expect(readReap(reap(bin({}), cgroup(1)))?.oomKilled).toBeUndefined();
+  });
+});
+
+describe('the reap says a scope that did not stop (issue #2722 part 6)', () => {
+  it('its state and the processes still in it, when its stop failed; a failed scope is reset, so it does not stay listed', () => {
+    const dir = bin({ stop: { state: 'failed' } });
+    expect(readReap(reap(dir, cgroup(0, [41, 42])))?.scopeNotStopped).toEqual({ state: 'failed', processes: 2 });
+    expect(readFileSync(join(dir, 'systemctl.args'), 'utf8')).toContain(`--user reset-failed ${UNIT}`);
+  });
+
+  it('a stop still under way is said too, but not reset; nothing when the stop went through, or the scope is gone', () => {
+    const dir = bin({ stop: { state: 'deactivating' } });
+    expect(readReap(reap(dir, cgroup(0, [41])))?.scopeNotStopped).toEqual({ state: 'deactivating', processes: 1 });
+    expect(readFileSync(join(dir, 'systemctl.args'), 'utf8')).not.toContain('reset-failed');
+    expect(readReap(reap(bin({}), cgroup(0, [41])))?.scopeNotStopped).toBeUndefined();
+    expect(readReap(reap(bin({ stop: { state: 'inactive' } }), cgroup(0)))?.scopeNotStopped).toBeUndefined();
   });
 });

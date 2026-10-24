@@ -118,6 +118,8 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
         // And each core dump and OOM kill of its processes (part 3), as the reap read them from the journal.
         for (const d of reaped?.cores ?? []) c.store.events.append({ type: 'job.core_dumped', jobId, ...(machineId ? { machineId } : {}), data: coreDumpedOf(d) });
         for (const k of reaped?.oomKilled ?? []) c.store.events.append({ type: 'job.oom_killed', jobId, ...(machineId ? { machineId } : {}), data: oomKilledOf(k) });
+        // Its scope, when the reap could not stop it (part 6): the sweep reaps it again while it is there.
+        if (reaped?.scopeNotStopped) c.store.events.append({ type: 'job.scope_not_stopped', jobId, ...(machineId ? { machineId } : {}), data: { ...reaped.scopeNotStopped } });
         // Its resource ledger (issue #2504) closed as the reap said: reaped, kept with the work, or failed with why.
         // A reap that kept the scratch dir for a time (part 5) closes the scope only; the sweep judges the rest after.
         if (said) closeLedger(c.store, jobId, said, nowIso(c), retainedUntil === undefined, panes);

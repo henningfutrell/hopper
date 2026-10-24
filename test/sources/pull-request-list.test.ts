@@ -116,6 +116,15 @@ describe('a pull request its item\'s tend job works on (issue #763)', () => {
     expect(list([tended('job-2')], running)[0]).not.toHaveProperty('tendWaits');
   });
 
+  it('a companion pull request\'s tend (issue #1143 reopened): the card names the pull request the tend job works on', () => {
+    const companion = `https://github.com/${REPO}/pull/8`;
+    const job = jobForIssue(1, { id: 'job-1', status: 'finished', sourceState: { source: {
+      follow: 'tended', pullRequest: PR, seen: seen(), tended: { pullRequest: companion, step: 'rebase', nextJobId: 'job-2', companion: true },
+    } } });
+    const tender = jobForIssue(1, { id: 'job-2', status: 'running', rerunOf: 'job-1' });
+    expect(list([job], tender)[0]).toMatchObject({ pullRequest: { number: 8, url: companion }, waits: 'tending', tendStep: 'rebase' });
+  });
+
   it('the card names the step the tend job works on (issue #927)', () => {
     const tender = jobForIssue(1, { id: 'job-2', status: 'running', rerunOf: 'job-1' });
     expect(list([tended('job-2')], tender)[0]).toMatchObject({ tendJobId: 'job-2', tendStep: 'rebase' });

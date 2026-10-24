@@ -4,7 +4,7 @@
 // says so on its lane plan.
 import { describe, expect, it } from 'vitest';
 import { decide } from '../../src/decider/index.ts';
-import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
+import type { ExpectedCost, Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { inputs, job, machine } from './support.ts';
 
 const GIB = 1024 ** 3;
@@ -23,6 +23,14 @@ describe('placement by real headroom (issue #2499)', () => {
     // a: 8 lanes, 4 GiB available: memory for 1 job. b: 2 lanes, 12 GiB: memory for 5 jobs, lanes for 2.
     const d = decide(inputs({ machines: [vm('a', 4), vm('b', 12, 2)], waiting: jobs(3) }), 'd1');
     expect(d.start.map((s) => `${s.jobId}@${s.machineId}`)).toEqual(['j1@b', 'j2@b', 'j3@a']);
+  });
+
+  it('a job with an expected peak counts real room in jobs of its own peak (issue #2737)', () => {
+    // A 6 GiB peak. a: 8 lanes, 9 GiB available: 3 jobs of 2 GiB, but 1 of its peak. b: 2 lanes, 13 GiB: 1 of its peak,
+    // and more memory over its floor. In jobs of 2 GiB, a has more real room (3 to 2); in jobs of its peak, the two are equal.
+    const heavy: ExpectedCost = { group: 'repo', key: 'heavy', jobs: 8, memoryBytes: { avg: 5 * GIB, peak: 6 * GIB } };
+    const d = decide(inputs({ machines: [vm('a', 9), vm('b', 13, 2)], waiting: jobs(1), expectedCosts: { j1: heavy } }), 'd1');
+    expect(d.start.map((s) => s.machineId)).toEqual(['b']);
   });
 
   it('the Decision names how many more jobs each machine\'s memory holds', () => {

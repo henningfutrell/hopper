@@ -5,7 +5,7 @@
 // target runs them, and a client release is the files in that directory. Imports nothing of hopper but its own directory.
 
 import { DETAILS_FORMAT, DETAILS_MARK, JOB_LABEL, REAP_RUNTIME_SH, SURVEY_RUNTIME_SH } from './job-runtime.ts';
-import { CRASHES_SH, crashesOf, HEAP_REPORTS_SH, heapOf, usedOf, type CoreDump, type HeapReport, type OomKill, type ResourceUse } from './reap-use.ts';
+import { CRASHES_SH, crashesOf, HEAP_REPORTS_SH, heapOf, SCOPE_STOP_SH, scopeLeftOf, usedOf, type CoreDump, type HeapReport, type OomKill, type ResourceUse, type ScopeNotStopped } from './reap-use.ts';
 
 /** A job id the scripts take: a uuid, or a test's plain name. Never a pattern, a path or an option. */
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
@@ -93,8 +93,8 @@ const REAP_SCRIPT = [
   '  ok=$(sed -n "s/^oom_kill //p" "$cr$cg/memory.events" 2>/dev/null); printf "hopper-used %s %s %s\\n" "${mp:--}" "${cu:--}" "${ok:--}"; };; esac;',
   ...HEAP_REPORTS_SH,
   ...CRASHES_SH,
-  // The job's scope: every process in it, whatever it did to its environment or session.
-  'if command -v systemctl >/dev/null 2>&1; then systemctl --user stop "hopper-job-$id.scope" >/dev/null 2>&1; fi;',
+  // The job's scope: every process in it, said when its stop did not go through (issue #2722 part 6).
+  ...SCOPE_STOP_SH,
   // Where there is no systemd, or for what left the scope: the processes carrying the job's id, and those run from its
   // scratch dir (issue #2489: a Gradle daemon of a JDK the job put there, which left the job's scope or environment).
   'pids() { { grep -lzx "HOPPER_JOB_ID=$id" /proc/[0-9]*/environ 2>/dev/null | sed -n "s|^/proc/\\([0-9]*\\)/environ\\$|\\1|p";',
@@ -321,7 +321,7 @@ export type KeptReason = typeof KEPT_REASONS[number];
  * could not remove (issue #1452), why it kept each it kept (`reasons`, issue #2494; none from a client older than that), and the containers and volumes of the job it removed (issue #1120), with what it said of
  * each container (issue #975; none from a client older than that). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; leftWhy?: Record<string, LeftCause>; loose?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse; heap?: HeapReport[]; cores?: CoreDump[]; oomKilled?: OomKill[] } | undefined {
+export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; leftWhy?: Record<string, LeftCause>; loose?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse; heap?: HeapReport[]; cores?: CoreDump[]; oomKilled?: OomKill[]; scopeNotStopped?: ScopeNotStopped } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
@@ -349,7 +349,7 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
   return {
     kept, ...(Object.keys(tips).length ? { tips } : {}), ...(Object.keys(reasons).length ? { reasons } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}), ...(Object.keys(leftWhy).length ? { leftWhy } : {}), ...(loose.length ? { loose } : {}),
     ...(containers.length || volumes.length ? { removed: { containers, volumes, ...(details.length ? { details } : {}) } } : {}),
-    ...usedOf(lines), ...heapOf(lines), ...crashesOf(lines),
+    ...usedOf(lines), ...heapOf(lines), ...crashesOf(lines), ...scopeLeftOf(lines),
   };
 }
 

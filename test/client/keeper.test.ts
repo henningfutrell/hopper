@@ -1,7 +1,8 @@
 // The hopper keeps its client targets on its own client release (issue #70): each probe asks the client
 // which release it runs and loads the hopper's when it differs — never while a job is at work on that
 // machine, so no herdr call of a running job meets a client restarting; behind an hour while jobs are at work, it holds
-// new jobs off until they end (issue #2715). An old client, one that
+// new jobs off until they end (issue #2715); behind past the swap deadline, it loads while every job at work rides the
+// client's restart (issue #2738). An old client, one that
 // predates releases, stays online and is reported once: it is added again with Add machine.
 import { execFile } from 'node:child_process';
 import { chmodSync, cpSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,7 +14,7 @@ import { readRelease } from '../../src/client/release.ts';
 import { mintToken } from '../../src/client/signature.ts';
 import type { ClientTransport } from '../../src/executors/client.ts';
 import { bridgeRelease } from '../../src/machines/client-bridge.ts';
-import { CLIENT_UPDATE_HOLD_MS, createClientReleaseKeeper } from '../../src/machines/client-release.ts';
+import { CLIENT_UPDATE_HOLD_MS, CLIENT_UPDATE_SWAP_MS, createClientReleaseKeeper } from '../../src/machines/client-release.ts';
 import * as field from '../fixtures/client-835e17bd3c9c6ac3/release.ts';
 import { startClient as startFieldClient } from '../fixtures/client-835e17bd3c9c6ac3/server.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
@@ -79,6 +80,45 @@ describe('keeping a client target on the hopper\'s release', () => {
     expect((await keep(transport, () => atWork, () => atWork)).client).not.toHaveProperty('updateHold');
     await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
     expect(loaded).toEqual([HOPPERS.id]);
+  });
+
+  it('behind while jobs are at work: the probe says the load waits, why, and when it holds jobs off and swaps (issue #2738)', async () => {
+    const { transport } = await olderClient();
+    const now = Date.parse('2026-10-24T09:00:00.000Z');
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} }, now: () => now });
+    const probe = await keep(transport, () => ['job-busy'], () => ['job-busy'], () => true);
+    expect(probe.client).toMatchObject({ current: false, pendingLoad: { since: '2026-10-24T09:00:00.000Z', atWork: ['job-busy'], holdsAt: '2026-10-24T10:00:00.000Z', swapsAt: '2026-10-24T11:00:00.000Z' } });
+  });
+
+  it('a machine with jobs at work all the time still reaches the hopper\'s release: the update swap at its deadline (issue #2738)', async () => {
+    const { install, loaded, transport } = await olderClient();
+    const lines: string[] = [];
+    let now = Date.parse('2026-10-24T09:00:00.000Z');
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: (l) => lines.push(l), warn: (l) => lines.push(l) }, now: () => now });
+    const atWork = () => ['job-a', 'job-b'];
+    for (; now < Date.parse('2026-10-24T09:00:00.000Z') + CLIENT_UPDATE_SWAP_MS; now += 10 * 60_000) {
+      await keep(transport, atWork, atWork, () => true);
+      expect(loaded).toEqual([]);
+    }
+    await keep(transport, atWork, atWork, () => true);
+    await waitFor(() => (loaded.length > 0 ? true : undefined), { timeoutMs: 5000, what: 'the restart asked for' });
+    expect(readRelease(install)).toEqual(HOPPERS);
+    expect(lines.join('\n')).toMatch(new RegExp(`client studio: swapped in release ${HOPPERS.id} while 2 jobs are at work there`));
+    await client?.stop();
+    client = await startTestClient({ token: () => TOKEN, herdrBin: HERDR, session: 'hopper', installDir: install });
+    const after = await keep(client.transport(TOKEN), atWork, atWork, () => true);
+    expect(after.client).toMatchObject({ release: HOPPERS.id, current: true, swapped: { at: '2026-10-24T11:00:00.000Z', from: expect.stringMatching(/^[0-9a-f]{16}$/) } });
+  });
+
+  it('past the swap deadline, a job at work that does not ride a client restart keeps the hold, and the probe names it (issue #2738)', async () => {
+    const { loaded, transport } = await olderClient();
+    let now = Date.parse('2026-10-24T09:00:00.000Z');
+    const keep = createClientReleaseKeeper({ release: HOPPERS, logger: { info: () => {}, warn: () => {} }, now: () => now });
+    await keep(transport, () => ['job-turn', 'job-pane'], () => ['job-turn', 'job-pane'], (id) => id === 'job-pane');
+    now += CLIENT_UPDATE_SWAP_MS;
+    const held = await keep(transport, () => ['job-turn', 'job-pane'], () => ['job-turn', 'job-pane'], (id) => id === 'job-pane');
+    expect(held.client).toMatchObject({ current: false, updateHold: { since: '2026-10-24T09:00:00.000Z' }, pendingLoad: { waitsOn: ['job-turn'] } });
+    expect(loaded).toEqual([]);
   });
 
   it('once no job runs there: the hopper\'s release is loaded, and the load is logged', async () => {

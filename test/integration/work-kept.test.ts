@@ -1,7 +1,8 @@
 // The reap at a job's end (issue #401): what it kept for uncommitted or unpushed work is flagged on the
 // job's trail as job.work_kept, never removed silently; a reap that kept nothing records nothing. What the job's scope
 // used (issue #2498) is recorded as job.resources_used, and each heap abort it read (issue #2722) as job.heap_aborted;
-// each core dump and OOM kill of its processes (part 3) as job.core_dumped and job.oom_killed.
+// each core dump and OOM kill of its processes (part 3) as job.core_dumped and job.oom_killed; a scope that did not stop
+// (part 6) as job.scope_not_stopped.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Reaped } from '../../src/domain/ports.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -18,7 +19,7 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function cancelled(kept?: string[], removed?: Reaped['removed'], tips?: Reaped['tips'], heads?: string[], used?: Reaped['used'], heap?: Reaped['heap'], crashes: Pick<Reaped, 'cores' | 'oomKilled'> = {}) {
+async function cancelled(kept?: string[], removed?: Reaped['removed'], tips?: Reaped['tips'], heads?: string[], used?: Reaped['used'], heap?: Reaped['heap'], crashes: Pick<Reaped, 'cores' | 'oomKilled' | 'scopeNotStopped'> = {}) {
   const db = tempDbPath();
   cleanup = db.cleanup;
   const sticky = createStickyExecutor({ ...(kept ? { kept } : {}), ...(tips ? { tips } : {}), ...(removed ? { removed } : {}), ...(used ? { used } : {}), ...(heap ? { heap } : {}), ...crashes });
@@ -115,5 +116,13 @@ describe('the core dumps and OOM kills the reap read (issue #2722 part 3)', () =
     const [core] = await a.events('types=job.core_dumped'), [oom] = await a.events('types=job.oom_killed');
     expect(core).toMatchObject({ jobId: job.id, data: { command: 'cc1plus -O2 big.cpp', signal: 'SIGSEGV', dumpedAt: '2026-10-24T10:41:00.000Z' } });
     expect(oom).toMatchObject({ jobId: job.id, data: { command: 'tsc', killedAt: '2026-10-24T10:41:00.000Z' } });
+  });
+});
+
+describe('a scope the reap could not stop (issue #2722 part 6)', () => {
+  it('is recorded on the job: job.scope_not_stopped, with its state and the processes in it', async () => {
+    const { a, job } = await cancelled(undefined, undefined, undefined, undefined, undefined, undefined, { scopeNotStopped: { state: 'failed', processes: 2 } });
+    await waitFor(async () => (await a.events('types=job.scope_not_stopped')).length === 1);
+    expect((await a.events('types=job.scope_not_stopped'))[0]).toMatchObject({ jobId: job.id, data: { state: 'failed', processes: 2 } });
   });
 });

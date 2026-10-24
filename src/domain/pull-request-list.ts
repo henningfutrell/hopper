@@ -174,10 +174,12 @@ function cardOf(job: Job, yolo: boolean, rule: ChangeRule, now: number, tendJob:
   const retryAt = tendRetryAt(f.tended, tendJob);
   const tendEnded = tendJob !== undefined && TEND_ENDS.includes(tendJob.status) && retryAt === undefined;
   const waits = tendJob ? (tendEnded ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, rule, now);
+  // A tend of a companion pull request (issue #1143 reopened): the card names the pull request the tend job works on.
+  const shown = tendJob && f.tended?.companion ? f.tended.pullRequest : f.pullRequest;
   return {
     jobId: job.id, repo: jobPullRequestRepo(job)!,
     ...(job.source!.number !== undefined ? { issue: { number: job.source!.number, url: job.source!.url ?? job.source!.key } } : { directJob: { url: job.source!.url ?? job.source!.key } }),
-    ...(f.pullRequest ? { pullRequest: { number: numberOf(f.pullRequest), url: f.pullRequest } } : {}),
+    ...(shown ? { pullRequest: { number: numberOf(shown), url: shown } } : {}),
     part: f.part === true, state, checks: seen?.checks ?? 'unknown', mergeable: seen ? (seen.conflicting ? 'conflicts' : 'mergeable') : 'unknown',
     draft: seen?.draft ?? false, ...(seen?.base ? { base: seen.base } : {}), ...(seen?.openedAt ? { openedAt: seen.openedAt } : {}),
     ...(job.finishedAt ? { since: job.finishedAt } : {}), yolo, ...(seen?.change ? { change: { kind: seen.change.kind, why: seen.change.why } } : {}),

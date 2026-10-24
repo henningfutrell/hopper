@@ -70,7 +70,7 @@ import { createTendAgain } from './tend-again.ts'; import { createPullRequestAct
 import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
-import { pullRequestCensus } from './census.ts'; import { recordCiMiss } from './ci-missed.ts';
+import { pullRequestCensus } from './census.ts'; import { recordCiMiss } from './ci-missed.ts'; import { companionPullRequests } from './companions.ts';
 import {
   failedTend, following, followsWhenEnded, inMotion, jobPullRequestRepo, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestSeen, type Tended, type TendChecks,
@@ -109,7 +109,7 @@ export type FollowRound = 'all' | 'in_motion' | 'none';
 
 export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
-  const strays = strayHousekeeping(c), census = pullRequestCensus(c);
+  const strays = strayHousekeeping(c), census = pullRequestCensus(c), companions = companionPullRequests(c);
 
   /**
    * The newest of `listed`, from one read of the jobs table (issue #1154): a sync of a source with about 740 ended jobs
@@ -201,16 +201,17 @@ export function createAfterDone(c: AfterDoneContext) {
 
   /**
    * Its followed pull request needs tending (issue #736), and it may be: the step, its URL, and what the brief says of its
-   * checks — the ones that failed, and a rerun for the first fix of a row (issue #927); else undefined.
+   * checks — the ones that failed, and a rerun for the first fix of a row (issue #927). Else a rebase of a companion pull
+   * request of its item (issue #1143 reopened), when one has merge conflicts; else undefined.
    */
-  function tendDue(job: Job | undefined): { step: NonNullable<ReturnType<typeof tendStep>>; url: string; checks: TendChecks; retries?: number } | undefined {
+  function tendDue(job: Job | undefined): { step: NonNullable<ReturnType<typeof tendStep>>; url: string; checks: TendChecks; retries?: number; companion?: true } | undefined {
     if (!job || !followsWhenEnded(job)) return undefined;
     const again = retryDue(job);
     if (again) return again;
-    if (!following(job)) return undefined;
+    if (!following(job)) return companions.due(job);
     const s = job.sourceState?.source as { pullRequest?: string; seen?: PullRequestSeen } | undefined;
     const step = tendStep(s?.seen);
-    if (!step || !s?.pullRequest) return undefined;
+    if (!step || !s?.pullRequest) return companions.due(job);
     const inRow = step === 'fix_checks' ? tendsInRow(job, s.pullRequest, (id) => store.jobs.get(id)) : 0;
     if (inRow >= MAX_TENDS) return undefined;
     return { step, url: s.pullRequest, checks: { failed: s.seen?.failedChecks ?? [], rerun: inRow === 0 } };
@@ -221,7 +222,7 @@ export function createAfterDone(c: AfterDoneContext) {
    * its wait is over: the same step, on the job's report as last seen. Only while the cancelled tend job is the newest of
    * the item, and its end is reported.
    */
-  function retryDue(job: Job): { step: Tended['step']; url: string; checks: TendChecks; retries: number } | undefined {
+  function retryDue(job: Job): { step: Tended['step']; url: string; checks: TendChecks; retries: number; companion?: true } | undefined {
     const s = job.sourceState?.source as { follow?: string; tended?: Tended; seen?: PullRequestSeen } | undefined;
     if (s?.follow !== 'tended' || !s.tended || !job.source) return undefined;
     const tendJob = store.jobs.getBySourceKey(job.source.key);
@@ -229,7 +230,7 @@ export function createAfterDone(c: AfterDoneContext) {
     if (at === undefined || at > c.now() || !c.finalReported(tendJob!)) return undefined;
     return { step: s.tended.step, url: s.tended.pullRequest, checks: { failed: s.seen?.failedChecks ?? [], rerun: s.tended.step === 'fix_checks' && tendsInRow(job, s.tended.pullRequest, (id) => store.jobs.get(id)) === 0 },
       // A person's Tend again starts a new row of retries.
-      retries: s.tended.again ? 0 : (s.tended.retries ?? 0) + 1 };
+      retries: s.tended.again ? 0 : (s.tended.retries ?? 0) + 1, ...(s.tended.companion ? { companion: true as const } : {}) };
   }
 
   /**
@@ -240,7 +241,7 @@ export function createAfterDone(c: AfterDoneContext) {
     const due = tendDue(store.jobs.get(jobId));
     if (!due) return undefined;
     // A tend job's work item's issue closed (issue #2127): nothing is left to tend, and the tend's Run again would reopen it.
-    const ended = await endedBeforeTend(source, jobId, due.url) ?? (await issueClosed(store, source, store.jobs.get(jobId)) ? 'issue' : undefined);
+    const ended = (due.companion ? undefined : await endedBeforeTend(source, jobId, due.url)) ?? (await issueClosed(store, source, store.jobs.get(jobId)) ? 'issue' : undefined);
     if (ended) return { ok: false, reason: 'conflict', message: `job ${jobId}'s pull request is not tended: ${ended === 'issue' ? 'its work item\'s issue is closed' : `it was ${ended} on GitHub`}` };
     const checks = due.step === 'fix_checks' && source.checkLogs && due.checks.failed?.length
       ? { ...due.checks, failed: await source.checkLogs(due.checks.failed) } : due.checks;
@@ -253,7 +254,7 @@ export function createAfterDone(c: AfterDoneContext) {
     }
     const job = store.jobs.get(jobId);
     if (!job) return r;
-    const tended: Tended = { pullRequest: due.url, step: due.step, nextJobId: r.job.id, ...(due.retries ? { retries: due.retries } : {}) };
+    const tended: Tended = { pullRequest: due.url, step: due.step, nextJobId: r.job.id, ...(due.retries ? { retries: due.retries } : {}), ...(due.companion ? { companion: true } : {}) };
     const { tendRefused: _r, ...was } = (job.sourceState?.source ?? {}) as Record<string, unknown>;
     c.setSource(jobId, { ...was, follow: 'tended', tended });
     store.events.append({ type: 'job.pull_request_tended', jobId, data: { pullRequest: due.url, step: due.step, nextJobId: r.job.id, ...acting } });
@@ -291,14 +292,14 @@ export function createAfterDone(c: AfterDoneContext) {
     if (d.step !== 'rebase' || !source.baseMerge || !job) return false;
     let r: BaseMerge | undefined;
     try {
-      r = await traceJobStep(d.jobId, 'base_merge', () => source.baseMerge!(job), (b) => b?.outcome ?? 'none');
+      r = await traceJobStep(d.jobId, 'base_merge', () => source.baseMerge!(companions.view(job, d.pullRequest)), (b) => b?.outcome ?? 'none');
     } catch (e) {
       console.warn(`hopper: ${source.name}: the base merge of ${d.pullRequest} failed, a tend job rebases it: ${(e as Error).message}`);
       return false;
     }
     if (r?.outcome !== 'pushed') return false;
     const s = (store.jobs.get(d.jobId)?.sourceState?.source ?? {}) as { seen?: PullRequestSeen };
-    if (s.seen) {
+    if (!companions.baseMerged(d.jobId, d.pullRequest) && s.seen) {
       const { failedChecks: _f, failedHead: _h, mergeHeldBehind: _m, ...seen } = s.seen;
       c.setSource(d.jobId, { ...s, seen: { ...seen, conflicting: false, checks: 'pending', pushedAt: new Date(c.now()).toISOString() } satisfies PullRequestSeen });
     }
@@ -319,7 +320,7 @@ export function createAfterDone(c: AfterDoneContext) {
     if (!tendJob || !rebasesWhenBaseMoves(s.tended, tendJob) || !c.finalReported(tendJob)) return;
     let tip: string | undefined;
     try {
-      tip = await source.baseTip(job);
+      tip = await source.baseTip(companions.view(job, s.tended.pullRequest));
     } catch (e) {
       console.warn(`hopper: ${source.name}: the base branch of ${s.tended.pullRequest} failed, asked again next sync: ${(e as Error).message}`);
       return;
@@ -362,7 +363,7 @@ export function createAfterDone(c: AfterDoneContext) {
     // Held an hour (issue #1143): new heads keep coming, so it is tended now, and the log says so (issue #1162).
     const job = store.jobs.get(d.jobId)!, held = job.sourceState?.source as Holds | undefined;
     if (heldTooLong(held?.heldSince, c.now())) return void console.warn(`hopper: ${source.name}: ${d.pullRequest} was held behind ${held?.heldBehind?.pullRequest} since ${held?.heldSince}: tended now`);
-    for (const h of heads) if (await conflict(source, job, h.pullRequest) !== false) return h;
+    for (const h of heads) if (await conflict(source, companions.view(job, d.pullRequest), h.pullRequest) !== false) return h;
     return undefined;
   }
 
@@ -452,7 +453,7 @@ export function createAfterDone(c: AfterDoneContext) {
     /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. `asked`: a census now. */
     async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all', asked = false): Promise<void> {
       const all = round === 'all';
-      if (all) await reconcile(source, listed).then(() => strays(source, listed)).then(() => census(source, listed, asked));
+      if (all) await reconcile(source, listed).then(() => strays(source, listed)).then(() => census(source, listed, asked)).then(() => companions.read(source, listed));
       const stored = store.jobs.list(), jobs = fresh(listed, stored), newest = newestOfItems(stored);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));

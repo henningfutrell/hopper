@@ -121,7 +121,7 @@ export function createLocalMachineSource(o: {
 
 export { createAttachedMachineSource, createTargetPool, hostKeyFingerprint, hostKeyOffer, probeClient, knownHostKey, scanHostKey, probeHerdrOverSsh, probeSsh, resolveSshTarget, type MachineProbe, type ResolvedTarget } from './attached.ts';
 export { diskAt, diskOf } from './disk.ts';
-export { createClientReleaseKeeper, withClientWorkTree, type ClientReleaseKeeper } from './client-release.ts';
+export { createClientReleaseKeeper, ridesClientRestart, withClientWorkTree, type ClientReleaseKeeper } from './client-release.ts';
 export { readSshTargets, type SshTargets } from './ssh-config.ts';
 export { isThisMachine, type ThisMachineDeps } from './this-machine.ts';
 export { cachedHopperHerdr, createOwnedHerdrKeeper, hopperHerdr, probeOwnedHerdr, withOwnedHerdr, type HopperHerdr, type OwnedHerdr, type OwnedHerdrKeeper } from './herdr-owned-ssh.ts';
