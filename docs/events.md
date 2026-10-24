@@ -1118,6 +1118,31 @@ Version 1 (`docs/schemas/job.heap_aborted.v1.json`). A Node process of the job r
 }
 ```
 
+## `job.heap_retry`
+
+Version 1 (`docs/schemas/job.heap_retry.v1.json`). The job runs again a job whose Node process ran out of heap (`rerunOf`, its `job.heap_aborted`), and starts with a larger memory limit, so a larger Node heap (issue #2722 part 4, design.md "Heap retry"): once in a chain of runs, at its first start. `command`: the command that ran out of heap, as `job.heap_aborted` said it. With a larger limit: `memoryMaxGiB` and `heapMiB`, the job scope's `MemoryMax` and the `--max-old-space-size` its Node processes get, and `fromMemoryMaxGiB` and `fromHeapMiB`, the ones it had: 1.5 times its machine's job memory limit, at most the memory available above the machine's memory floor. Else `skipped`, why not (no memory limit, no memory reading, or less than 0.5 GiB more room), and it runs with its own limits. Its parts list shows it under machines.
+
+| field | type | required |
+|---|---|---|
+| `command` | string | yes |
+| `rerunOf` | string | yes |
+| `memoryMaxGiB` | number | no |
+| `heapMiB` | number | no |
+| `fromMemoryMaxGiB` | number | no |
+| `fromHeapMiB` | number | no |
+| `skipped` | string | no |
+
+```json
+{
+  "command": "tsc --noEmit -p .",
+  "rerunOf": "a1b2c3d4",
+  "memoryMaxGiB": 13.5,
+  "heapMiB": 10368,
+  "fromMemoryMaxGiB": 9,
+  "fromHeapMiB": 6912
+}
+```
+
 ## `job.core_dumped`
 
 Version 1 (`docs/schemas/job.core_dumped.v1.json`). A process of the job ended with a core dump on its machine (`machineId`, issue #2722 part 3, design.md "Core dumps and OOM kills"): a signal ended it and systemd-coredump took its core, which the job's reap read at its end from the journal entries of the job's scope. `command`: what ran, as for `job.heap_aborted` (the script node ran by its file's name, each path by its file's name, at most 120 characters), from the journal's command line; `a process` when it gave none. `signal`: the signal by its name (`SIGSEGV`, `SIGABRT`), `signal <n>` for another. `dumpedAt`: when. A core dump of a heap abort is the heap abort's (`job.heap_aborted`), and so is its parent's of the same signal at most 10 s after it. A failed part of the job; the job itself does not fail for it.
