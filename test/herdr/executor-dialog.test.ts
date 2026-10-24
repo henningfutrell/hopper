@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contextFor, jobWith, setup } from './support.ts';
+import { contextFor, jobWith, LANE, LOCAL, setup } from './support.ts';
 
 describe('herdr-claude executor: a dialog as a question', () => {
   // Issue #377: the question is the dialog; the tool output above it goes in recentOutput only.
@@ -58,5 +58,17 @@ describe('herdr-claude executor: a dialog as a question', () => {
     const own = setup({ turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
     await own.executor.run(contextFor(jobWith({ prompt: 'go', env: { GRADLE_OPTS: '-Xmx1g', MAVEN_OPTS: '-Xmx1g' } })).ctx);
     expect(own.herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { GRADLE_OPTS: `${caps} -Xmx1g ${idle}`, MAVEN_OPTS: '-Xmx2g -Xmx1g' } });
+  });
+
+  // Issue #2721: Node sizes its default heap at a quarter of its scope's memory limit, so tsc ran out of heap in a job. A
+  // machine whose jobs get a memory limit gives Node a heap of 75% of it; a payload's own heap size stays.
+  it("gives Node a heap of the job's memory limit, and keeps the payload's own heap size", async () => {
+    const machine = { ...LOCAL, resources: { cores: 8, memTotalBytes: 60 * 1024 ** 3, memAvailableBytes: 60 * 1024 ** 3 }, maxLanes: 6 };
+    const limited = setup({ turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
+    await limited.executor.run(contextFor(jobWith({ prompt: 'go' }), LANE, machine).ctx);
+    expect(limited.herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { NODE_OPTIONS: '--max-old-space-size=6912' } });
+    const own = setup({ turns: [{ output: ['● Done.', '  HOPPER_DONE'] }] });
+    await own.executor.run(contextFor(jobWith({ prompt: 'go', env: { NODE_OPTIONS: '--max-old-space-size=12000' } }), LANE, machine).ctx);
+    expect(own.herdr.calls.find((c) => c.method === 'createTab')!.args[0]).toMatchObject({ env: { NODE_OPTIONS: '--max-old-space-size=12000' } });
   });
 });

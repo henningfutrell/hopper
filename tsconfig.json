@@ -15,5 +15,5 @@
     "types": ["node"]
   },
   "include": ["src", "cloud", "test", "scripts", "examples", "vitest.config.ts", "vitest.cloud.config.ts", "eslint.config.js"],
-  "exclude": ["test/e2e/sse-vault-wiremock"]
+  "exclude": ["test/e2e/sse-vault-wiremock", "**/node_modules", ".worktrees", "**/@scratch"]
 }
