@@ -34326,11 +34326,13 @@ as `hopper-relay` is — a POSIX sh line that runs a Node module with no depende
 the job's work tree: `sh "$HOPPER_REQUIREMENTS" check`.
 
 1. It reads the commit checked out (HEAD, on a branch; changes not committed are refused: an evaluation is of a commit),
-   each requirements file in the commit, and the repository from `origin`.
+   and the repository from `origin`.
 2. It asks the hopper the branch's base (`POST /job/requirements`, `op: base`): the base the git proxy judges the push
    against, as the shrink guard's — the open pull request's base, else the landing branch, else the default branch
    (`baseBranchOf`). `--base` names one.
-3. It fetches the base, and lists the files the commit changes from their merge base (`git diff --no-renames`).
+3. It fetches the base, and lists the files the commit changes from their merge base (`git diff --no-renames`). It reads
+   each requirements file of the base's tip and of the commit; the commit's file replaces the base's at the same path
+   (issue #2712: a branch made before its repository kept a requirements file still meets it).
 4. The hopper plans (`op: plan`): which requirements apply, with the job's kind of work and labels, and why each other one
    is skipped.
 5. It runs each check of each requirement that applies, here, on the job's machine, and keeps the output here.
@@ -34349,8 +34351,8 @@ in the client. One copy of the rules, in the domain, tested once; the client onl
 **The gate** (`src/users/push-requirements.ts`, the git broker's `pushRequirements`). In the git proxy, after the shrink
 guard, each branch a job's push moves to a commit is judged: the job's newest evaluation of that commit in that
 repository passed, the push goes on; it failed, the push is refused with the requirements that failed. With no
-evaluation of the commit, the commit's tree is read in the user's mirror, in the push's quarantine
-(`src/git-mirror/push-requirements-at.ts`): no requirements file, the push goes on, as before; one, the push is refused,
+evaluation of the commit, the commit's tree and the base's tip are read in the user's mirror, the commit in the push's
+quarantine (`src/git-mirror/push-requirements-at.ts`): no requirements file in either, the push goes on, as before; one, the push is refused,
 as git's own refusal: `octo/tools has push requirements, and 4f1c2a9e8b7d has no passing evaluation: run sh
 "$HOPPER_REQUIREMENTS" check in the work tree at that commit, fix what fails, and push again`. With no requirements file,
 the **default push requirements** (below) are planned against the files the commit changes from where it leaves the base,
@@ -34358,7 +34360,23 @@ read in the same quarantine (`git merge-base`, `git diff --name-only --no-rename
 job's kind of work and labels: one applies, the push is refused the same way, naming it (`the hopper's default push
 requirements apply to 4f1c2a9e8b7d (workflows), …`); none applies, the push goes on with no evaluation. A new commit (an
 amend, a rebase) needs a new evaluation. Git cannot say (no credential, git failing): the push goes on, as with the shrink guard —
-a net, not a gate a broken mirror may close on every push. A branch deleted is not judged.
+a net, not a gate a broken mirror may close on every push. But when the base's tip holds a requirements file and only the
+pushed commit cannot be read, the push is refused as for one that holds it (issue #2712). A branch deleted is not judged.
+A refusal of a failed evaluation names each failed requirement with why: `kotlin-coverage (changed-files coverage: it
+exited 2)`.
+
+**A gate that cannot run where the job runs** (issue #2712, 2026-10-24). Seen: a repository added a coverage gate to its
+requirements file, and for a day its jobs' branches that changed the files it names still reached GitHub and failed that
+gate in CI. Those branches were made before the file was on the base, so their commits held no requirements file: the
+client found no requirement, and the gate read none in the commit. Its command, run on a job machine with no JDK and no
+container runtime, exits 2. What holds now:
+- The base's requirements hold for every branch that merges into it (step 3 above, and the gate).
+- Any exit but 0 fails a check: 1, 2, 127 alike (`judgeEvaluation`). A failed check is never a pass or a skip, and the push
+  of its commit is refused with its exit code; the client prints the last 200 lines of its output.
+- A check that needs what the job's machine lacks runs where it is: its `run` can be a box step,
+  `sh "$HOPPER_STEP" box <template> --script <file>`, with the files it reads as `--input` ("Box steps"), whose exit code is the step's. The client passes the
+  job's environment to each check, so `HOPPER_STEP` is there. Not taken: the hopper picks a box for a requirement by
+  itself. The repository knows its toolchain, and a box needs the template's approval; the file names it once.
 
 **Trust.** The job runs its checks and reports their exit codes: a job that lies passes its own gate. The gate is for a
 job that works as asked, to catch in a minute what CI catches in fifteen; CI still runs every gate on the pull request.

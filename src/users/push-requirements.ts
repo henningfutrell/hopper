@@ -1,7 +1,7 @@
 // Push requirements at the push (issue #2555, design.md "Push requirements"): the git proxy asks, for each branch a job's
 // push moves, whether the job may push that commit. Yes when the job's newest evaluation of that commit in that repository
-// passed; no when it failed. With no evaluation, the commit's tree is read in the user's mirror: a requirements file, the
-// push is refused until an evaluation passes; none, the hopper's default requirements are planned against the files the
+// passed; no when it failed. With no evaluation, the commit's tree and its base's tip are read in the user's mirror: a
+// requirements file in either (issue #2712: a branch made before its repository kept one), the push is refused until an evaluation passes; none, the hopper's default requirements are planned against the files the
 // commit changes, with the job's own (a direct job's, part 3), and the push is refused only when one applies. Git cannot say: the push goes on, as with the shrink guard.
 // The evaluation of a pushed commit is summarized in its pull request's body (part 4): at `pr create`, and after each push.
 import { effectiveRequirements, planPush, type PushRequirement } from '../domain/push-requirements.ts';
@@ -43,7 +43,11 @@ export function pushRequirementsGate(o: {
     const evaluated = evaluationOf(o.evaluations(push.jobId), push.repo, push.new);
     if (evaluated?.passed) return { ok: true };
     if (evaluated) {
-      const failed = evaluated.requirements.filter((q) => q.status === 'failed').map((q) => q.id);
+      // Each failed requirement with why: a check's exit code (2 as 1: any but 0 fails), a threshold, or checks not run.
+      const failed = evaluated.requirements.filter((q) => q.status === 'failed').map((q) => {
+        const why = (q.checks ?? []).filter((c) => !c.passed).map((c) => `${c.name}: ${c.problem ?? 'it failed'}`);
+        return `${q.id} (${why.length > 0 ? why.join('; ') : q.reason ?? 'it failed'})`;
+      });
       return { ok: false, reason: `the push requirements failed for ${commit}: ${failed.join(', ')}. Fix what fails, commit, run ${CHECK} again, and push` };
     }
     const tree = o.holds ? await o.holds(push.repo, o.remote(push.repo), { base: push.base, new: push.new, pack: push.pack }).catch(() => undefined) : undefined;

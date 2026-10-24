@@ -8,6 +8,10 @@
 //     And a push with no evaluation is refused, saying what to run
 //     And a check under its threshold fails the evaluation, with the check's output, and the push is still refused
 //     And once the fix passes, the evaluation is recorded on the job, and the push goes through
+//   Scenario: a branch made before its repository kept a requirements file (issue #2712)
+//     Then the base's requirements apply: a push with no evaluation is refused, and the check runs them
+//   Scenario: a check that exits 1 or 2 (issue #2712: a gate that cannot run where the job runs exits 2)
+//     Then the requirement fails, and the push is refused, saying the exit code
 //   Scenario: a repository with no requirements file
 //     Then a push goes through with no evaluation
 //   Scenario: the hopper's default requirements (Settings → Push requirements), an admin's setting
@@ -22,7 +26,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
-import { branchesOf, eventsOf, running, start, stopGitProxies, type Started } from '../support/git-proxy.ts';
+import { branchesOf, eventsOf, running, seedCommit, start, stopGitProxies, type Started } from '../support/git-proxy.ts';
 import { jobOnBranch, REQUIREMENTS } from '../support/push-requirements.ts';
 
 afterEach(stopGitProxies);
@@ -111,6 +115,39 @@ describe('push requirements (issue #2555)', () => {
     });
     t.held.get(r.job.id)!.end();
     await t.app.waitForStatus(r.job.id, 'finished');
+  }, 60_000);
+
+  it('a branch made before its repository kept a requirements file meets the base\'s requirements (issue #2712)', async () => {
+    const t = await start();
+    const r = await jobOnBranch(t, null);
+    await seedCommit(t, 'octo/tools', 'dev', { '.hopper/requirements.yaml': REQUIREMENTS });
+    const unchecked = await r.push();
+    expect(unchecked.code).not.toBe(0);
+    expect(unchecked.stderr).toContain('octo/tools has push requirements');
+    const failed = await r.requirements('check');
+    expect(failed.code).toBe(1);
+    expect(failed.stdout).toContain('failed  kotlin-coverage (repo)');
+    expect((await r.push()).code).not.toBe(0);
+    writeFileSync(join(r.work, 'coverage.txt'), 'hopper-measure changedLines=84\n');
+    await r.git(['commit', '--quiet', '-am', 'Cover B'], r.work);
+    expect(await r.requirements('check')).toMatchObject({ code: 0 });
+    expect(await r.push()).toMatchObject({ code: 0 });
+  }, 60_000);
+
+  it.each([1, 2])('a check that exits %i fails its requirement, and the push is refused with the exit code (issue #2712)', async (exit) => {
+    const t = await start();
+    const r = await jobOnBranch(t, REQUIREMENTS.replace('run: cat coverage.txt', `run: echo no JDK here; exit ${exit}`));
+    const failed = await r.requirements('check');
+    expect(failed.code).toBe(1);
+    expect(failed.stdout).toContain(`it exited ${exit}`);
+    expect(failed.stdout).toContain('| no JDK here');
+    const refused = await r.push();
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toContain(`kotlin-coverage (changed-files coverage: it exited ${exit})`);
+    const head = (await r.git(['rev-parse', 'HEAD'], r.work)).stdout.trim();
+    expect(eventsOf(t.app, 'push_requirements.evaluated')).toEqual([expect.objectContaining({
+      jobId: r.job.id, data: expect.objectContaining({ head, passed: false, requirements: expect.arrayContaining([expect.objectContaining({ id: 'kotlin-coverage', status: 'failed' })]) }),
+    })]);
   }, 60_000);
 
   it('a check is of a commit: changes not committed are refused', async () => {
