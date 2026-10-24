@@ -47,6 +47,8 @@ export const PR_READY = 'done: its pull request waits for review';
 export const PARTLY_DONE = 'partly done: the rest runs once its pull request merges';
 export const PR_CLOSED = 'its pull request was closed without a merge: hopper:pr-closed is on the issue';
 export const BLOCKED = 'blocked: no pull request was found for it; hopper:blocked is on the issue';
+/** Blocked for want of a pull request (issue #2693): no label says so, and the hopper looks for one, then runs it again. */
+export const NO_PR = 'waiting: its job ended with no pull request; the hopper looks for one, then runs it again';
 export const BLOCKED_STALE = 'blocked: it stayed past its deadline with no move, and waits on a person';
 export const REJECTED_LABEL = 'rejected: hopper:rejected is on the issue';
 export const REJECTED_BY_YOU = 'rejected by you: not taken until assigned to you again';
@@ -137,9 +139,11 @@ export function ledgerReason(item: WorkItem | undefined, facts: LabelFacts): { r
   if (item.state === 'pr_open') return { reason: facts.part ? PARTLY_DONE : PR_READY };
   if (item.state === 'failed') return want.add === LABEL_DONE ? { reason: DONE_OPEN } : facts.failureReported || facts.failureReportWaits ? { reason: FAILED } : {};
   if (item.state === 'needs_you' && item.waitingOn === HANDOFF_WAIT) return { reason: FAILED };
+  // Done by its end, its report found no pull request (issue #2693): no label, and it keeps out as done, not taken again.
+  if (item.state === 'done' && facts.doneReported === 'no_pr') return { reason: DONE_OPEN };
   if (item.state === 'done' || item.state === 'partly_done') return want.add !== undefined ? { reason: labelReason({ labels: [want.add] }, null) } : {};
   if (item.state === 'dropped') return item.wontDo === true ? { reason: REJECTED_LABEL } : item.dismissed === true ? { reason: FAILED } : item.closedByPerson === true || item.closedByHopper === true ? { reason: PR_CLOSED } : item.keptOut !== undefined ? { reason: labelReason({ labels: [item.keptOut] }, null) } : facts.dropReported === 'pr_ready' ? { reason: PR_READY } : {};
-  if (item.state === 'blocked') return { reason: item.blockedCause === 'pr_closed' ? PR_CLOSED : item.blockedCause === 'stale' ? BLOCKED_STALE : BLOCKED };
+  if (item.state === 'blocked') return { reason: item.blockedCause === 'pr_closed' ? PR_CLOSED : item.blockedCause === 'stale' ? BLOCKED_STALE : NO_PR };
   return {};
 }
 
@@ -222,7 +226,7 @@ const GROUP_OF: Record<string, NotTakenGroup> = { [NOT_ASSIGNED]: 'not-assigned'
 export const groupOf = (reason: string): NotTakenGroup => GROUP_OF[reason] ?? 'other';
 
 /** What a person can do about an issue its labels keep out: take it off the backburner, or Won't do on a blocked one (issue #1891). */
-const LABEL_ACTION: Record<string, IntakeOutcome['action']> = { [BACKBURNER]: 'unbackburner', [BLOCKED]: 'wont_do', [BLOCKED_STALE]: 'wont_do', [PR_CLOSED]: 'wont_do' };
+const LABEL_ACTION: Record<string, IntakeOutcome['action']> = { [BACKBURNER]: 'unbackburner', [BLOCKED]: 'wont_do', [BLOCKED_STALE]: 'wont_do', [NO_PR]: 'wont_do', [PR_CLOSED]: 'wont_do' };
 
 const outcome = (i: GitHubIssue, reason?: string, action?: IntakeOutcome['action']): IntakeOutcome => ({
   key: i.url, title: i.title, repo: i.repo, ...(reason !== undefined ? { reason, group: groupOf(reason) } : {}), ...(action ? { action } : {}),

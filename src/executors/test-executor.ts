@@ -82,6 +82,8 @@ export function createTestExecutor(): Executor {
       const { op, ms, message, revised } = ctx.job.spec.payload as unknown as TestPayload;
       if (!(await wait(ms ?? 0, ctx.signal))) return ABORTED;
       if (op === 'fail-after-answer') return { kind: 'failed', error: `failed after answer: ${answer}` };
+      // Rejected on an issue (issue #2693): told to go back to the issue's work, it ends done.
+      if (op === 'propose' && answer.includes('was rejected') && answer.includes('HOPPER_DONE')) return { kind: 'finished', result: { answer } };
       if (op === 'propose' && revised !== undefined) return { kind: 'report', review: 'proposal', report: { text: `${revised}\n\nRevised after: ${answer}`, recentOutput: '' } };
       if (op === 'propose') return { kind: 'report', review: 'proposal', report: { text: `${message ?? 'Goal: something'}\nRevised after: ${answer}`, recentOutput: '' } };
       // Accepted research it was not asked for (issue #538): told to go on, it ends done.

@@ -23,7 +23,7 @@ export type BlockedCause = typeof BLOCKED_CAUSES[number];
 /** What a blocked item waits on, in plain words. */
 export const BLOCKED_WORDS: Readonly<Record<BlockedCause, string>> = {
   stale: 'a person: it stayed past its deadline with no move',
-  no_pr: 'a pull request: none was found for it',
+  no_pr: 'its pull request: none was found yet, so the hopper looks for one, then runs it again',
   pr_closed: 'a person: its pull request was closed without a merge',
 };
 
@@ -112,16 +112,16 @@ export interface ReconcileJob { id: string; status: string; ended: boolean; upda
 export type ItemCorrection =
   | { kind: 'replay'; key: string; jobId: string; from: WorkItemState }
   | { kind: 'block'; key: string; from: WorkItemState; cause: BlockedCause }
-  | { kind: 'run_again'; key: string; jobId: string; pullRequest?: string }
+  | { kind: 'run_again'; key: string; jobId: string; cause: 'pr_closed' | 'no_pr'; pullRequest?: string }
   | { kind: 'ask'; key: string; cause: BlockedCause; jobId?: string; pullRequest?: string };
 
 /**
  * Whether a blocked item is stuck work for a person (Failures' `pr_open_stale`): blocked as stale, or for want of a pull
  * request for `BLOCKED_NO_PR_MS` — a job's end is blocked on it until its report names the pull request, a moment later.
  */
-export function blockedStuck(item: Pick<WorkItem, 'state' | 'stateSince' | 'blockedCause' | 'closedWithoutMerge'>, now: string): boolean {
+export function blockedStuck(item: Pick<WorkItem, 'state' | 'stateSince' | 'blockedCause' | 'closedWithoutMerge' | 'noPullRequestEnds'>, now: string): boolean {
   if (item.state !== 'blocked') return false;
-  if (runsAgainBySelf(item, now)) return false;
+  if (runsAgainBySelf(item, now) || runsAgainForPullRequest(item)) return false;
   return item.blockedCause !== 'no_pr' || Date.parse(now) - Date.parse(item.stateSince) >= BLOCKED_NO_PR_MS;
 }
 
@@ -138,8 +138,25 @@ export const RUN_AGAIN_WINDOW_MS = 24 * 60 * MINUTE;
  */
 export const runsAgainBySelf = (item: Pick<WorkItem, 'state' | 'stateSince' | 'blockedCause' | 'closedWithoutMerge'>, now: string): boolean =>
   item.state === 'blocked' && item.blockedCause === 'pr_closed' && item.closedWithoutMerge === 1 && Date.parse(now) - Date.parse(item.stateSince) < RUN_AGAIN_WINDOW_MS;
-/** How long an item blocked for want of a pull request waits before a person is asked: its report names one before. */
+/** How long an item blocked for want of a pull request waits before it runs again or a person is asked: its report names one before. */
 export const BLOCKED_NO_PR_MS = 10 * MINUTE;
+
+/** How many times in a row the item reconciler runs an item again by itself when its job ended with no pull request (issue #2693). */
+export const NO_PR_RUNS_AGAIN = 2;
+
+/**
+ * Whether the item reconciler runs the item again by itself for want of a pull request (issue #2693): blocked so, at most
+ * `NO_PR_RUNS_AGAIN` ends in a row with none (`noPullRequestEnds`; an item blocked so before the count was kept is one).
+ */
+export const runsAgainForPullRequest = (item: Pick<WorkItem, 'state' | 'blockedCause' | 'noPullRequestEnds'>): boolean =>
+  item.state === 'blocked' && item.blockedCause === 'no_pr' && (item.noPullRequestEnds ?? 1) <= NO_PR_RUNS_AGAIN;
+
+/** The states that end a row of ends with no pull request (issue #2693): one to wait on, a merge, or a done end. */
+export const ROW_ENDS: readonly WorkItemState[] = ['pr_open', 'partly_done', 'done'];
+
+/** The ends in a row with no pull request after one more such end of the item `base` (its replay is no second end). */
+export const noPullRequestEndsAfter = (base: Pick<WorkItem, 'eventState' | 'blockedCause' | 'noPullRequestEnds'>): number =>
+  base.eventState === 'blocked' && base.blockedCause === 'no_pr' ? base.noPullRequestEnds ?? 1 : (base.noPullRequestEnds ?? 0) + 1;
 
 /** How long a change stays too new for the reconciler: the events in flight settle first. */
 export const RECONCILE_GRACE_MS = 2 * MINUTE;
@@ -152,6 +169,8 @@ export const RECONCILE_GRACE_MS = 2 * MINUTE;
  * open pull request a job follows is blocked: `no_pr` with none named, else `stale`. Any other state past its deadline is
  * blocked as `stale`: one a job holds only with no job of the item found, partly done with no job for its next part. An item blocked because its pull
  * request was closed without a merge for the first time in a row (`runsAgainBySelf`) runs again: its ended job's Run again.
+ * So does an item blocked for want of a pull request whose finished job named none `BLOCKED_NO_PR_MS` on, a few times in a
+ * row (`runsAgainForPullRequest`, issue #2693): no pull request found is no resting state.
  * A blocked item that is stuck work for a person (`blockedStuck`) and not asked about yet gets its one notice (`ask`).
  */
 export function correctionOf(item: WorkItem, job: ReconcileJob | undefined, follows: boolean, now: string): ItemCorrection | undefined {
@@ -162,10 +181,12 @@ export function correctionOf(item: WorkItem, job: ReconcileJob | undefined, foll
     return { kind: 'replay', key: item.key, jobId: job.id, from: item.state };
   }
   if (runsAgainBySelf(item, now) && job?.ended && job.id === item.jobId) {
-    return { kind: 'run_again', key: item.key, jobId: job.id, ...(item.pullRequest !== undefined ? { pullRequest: item.pullRequest } : {}) };
+    return { kind: 'run_again', key: item.key, jobId: job.id, cause: 'pr_closed', ...(item.pullRequest !== undefined ? { pullRequest: item.pullRequest } : {}) };
   }
-  if (item.state === 'blocked' && item.blockedCause === 'no_pr' && job?.status === 'finished' && job.id === item.jobId && job.pullRequest !== undefined) {
-    return { kind: 'replay', key: item.key, jobId: job.id, from: item.state };
+  if (item.state === 'blocked' && item.blockedCause === 'no_pr' && job?.status === 'finished' && job.id === item.jobId) {
+    if (job.pullRequest !== undefined) return { kind: 'replay', key: item.key, jobId: job.id, from: item.state };
+    // None named a moment after its end (issue #2693): no resting state, it runs again by itself, a few times in a row.
+    if (runsAgainForPullRequest(item) && Date.parse(now) - Date.parse(item.stateSince) >= BLOCKED_NO_PR_MS) return { kind: 'run_again', key: item.key, jobId: job.id, cause: 'no_pr' };
   }
   if (item.state === 'pr_open') {
     const deadline = checkOf(item.state, item.eventAt)?.deadline;

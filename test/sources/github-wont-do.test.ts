@@ -54,7 +54,7 @@ describe('Won\'t do on a blocked item (issue #1891)', () => {
   });
 
   it('a second Won\'t do adds no event and no row', async () => {
-    const { gh, source, events } = setup({ [url(1)]: { blockedCause: 'no_pr' } });
+    const { gh, source, events } = setup({ [url(1)]: { blockedCause: 'stale' } });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:blocked'] });
     await source.discover();
     await source.intakeAction!({ kind: 'wont_do', keys: [url(1)], acting: ACTING });

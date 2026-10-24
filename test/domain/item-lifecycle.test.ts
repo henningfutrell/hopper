@@ -92,7 +92,7 @@ describe('the item lifecycle', () => {
     const PR = 'https://github.com/o/r/pull/2';
     const closed = item({ state: 'blocked', eventState: 'blocked', blockedCause: 'pr_closed', closedWithoutMerge: 1, pullRequest: PR, pullRequestState: 'closed' });
     expect(correctionOf(closed, ended, false, at(1))).toBeUndefined();
-    expect(correctionOf(closed, ended, false, at(3))).toEqual({ kind: 'run_again', key: KEY, jobId: 'j1', pullRequest: PR });
+    expect(correctionOf(closed, ended, false, at(3))).toEqual({ kind: 'run_again', key: KEY, jobId: 'j1', cause: 'pr_closed', pullRequest: PR });
     expect(blockedStuck(closed, at(3))).toBe(false);
     // A second close in a row, or one older than the window (a rebuild found it): a person decides.
     expect(correctionOf({ ...closed, closedWithoutMerge: 2 }, ended, false, at(3))).toMatchObject({ kind: 'ask', cause: 'pr_closed' });
@@ -119,8 +119,8 @@ describe('the item lifecycle', () => {
     expect(correctionOf(stale, ended, false, at(1))).toBeUndefined();
     expect(correctionOf(stale, ended, false, at(3))).toEqual({ kind: 'ask', key: KEY, cause: 'stale', jobId: 'j1', pullRequest: PR });
     expect(correctionOf({ ...stale, personAsked: true }, ended, false, at(3))).toBeUndefined();
-    // For want of a pull request: only once Failures lists it, as its report names one a moment after the job's end.
-    const noPr = item({ state: 'blocked', eventState: 'blocked', blockedCause: 'no_pr' });
+    // For want of a pull request: only once it ran again by itself as often as it may (issue #2693), and Failures lists it.
+    const noPr = item({ state: 'blocked', eventState: 'blocked', blockedCause: 'no_pr', noPullRequestEnds: 3 });
     expect(correctionOf(noPr, ended, false, at(5))).toBeUndefined();
     expect(correctionOf(noPr, ended, false, at(10))).toEqual({ kind: 'ask', key: KEY, cause: 'no_pr', jobId: 'j1' });
     // Closed once: the reconciler runs it again, no person is asked. Closed twice: a person is asked.

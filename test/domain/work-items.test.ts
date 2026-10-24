@@ -311,7 +311,7 @@ describe('what GitHub says moves the item (issue #1067, part 3)', () => {
 describe('a state that needs a pull request (issue #1891)', () => {
   it('a job that ended done naming no pull request is blocked for want of one, never in PR open', () => {
     const unseen = fold([['job.queued'], ['job.started'], ['job.finished', { result: 'opened a pull request' }]])!;
-    expect(unseen).toMatchObject({ state: 'blocked', blockedCause: 'no_pr', waitingOn: 'a pull request: none was found for it' });
+    expect(unseen).toMatchObject({ state: 'blocked', blockedCause: 'no_pr', waitingOn: 'its pull request: none was found yet, so the hopper looks for one, then runs it again', noPullRequestEnds: 1 });
     expect(unseen.pullRequest).toBeUndefined();
   });
 

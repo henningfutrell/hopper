@@ -132,9 +132,10 @@ describe('the pull request after done', () => {
     };
     const { issue, job } = await doneWithPullRequest(gh, app, ships);
     expect(job.partlyDone).toBeUndefined();
-    // No open pull request (issue #1891): never hopper:pr-ready with none; blocked, and the follow looks again.
-    await labelled(gh, issue.number, 'hopper:blocked');
+    // No open pull request (issue #1891): never hopper:pr-ready with none, nor hopper:blocked (issue #2693); the follow looks again.
+    await waitFor(() => !gh.issue(REPO, issue.number).labels.includes('hopper:claimed'), { what: 'the report out' });
     expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:pr-ready');
+    expect(gh.issue(REPO, issue.number).labels).not.toContain('hopper:blocked');
     await app.sync();
     const item = () => app.user().store.workItems.get(issue.url);
     await waitFor(() => item()?.state === 'partly_done', { what: 'the item partly done' });
