@@ -1,0 +1,1 @@
+- A job can now also read rows of a SQL Server database you approve, read only, and a database's set-up can name single tables in place of whole schemas.

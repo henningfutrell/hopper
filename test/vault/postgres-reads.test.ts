@@ -74,6 +74,18 @@ describe('a database read role (issue #2231)', () => {
     expect(await refusal(r, 'SELECT 1', dbs.b)).toMatch(/permission denied for database|does not have CONNECT privilege/);
   });
 
+  it('reads only the tables its credential names, when it names tables', async () => {
+    const r = role();
+    await reader.mint({ ...dbs.credential, schemas: [], tables: ['app.users'] }, { role: r, password: PASSWORD, validUntil: soon() });
+    expect(await refusal(r, 'SELECT count(*) FROM app.users')).toBe('no refusal');
+    await dbs.admin('CREATE TABLE app.other (id int); GRANT SELECT ON app.other TO ' + dbs.credential.user + ' WITH GRANT OPTION');
+    try {
+      expect(await refusal(r, 'SELECT * FROM app.other')).toBe('permission denied for table other');
+    } finally {
+      await dbs.admin('DROP TABLE app.other');
+    }
+  });
+
   it('is never made when it could change something: a person takes the grant from PUBLIC first', async () => {
     await dbs.admin('CREATE TABLE app.open (id int); GRANT INSERT ON app.open TO PUBLIC');
     try {

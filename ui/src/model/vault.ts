@@ -66,16 +66,17 @@ export function mintsValueOf(mints: Asset | undefined, value: string): { shape?:
 
 /**
  * A database's minting credential (issue #2231): one JSON value, the login that makes and drops the database read roles and the
- * schemas a database read role may SELECT from. `problem`: why the typed value is not one, never the value.
+ * schemas and tables a database read role may SELECT from. `problem`: why the typed value is not one, never the value.
  */
 function databaseValueOf(value: string): { shape: string; problem?: string } {
-  const shape = 'JSON: {"engine": "postgres", "host": "…", "database": "…", "user": "<the minting login>", "password": "…", "schemas": ["public"]} (and port, sslmode — verify-full, require or disable — or ca when it has them)';
+  const shape = 'JSON: {"engine": "postgres" or "sqlserver", "host": "…", "database": "…", "user": "<the minting login>", "password": "…", "schemas": ["public"], "tables": ["<schema>.<table>"]} (schemas, tables or both; and port, sslmode — verify-full, require or disable — or ca when it has them)';
   if (!value) return { shape };
   let v: Record<string, unknown> = {};
   try { v = JSON.parse(value) as Record<string, unknown>; } catch { /* below */ }
   const has = (k: string): boolean => typeof v?.[k] === 'string' && v[k] !== '';
-  const whole = ['engine', 'host', 'database', 'user', 'password'].every(has) && Array.isArray(v?.schemas) && (v.schemas as unknown[]).length > 0;
-  return whole ? { shape } : { shape, problem: 'a database\'s minting credential is JSON with engine, host, database, user, password and schemas' };
+  const count = (k: string): number => (Array.isArray(v?.[k]) ? (v[k] as unknown[]).length : 0);
+  const whole = ['engine', 'host', 'database', 'user', 'password'].every(has) && count('schemas') + count('tables') > 0;
+  return whole ? { shape } : { shape, problem: 'a database\'s minting credential is JSON with engine, host, database, user, password, and schemas or tables' };
 }
 
 /** What the card's title line says of the value: set in the hopper, or kept in a backend and read there. */
