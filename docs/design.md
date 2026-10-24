@@ -13684,7 +13684,8 @@ abort**, with the command, the heap limit and the process's peak memory.
 
 - **Node writes a report.** Every job's tools get `NODE_OPTIONS` that starts with `--report-on-fatalerror --report-compact
   --report-directory=<the job's temp link>` (`nodeReportEnv`, `src/domain/heap-aborts.ts`; `jobToolEnv` in
-  `src/executors/herdr/start.ts`, also a print-mode agent's turn); the payload's own `NODE_OPTIONS` come after it. On a
+  `src/executors/herdr/start.ts`, also a print-mode agent's turn); the Node heap of the build defaults (issue #2721), else
+  the payload's own `NODE_OPTIONS`, come after it. On a
   fatal error only — a heap that runs out is one — Node writes its diagnostic report as one line of JSON into the job's
   scratch dir, and nothing at any other time. These options are Node's own since Node 12. Not `--report-exclude-env`: a
   Node older than 22.13 refuses it in `NODE_OPTIONS` and does not start at all. So the report holds the process's
@@ -13703,8 +13704,7 @@ abort**, with the command, the heap limit and the process's peak memory.
 Read at the reap, so a heap abort shows when the job ends, not while it runs. Left for the next parts of the issue: a
 core dump and a cgroup OOM kill of a job process as typed failures of their own (the OOM kills of the scope are counted
 already, `job.resources_used`), one automatic retry with a larger heap, repeated heap aborts of one command across jobs
-as a pattern for the failure assessor, memory per lane on the UI, and no misleading state after a downstream crash. The
-Node heap from the job's memory limit is issue #2721.
+as a pattern for the failure assessor, memory per lane on the UI, and no misleading state after a downstream crash.
 
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
