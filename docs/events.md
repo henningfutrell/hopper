@@ -1098,6 +1098,26 @@ Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used
 }
 ```
 
+## `job.heap_aborted`
+
+Version 1 (`docs/schemas/job.heap_aborted.v1.json`). A Node process of the job ran out of heap on its machine (`machineId`, issue #2722, design.md "Heap aborts"): V8 ended it with "JavaScript heap out of memory", and the report it wrote to the job's temp dir (every job's `NODE_OPTIONS` asks for one on a fatal error) was read by the job's reap at its end, then removed. `command`: what ran, the script node ran by its file's name with its arguments (`tsc --noEmit -p .`), never a path, at most 120 characters; `node` when it ran no script. `heapLimitBytes`: V8's heap limit for it (its `memoryLimit`); `rssPeakBytes`: the most memory the process held (its `maxRss`); `abortedAt`: when it aborted. Each is absent where the report did not say it. One for each report, at most 20 for each reap. The job's parts list shows each as failed.
+
+| field | type | required |
+|---|---|---|
+| `command` | string | yes |
+| `heapLimitBytes` | number | no |
+| `rssPeakBytes` | number | no |
+| `abortedAt` | string | no |
+
+```json
+{
+  "command": "tsc --noEmit -p .",
+  "heapLimitBytes": 2248146944,
+  "rssPeakBytes": 2405000000,
+  "abortedAt": "2026-10-24T10:41:00.000Z"
+}
+```
+
 ## `job.cleanup_leftover`
 
 Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Machines counts it while an entry stays, and the cleanup worker tries again (it is no stuck work on Failures, issue #2684). An entry on a retired machine (no machine source lists it, the plugins config does not name it) is then closed `retired` in the ledger (part 12), and the leftover ends.

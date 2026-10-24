@@ -52,7 +52,7 @@ describe('herdr-claude executor: run', () => {
     const { ctx, saved, sessions } = contextFor(jobWith({ prompt: 'Write hello.txt', model: 'opus' }));
     await executor.run(ctx);
     expect(herdr.calls.find((c) => c.method === 'ensureWorkspace')!.args).toEqual(['hopper', CWD]);
-    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12 · 1.1`, env: { CLAUDE_CODE_TMPDIR: TMP, TMPDIR: TMP, HOPPER_JOB_ID: JOB_ID, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', CHECKPOINT_DISABLE: '1', GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.workers.max=2 -Dkotlin.compiler.execution.strategy=in-process -Dorg.gradle.daemon.idletimeout=300000', MAVEN_OPTS: '-Xmx2g' } }]);
+    expect(herdr.calls.find((c) => c.method === 'createTab')!.args).toEqual([{ workspaceId: 'w1', cwd: CWD, label: `${LANE} · abcdef12 · 1.1`, env: { CLAUDE_CODE_TMPDIR: TMP, TMPDIR: TMP, HOPPER_JOB_ID: JOB_ID, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', CHECKPOINT_DISABLE: '1', GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.workers.max=2 -Dkotlin.compiler.execution.strategy=in-process -Dorg.gradle.daemon.idletimeout=300000', MAVEN_OPTS: '-Xmx2g', NODE_OPTIONS: `--report-on-fatalerror --report-compact --report-directory=${TMP}` } }]);
     expect(herdr.agentStarts).toEqual([{ name: 'jh-abcdef12', paneId: 'w1:p1', args: ['--dangerously-skip-permissions', '--model', 'opus', '--session-id', sessions[0]!], timeoutMs: 60000 }]);
     // The session the hopper chose (issue #501), reported once Claude is up: a parked job resumes it.
     expect(sessions).toEqual([expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)]);

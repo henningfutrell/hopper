@@ -5,6 +5,7 @@
 // target runs them, and a client release is the files in that directory. Imports nothing of hopper but its own directory.
 
 import { DETAILS_FORMAT, DETAILS_MARK, JOB_LABEL, REAP_RUNTIME_SH, SURVEY_RUNTIME_SH } from './job-runtime.ts';
+import { HEAP_REPORTS_SH, heapOf, usedOf, type HeapReport, type ResourceUse } from './reap-use.ts';
 
 /** A job id the scripts take: a uuid, or a test's plain name. Never a pattern, a path or an option. */
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
@@ -90,6 +91,7 @@ const REAP_SCRIPT = [
   'cr=${HOPPER_CGROUP_ROOT:-/sys/fs/cgroup}; cg=; command -v systemctl >/dev/null 2>&1 && cg=$(systemctl --user show -p ControlGroup --value "hopper-job-$id.scope" 2>/dev/null);',
   'case $cg in *..*) ;; /?*) [ -d "$cr$cg" ] && { mp=$(head -n 1 "$cr$cg/memory.peak" 2>/dev/null); cu=$(sed -n "s/^usage_usec //p" "$cr$cg/cpu.stat" 2>/dev/null);',
   '  ok=$(sed -n "s/^oom_kill //p" "$cr$cg/memory.events" 2>/dev/null); printf "hopper-used %s %s %s\\n" "${mp:--}" "${cu:--}" "${ok:--}"; };; esac;',
+  ...HEAP_REPORTS_SH,
   // The job's scope: every process in it, whatever it did to its environment or session.
   'if command -v systemctl >/dev/null 2>&1; then systemctl --user stop "hopper-job-$id.scope" >/dev/null 2>&1; fi;',
   // Where there is no systemd, or for what left the scope: the processes carrying the job's id, and those run from its
@@ -318,7 +320,7 @@ export type KeptReason = typeof KEPT_REASONS[number];
  * could not remove (issue #1452), why it kept each it kept (`reasons`, issue #2494; none from a client older than that), and the containers and volumes of the job it removed (issue #1120), with what it said of
  * each container (issue #975; none from a client older than that). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; leftWhy?: Record<string, LeftCause>; loose?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse } | undefined {
+export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; leftWhy?: Record<string, LeftCause>; loose?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse; heap?: HeapReport[] } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
@@ -346,31 +348,11 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
   return {
     kept, ...(Object.keys(tips).length ? { tips } : {}), ...(Object.keys(reasons).length ? { reasons } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}), ...(Object.keys(leftWhy).length ? { leftWhy } : {}), ...(loose.length ? { loose } : {}),
     ...(containers.length || volumes.length ? { removed: { containers, volumes, ...(details.length ? { details } : {}) } } : {}),
-    ...usedOf(lines),
+    ...usedOf(lines), ...heapOf(lines),
   };
 }
 
-/**
- * What a job used (issue #2498), as `job.resources_used` records it: its scope's, each field absent where its cgroup had
- * none, and the disk its scratch dir and worktrees held (part 4), absent where it had neither.
- */
-export interface ResourceUse { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; diskBytes?: number }
 
-/**
- * The reap's `hopper-used <peak bytes> <CPU µs> <OOM kills>` line, each `-` when unread, and its `hopper-disk <KiB>` line;
- * nothing when no field was read.
- */
-function usedOf(lines: readonly string[]): { used?: ResourceUse } {
-  const m = lines.map((l) => /^hopper-used (\S+) (\S+) (\S+)$/.exec(l)).find((x) => x !== null);
-  const n = (v: string | undefined): number | undefined => (v && /^\d+$/.test(v) ? Number(v) : undefined);
-  const peak = n(m?.[1]), usec = n(m?.[2]), oom = n(m?.[3]);
-  const kib = n(lines.map((l) => /^hopper-disk (\d+)$/.exec(l)?.[1]).find((x) => x !== undefined));
-  const used: ResourceUse = {
-    ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}),
-    ...(kib !== undefined ? { diskBytes: kib * 1024 } : {}),
-  };
-  return Object.keys(used).length ? { used } : {};
-}
 
 /** One scratch dir the survey found: its job, path and age. */
 export interface SurveyedDir { jobId: string; path: string; ageMs: number }
