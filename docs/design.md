@@ -844,9 +844,14 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   With a memory limit, the build JVMs also take their sizes from the job's limits (issue #2737), in place of the fixed
   2 GiB and 2 workers above: the build JVM's heap (`-Dorg.gradle.jvmargs=-Xmx<n>m`, and `MAVEN_OPTS` `-Xmx<n>m`) is half the
   limit (`JVM_HEAP_SHARE`), and Gradle gets a worker for each GiB of the other half, at most one for each CPU of the job's
-  CPU quota, at least one (`gradleWorkers`): 9 GiB gives `-Xmx4608m` and 4 workers, 2 GiB `-Xmx1024m` and 1. Every other JVM
+  CPU quota, at least one (`buildWorkers`): 9 GiB gives `-Xmx4608m` and 4 workers, 2 GiB `-Xmx1024m` and 1. Every other JVM
   (a test worker, a forked compiler) sizes its own default heap from the scope's cgroup limit, as Node does. With no memory
   limit, the fixed defaults stay.
+  vitest gets the same worker count (`VITEST_MAX_WORKERS`, issue #2737), unless the payload's own sets it: it starts a
+  worker for each CPU it sees, each a Node process with a heap of its own, whatever the job's memory limit. vitest reads
+  the variable over its config and its `--maxWorkers`. No other test runner gets a count: jest reads no variable for it,
+  Maven Surefire forks one JVM by default and a project's `1C` follows the scope's CPU quota through the JVM's container
+  support, and Gradle's test forks are its workers, capped above.
 - **`.worktrees` ignores itself.** Before `agent start`, the pane's own shell runs
   `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.worktrees/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361; on a Windows

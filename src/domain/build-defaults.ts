@@ -9,6 +9,8 @@
 // Issue #2737: with a memory limit, the build JVMs take their sizes from it in place of the fixed 2 GiB and 2 workers: the
 // build JVM's heap is JVM_HEAP_SHARE of it, and Gradle gets a worker for each GiB of the rest, at most one for each CPU of
 // the job's CPU quota. Every other JVM (a test worker, a forked compiler) sizes its own heap from the scope's cgroup limit.
+// vitest starts a worker for each CPU it sees, each a Node process with a heap of its own: with a memory limit it gets the
+// same worker count in VITEST_MAX_WORKERS, which it reads over its config.
 import type { JobLimits } from './job-limits.ts';
 
 /** Gradle: no daemon, its build JVM at `heap`, `workers` workers, Kotlin compiled in that JVM. */
@@ -22,15 +24,15 @@ export const MAVEN_BUILD_DEFAULTS = '-Xmx2g';
 /** The build JVM's heap, as this share of the job's memory limit (issue #2737): the rest is for its workers and Node. */
 export const JVM_HEAP_SHARE = 0.5;
 
-/** Gradle's workers with a memory limit of `memoryMaxGiB`: one for each GiB over the build JVM's heap, at most one for each CPU of `cpuPercent`, at least one. */
-export const gradleWorkers = (memoryMaxGiB: number, cpuPercent?: number): number =>
+/** A job's build and test workers (Gradle's, vitest's) with a memory limit of `memoryMaxGiB`: one for each GiB over the build JVM's heap, at most one for each CPU of `cpuPercent`, at least one. */
+export const buildWorkers = (memoryMaxGiB: number, cpuPercent?: number): number =>
   Math.max(1, Math.min(Math.floor(memoryMaxGiB * (1 - JVM_HEAP_SHARE)), cpuPercent !== undefined ? Math.floor(cpuPercent / 100) : Infinity));
 
 /** GRADLE_OPTS and MAVEN_OPTS before the payload's own: sized from the job's limits with a memory limit, else the fixed defaults. */
 function jvmDefaults(limits?: JobLimits): { gradle: string; maven: string } {
   if (limits?.memoryMaxGiB === undefined) return { gradle: GRADLE_BUILD_DEFAULTS, maven: MAVEN_BUILD_DEFAULTS };
   const heap = `${Math.floor(limits.memoryMaxGiB * 1024 * JVM_HEAP_SHARE)}m`;
-  return { gradle: gradleDefaults(heap, gradleWorkers(limits.memoryMaxGiB, limits.cpuPercent)), maven: `-Xmx${heap}` };
+  return { gradle: gradleDefaults(heap, buildWorkers(limits.memoryMaxGiB, limits.cpuPercent)), maven: `-Xmx${heap}` };
 }
 /** Gradle's daemon idle timeout in a job (issue #2489): 5 minutes, not Gradle's 3 hours, so it ends soon after its build. */
 export const GRADLE_IDLE_OPT = '-Dorg.gradle.daemon.idletimeout=300000';
@@ -48,7 +50,8 @@ const HEAP_FLAG = /--max[-_]old[-_]space[-_]size\b/;
 
 /**
  * GRADLE_OPTS and MAVEN_OPTS: the build defaults, sized from `limits` (issue #2737), then the payload's own (`env`); Gradle's idle timeout last, which wins.
- * With a memory limit (`limits`), NODE_OPTIONS: the payload's own, then the job's heap, unless the payload set one.
+ * With a memory limit (`limits`), NODE_OPTIONS: the payload's own, then the job's heap, unless the payload set one; and
+ * VITEST_MAX_WORKERS: the job's workers, unless the payload set it.
  */
 export function buildDefaultsEnv(env: Readonly<Record<string, string>> = {}, limits?: JobLimits): Record<string, string> {
   const jvm = jvmDefaults(limits);
@@ -57,6 +60,7 @@ export function buildDefaultsEnv(env: Readonly<Record<string, string>> = {}, lim
     MAVEN_OPTS: joined(jvm.maven, env.MAVEN_OPTS),
     ...(limits?.memoryMaxGiB !== undefined ? {
       NODE_OPTIONS: HEAP_FLAG.test(env.NODE_OPTIONS ?? '') ? env.NODE_OPTIONS! : joined(env.NODE_OPTIONS, `--max-old-space-size=${nodeHeapMiB(limits.memoryMaxGiB)}`),
+      VITEST_MAX_WORKERS: env.VITEST_MAX_WORKERS || String(buildWorkers(limits.memoryMaxGiB, limits.cpuPercent)),
     } : {}),
   };
 }
