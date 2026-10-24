@@ -6,10 +6,11 @@
 // each number `-` where the report has none (the argv: the compact report's header, up to the field after it), at most 20;
 // then removed, so a later reap of kept work does not say it again.
 export const HEAP_REPORTS_SH: readonly string[] = [
-  'hv() { v=$(grep -o "\\"$1\\":\\"\\{0,1\\}[0-9]*" "$hf" 2>/dev/null | head -n 1 | tr -cd 0-9); printf %s "${v:--}"; };',
+  // No `\"` here (issue #2427): the double quote of a JSON pattern is `$q`.
+  'q=\'"\'; hv() { v=$(grep -o "$q$1$q:$q\\{0,1\\}[0-9]*" "$hf" 2>/dev/null | head -n 1 | tr -cd 0-9); printf %s "${v:--}"; };',
   'hn=0; [ -n "$s" ] && [ -d "$s" ] && [ ! -L "$s" ] && for hf in "$s"/report.*.json; do [ -f "$hf" ] && [ ! -L "$hf" ] || continue;',
-  '  grep -q "\\"trigger\\":\\"OOMError\\"" "$hf" 2>/dev/null || continue; hn=$((hn+1));',
-  '  [ $hn -le 20 ] && printf "hopper-heap %s %s %s %s\\n" "$(hv dumpEventTimeStamp)" "$(hv memoryLimit)" "$(hv maxRss)" "$(sed -n "s/.*\\"commandLine\\":\\(\\[.*\\]\\),\\"nodejsVersion\\".*/\\1/p" "$hf" | head -n 1 | head -c 4000 | tr -d "\\n")";',
+  '  grep -q "${q}trigger$q:${q}OOMError$q" "$hf" 2>/dev/null || continue; hn=$((hn+1));',
+  '  [ $hn -le 20 ] && printf "hopper-heap %s %s %s %s\\n" "$(hv dumpEventTimeStamp)" "$(hv memoryLimit)" "$(hv maxRss)" "$(sed -n "s/.*${q}commandLine$q:\\(\\[.*\\]\\),${q}nodejsVersion$q.*/\\1/p" "$hf" | head -n 1 | head -c 4000 | tr -d "\\n")";',
   '  rm -f "$hf"; done;',
 ];
 
