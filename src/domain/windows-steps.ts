@@ -211,11 +211,6 @@ export interface WindowsStep {
   rerun?: true;
   /** How many times it started on its host, when more than once (a rerun). */
   runs?: number;
-  /**
-   * A stop cut its run short: the hopper stopped, or its saga was aborted or taken over (issue #2690). A run cut short with
-   * no such mark is one a hopper ended with no stop, as a crash does: a step asked with rerun is not run again then.
-   */
-  stopped?: true;
   /** When it took its host: from then it may have had its effect there, so it is never run a second time, unless `rerun`. */
   leasedAt?: string;
   /** Its host lease holds now: no other step of the user runs there until its scratch is swept. */
@@ -233,7 +228,7 @@ export interface WindowsStepRepository {
   sagaIs(id: string, saga: string): void;
   /** The inputs the job sent; undefined: none, or the step ended. */
   inputs(id: string): Buffer | undefined;
-  /** Adds to the step's log, until it holds STEP_LOG_MAX characters; a NUL is not kept (issue #2690). */
+  /** Adds to the step's log, until it holds STEP_LOG_MAX characters. */
   appendLog(id: string, text: string): void;
   /** The log from character `from`, and where the next read starts. */
   log(id: string, from: number): { text: string; next: number };
@@ -245,10 +240,8 @@ export interface WindowsStepRepository {
    * step never had one before. Whether the step has the lease now, by this call.
    */
   leaseHost(id: string, at: string): boolean;
-  /** The step runs again on the host it has the lease on (a rerun, issue #2117): its runs counted, its `stopped` cleared. */
+  /** The step runs again on the host it has the lease on (a rerun, issue #2117): its runs counted. */
   runAgain(id: string): void;
-  /** A stop cut the step's run short (`stopped`): only a step not ended. */
-  stopped(id: string): void;
   /** The step lets its host go: its host lease ends. */
   releaseHost(id: string): void;
   /** Removes the steps that ended before `before` and have no host lease. */

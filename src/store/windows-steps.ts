@@ -59,9 +59,7 @@ export function createWindowsStepRepository(c: StoreContext): WindowsStepReposit
       });
     },
     inputs: (id) => bytes("SELECT encode(inputs, 'base64') AS b FROM windows_steps WHERE id = ?", id),
-    appendLog(id, given) {
-      // Postgres keeps no NUL in text (22021), and wsl.exe writes UTF-16LE: without its NULs, its text reads (issue #2690).
-      const text = given.replaceAll('\0', '');
+    appendLog(id, text) {
       // Cut once at the most: the note that it is cut is the last of it.
       c.db.run(`UPDATE windows_steps SET log = CASE WHEN length(log) + length(?::text) > ?::int THEN log || ?::text ELSE log || ?::text END
         WHERE id = ? AND right(log, ?::int) <> ?::text`, text, STEP_LOG_MAX, CUT, text, id, CUT.length, CUT);
@@ -93,15 +91,7 @@ export function createWindowsStepRepository(c: StoreContext): WindowsStepReposit
     runAgain(id) {
       c.tx(() => {
         const s = get(id);
-        if (!s || s.endedAt !== undefined) return;
-        const { stopped: _stopped, ...run } = s;
-        c.db.run('UPDATE windows_steps SET body = ? WHERE id = ?', body({ ...run, runs: (s.runs ?? 1) + 1 }), id);
-      });
-    },
-    stopped(id) {
-      c.tx(() => {
-        const s = get(id);
-        if (s && s.endedAt === undefined && !s.stopped) c.db.run('UPDATE windows_steps SET body = ? WHERE id = ?', body({ ...s, stopped: true }), id);
+        if (s && s.endedAt === undefined) c.db.run('UPDATE windows_steps SET body = ? WHERE id = ?', body({ ...s, runs: (s.runs ?? 1) + 1 }), id);
       });
     },
     releaseHost(id) {
