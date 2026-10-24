@@ -25,7 +25,7 @@ export function createStickyExecutor(o: { kept?: string[]; tips?: Reaped['tips']
     run(ctx) {
       runs.push(ctx.job.id);
       ctx.saveState({ pane: `pane-${ctx.job.id}` });
-      if (o.finish) return Promise.resolve({ kind: 'finished', result: null });
+      if (o.finish) return Promise.resolve({ kind: 'finished', result: { ok: true } });
       return new Promise<ExecutionOutcome>((resolve) => {
         ctx.signal.addEventListener('abort', () => {
           abortReasons.push(ctx.signal.reason);

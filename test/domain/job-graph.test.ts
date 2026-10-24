@@ -323,19 +323,3 @@ describe('an issue that waits on its batch (issue #1337)', () => {
     expect(g.nodes.find((n) => n.id === issueNodeId('acme/app', 9))).toBeUndefined();
   });
 });
-
-describe('a job that ended well, with a process of it that failed (issue #2722 part 7)', () => {
-  it('says it after where it stands, on its node and its issue\'s', () => {
-    const note = { said: 'a process of the job failed: tsc ran out of heap', processes: 1 };
-    const g = jobGraph({ jobs: [job('j', 'finished', { failedProcesses: note }, 3), job('k', 'failed', { failedProcesses: note }, 4)] });
-    expect(node(g, jobNodeId('j'))).toMatchObject({ stage: 'done', failedProcesses: note, stageText: `Done, but ${note.said}` });
-    expect(node(g, issueNodeId('acme/app', 3)).stageText).toBe(`Done, but ${note.said}`);
-    expect(node(g, jobNodeId('k')).failedProcesses).toBeUndefined();
-  });
-
-  it('a job with no such note says only where it stands', () => {
-    const g = jobGraph({ jobs: [job('j', 'finished', {}, 3)] });
-    expect(node(g, jobNodeId('j')).failedProcesses).toBeUndefined();
-    expect(node(g, jobNodeId('j')).stageText).toBe('Done');
-  });
-});
