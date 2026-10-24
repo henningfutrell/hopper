@@ -107,6 +107,20 @@ If the bastion is refused (Forbidden: pods/portforward), the cluster's observe r
   A job that needs it waits with: on: outside: gated: pods/portforward for hopper-observe on CLUSTER/NAMESPACE.
 If the read-only check fails with errors (Unauthorized, kube.get errors too), the cluster does not take the observe role yet: that is no allow and no refusal.`;
 
+// Issue #2231: how a job reads rows of a database through the hopper (design.md "Database reads", src/skills/database-skill.ts).
+export const DATABASE_TEXT = `database: read rows of a database through the hopper. Read only. You never get a credential: for each read the hopper makes a login in the database, runs your one SELECT with it, and removes the login after it.
+
+1. Ask once for a template with read on the database. A person approves it on Access requests:
+   sh "$HOPPER_SKILL" sandbox-template --why "<why>" --needs "read/database/<cluster>/<namespace>/<database>" --wait
+2. Read. The answer is the rows as CSV, with a header line:
+   mkdir -p out && sh "$HOPPER_SKILL" database read --template TEMPLATE --database <cluster>/<namespace>/<database> --sql "SELECT id, email FROM app.users ORDER BY id LIMIT 1000" --why "<why>" > out/users.csv
+
+One statement only: a SELECT (or WITH … SELECT, VALUES). The login can change nothing, and the read runs in a read-only transaction.
+The login reads only the schemas a person named for the database. A statement stops after 60 s.
+An answer of more than 100000 rows or 16 MiB is refused, never cut: page it (WHERE id > <last id> ORDER BY id LIMIT 10000).
+Each read and its SQL are on the job's timeline. Put no secret in the SQL.
+If no minting credential mints for the database, only a person can add one, on Vault. Say so; do not look for another credential.`;
+
 export const SKILLS: readonly Skill[] = [
   {
     name: 'github',
@@ -177,6 +191,12 @@ export const SKILLS: readonly Skill[] = [
     name: 'observability',
     line: 'PromQL, LogQL and Grafana reads through a bastion',
     text: OBSERVABILITY_TEXT,
+  },
+  {
+    // Issue #2231: a database read; `database read` runs one (src/skills/database-skill.ts).
+    name: 'database',
+    line: 'read rows of a database as CSV: one SELECT, read only',
+    text: DATABASE_TEXT,
   },
   {
     // Issue #1905: the user's topology, read with the job's own token (src/http/job-topology.ts).

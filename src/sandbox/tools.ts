@@ -198,6 +198,8 @@ const KIND_TOOLS: Record<AssetKind, BoxTool[]> = {
   'terraform-workspace': ['terraform', 'aws'],
   'aws-account': ['aws'],
   'aws-role': ['aws'],
+  // Issue #2231: the hopper reads a database itself; a box gets no tool, and no credential, for it.
+  database: [],
 };
 
 /** The tools these needs use, each once, in the catalog's order. */

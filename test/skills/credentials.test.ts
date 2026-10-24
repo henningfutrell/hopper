@@ -6,10 +6,10 @@ import { askedSkill, catalogText, credentialText, skillOf, SKILLS } from '../../
 
 describe('skills that need a credential', () => {
   it('the catalog has no skill for one outside service; it says how to ask for a credential for any service, and stays short', () => {
-    expect(SKILLS.map((s) => s.name)).toEqual(['github', 'kube-diagnostics', 'aws-diagnostics', 'sandbox', 'sandbox-template', 'artifacts', 'windows-step', 'box-step', 'need-step', 'observability', 'topology', 'park', 'help']);
+    expect(SKILLS.map((s) => s.name)).toEqual(['github', 'kube-diagnostics', 'aws-diagnostics', 'sandbox', 'sandbox-template', 'artifacts', 'windows-step', 'box-step', 'need-step', 'observability', 'database', 'topology', 'park', 'help']);
     expect(catalogText()).toContain('A credential for any other service: sh "$HOPPER_SKILL" SERVICE --credential "<what it takes>"');
     // Issue #1007 added need-step, issue #1905 topology, issue #1909 orchestrate, issue #2146 observability, issue #2167 park: the catalog stays short, one line per skill.
-    expect(catalogText().length).toBeLessThan(1200);
+    expect(catalogText().length).toBeLessThan(1300);
   });
 
   it('each says what it takes, the suggested kind first, and how a person gets one or sets the tool up', () => {

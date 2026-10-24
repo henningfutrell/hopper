@@ -39,6 +39,8 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #                        A request with --secrets or --egress needs no --needs, and a person always approves it.
 #     --path TEXT        for bastion read: the path of the target to read, as /api/search?query=x (issue #2146)
 #     --data JSON        for bastion read: a POST's body, to Grafana's /api/ds/query only (issue #2146)
+#     --database NAME    for database read: the database, <cluster>/<namespace>/<database> (issue #2231)
+#     --sql TEXT         for database read: the one SELECT to run; the answer is its rows as CSV (issue #2231)
 #     --actions TEXT     for sandbox-template: the AWS actions its one change on an aws-role does, each
 #                        <service:Action>=<resource ARN>; the hopper says which the minted session cannot do (issue #2206)
 #     --wait             while the hopper waits for the user to give the credential (202), wait for the answer:
@@ -50,7 +52,7 @@ export const SKILL_SCRIPT = `#!/bin/sh
 #      4: --wait reached its deadline with no answer.
 : "\${HOPPER_URL:?HOPPER_URL is not set: the hopper cannot be reached from here}"
 : "\${HOPPER_TOKEN_FILE:?HOPPER_TOKEN_FILE is not set}"
-usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--secrets TEXT] [--egress TEXT] [--image NAME] [--tools TEXT] [--targets TEXT] [--path TEXT] [--data JSON] [--actions TEXT] [--wait [--timeout SECONDS]] [--repo-copy DIR]]' >&2; exit 2; }
+usage() { echo 'usage: sh "$HOPPER_SKILL" [NAME [ASSET] [--why TEXT] [--plan TEXT] [--credential TEXT] [--needs TEXT] [--template NAME] [--secrets TEXT] [--egress TEXT] [--image NAME] [--tools TEXT] [--targets TEXT] [--path TEXT] [--data JSON] [--database NAME] [--sql TEXT] [--actions TEXT] [--wait [--timeout SECONDS]] [--repo-copy DIR]]' >&2; exit 2; }
 ${TRACE_HEADER_SH}
 token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; trace_header; }
 ${HCURL_SH}
@@ -74,6 +76,8 @@ for a in "$@"; do
     --targets) opt=targets ;;
     --path) opt=path ;;
     --data) opt=data ;;
+    --database) opt=database ;;
+    --sql) opt=sql ;;
     --actions) opt=actions ;;
     --timeout) opt=timeout ;;
     --repo-copy) opt=copy ;;
