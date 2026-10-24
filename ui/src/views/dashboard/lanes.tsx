@@ -1,4 +1,4 @@
-// The lane board: every lane on every machine, what it runs, for how long, how far along (when the job says), and its latest activity.
+// The lane board: every lane on every machine, what it runs, for how long, its job's memory (issue #2722), how far along (when the job says), and its latest activity.
 import { ExternalLink, FileCheck, FolderOpen, Hand, Layers, Pause, Play, Telescope, X } from 'lucide-react';
 import { useState } from 'react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -12,6 +12,7 @@ import { Empty, Panel } from '@/components/panel';
 import { StatusBadge } from '@/components/status';
 import { GROUP, canPickUp, laneJobState, laneRows, machineName, overCap, parkRefusal, startsFresh, type LaneRow } from '@/model/board';
 import { goalOf, issuePointer } from '@/model/job';
+import { laneMemoryText } from '@/model/machine-history';
 import { REVIEW_UI, reviewKindOfJob } from '@/model/reviews';
 import { personWait, pickUpRefused, type PersonWait } from '@/model/auto-park';
 import type { Job, QuestionView, ReviewItemView, ReviewKind } from '@/model/wire';
@@ -152,7 +153,7 @@ const ELBOWED_IN = 'A specialty job, or a job that tends a pull request, elbowed
 const PAST_CAP = 'Its job went on in its pane after a question or a wait, and no lane was free: it came back on a lane past this machine\'s lane cap. The lane closes when the job ends, and the machine is back at its cap.';
 const OVER_CAP = 'Lanes past the lane cap: a specialty or tend job elbowed in, or a job came back from its pane with no lane free. They close when their jobs end.';
 
-function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: string; idle?: string | undefined; priority: boolean }) {
+function LaneCard({ row, machine, idle, priority, memory }: { row: LaneRow; machine: string; idle?: string | undefined; priority: boolean; memory?: { text: string; title: string } | null }) {
   const { job, lane } = row;
   const name = lane ? lane.id.slice(lane.id.lastIndexOf('/') + 1) : 'unopened';
   // A draining lane still runs its job (issue #381): it shows busy, and says it closes after the job. A lane with a job
@@ -182,6 +183,7 @@ function LaneCard({ row, machine, idle, priority }: { row: LaneRow; machine: str
           <div className="flex items-start gap-2"><JobTitle job={job} className="flex-1" /><ParkButton job={job} /><CancelButton job={job} /></div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             {job.startedAt && <span title="Running for">for <Since iso={job.startedAt} /></span>}
+            {memory && <span data-slot="lane-memory" className="shrink-0" title={memory.title}>{memory.text}</span>}
             <TaskBar tasks={job.tasks} />
           </div>
           {row.workTree && (
@@ -225,7 +227,8 @@ export function LanesPanel() {
   const notOpen = chosen.filter((id) => !shown.has(id));
   return (
     <Panel title="Lanes" icon={Layers} count={`${running.length} running`} list bodyClassName="grid grid-cols-1 gap-2">
-      {rows.length ? rows.map((r) => <LaneCard key={r.key} row={r} machine={machineName(r.machine.id, machines)} idle={idle.get(r.machine.id)} priority={!!r.lane && chosen.includes(r.lane.id)} />) : <Empty>no machines</Empty>}
+      {rows.length ? rows.map((r) => <LaneCard key={r.key} row={r} machine={machineName(r.machine.id, machines)} idle={idle.get(r.machine.id)} priority={!!r.lane && chosen.includes(r.lane.id)}
+        memory={r.job ? laneMemoryText(machines.find((m) => m.id === r.machine.id)?.resources, r.job.id) : null} />) : <Empty>no machines</Empty>}
       {notOpen.length > 0 && (
         <a href="#machines" data-slot="priority-lanes-closed" className="text-xs text-muted-foreground hover:text-foreground">
           {notOpen.length === 1 ? 'Priority lane' : 'Priority lanes'} {notOpen.join(', ')} not open now: opened for the next high-priority job
