@@ -11,7 +11,7 @@
 // Its test databases (issue #975): each container its reap removed, from `job.containers_removed`, as the reap said it.
 // What it used (issue #2498): its scope's peak memory, CPU time and OOM kills, from `job.resources_used`; each heap abort
 // of its Node processes (issue #2722, `job.heap_aborted`), and the core dumps and OOM kills of its processes (part 3,
-// `job.core_dumped`, `job.oom_killed`).
+// `job.core_dumped`, `job.oom_killed`); a scope its reap could not stop, and a header that says each (part 6).
 import type { Artifact } from './artifacts.ts';
 import type { JobRun } from './job-costs.ts';
 import type { PullRequestSeen } from './pull-requests.ts';
@@ -23,7 +23,7 @@ import { ownWaitOf } from './own-command.ts';
 import { phaseOf } from './phase.ts';
 import type { Question } from './questions.ts';
 import { testDatabases } from './test-databases.ts';
-import { heapAborts, heapRetries, processCrashes, resourcesNow, resourcesUsed, type LiveUse } from './job-resources.ts';
+import { heapAborts, heapRetries, processCrashes, resourcesNow, resourcesUsed, scopeNotStopped, failedProcessHeader, type LiveUse } from './job-resources.ts';
 import { ledgerParts, type LedgerEntry } from './resource-ledger.ts';
 import type { DomainEvent, Job } from './types.ts';
 
@@ -342,7 +342,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const events = [...input.events].sort((a, b) => a.seq - b.seq);
   const own = events.filter((e) => e.jobId === job.id);
   const parts = [
-    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...testDatabases(own), ...resourcesUsed(own), ...heapAborts(own), ...heapRetries(own), ...processCrashes(own), ...resourcesNow(input.live ?? [], now), ...code(job, own), ...outputs(job, own, input.artifacts),
+    ...asked(job, own), ...work(job, own, input.related, now), ...[usage(input.runs ?? []), githubCalls(own)].filter((p) => p !== undefined), ...testDatabases(own), ...resourcesUsed(own), ...heapAborts(own), ...heapRetries(own), ...processCrashes(own), ...scopeNotStopped(own), ...resourcesNow(input.live ?? [], now), ...code(job, own), ...outputs(job, own, input.artifacts),
     ...infra(own), ...decisions(input.questions, own, input.handoff), ...ledgerParts(job, input.ledger ?? []),
   ];
   const ordered = parts.map((p, i) => ({ p, i }))
@@ -358,7 +358,7 @@ export function jobBom(input: JobBomInput): JobBom {
   const title = s?.title || job.spec.goal || job.id;
   return {
     jobId: job.id,
-    header: { asked: s?.repo && s.number !== undefined ? `${title} (${s.repo}#${s.number})` : title, stands: stageWords(worded), next: nextWords(worded, job.tasks) },
+    header: failedProcessHeader(job.status, ordered, { asked: s?.repo && s.number !== undefined ? `${title} (${s.repo}#${s.number})` : title, stands: stageWords(worded), next: nextWords(worded, job.tasks) }),
     summary: summaryOf(ordered, waitsOnYou(worded)),
     parts: ordered,
     events: [...own].reverse(),

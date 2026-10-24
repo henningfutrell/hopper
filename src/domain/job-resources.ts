@@ -9,6 +9,7 @@ import type { DomainEvent } from './types.ts';
 /** Each heap abort of the job's Node processes (issue #2722), beside what it used. */
 export { heapAborts } from './heap-aborts.ts';
 export { processCrashes } from './process-crashes.ts';
+export { failedProcessHeader, scopeNotStopped } from './failed-processes.ts';
 export { heapRetries } from './heap-retry.ts';
 
 const memoryText = (bytes: number): string =>

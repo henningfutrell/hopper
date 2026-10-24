@@ -1,6 +1,6 @@
 // What a job used, as its reap reads it, beside reap.ts for its size: its scope's (issue #2498), its heap aborts (issue
-// #2722, design.md "Heap aborts"), and the core dumps and OOM kills of its processes (part 3, "Core dumps and OOM kills").
-// Imports nothing of hopper.
+// #2722, design.md "Heap aborts"), the core dumps and OOM kills of its processes (part 3, "Core dumps and OOM kills"),
+// and the stop of its scope, said when it did not go through (part 6). Imports nothing of hopper.
 
 // Each report a Node process of the job wrote to its temp dir (its scratch dir, `$s`) when its heap ran out (NODE_OPTIONS,
 // src/domain/heap-aborts.ts), said as `hopper-heap <ms> <heap limit> <peak RSS> <argv JSON>`,
@@ -29,6 +29,26 @@ export const CRASHES_SH: readonly string[] = [
   '    sed -n "s/^\\([0-9][0-9]*\\)\\.\\([0-9][0-9][0-9]\\)[0-9]* .*[ ,]task=\\([^,]*\\),pid=\\([0-9][0-9]*\\),.*/hopper-oom \\1\\2 \\4 \\3/p";; esac;',
   'fi;',
 ];
+
+// The job's scope, stopped: every process in it, whatever it did to its environment or session. A stop that did not go
+// through (part 6: a process that writes its core dump cannot be killed until it is written, so the stop times out) is said
+// as `hopper-scope-left <state> <processes>`, the scope's state and the processes still in its cgroup (`-` unread); a
+// failed scope is reset, so it does not stay listed. `$cr` and `$cg` are the cgroup root and the scope's cgroup (reap.ts).
+export const SCOPE_STOP_SH: readonly string[] = [
+  'if command -v systemctl >/dev/null 2>&1; then systemctl --user stop "hopper-job-$id.scope" >/dev/null 2>&1 || {',
+  '  st=$(systemctl --user show -p ActiveState --value "hopper-job-$id.scope" 2>/dev/null); np=-;',
+  '  case $cg in *..*) ;; /?*) [ -r "$cr$cg/cgroup.procs" ] && np=$(grep -c . "$cr$cg/cgroup.procs" 2>/dev/null);; esac;',
+  '  case $st in ""|inactive) ;; *[!a-z-]*) ;; *) printf "hopper-scope-left %s %s\\n" "$st" "${np:--}"; [ "$st" = failed ] && systemctl --user reset-failed "hopper-job-$id.scope" >/dev/null 2>&1;; esac; }; fi;',
+];
+
+/** A job's scope its reap could not stop (part 6): its state then (`failed`, `deactivating`), the processes still in it. */
+export interface ScopeNotStopped { state: string; processes?: number }
+
+/** The reap's `hopper-scope-left` line; nothing when the stop went through. */
+export function scopeLeftOf(lines: readonly string[]): { scopeNotStopped?: ScopeNotStopped } {
+  const m = lines.map((l) => /^hopper-scope-left ([a-z-]+) (\S+)$/.exec(l)).find((x) => x !== null);
+  return m ? { scopeNotStopped: { state: m[1]!, ...(/^\d+$/.test(m[2]!) ? { processes: Number(m[2]) } : {}) } } : {};
+}
 
 /**
  * One report of a job's Node process whose heap ran out (issue #2722), as the reap read it: when it aborted (ms since the
