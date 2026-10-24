@@ -25818,7 +25818,8 @@ no failed tend.
 
 - A companion of an item whose issue is closed, or whose work item is done or dropped, is not read: a tend is a Run again
   of the item, and Run again reopens a closed issue (issue #2127).
-- A companion in another repository than the item's: a tend job works in its item's repository.
+- A companion in another repository than the item's: a tend job works in its item's repository. Since issue #2752 it
+  is one: "Companion pull requests in another repository" below.
 - "Behind" with no merge conflicts, as for a followed pull request (part 4).
 - The pull requests a job did not open through the hopper: the census lists them (issue #1176).
 
@@ -25826,6 +25827,33 @@ Tests: `test/domain/companion-pull-requests.test.ts` (which job holds which comp
 is due, the holder as if it followed one), `test/integration/companion-pull-requests.test.ts` (over the real daemon: a
 finished job's second pull request that gets merge conflicts is rebased by a tend job, with no comment from anyone, and
 says so on it), `test/sources/pull-request-list.test.ts` (the card names the companion while it is tended).
+
+## Companion pull requests in another repository (issue #2752 part 1, 2026-10-24)
+
+**The problem.** Jobs of a workflow repository's issues opened their change in an app repository the hopper does not work
+on, and a bookkeeping pull request in the issue's own repository. When the job followed the bookkeeping one, its pull
+request in the app repository was no companion — a companion was of the item's own repository only — so no follow read it.
+It got merge conflicts with its base, and nothing rebased it.
+
+**The change.** A companion pull request is one of any GitHub repository (`companionsOf`: every GitHub pull request URL a job
+of the item opened through the hopper, but the followed one; a GitLab merge request is none). It is read in its own
+repository (`readCompanions` already read each by its repository), and a due rebase goes through the tending queue of the
+companion's own repository (`tendNext` groups each due tend by its pull request's repository, not the holder's followed
+one). The rest is as for a companion of the item's own repository: the base merge first, else a tend job of the item, which
+pushes through the git proxy to that repository as for a followed pull request in another repository (issue #1778).
+
+**Decisions.**
+- **No tend note there.** As on a followed pull request in another repository (`tendStartedOn`), the hopper posts its tend
+  note only on a pull request of the issue's repository.
+- **The merge policy stays.** On a repository the hopper does not work on, the hopper merges only when a person named it on
+  in yolo mode (issue #1806, "Yolo mode on a repository the hopper does not work on"); this part does not widen it.
+
+**Left for later parts of issue #2752.** A job whose followed pull request is open and that the hopper does not merge there
+(yolo mode off for that repository, or its merge refused) reads as plain finished (`PR ready`): it should say "needs merge in
+<repo>" on the job, the issue and the Pull requests view. A companion is rebased, never merged.
+
+Tests: `test/domain/companion-pull-requests.test.ts` ("it holds the ones it opened in another repository too"),
+`test/integration/companion-pull-requests.test.ts` ("its second pull request in another repository … is rebased there too").
 
 ## A job pushes to its own repository outside the job repositories (issue #1131, 2026-10-14)
 

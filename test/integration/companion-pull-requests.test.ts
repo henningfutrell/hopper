@@ -114,6 +114,7 @@ describe('companion pull requests (issue #1143 reopened)', () => {
     await app.waitForStatus(tender.id, 'finished');
     expect(String(app.scripted.payloads.at(-1)!.prompt)).toContain(tendBrief(companion!, 'rebase'));
     expect((await app.events('types=job.pull_request_tended')).map((e) => [e.jobId, e.data])).toEqual([[job!.id, { pullRequest: companion, step: 'rebase', nextJobId: tender.id }]]);
-    expect(gh.pullRequestComments(companion!)).toEqual([tendNote('rebase')]);
+    // As on a followed pull request in another repository: the tend note goes only on one of the issue's repository.
+    expect(gh.pullRequestComments(companion!)).toEqual([]);
   });
 });

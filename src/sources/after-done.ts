@@ -67,7 +67,7 @@
 // ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
 import type { JobSource, RerunResult, SourceHost, UserStore } from '../domain/ports.ts';
 import { createTendAgain } from './tend-again.ts'; import { createPullRequestActs } from './pull-request-acts.ts';
-import { heldTooLong, queueHeads, repoOf, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
+import { dueRepoOf, heldTooLong, queueHeads, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
 import { pullRequestCensus } from './census.ts'; import { recordCiMiss } from './ci-missed.ts'; import { companionPullRequests } from './companions.ts';
@@ -382,11 +382,11 @@ export function createAfterDone(c: AfterDoneContext) {
     const due = jobs.filter((j) => c.finalReported(j) && !heldClosed(store, j)).flatMap((j): TendDue[] => { const d = tendDue(j); return d ? [{ jobId: j.id, pullRequest: d.url, step: d.step }] : []; });
     const merges = (repo: string, kind?: ChangeKind) => source.mergesOnReady?.(repo, kind) ?? false;
     const held = new Map<string, QueueHead>();
-    for (const repo of new Set(due.map((d) => repoOf(get(d.jobId)!)))) {
+    for (const repo of new Set(due.map((d) => dueRepoOf(get(d.jobId)!, d.pullRequest)))) {
       if (repo === undefined) continue;
       const heads = queueHeads(repo, jobs, get, merges, c.now(), (j) => c.finalReported(j));
       const free: TendDue[] = [];
-      for (const d of tendOrder(due.filter((x) => repoOf(get(x.jobId)!) === repo), get)) {
+      for (const d of tendOrder(due.filter((x) => dueRepoOf(get(x.jobId)!, x.pullRequest) === repo), get)) {
         const h = await heldBy(source, d, heads);
         if (h) held.set(d.jobId, h); else free.push(d);
       }
