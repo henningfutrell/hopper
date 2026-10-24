@@ -25855,6 +25855,35 @@ pushes through the git proxy to that repository as for a followed pull request i
 Tests: `test/domain/companion-pull-requests.test.ts` ("it holds the ones it opened in another repository too"),
 `test/integration/companion-pull-requests.test.ts` ("its second pull request in another repository … is rebased there too").
 
+## Needs merge in a repository the hopper does not merge in (issue #2752 part 2, 2026-10-24)
+
+**The problem.** A job of a workflow issue followed its pull request in an app repository that is not a job repository.
+No person named that repository on in yolo mode, so the hopper merged nothing there (issue #1806). The job still read
+`PR ready`, its card `waiting for a person to merge`, the same as a job repository with yolo mode off. Nothing said that
+this pull request waits on a merge in another repository that the hopper never makes.
+
+**The change.**
+- The Pull requests list's card in such a repository waits on `needs merge` in place of `yolo off`
+  (`src/domain/pull-request-list.ts`, `waitOf`): the repository is none of the job repositories, and yolo mode does not
+  merge there (never named, or named off). The card says `needs merge in <repo>`, and that the hopper does nothing until a
+  person merges it there or names the repository on in Settings → Yolo mode.
+- The job's title says `needs merge in <repo>` (warn) in place of `PR ready` or `partly done` (`ui/src/model/job.ts`,
+  `afterDone`), from the yolo mode view the UI already reads. A finished job with such a pull request no longer reads as
+  plain finished. With yolo mode not read yet, it reads as before.
+- A job repository with yolo mode off still waits on `yolo off`: a person reviews and merges it there by choice.
+
+**Decisions.**
+- **The merge policy stays** (issue #1806, part 1 of this issue). The state only says where the merge waits.
+- **From the yolo mode settings, not from GitHub.** A refused merge already has its own wait (`merge refused`, with what
+  GitHub said); a missing access shows as the refusal. No new read of GitHub.
+
+**Left for later parts of issue #2752.** The issue label for a pull request that needs a merge in another repository, and
+the merge of a ready companion pull request under its own repository's merge gate.
+
+Tests: `test/sources/pull-request-list.test.ts` ("ready in a repository the hopper does not merge in"),
+`test/ui/after-done.test.ts` ("a pull request in a repository the hopper does not merge in"),
+`test/ui/pull-requests-view.test.ts` (the card's words).
+
 ## A job pushes to its own repository outside the job repositories (issue #1131, 2026-10-14)
 
 **The problem.** A tend job's `git push --force-with-lease` to its own pull request's branch was refused: "<repo> is not
