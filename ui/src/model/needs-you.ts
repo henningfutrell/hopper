@@ -73,7 +73,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   accounts: { label: 'Accounts', href: '#machines/accounts', what: 'machines whose agent tool is signed in as nobody: sign them in again' },
   machines: { label: 'Machines', href: '#machines', what: 'machines that are not ready and take no new job: give their jobs a dedicated user with no credentials, or a way to reach the hopper' },
   failures: { label: 'Failures', href: '#failures', what: 'open problems, jobs handed off to a person, and work not pushed' },
-  budgets: { label: 'Budgets', href: '#failures/parked', what: 'jobs paused because they reached their token budget: pick one up to let it go on, or cancel it' },
+  budgets: { label: 'Budgets', href: '#parked', what: 'jobs paused because they reached their token budget: pick one up to let it go on, or cancel it' },
   'pull-requests': { label: 'Pull requests', href: '#pull-requests', what: 'pull requests the hopper gave up on: tend them again, fix them, or close them' },
   checks: { label: 'Checks', href: '#pull-requests', what: 'repositories whose pull request checks the hopper may not read: give its connection the permissions' },
   landing: { label: 'Landing', href: '#settings/landing-batches', what: 'landing passes that failed the same way several times in a row: nothing moves to the tested branch until you restart the batch or fix the cause' },

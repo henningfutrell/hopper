@@ -9,14 +9,14 @@
 // group holds one entry only (issue #1943). The Dashboard (issue #951) and Needs you are pinned above them, never collapsed:
 // the Dashboard covers the whole system and is the landing page; Needs you's badge already sums other entries', so no group
 // sums it again. One canonical home per workflow (issue #2374): Approvals holds Access requests (what jobs on boxes wait
-// for) and Pending approvals (GitHub deployment approvals, issue #2088); Failures holds Stuck work and Parked (issue #565);
+// for) and Pending approvals (GitHub deployment approvals, issue #2088); Failures holds Stuck work, and Parked (issue #565) is an entry of its own (issue #2713): a parked job waits on a person, it did not fail, so the Failures badge never counts it;
 // Jobs holds the Queue order; Ask hopper (issue #2375) holds Run a job (Direct jobs, issue #901) and Ask a question (Direct queries, issue #2184); Activity holds
 // Events and Decisions; Machines holds Accounts (issue #1128) and Logins; Usage holds Resources (issue #947). A merged
 // page's entry badge sums its tabs', each tab showing its own (page-tabs.tsx). Search (issue #945) has no entry in the
 // navigation: the command palette (issue #2661) in the header opens it at every width.
 // Your reports (issue #694) and Version history are in the user menu. Plugins, Vault and Users & access (issue #2373) left
 // Settings for entries of their own: Vault in Infra, Plugins and Users & access in Admin; their old Settings hashes open them.
-import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, LayoutDashboard, LockKeyhole, LayoutGrid, ListTree, Menu, Network, MessageCircleQuestion, OctagonAlert, Puzzle, Send, Server, Settings, ShieldQuestion, Telescope, Users, type LucideIcon } from 'lucide-react';
+import { AtSign, BellRing, BookOpen, Search, Briefcase, Bug, ChevronDown, ChevronsUp, CircleDashed, CirclePause, FileCheck, FileDiff, Flame, FolderOpen, Gauge, GitPullRequest, Inbox, LayoutDashboard, LockKeyhole, LayoutGrid, ListTree, Menu, Network, MessageCircleQuestion, OctagonAlert, Puzzle, Send, Server, Settings, ShieldQuestion, Telescope, Users, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -50,6 +50,7 @@ const ITEMS: Record<View, { label: string; icon: LucideIcon }> = {
   proposals: { label: 'Proposals', icon: FileCheck },
   research: { label: 'Research', icon: Telescope },
   failures: { label: 'Failures', icon: OctagonAlert },
+  parked: { label: 'Parked', icon: CirclePause },
   'pull-requests': { label: 'Pull requests', icon: GitPullRequest },
   artifacts: { label: 'Artifacts', icon: FolderOpen },
   activity: { label: 'Activity', icon: ListTree },
@@ -142,7 +143,7 @@ function Links({ view, onPick, phone }: { view: View; onPick?: () => void; phone
         return (
           <div key={g.id} data-nav-group={g.id} className="grid gap-px">
             <button type="button" data-slot="nav-group-toggle" aria-expanded={open} data-current={!open && holdsView ? true : undefined} onClick={() => toggleNavGroup(g.id)}
-              className={cn('flex h-5.5 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 transition-colors hover:text-foreground',
+              className={cn('flex h-4.5 items-center gap-1.5 rounded-md px-2.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 transition-colors hover:text-foreground',
                 !open && holdsView && 'text-foreground')}>
               <ChevronDown className={cn('size-3.5 transition-transform', !open && '-rotate-90')} aria-hidden />{g.label}
               {!open && sum.badge && <Count slot="nav-group-badge" b={sum.badge} />}
@@ -176,7 +177,7 @@ function Backburner({ slot, n, alone }: { slot: string; n: number; alone: boolea
 }
 
 export function Sidebar({ view }: { view: View }) {
-  return <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-52 shrink-0 overflow-y-auto overscroll-contain border-r px-3 py-2 lg:block"><Links view={view} /></aside>;
+  return <aside className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-52 shrink-0 overflow-y-auto overscroll-contain border-r px-3 py-1.5 lg:block"><Links view={view} /></aside>;
 }
 
 export function MobileNav({ view }: { view: View }) {
