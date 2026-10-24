@@ -17,8 +17,18 @@ import type { SweepSettings } from '../domain/machines.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { heapAbortedOf } from '../domain/heap-aborts.ts';
 import { coreDumpedOf, oomKilledOf } from '../domain/process-crashes.ts';
+import { FAILED_PROCESS_EVENTS, failedProcessNote } from '../domain/failed-processes.ts';
+
+/** The events of failed processes a job's cleanup reads for its note (issue #2722 part 7). */
+const FAILED_PROCESSES_READ = 50;
 
 export type Cleanup = (jobId: string) => Promise<void>;
+
+/** What the reap read the job used, with the meter's peak (`metered`) where it read no peak; undefined when neither read anything. */
+export function withMeteredPeak(used: Reaped['used'], metered: number | undefined): Reaped['used'] {
+  if (metered === undefined || used?.memoryPeakBytes !== undefined) return used;
+  return { ...used, memoryPeakBytes: metered };
+}
 
 export interface Cleanups {
   run: Cleanup;
@@ -38,7 +48,7 @@ const ENDED = TERMINAL_STATUSES;
 /** The cleanup's record, for the patch of the transaction that records the job's end (issue #1570). */
 export const cleanupDue = (c: Pick<EngineContext, 'clock'>): Pick<Job, 'cleanupDue'> => ({ cleanupDue: { at: nowIso(c) } });
 
-export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'keepPanes' | 'clock' | 'trigger' | 'stopping'>): Cleanups {
+export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'keepPanes' | 'clock' | 'trigger' | 'stopping' | 'jobPeaks'>): Cleanups {
   const running = new Set<string>();
   /** The jobs whose cleanup `resume` found due from a stop: said so once it goes through. */
   const resumed = new Set<string>();
@@ -111,8 +121,10 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
         if (removed && (removed.containers.length > 0 || removed.volumes.length > 0)) {
           c.store.events.append({ type: 'job.containers_removed', jobId, ...(machineId ? { machineId } : {}), data: removed });
         }
-        // What the job's scope used (issue #2498), as its reap read it before it stopped the scope.
-        if (reaped?.used) c.store.events.append({ type: 'job.resources_used', jobId, ...(machineId ? { machineId } : {}), data: reaped.used });
+        // What the job's scope used (issue #2498), as its reap read it before it stopped the scope; its meter's peak where
+        // the reap read none (issue #2737: no scope, or one that ended before the reap).
+        const used = withMeteredPeak(reaped?.used, c.jobPeaks?.take(jobId));
+        if (used) c.store.events.append({ type: 'job.resources_used', jobId, ...(machineId ? { machineId } : {}), data: used });
         // Each heap abort of its Node processes (issue #2722), as the reap read the report each wrote.
         for (const h of reaped?.heap ?? []) c.store.events.append({ type: 'job.heap_aborted', jobId, ...(machineId ? { machineId } : {}), data: heapAbortedOf(h) });
         // And each core dump and OOM kill of its processes (part 3), as the reap read them from the journal.
@@ -120,6 +132,10 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
         for (const k of reaped?.oomKilled ?? []) c.store.events.append({ type: 'job.oom_killed', jobId, ...(machineId ? { machineId } : {}), data: oomKilledOf(k) });
         // Its scope, when the reap could not stop it (part 6): the sweep reaps it again while it is there.
         if (reaped?.scopeNotStopped) c.store.events.append({ type: 'job.scope_not_stopped', jobId, ...(machineId ? { machineId } : {}), data: { ...reaped.scopeNotStopped } });
+        // A job that ended well keeps what failed for its cards (part 7): they read no events of a job.
+        const failedNote = reaped?.heap?.length || reaped?.cores?.length || reaped?.oomKilled?.length || reaped?.scopeNotStopped
+          ? failedProcessNote(job.status, c.store.events.recent(FAILED_PROCESSES_READ, [...FAILED_PROCESS_EVENTS], jobId)) : undefined;
+        if (failedNote) c.store.jobs.update(jobId, { failedProcesses: failedNote });
         // Its resource ledger (issue #2504) closed as the reap said: reaped, kept with the work, or failed with why.
         // A reap that kept the scratch dir for a time (part 5) closes the scope only; the sweep judges the rest after.
         if (said) closeLedger(c.store, jobId, said, nowIso(c), retainedUntil === undefined, panes);

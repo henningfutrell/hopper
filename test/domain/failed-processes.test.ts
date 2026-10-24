@@ -2,7 +2,7 @@
 // of it that failed — a heap abort, a core dump, an OOM kill — or a scope that did not stop, does not say only "Done".
 // Pure.
 import { describe, expect, it } from 'vitest';
-import { failedProcessHeader, scopeNotStopped } from '../../src/domain/failed-processes.ts';
+import { failedProcessHeader, failedProcessNote, scopeNotStopped } from '../../src/domain/failed-processes.ts';
 import { jobBom } from '../../src/domain/job-bom.ts';
 import type { DomainEvent, Job, JobStatus } from '../../src/domain/types.ts';
 
@@ -50,5 +50,20 @@ describe('a scope that did not stop (issue #2722 part 6)', () => {
     }]);
     expect(scopeNotStopped([event('job.scope_not_stopped', { state: 'failed' })])[0]?.label).toBe('Its scope did not stop (failed)');
     expect(scopeNotStopped([])).toEqual([]);
+  });
+});
+
+describe('the note a job that ended well keeps for its cards (issue #2722 part 7)', () => {
+  it('says each failed process and a scope that did not stop, as its header says them', () => {
+    const events = [event('job.heap_aborted', { command: 'tsc --noEmit' }), event('job.oom_killed', { command: 'node' }), event('job.scope_not_stopped', { state: 'failed' })];
+    const note = failedProcessNote('finished', events);
+    expect(note).toEqual({ said: 'a process of the job failed: tsc ran out of heap; node was killed: out of memory, and its scope did not stop (failed)', processes: 2 });
+    expect(bom('finished', events).header.stands).toBe(`Done, but ${note?.said}`);
+    expect(failedProcessNote('finished', [event('job.scope_not_stopped', { state: 'failed' })])).toEqual({ said: 'its scope did not stop (failed)', processes: 0 });
+  });
+
+  it('is none for a job with none, and for a job that did not end well', () => {
+    expect(failedProcessNote('finished', [event('job.resources_used', { memoryPeakBytes: 1 })])).toBeUndefined();
+    expect(failedProcessNote('failed', [event('job.heap_aborted', { command: 'tsc' })])).toBeUndefined();
   });
 });

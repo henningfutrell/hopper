@@ -175,12 +175,15 @@ export function treeSummary(t: Omit<JobTree, 'summary'>, nodes: ReadonlyMap<stri
   return summaryWords(pieces, waiting);
 }
 
-/** Each node's words (issue #935): an issue says what its newest job says, while it is at that job's stage (issue #1036). */
+/**
+ * Each node's words (issue #935): an issue says what its newest job says, while it is at that job's stage (issue #1036);
+ * a job that ended well says its failed processes after (issue #2722 part 7).
+ */
 export function wordNodes(nodes: ReadonlyMap<string, JobGraphNode>, newestOf: ReadonlyMap<string, Job>): void {
   for (const n of nodes.values()) {
     const newest = n.kind === 'issue' ? nodes.get(`job:${newestOf.get(n.id)?.id}`) : undefined;
     const worded = newest?.stage === n.stage && !n.awaitsBatch ? newest : n;
-    n.stageText = stageWords(worded);
+    n.stageText = stageWords(worded) + (worded.failedProcesses ? `, but ${worded.failedProcesses.said}` : '');
     if (waitsOnYou(worded)) n.waitsOnYou = true;
   }
 }

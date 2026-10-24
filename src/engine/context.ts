@@ -9,6 +9,7 @@ import type { JobRunData } from './job-run.ts';
 import type { JobLeases } from './leases.ts';
 import type { ReachHolds } from './reach-holds.ts';
 import type { LaneHealth } from './lane-health.ts';
+import type { JobPeaks } from './job-peaks.ts';
 import type { WaitReads } from './wait-checks.ts';
 
 export interface EngineOptions {
@@ -135,6 +136,8 @@ export interface EngineContext extends Required<Omit<EngineOptions, 'fakeUsage' 
   reachHolds?: ReachHolds;
   /** The lanes whose starts failed again and again the same way (issue #2234): they take no new job for a while. Absent: none is out. */
   laneHealth?: LaneHealth;
+  /** The most memory each job's machine's meter said it held (issue #2737): the cleanup's peak where the reap read none. Absent: none kept. */
+  jobPeaks?: JobPeaks;
 }
 
 export const nowIso = (c: { clock: Clock }): string => c.clock.now().toISOString();

@@ -13,7 +13,7 @@ export interface StickyExecutor extends Executor {
 }
 
 /** Not idempotent (like herdr-claude): runs until aborted, records how it was stopped. `kept`: what its reap keeps (issue #401). */
-export function createStickyExecutor(o: { kept?: string[]; tips?: Reaped['tips']; removed?: Reaped['removed']; used?: Reaped['used']; heap?: Reaped['heap']; cores?: Reaped['cores']; oomKilled?: Reaped['oomKilled']; scopeNotStopped?: Reaped['scopeNotStopped'] } = {}): StickyExecutor {
+export function createStickyExecutor(o: { kept?: string[]; tips?: Reaped['tips']; removed?: Reaped['removed']; used?: Reaped['used']; heap?: Reaped['heap']; cores?: Reaped['cores']; oomKilled?: Reaped['oomKilled']; scopeNotStopped?: Reaped['scopeNotStopped']; finish?: true } = {}): StickyExecutor {
   const runs: string[] = [];
   const abortReasons: unknown[] = [];
   const cleaned: string[] = [];
@@ -25,6 +25,7 @@ export function createStickyExecutor(o: { kept?: string[]; tips?: Reaped['tips']
     run(ctx) {
       runs.push(ctx.job.id);
       ctx.saveState({ pane: `pane-${ctx.job.id}` });
+      if (o.finish) return Promise.resolve({ kind: 'finished', result: { ok: true } });
       return new Promise<ExecutionOutcome>((resolve) => {
         ctx.signal.addEventListener('abort', () => {
           abortReasons.push(ctx.signal.reason);

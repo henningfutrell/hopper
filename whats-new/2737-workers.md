@@ -1,0 +1,1 @@
+- Test runs with vitest in a job now start only as many workers as the job's memory allows.
