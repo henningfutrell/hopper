@@ -2,7 +2,7 @@
 // a WSL machine's memory held and host memory (issue #868), swap, disk, its lanes in use, memory pressure and CPU throttle (issue #2499),
 // the hopper's own disk use and the caches (issue #2494), one colour each — drawn by the usage graph (charts/usage-history.tsx) on the
 // Machines view; every machine's lines at once on the Usage page, one colour per machine and a dash per resource,
-// swap and lanes hidden until shown; a machine row's CPU sparkline; and the resource facts a machine card says now.
+// swap and lanes hidden until shown; a machine row's CPU sparkline; the resource facts a machine card says now; and a lane's memory (issue #2722).
 // One machine's graph overlays the usage that limits it and marks its lane changes on its lanes in use (issue #688).
 // Pure: tested from test/ui/machine-history.test.ts.
 import type { LaneChange, MachineResource, ResourceReading, ResourceSeries, UsageSeries } from '../../../src/domain/types.ts';
@@ -119,4 +119,17 @@ export function jobsUseText(r: ResourceReading | undefined): string | null {
     ...(cores !== undefined ? [`${coresText(Math.round(cores * 10) / 10)} busy`] : []),
     ...(kills > 0 ? [`${kills} OOM ${kills === 1 ? 'kill' : 'kills'}`] : []),
   ].join(' · ');
+}
+
+/**
+ * A lane's memory on the lane board (issue #2722): its job's scope's memory in use now and its peak, as its machine's
+ * meter last read them (`jobMemoryBytes`, `jobUse`). Null when the meter did not read the job's scope.
+ */
+export function laneMemoryText(r: ResourceReading | undefined, jobId: string): { text: string; title: string } | null {
+  const now = r?.jobMemoryBytes?.[jobId];
+  if (now === undefined) return null;
+  const peak = r?.jobUse?.[jobId]?.memoryPeakBytes;
+  return peak === undefined
+    ? { text: `memory ${gb(now)}`, title: `Its job uses ${gb(now)} of memory now` }
+    : { text: `memory ${gb(now)} · peak ${gb(peak)}`, title: `Its job uses ${gb(now)} of memory now; its peak was ${gb(peak)}` };
 }

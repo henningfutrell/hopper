@@ -15488,7 +15488,7 @@ memory total and available (available, not free), and swap total and used where 
 - **its CPU throttle** (issue #2499): the share of CPU periods a CPU quota of its cgroup or one above it throttled since the
   read before (`cpuThrottledFrac`), the most of them; absent with no quota and at the first read. The decider reads it
   ("The memory floor", "The CPU throttle"); each machine sample keeps it (`cpu_throttled`, tenant migration 96).
-- Per lane (an agent's process tree): not built; a job's scope is the nearest.
+- Per lane (an agent's process tree): not built; a job's scope is the nearest, and the lane board says it as the lane's memory (issue #2722).
 
 **Recording.** Each user runtime runs a **resource recorder** (`src/machines/history.ts`), on the usage recorder's loop
 (`createRecordLoop`, `src/usage/history.ts`): every minute it lists the user's machines and keeps a **machine sample**
@@ -20166,7 +20166,10 @@ job, or at a machine that is full, could not see which job holds what. Three dec
    (`resourcesNow` in `src/domain/job-resources.ts`). `GET /api/jobs/:id/bom` reads the machines' last readings only for
    a job that has not ended (`liveUseOf`, `Queries.getLiveUse`). On Machines, each card says what its jobs use together:
    "<n> jobs use <memory> · <n> cores busy · <n> OOM kills" (`jobsUseText`). `GET /api/machines` has both fields in each
-   machine's `resources`.
+   machine's `resources`. On the lane board (Dashboard → Lanes, issue #2722), each lane with a job says the job's memory
+   now and its peak: "memory <n> · peak <n>" (`laneMemoryText`, `ui/src/model/machine-history.ts`), from its machine's same
+   reading; a lane whose job's scope the meter did not read says none. A lane's memory is its job's scope's: an agent's
+   process tree has no reading of its own.
 3. *What it is not.* No sample keeps it: the machine samples keep the waiting memory only (issue #2499), and the job's
    record at its end is still the reap's `job.resources_used`. A seat's total is its machines' totals: a seat's jobs run
    on its machines.
