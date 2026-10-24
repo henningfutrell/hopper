@@ -17,11 +17,19 @@ export const NO_WAY_TO_HOPPER = 'no-way-to-hopper';
 export const EXITED_AT_START = 'exited-at-start';
 /** The cause of a job whose agent CLI exited after the OOM killer stopped processes in its scope (issue #2498): resources, not its code. */
 export const RESOURCE_LIMIT = 'resource-limit';
+/** The cause of a job whose agent CLI exited after the hopper's sweep stopped its processes (issue #2707): the hopper's act, not the agent's. */
+export const SWEPT = 'swept';
 /** The cause of a job whose conditional skills' done criteria are not met (issue #1924): the hopper sends it back to rework. */
 export const DONE_CRITERIA_UNMET = 'done-criteria-unmet';
 
 export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
-  // First (issue #2235): the read error it names is the hopper's own read of the source, never the machine's or the agent's.
+  // Before the agent's own exits (issue #2707): its text says how the agent exited too.
+  cause({
+    id: SWEPT, name: 'Stopped by the sweep', cls: 'transient', decision: 'retry', scope: 'machine',
+    description: 'The hopper\'s sweep stopped the job\'s processes while the hopper read the job as not running (queued, held or parked), and its agent CLI then exited, often with exit code 143 (signal 15): the hopper\'s own act, not the agent\'s or the job\'s (issue #2707). The failure says the machine and the status the sweep read. It runs again.',
+    pattern: /^the hopper's sweep stopped its processes/i,
+  }),
+  // Then (issue #2235): the read error it names is the hopper's own read of the source, never the machine's or the agent's.
   cause({
     id: 'done-check-unread', name: 'Done check unread', cls: 'transient', decision: 'retry', scope: 'machine',
     description: 'The job said it was done, but the hopper could not read its source to check the work, also after it tried again with backoff (a connect timeout, a busy service, a rate limit). Nothing showed the work incomplete. Before it runs again, its source is asked whether the work is done there: then it ends finished.',

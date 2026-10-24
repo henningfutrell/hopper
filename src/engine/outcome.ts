@@ -21,9 +21,24 @@ const TERMINAL: Recorded = { kind: 'terminal' };
 
 const TAIL_CHARS = 2000;
 
+/** What a failure says when the sweep stopped the job's processes (issue #2707): read by `SWEPT` (src/failures/causes.ts). */
+export const SWEPT_TEXT = 'the hopper\'s sweep stopped its processes';
+
+/**
+ * The failure text (issue #2707): an agent that exited after the sweep stopped the job's processes, with no failure of the
+ * job since, exited by the hopper's act, so the text names the sweep and the job's status then.
+ */
+export function sweptError(c: Pick<EngineContext, 'store'>, job: Pick<Job, 'id'>, error: string): string {
+  if (!/\bexited\b/.test(error)) return error;
+  const last = c.store.events.recent(1, ['job.processes_stopped', 'job.failed'], job.id)[0];
+  if (last?.type !== 'job.processes_stopped') return error;
+  const d = last.data as { machineId: string; status: string };
+  return `${SWEPT_TEXT} on ${d.machineId} while it was ${d.status}: ${error}`;
+}
+
 /** `liveness`: a timeout's (issue #630), kept on the job for the assessor. */
 function fail(c: EngineContext, job: Job, laneId: LaneId | undefined, error: string, at: string, tail?: string, liveness?: JobLiveness): Recorded {
-  const maskedError = maskGitHubTokens(error);
+  const maskedError = maskGitHubTokens(sweptError(c, job, error));
   const maskedTail = tail ? maskGitHubTokens(tail.slice(-TAIL_CHARS)) : undefined;
   c.store.jobs.update(job.id, { status: 'failed', error: maskedError, finishedAt: at, pendingAnswer: undefined, liveness, ...cleanupDue(c), ...(maskedTail ? { errorTail: maskedTail } : {}) });
   c.store.events.append({ type: 'job.failed', jobId: job.id, ...(laneId ? { laneId } : {}), data: { error: maskedError, ...priorityTagOf(c, job.id) } });

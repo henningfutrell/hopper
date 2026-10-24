@@ -18,7 +18,7 @@ export const none: Survey = { scopes: [], processes: [], scratch: [] };
 export const day = (_job: Job, ageMs: number): boolean => ageMs >= 24 * HOUR;
 
 /** The sweep with a fake machine shell; the store's jobs and work trail as plain lists. */
-export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[]; measures?: Map<string, DiskMeasure>; told?: { type: string; machineId: string; data: unknown }[]; pruned?: Pruned | 'old client'; trimmed?: Trimmed | 'old client'; cleared?: (kinds: CappedKind[]) => Cleared | 'old client' } = {}) {
+export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; machines?: MachineSnapshot[]; keeps?: string[]; oldClient?: boolean; itemDone?: string[]; budget?: number; containers?: string[]; others?: Job[]; spec?: Partial<Job['spec']>; reapGate?: Promise<void>; onSurvey?: (jobs: Job[]) => void; reapFails?: string; lefts?: string[]; leftovers?: Leftover[] | 'old client' | 'fails'; removal?: 'removed' | 'gone' | 'left'; tips?: string[]; proxied?: string[]; reasons?: string[]; ledger?: LedgerEntry[]; measures?: Map<string, DiskMeasure>; told?: { type: string; machineId: string; data: unknown }[]; pruned?: Pruned | 'old client'; trimmed?: Trimmed | 'old client'; cleared?: (kinds: CappedKind[]) => Cleared | 'old client' } = {}) {
   let now = Date.parse('2026-10-08T00:00:00Z');
   // The disk budget (issue #1120), in bytes; absent: none. `surveys`: what each survey finds in turn, then `found`.
   let budget = o.budget;
@@ -70,7 +70,7 @@ export function rig(o: { found?: Survey; surveys?: Survey[]; kept?: string[]; ma
       return o.leftovers ?? [];
     },
     async removeLeftover(path) { removals.push(path); return o.removal ?? 'removed'; },
-    async survey(roots) { surveyed.push(roots); return surveys.shift() ?? o.found ?? none; },
+    async survey(roots) { surveyed.push(roots); o.onSurvey?.(jobs); return surveys.shift() ?? o.found ?? none; },
     async reap(jobId, scratch, _keep, discard) {
       reaps.push({ jobId, ...(scratch ? { scratch } : {}), ...(discard ? { discard } : {}) });
       // `reapGate`: the reap ends once it settles (a slow machine, issue #1194); `reapFails`: it cannot reach the machine.
