@@ -13675,6 +13675,37 @@ GiB through the real daemon in `test/integration/heavy-gate.test.ts`. Part 5: `h
 and the run's machine with its pool in `test/plugins/job-limits.test.ts`; the gate's view in
 `test/engine/heavy-gate.test.ts`; the card's lines in `test/ui/machine-list.test.ts`.
 
+### Heap aborts (issue #2722 part 1, 2026-10-24)
+
+A Node process in a job that runs out of heap — V8's "JavaScript heap out of memory", a SIGABRT — was seen only as an exit
+code, by the agent, and the hopper knew nothing of it. `tsc` in a job scope (issue #2721) aborted so in about 15 jobs in a
+day while the scope used under half its memory limit, and nothing on the job said so. Now the job records each **heap
+abort**, with the command, the heap limit and the process's peak memory.
+
+- **Node writes a report.** Every job's tools get `NODE_OPTIONS` that starts with `--report-on-fatalerror --report-compact
+  --report-directory=<the job's temp link>` (`nodeReportEnv`, `src/domain/heap-aborts.ts`; `jobToolEnv` in
+  `src/executors/herdr/start.ts`, also a print-mode agent's turn); the payload's own `NODE_OPTIONS` come after it. On a
+  fatal error only — a heap that runs out is one — Node writes its diagnostic report as one line of JSON into the job's
+  scratch dir, and nothing at any other time. These options are Node's own since Node 12. Not `--report-exclude-env`: a
+  Node older than 22.13 refuses it in `NODE_OPTIONS` and does not start at all. So the report holds the process's
+  environment; it stays in the job's own scratch dir, and the hopper reads only the fields below of it.
+- **The reap reads it.** The reap (`HEAP_REPORTS_SH`, `src/client/heap-reports.ts`) reads each `report.*.json` in the
+  scratch dir whose `trigger` is `OOMError`, before it removes or keeps the dir, and says `hopper-heap <ms> <heap limit>
+  <peak RSS> <argv JSON>`: the header's `dumpEventTimeStamp`, `javascriptHeap.memoryLimit`, `resourceUsage.maxRss` and
+  `commandLine`, each `-` where the report has none, at most 20. Then it removes the report, so the reap of kept work
+  later does not say it again. Plain `sh`, `grep` and `sed`, so an ssh target or a client target reads it the same way.
+- **The job records it.** The cleanup appends one `job.heap_aborted` for each, with the job's machine: `command`, the
+  script node ran by its file's name with its arguments (`tsc --noEmit -p .`; node's own options left out; no path, so no
+  home directory; at most 120 characters; `node` when it ran no script), `heapLimitBytes`, `rssPeakBytes`, `abortedAt`.
+  The job's parts list shows each as a failed part under machines: "tsc ran out of heap", with the limit, the peak and
+  the machine.
+
+Read at the reap, so a heap abort shows when the job ends, not while it runs. Left for the next parts of the issue: a
+core dump and a cgroup OOM kill of a job process as typed failures of their own (the OOM kills of the scope are counted
+already, `job.resources_used`), one automatic retry with a larger heap, repeated heap aborts of one command across jobs
+as a pattern for the failure assessor, memory per lane on the UI, and no misleading state after a downstream crash. The
+Node heap from the job's memory limit is issue #2721.
+
 ## A GitHub sign-in ends with its connection (issue #513, 2026-10-08; replaced by issue #1380 part 3)
 
 **Replaced** (issue #1380 part 3, "A source that expires marks only the source" below): a connection that ends ends no
