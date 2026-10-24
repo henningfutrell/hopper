@@ -26,7 +26,8 @@
             "argocd-app",
             "terraform-workspace",
             "aws-account",
-            "aws-role"
+            "aws-role",
+            "database"
           ]
         },
         "name": {

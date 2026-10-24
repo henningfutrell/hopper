@@ -5512,6 +5512,124 @@ Version 1 (`docs/schemas/bastion.read.v1.json`). A bastion read ran (issue #2146
 }
 ```
 
+## `database.role_minted`
+
+Version 1 (`docs/schemas/database.role_minted.v1.json`). A database read's role was minted (issue #2231, design.md "Database reads"): after Access allowed `template` read on the database `asset` (`decision`), the vault made the login role `role` in it with the minting credential `credential`: SELECT only on the schemas the credential names, read-only by default, two connections, valid until `expiresAt` at most. `read` is the read's id. Its password is made in the hopper and never leaves it: never in an event.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `read` | string | yes |
+| `template` | string | yes |
+| `asset` | object | yes |
+| `credential` | string | yes |
+| `role` | string | yes |
+| `decision` | string | yes |
+| `expiresAt` | string | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "read": "0a1b2c3d4e5f6a7b",
+  "template": "orders-read",
+  "asset": {
+    "kind": "database",
+    "name": "lab/apps/orders"
+  },
+  "credential": "ORDERS_DB",
+  "role": "hopper_read_0a1b2c3d4e5f6a7b",
+  "decision": "c0ffee00-0000-4000-8000-000000000001",
+  "expiresAt": "2026-10-23T12:15:00.000Z"
+}
+```
+
+## `database.role_dropped`
+
+Version 1 (`docs/schemas/database.role_dropped.v1.json`). A database read's role was dropped (issue #2231): `reason` `read-ended` (its read ended, whatever happened) or `expired` (the sweep found its `VALID UNTIL` passed: a hopper that stopped mid-read left it). Its sessions were ended first.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | no |
+| `read` | string | no |
+| `asset` | object | yes |
+| `credential` | string | yes |
+| `role` | string | yes |
+| `reason` | `read-ended` \| `expired` | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "read": "0a1b2c3d4e5f6a7b",
+  "asset": {
+    "kind": "database",
+    "name": "lab/apps/orders"
+  },
+  "credential": "ORDERS_DB",
+  "role": "hopper_read_0a1b2c3d4e5f6a7b",
+  "reason": "read-ended"
+}
+```
+
+## `database.read`
+
+Version 1 (`docs/schemas/database.read.v1.json`). A database read ran (issue #2231, design.md "Database reads"): `sql`, the job's one SELECT, as `role` in a read-only transaction on the database `asset`, after Access allowed it (`decision`). `rows` and `bytes`: the CSV it answered; `problem`: why there was none (what the database said, or an answer past the cap). `ms`: how long it took. Never a row of the answer or a password.
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `read` | string | yes |
+| `template` | string | yes |
+| `asset` | object | yes |
+| `role` | string | yes |
+| `decision` | string | yes |
+| `sql` | string | yes |
+| `rows` | integer | no |
+| `bytes` | integer | no |
+| `problem` | string | no |
+| `ms` | integer | yes |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "read": "0a1b2c3d4e5f6a7b",
+  "template": "orders-read",
+  "asset": {
+    "kind": "database",
+    "name": "lab/apps/orders"
+  },
+  "role": "hopper_read_0a1b2c3d4e5f6a7b",
+  "decision": "c0ffee00-0000-4000-8000-000000000001",
+  "sql": "SELECT count(*) FROM app.users",
+  "rows": 1,
+  "bytes": 9,
+  "ms": 40
+}
+```
+
+## `database.read_refused`
+
+Version 1 (`docs/schemas/database.read_refused.v1.json`). A job's database read was refused before any role was minted (issue #2231): Access denied it (`decision`), no minting credential mints for the database, or the mint failed (`reason`).
+
+| field | type | required |
+|---|---|---|
+| `job` | string | yes |
+| `template` | string | yes |
+| `asset` | object | yes |
+| `reason` | string | yes |
+| `decision` | string | no |
+
+```json
+{
+  "job": "f3b1c2d4-0000-4000-8000-000000000001",
+  "template": "orders-read",
+  "asset": {
+    "kind": "database",
+    "name": "lab/apps/orders"
+  },
+  "reason": "no minting credential mints for database lab/apps/orders: a person adds one on Vault"
+}
+```
+
 ## `vault.credential_asked`
 
 Version 1 (`docs/schemas/vault.credential_asked.v1.json`). A job on a box loaded a skill whose credential its template does not give (issue #583), and the hopper asked a person for one: a credential request. The skill, the template, the machine, the job, and what the job said it needs it for. Once per job and request.
