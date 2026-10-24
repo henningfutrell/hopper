@@ -4328,7 +4328,7 @@ Version 1 (`docs/schemas/job.preempted.v1.json`). A Decision preempted this runn
 
 ## `job.memory_paused`
 
-Version 1 (`docs/schemas/job.memory_paused.v1.json`). A Decision paused this running job (issue #2291): its machine has `availableBytes` of memory available, below its memory floor `floorBytes`, and this job started there last. Issue #2499: or its machine's memory pressure is at or above 40% (`availableBytes` and `floorBytes` its own), or its host pool has `availableBytes` below the pool's floor `floorBytes` and this job started last on any machine of it. It is parked next (`job.parked`), its lane and memory free, and it is queued again (`job.unparked`) to resume there where it stopped once the memory holds it. `reason`: the Decision's.
+Version 1 (`docs/schemas/job.memory_paused.v1.json`). A Decision paused this running job (issue #2291): its machine has `availableBytes` of memory available, below its memory floor `floorBytes`, and this job has the lowest priority there, of those the one that started there last (issue #2737). Issue #2499: or its machine's memory pressure is at or above 40% (`availableBytes` and `floorBytes` its own), or its host pool has `availableBytes` below the pool's floor `floorBytes` and this job has the lowest priority on any machine of it. It is parked next (`job.parked`), its lane and memory free, and it is queued again (`job.unparked`) to resume there where it stopped once the memory holds it. `reason`: the Decision's.
 
 | field | type | required |
 |---|---|---|

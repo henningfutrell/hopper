@@ -180,7 +180,7 @@ function apply(c: EngineContext, d: Decision): Applied {
   for (const p of d.memoryPause ?? []) {
     const job = store.jobs.get(p.jobId);
     if (job?.status !== 'running' || job.laneId !== p.laneId || preempts.includes(p.jobId)) continue;
-    store.jobs.update(p.jobId, { memoryPaused: { at: d.at, machineId: p.machineId, availableBytes: p.availableBytes, floorBytes: p.floorBytes } });
+    store.jobs.update(p.jobId, { memoryPaused: { at: d.at, machineId: p.machineId, availableBytes: p.availableBytes, floorBytes: p.floorBytes, priority: p.priority, why: p.why } });
     memoryPaused.set(c, (memoryPaused.get(c) ?? new Map<string, string>()).set(p.machineId, d.at));
     store.events.append({
       type: 'job.memory_paused', jobId: p.jobId, laneId: p.laneId, machineId: p.machineId, decisionId: d.id,

@@ -1,8 +1,8 @@
 // The memory pause (issue #2291, design.md "The memory floor"), step 7c. Below its floor, a machine pauses the running job
-// that started there last: parked on the Park button's path, its work kept, and queued again to resume there. One pause
+// of the lowest priority there (issue #2737), and of those the one that started there last: parked on the Park button's path, its work kept, and queued again to resume there. One pause
 // per machine at a time. Issue #2499: also a machine whose memory pressure is at or above MEMORY_PRESSURE_PAUSE_PERCENT, and
-// a host pool below the kernel's floor, though each of its machines has memory of its own: the job that started last on any
-// of them, one pause at a time for the pool. Pure: the clock is `at`.
+// a host pool below the kernel's floor, though each of its machines has memory of its own: the job of the lowest priority on
+// any of them, one pause at a time for the pool. Pure: the clock is `at`.
 import {
   MEMORY_PAUSE_EVERY_MS, MEMORY_PRESSURE_PAUSE_PERCENT,
   type Job, type JobId, type Lane, type MachineSnapshot, type MemoryPausePlan,
@@ -39,9 +39,15 @@ function poolShort(machines: readonly MachineSnapshot[], at: number): Short[] {
   });
 }
 
+/** Why the pause took this job of `options`: its lowest priority, or with one priority among them, that it started last. */
+function chosenWhy(id: string, priority: number, priorities: readonly number[]): string {
+  if (priorities.every((p) => p === priority)) return `${id} started there last`;
+  return `${id} has the lowest priority there (${priority})${priorities.filter((p) => p === priority).length > 1 ? ' and started there last of them' : ''}`;
+}
+
 /**
- * Step 7c: for each machine, then each host pool, whose memory holds no more running job, pause the running job that
- * started there last: its executor parks, it has an agent session to resume, and no preemption names it. None where a
+ * Step 7c: for each machine, then each host pool, whose memory holds no more running job, pause the running job of the
+ * lowest priority there (issue #2737), of those the one that started there last: its executor parks, it has an agent session to resume, and no preemption names it. None where a
  * memory pause on one of its machines is less than `MEMORY_PAUSE_EVERY_MS` old, so the park frees memory and a new reading
  * shows it first; a pool pauses none when one of its machines pauses in this Decision.
  */
@@ -64,12 +70,13 @@ export function memoryPauses(
       const lane = lanes.find((l) => l.jobId === j.id && l.state === 'busy' && ids.has(l.machineId));
       return lane ? [{ j, lane }] : [];
     });
-    const last = options.sort((a, b) => b.j.startedAt!.localeCompare(a.j.startedAt!) || a.j.id.localeCompare(b.j.id))[0];
+    const last = options.sort((a, b) => a.j.priority - b.j.priority || b.j.startedAt!.localeCompare(a.j.startedAt!) || a.j.id.localeCompare(b.j.id))[0];
     if (!last) continue;
     for (const id of ids) pausing.add(id);
     plans.push({
       jobId: last.j.id, laneId: last.lane.id, machineId: last.lane.machineId, availableBytes: s.availableBytes, floorBytes: s.floorBytes,
-      reason: `pauses ${last.j.id} on ${last.lane.id}: ${s.why}; ${last.j.id} started there last`,
+      priority: last.j.priority, why: s.why,
+      reason: `pauses ${last.j.id} on ${last.lane.id}: ${s.why}; ${chosenWhy(last.j.id, last.j.priority, options.map((o) => o.j.priority))}`,
     });
   }
   return plans;
