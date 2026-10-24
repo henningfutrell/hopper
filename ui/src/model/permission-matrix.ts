@@ -8,7 +8,7 @@ import type { AccessView, Approval, Asset, AssetKind, Operation, OperationProfil
 
 export const ALL = 'all';
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply', 'observe'];
-const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
+const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role', 'database'];
 
 /** `requesters`: each template, then its boxes, then the users; `jobs`: the live jobs. */
 export type MatrixRows = 'requesters' | 'jobs';

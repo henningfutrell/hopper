@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { VAULT_VALUE_MAX } from '../domain/vault.ts';
 import { ASSET_KINDS } from '../domain/access.ts';
+import { SQL_MAX } from '../domain/database-read.ts';
 
 /** The preshared key the hopper shows and the vault checks: a runtime secret (also `_FILE`). */
 export const VAULT_KEY_VARIABLE = 'HOPPER_VAULT_KEY';
@@ -83,6 +84,19 @@ export const vaultOps = {
   'pod-credential': z.strictObject({ user, ask: z.strictObject({ name, pod: z.string().max(200), job: z.string().max(64) }) }),
   /** The values of the vault secrets delivered to a job (issue #1957), read from its delivery events: its checkpoint is scrubbed of them. */
   'delivered-to': z.strictObject({ user, jobId: z.string().max(64) }),
+  /**
+   * A database read (issue #2231), asked only after the hopper's Access allowed it: the vault opens the database's minting
+   * credential, mints a database read role, runs the SELECT and drops the role. The rows cross back, never a credential.
+   */
+  'database-read': z.strictObject({
+    user,
+    read: z.strictObject({
+      job: z.string().max(64), template: name, asset: z.strictObject({ kind: z.literal('database'), name: z.string().max(200) }),
+      sql: z.string().max(SQL_MAX), id: z.string().regex(/^[0-9a-f]{16}$/), decision: z.string().max(100),
+    }),
+  }),
+  /** Drops each database read role past its TTL (issue #2231), in each database a minting credential the vault holds mints for. */
+  'database-sweep': z.strictObject({ user }),
 } as const;
 
 export type VaultOp = keyof typeof vaultOps;

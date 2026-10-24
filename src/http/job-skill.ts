@@ -61,6 +61,7 @@ function skillUser(tenants: Tenants, id: string): SkillUser | undefined {
     sandbox: (template, job, about) => parts.sandboxRequests.ask(job.id, template, about),
     sandboxWaits: (template, job, about) => parts.sandboxRequests.waited(job.id, template, about),
     bastions: parts.bastions, // issue #2146
+    databases: { readDatabase: (ask) => parts.vault.readDatabase(ask) }, // issue #2231
     outsideStamp: (profiles, job) => parts.sandboxRequests.outside(job.id, profiles), // issue #655 part 16
     // Issue #2206, part 2: IAM simulates the role with a read session of hopper-read, minted as topology discovery mints one.
     actionCheck: (needs, said, job, why) => checkTemplateActions({ store: parts.store, appliesOff: () => parts.needSteps.appliesOff(),

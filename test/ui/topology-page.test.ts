@@ -95,7 +95,7 @@ describe('the Topology page', () => {
     expect(page().querySelector('[data-slot="topology-discover"]')).toBeNull();
     expect(button(empty, 'Add a cluster')).toBeDefined();
     await act(async () => button(empty, 'Add an AWS account')!.click());
-    const mints = page().querySelector('input[placeholder="cluster/lab or aws-account/123456789012"]') as HTMLInputElement;
+    const mints = page().querySelector('input[placeholder="cluster/lab, aws-account/123456789012 or database/lab/apps/orders"]') as HTMLInputElement;
     expect(mints.value).toBe('aws-account/');
     expect(button(page(), 'Set secret')).toBeDefined();
   });

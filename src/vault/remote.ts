@@ -16,9 +16,13 @@ import type { RuntimeSecrets } from '../secrets/runtime.ts';
 import type { ClientTarget, VaultResult, VaultService } from './service.ts';
 import type { Vault } from './vault.ts';
 import type { AgentCredentialAnswer } from './agent-credential.ts';
+import { refusedRead, type DatabaseReadAnswer, type DatabaseReadFrom } from './database-reads.ts';
 import { VAULT_KEY_VARIABLE, VAULT_OP_PATH, type VaultOp } from './wire.ts';
+import { CONNECT_TIMEOUT_MS, READ_STATEMENT_TIMEOUT_MS } from '../domain/database-read.ts';
 
 const TIMEOUT_MS = 10_000;
+/** A database read (issue #2231) waits for the mint, the read and the drop: each connect and the statement's own timeout. */
+const READ_TIMEOUT_MS = 4 * CONNECT_TIMEOUT_MS + READ_STATEMENT_TIMEOUT_MS;
 
 export function remoteVault(o: {
   url: string;
@@ -31,7 +35,7 @@ export function remoteVault(o: {
   holds: (parts: ProxyTokenParts) => boolean;
 }): Omit<Vault, 'need' | 'give' | 'decline' | 'holdCheck'> {
   /** The vault container's answer, or why there is none. */
-  async function call<T>(op: VaultOp, body: Record<string, unknown>): Promise<{ result: T } | { problem: string }> {
+  async function call<T>(op: VaultOp, body: Record<string, unknown>, timeoutMs = TIMEOUT_MS): Promise<{ result: T } | { problem: string }> {
     const key = o.secret(VAULT_KEY_VARIABLE);
     if (!key) return { problem: `the vault at ${o.url} is not reachable: ${VAULT_KEY_VARIABLE} is not set` };
     let res: Response;
@@ -40,7 +44,7 @@ export function remoteVault(o: {
         method: 'POST',
         headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
         body: JSON.stringify({ user: o.user, ...body }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (e) {
       const cause = (e as Error).cause instanceof Error ? ((e as Error).cause as Error).message : (e as Error).message;
@@ -73,6 +77,14 @@ export function remoteVault(o: {
     if (o.local.view().secrets.find((s) => s.name === b.credential)?.backend) return o.local.unbindFrom(b);
     const r = await call<{ ok: true } | { refused: string }>('unbind', { binding: b });
     return 'problem' in r ? { refused: r.problem } : r.result;
+  };
+
+  // A database read (issue #2231) crosses the same way, after Access allowed it here: the vault that holds the database's
+  // minting credential mints the database read role, runs the SELECT and drops the role. One kept in a vault backend is read here.
+  const readFrom: DatabaseReadFrom = async (r) => {
+    if (o.local.view().secrets.some((s) => s.mints?.kind === 'database' && s.mints.name === r.asset.name && s.backend)) return o.local.readAllowed(r);
+    const answer = await call<DatabaseReadAnswer>('database-read', { read: r }, READ_TIMEOUT_MS);
+    return 'problem' in answer ? refusedRead(o.store.events, r, { status: 503, no: answer.problem }, r.decision) : answer.result;
   };
 
   return {
@@ -114,7 +126,14 @@ export function remoteVault(o: {
     testMint: (asset, by) => o.local.testMint(asset, by, mintFrom), mintForDiscovery: (asset) => o.local.mintForDiscovery(asset, mintFrom),
     mintForCheck: (ask) => o.local.mintForCheck(ask, mintFrom),
     mintForNeedStep: (ask) => o.local.mintForNeedStep(ask, mintFrom),
-    releaseMints: (box) => o.local.releaseMints(box, unbindFrom), reconcileMints: () => o.local.reconcileMints(unbindFrom),
+    readDatabase: (ask) => o.local.readDatabase(ask, readFrom),
+    releaseMints: (box) => o.local.releaseMints(box, unbindFrom),
+    // The database read roles a read left (issue #2231) are swept where their minting credentials are opened: in the
+    // vault container; one kept in a vault backend here. A vault container out of reach sweeps at the next pass.
+    async reconcileMints() {
+      await o.local.reconcileMints(unbindFrom);
+      await call('database-sweep', {});
+    },
     saveTemplate: (t, by) => o.local.saveTemplate(t, by),
     removeTemplate: (name, by) => o.local.removeTemplate(name, by),
     approveTemplate: (name, by, job) => o.local.approveTemplate(name, by, job),

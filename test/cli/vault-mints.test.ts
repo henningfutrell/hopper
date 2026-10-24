@@ -22,7 +22,7 @@ describe('hopper vault set --mints (issue #791)', () => {
   });
 
   it('refuses a kind a minting credential does not mint for, a bad name, and a shared secret, before any call', () => {
-    expect(() => vaultCall(['set', 'X', '--mints', 'namespace/lab/web'], () => VALUE)).toThrow(new OperatorRefusal('--mints namespace/lab/web: write aws-account/<account id> or cluster/<name>, or none'));
+    expect(() => vaultCall(['set', 'X', '--mints', 'namespace/lab/web'], () => VALUE)).toThrow(new OperatorRefusal('--mints namespace/lab/web: write aws-account/<account id>, cluster/<name> or database/<cluster>/<namespace>/<database>, or none'));
     expect(() => vaultCall(['set', 'X', '--mints', 'cluster'], () => VALUE)).toThrow(/--mints cluster: write/);
     expect(() => vaultCall(['set', 'X', '--mints', 'cluster/a b'], () => VALUE)).toThrow(/is not a name a minting credential mints for/);
     expect(() => vaultCall(['set', 'X', '--mints', 'cluster/lab', '--shared'], () => VALUE)).toThrow(/a shared secret mints nothing/);

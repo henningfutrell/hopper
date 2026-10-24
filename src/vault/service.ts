@@ -27,14 +27,14 @@ import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/te
 import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
-import { probeMarksFor, recheckUnminted, templateChecks, type TemplateChecks } from './checks.ts'; import { needMinting, type NeedMinting } from './need-mint.ts';
+import { probeMarksFor, recheckUnminted, templateChecks, type TemplateChecks } from './checks.ts'; import { needMinting, type NeedMinting } from './need-mint.ts'; import { databaseReads, type DatabaseReads } from './database-reads.ts'; import { createPostgresReader } from './postgres-reads.ts'; import { createSqlServerReader } from './sqlserver-reads.ts'; import { readerByEngine, type DatabaseReader } from '../domain/database-read.ts';
 import { agentCredentialProblem, agentCredentials, type AgentCredentials } from './agent-credential.ts';
 import { resealRows, vaultContext } from './reseal.ts';
 export { vaultContext };
 
 export type VaultResult = { ok: true } | { ok: false; code: 'invalid' | 'not_found' | 'conflict' | 'unavailable'; error: string };
 
-export interface VaultService extends TemplateChecks, AgentCredentials, StepDelivery, Delivered, NeedMinting, MintReleases {
+export interface VaultService extends TemplateChecks, AgentCredentials, StepDelivery, Delivered, NeedMinting, MintReleases, DatabaseReads {
   view(): VaultView;
   /**
    * Sets a secret, or a new value or scope for one: sealed, never kept or answered in clear. Or (issue #585) points it at
@@ -129,7 +129,8 @@ export function createVaultService(o: {
   shared?: (row: string) => VaultSecret | undefined;
   /** The apply gate (issue #870): asked before every mint of an operation but read. Absent: none is minted. Infra applies (issue #1722): off, only a read is minted; absent, on.
    * `elsewhere`: the sandboxes another live hopper runs now, by name (issue #1954): the reconcile pass leaves their tokens bound. Absent: none. */
-  plans?: MintingOptions['plans']; applies?: MintingOptions['applies']; elsewhere?: () => ReadonlySet<string>;
+  /** `databases`: the databases a read runs on (issue #2231), Postgres by default. */
+  plans?: MintingOptions['plans']; applies?: MintingOptions['applies']; elsewhere?: () => ReadonlySet<string>; databases?: DatabaseReader;
 }): VaultService {
   const { store: { vault, events }, keys: { sealer } } = o;
   const unavailable = (): string => `the hopper cannot store a vault secret: ${o.keys.problem}`;
@@ -181,7 +182,7 @@ export function createVaultService(o: {
 
   const mintFrom = mintHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) });
   // A sandbox's tokens end with it (issue #1371): bound for the need box or check box, released at its end.
-  const unbindFrom = unbindHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) }), bindings = mintBindings({ events: o.store.events, clock: o.clock, unbindFrom, logger: o.logger, ...(o.elsewhere ? { elsewhere: o.elsewhere } : {}) });
+  const unbindFrom = unbindHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) }), bindings = mintBindings({ events: o.store.events, clock: o.clock, unbindFrom, logger: o.logger, ...(o.elsewhere ? { elsewhere: o.elsewhere } : {}) }), reads = databaseReads(o.store, { access: o.access, reader: o.databases ?? readerByEngine({ postgres: createPostgresReader(), sqlserver: createSqlServerReader() }), valueOf, clock: o.clock, logger: o.logger });
 
   const mint = createMinting({
     store: o.store, userId: o.userId ?? '', clock: o.clock,
@@ -384,7 +385,7 @@ export function createVaultService(o: {
     },
 
     mint: (ask, machineKey, from) => mint(ask, machineKey, from ?? mintFrom),
-    mintFrom, testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom), mintForDiscovery: (asset, from) => discoveryMint(asset, from ?? mintFrom), unbindFrom, releaseMints: (box, from) => bindings.release(box, from), reconcileMints: (from) => bindings.reconcile(from),
+    mintFrom, testMint: (asset, by, from) => testMint(asset, by, from ?? mintFrom), mintForDiscovery: (asset, from) => discoveryMint(asset, from ?? mintFrom), unbindFrom, releaseMints: (box, from) => bindings.release(box, from), reconcileMints: async (from) => { await bindings.reconcile(from); await reads.sweepDatabaseRoles(); }, ...reads,
     ...templateChecks(o.store, { access: o.access, mintFrom, bindings }), ...needMinting(o.store, { access: o.access, mintFrom, bindings, ...(o.plans ? { plans: o.plans } : {}), ...(o.applies ? { applies: o.applies } : {}) }), ...agentCredentials(o.store, valueOf), ...stepDelivery(o.store, o.clock, valueOf), ...deliveredValues(o.store, valueOf),
     resealAll: () => resealRows({ vault, sealer, mine: (name) => !isSystemSecret(name), what: 'vault secret', logger: o.logger }),
   };

@@ -33,16 +33,19 @@ export function secretFacts(s: VaultSecret): Fact[] {
 }
 
 const MINTS = /^(cluster|aws-account)\/([A-Za-z0-9][A-Za-z0-9._+=,-]{0,199})$/;
+/** A database (issue #2231): its whole name, `/` in it too. */
+const MINTS_DATABASE = /^database\/([A-Za-z0-9][A-Za-z0-9._/+=,-]{0,199})$/;
 
 /**
- * What a minting credential mints for (issue #580), as typed: `cluster/NAME` or `aws-account/ID`. Undefined when empty
- * (a plain secret); a string says why it is not one.
+ * What a minting credential mints for (issue #580), as typed: `cluster/NAME`, `aws-account/ID` or (issue #2231)
+ * `database/CLUSTER/NAMESPACE/DATABASE`. Undefined when empty (a plain secret); a string says why it is not one.
  */
 export function mintsOf(said: string): Asset | string | undefined {
   const v = said.trim();
   if (!v) return undefined;
-  const m = MINTS.exec(v);
-  return m ? { kind: m[1] as Asset['kind'], name: m[2]! } : 'write it as cluster/NAME or aws-account/ID';
+  const m = MINTS.exec(v), d = MINTS_DATABASE.exec(v);
+  if (d) return { kind: 'database', name: d[1]! };
+  return m ? { kind: m[1] as Asset['kind'], name: m[2]! } : 'write it as cluster/NAME, aws-account/ID or database/CLUSTER/NAMESPACE/DATABASE';
 }
 
 /**
@@ -50,6 +53,7 @@ export function mintsOf(said: string): Asset | string | undefined {
  * value, never a secret each. `problem`: why the typed value is not one, never the value.
  */
 export function mintsValueOf(mints: Asset | undefined, value: string): { shape?: string; problem?: string } {
+  if (mints?.kind === 'database') return databaseValueOf(value);
   if (mints?.kind === 'cluster') return { shape: 'JSON: {"server": "https://…", "token": "…"}, or {"type": "eks", "roleArn": "arn:aws:iam::<account>:role/<name>", …}' };
   if (mints?.kind !== 'aws-account') return {};
   const shape = 'JSON, both keys in one secret: {"AccessKeyId": "AKIA…", "SecretAccessKey": "…"} (and Region, Endpoint or SessionToken when it has them)';
@@ -58,6 +62,21 @@ export function mintsValueOf(mints: Asset | undefined, value: string): { shape?:
   try { v = JSON.parse(value) as Record<string, unknown>; } catch { /* below */ }
   const has = (k: string): boolean => typeof v?.[k] === 'string' && v[k] !== '';
   return has('AccessKeyId') && has('SecretAccessKey') ? { shape } : { shape, problem: 'an AWS account\'s minting credential is JSON with AccessKeyId and SecretAccessKey' };
+}
+
+/**
+ * A database's minting credential (issue #2231): one JSON value, the login that makes and drops the database read roles and the
+ * schemas and tables a database read role may SELECT from. `problem`: why the typed value is not one, never the value.
+ */
+function databaseValueOf(value: string): { shape: string; problem?: string } {
+  const shape = 'JSON: {"engine": "postgres" or "sqlserver", "host": "…", "database": "…", "user": "<the minting login>", "password": "…", "schemas": ["public"], "tables": ["<schema>.<table>"]} (schemas, tables or both; and port, sslmode — verify-full, require or disable — or ca when it has them)';
+  if (!value) return { shape };
+  let v: Record<string, unknown> = {};
+  try { v = JSON.parse(value) as Record<string, unknown>; } catch { /* below */ }
+  const has = (k: string): boolean => typeof v?.[k] === 'string' && v[k] !== '';
+  const count = (k: string): number => (Array.isArray(v?.[k]) ? (v[k] as unknown[]).length : 0);
+  const whole = ['engine', 'host', 'database', 'user', 'password'].every(has) && count('schemas') + count('tables') > 0;
+  return whole ? { shape } : { shape, problem: 'a database\'s minting credential is JSON with engine, host, database, user, password, and schemas or tables' };
 }
 
 /** What the card's title line says of the value: set in the hopper, or kept in a backend and read there. */

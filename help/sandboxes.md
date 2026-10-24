@@ -209,6 +209,24 @@ A bastion ends by itself after an hour with no use, when its job ends, or when t
 
 An operator can stop a bastion.
 
+## Database reads
+
+A job can read rows of a database through the hopper. The job never gets a credential, and no box reaches the database:
+
+1. A person sets up the database's minting credential once (see [The vault](vault.md), "A database's minting credential").
+2. The job asks for a template with read on the database, for example `read/database/lab/apps/orders`.
+3. A person approves that read on **Access requests**. A database read is high radius: the read policy, the auto-approve policy and skip template approval never approve it.
+4. For each read, the job runs `sh "$HOPPER_SKILL" database read --template <name> --database <name> --sql "SELECT …"`. The hopper makes a database read role in the database, runs the one `SELECT` with it in a read-only transaction, and drops the role. The answer is the rows as CSV, with a header line.
+
+The limits:
+
+- One statement, a `SELECT` (or `WITH … SELECT`, `VALUES`). A write fails: the role can change nothing, and the transaction is read-only.
+- On SQL Server, the statement must answer one result set. A write fails: the read login can change nothing, and the hopper rolls the transaction back. Dates come as ISO 8601 in UTC, `bit` as 1 or 0, binary as `0x…`. A `decimal`, `numeric` or `money` value is read as a JavaScript number: for every digit, `CAST` it to `varchar` in the `SELECT`.
+- At most 100000 rows or 16 MiB in one answer. A bigger answer fails, and is never cut: page the query.
+- A statement stops after 60 s.
+
+The job's timeline shows each read with its SQL, the role, and the Access decision: **database.role_minted**, **database.read** and **database.role_dropped**. When the hopper stops during a read, the role ends at its `VALID UNTIL`, and the hopper drops it at the next start or within 5 minutes after that time. SQL Server has no `VALID UNTIL`: there the hopper drops a read login older than 15 minutes at the same times.
+
 ## Windows sandbox steps
 
 No hopper client, lane or agent runs on Windows. When a job needs Windows for one step (a .NET Framework build, a Windows app's tests), it asks the hopper to run that step on a **Windows host**:

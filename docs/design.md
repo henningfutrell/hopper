@@ -34659,3 +34659,122 @@ twice), `test/integration/delivery-ledger.test.ts` (`overTime` per day, a named 
 period or zone), `test/integration/delivery-settings.test.ts` (the open set, 404 with no schedule),
 `test/cli/forecast.test.ts`, `test/ui/delivery-forecast.test.ts` (times across the end of daylight saving time, durations,
 the time zone, the query, the rows, the gates to clear).
+
+## Database reads (issue #2231, part 1, 2026-10-23)
+
+**The problem.** A job that needs rows of a database had no way to read them inside the rules: the vault mints for an
+AWS role, a cluster or a namespace only, a read-only box's egress reaches AWS and the cluster API servers only, and a
+read profile maps to view access, which has no `pods/exec` or `pods/portforward`. Jobs worked around it (exec in a read
+profile, port-forward RBAC, hand-run SQL). The issue asks for a per-step, read-only database read: a login minted for
+the step, short-lived, audited, approved as other profiles are, and no new cluster opening.
+
+- **The asset** (`src/domain/access.ts`). `database` joins the asset kinds, named `<cluster>/<namespace>/<database>`, and
+  takes `read` only (`profileProblem`). Its read is **high radius** (`highRadius`): it reads rows of data a person may not
+  want a job to see, so only its own approval approves it. The read policy never holds it (`inReadPolicy`,
+  `readPolicyProblem` refuses a database entry), and a template request with a database need is approved by a person
+  only, whatever the policies and toggles say (`automaticApprover`), as a vault secret or an egress host is.
+- **The minting credential** (`src/domain/database-read.ts`, `MINTS_FOR_KINDS`). A vault secret that mints for
+  `database/<name>`: one JSON value — `engine` (`postgres`), `host`, `port`, `database`, `user`, `password`, `sslmode`
+  (`verify-full` by default), `ca`, and `schemas`, the schemas a database read role may SELECT from. The login needs `CREATEROLE`,
+  and CONNECT, USAGE and SELECT with the grant option on what jobs may read; nothing else (help/vault.md).
+- **The database read role** (`src/vault/postgres-reads.ts`, the `DatabaseReader` seam). For each read the minting login makes a
+  role `hopper_read_<16 hex>`: `LOGIN NOINHERIT`, `CONNECTION LIMIT 2`, `VALID UNTIL` 15 minutes on, its password a
+  SCRAM verifier made in the hopper (the clear password never reaches the server or its log), `default_transaction_read_only
+  = on`, `statement_timeout` 60 s, `idle_in_transaction_session_timeout` 30 s, CONNECT on the database, USAGE and SELECT on
+  the named schemas. The minting login grants itself the role (a subset of its own privileges), so it may end the role's
+  sessions and take its grants back. Before any use it checks what the role could change — a table, a sequence, a schema
+  or the database, through the role's grants or `PUBLIC`'s —, and drops it when it could change anything.
+- **The read.** The hopper connects as the role and runs the job's one statement as a cursor in a `BEGIN READ ONLY`
+  transaction, over the extended protocol: a cursor is a query's only, and the extended protocol takes one statement. It
+  fetches 1000 rows at a time and answers CSV with a header (NULL empty, an empty string quoted), each value as Postgres
+  sends it. More than 100000 rows or 16 MiB is refused, never cut. Then `ROLLBACK`, and the role is dropped: `NOLOGIN`, its
+  sessions ended, `DROP OWNED`, `DROP ROLE`.
+- **Access and the run** (`src/vault/database-reads.ts`, `src/skills/database-skill.ts`). `sh "$HOPPER_SKILL" database read
+  --template T --database D --sql S`: the template must name `read/database/D`; while a person has not approved that
+  read, or the job's sandbox runs of the template, the ask waits (202), as a bastion's does. Then Access decides the read
+  for the template (`decideCheckMint`, the read as the check) at each read, and a deny mints nothing.
+- **The audit.** `database.role_minted` (job, read, template, database, minting credential, role, decision, expiry),
+  `database.read` (the same, the SQL, rows, bytes or the problem, ms), `database.role_dropped` (`read-ended` or
+  `expired`), `database.read_refused`. No password, no connection string, no row.
+- **The backstop.** `VALID UNTIL` ends a role's logins at its TTL. The reconcile pass (`reconcileMints`, at start and
+  every 5 minutes) drops each read role whose `VALID UNTIL` passed, in each database a minting credential mints for: a
+  hopper that stopped mid-read leaves its role at most that long.
+
+**Decisions (part 1):**
+- **The hopper runs the read, not a box.** The issue let the read run in a box, with the credential delivered as aws and
+  kube credentials are. The hopper must reach the database itself to mint the role; running the read there too means the
+  role's password never leaves the hopper, the row and byte cap is the hopper's own (Postgres has none for a role), the
+  statement is one SELECT by construction, and a box gets no database egress at all — tinyproxy's CONNECT allowlist does
+  not carry a Postgres client without a tunnel helper in every image.
+- **Schemas are the minting credential's, not the profile's.** An operation profile is an operation on an asset; the
+  schemas a database read role may read are set once by the person who sets the minting credential up.
+- **No renewal.** A read is one statement under 60 s; its role lives 15 minutes and is dropped at its end. Each read mints
+  again, after Access.
+- **The answer through the skill route, never the job stream.** A read that waited is asked again with no SQL (the skill
+  waits keep no `sql`): its answer says the read may run, so no row is kept in the job stream's results.
+- **Postgres first.** The issue named SQL Server as the highest priority. Postgres went first because the repository's
+  tests run on a real Postgres already, so every requirement (writes refused, other schemas and databases refused, the
+  drop, the TTL) is checked against the real engine; the seam takes a second engine.
+
+**Part 2: SQL Server** (`src/vault/sqlserver-reads.ts`, `mssql` on tedious; `readerByEngine` picks the reader by the
+credential's `engine`, `sqlserver`, port 1433 by default).
+- **Tables as well as schemas.** The credential takes `tables` (`<schema>.<table>`) beside `schemas`, at least one of the
+  two, on both engines: the CRM read joins two tables of a schema that holds many more. On SQL Server the minting login
+  needs the grant option on each such table itself; the schema's does not let it grant one table.
+- **The read role** is a SQL login and its user in the credential's database, `hopper_read_<16 hex>` both: SQL Server
+  has no role that logs in. A contained user would need a contained database. The login's password goes as a SQL Server
+  2012 hash (`PASSWORD = 0x0200… HASHED`, SHA-512 of the UTF-16LE password and a 4-byte salt), so the clear password
+  never reaches the server or its log; no password policy (a hash cannot be checked), its default database the
+  credential's. The user gets `SELECT ON SCHEMA::` or `ON OBJECT::` for what the credential names.
+- **The check.** SQL Server has no read-only transaction and no role setting for one, so nothing stops a write but what
+  the login may do. The hopper connects as the new login and asks `fn_my_permissions` (server and database) and
+  `HAS_PERMS_BY_NAME` for each table, view, procedure and schema it can see: a permission that changes something (a
+  write, ALTER, CREATE, CONTROL, EXECUTE, IMPERSONATE, …), a table or view it could write or alter, a procedure it could
+  run (one granted to `public` may write for it by ownership chaining), or a schema it could alter. Any of them, and the
+  login is dropped and the read fails. Running the check as the login needs no IMPERSONATE for the minting login.
+- **The read** runs in a transaction the hopper rolls back, streamed, rows counted against the same caps; more than one
+  result set, or none, fails. One statement is not checked by construction as on Postgres (a batch may hold more); the
+  check above is what keeps a second statement from changing anything. Values are text: a date as ISO 8601 UTC, `bit`
+  1 or 0, binary `0x…`; tedious reads `decimal` as a JavaScript number (the help says to CAST it).
+- **The end.** `ALTER LOGIN … DISABLE`, `KILL` each session the minting login can see (with `VIEW SERVER STATE` and
+  `ALTER ANY CONNECTION`), `DROP USER`, `DROP LOGIN`. Without those two permissions a held session keeps the login, the
+  drop fails and the sweep tries again: an outcome the help names, as the permissions are optional.
+- **The backstop.** No `VALID UNTIL`: the sweep drops each read login whose `create_date` is older than the TTL (the
+  server's own clock) and each read user in the database whose login is gone or old. A login left while the hopper is
+  stopped stays until it starts again; only the hopper had its password.
+
+**Part 3: the vault in a container of its own** (issue #586). Access decides each read in the hopper, as for a mint. Only
+the read Access allowed crosses: the op `database-read` (`src/vault/wire.ts`) carries the job, the template, the database,
+the SQL, the read's id and Access's decision. The vault container opens the minting credential, mints the database read
+role, runs the read and drops the role (`readAllowed`, `src/vault/database-reads.ts`), and answers the rows and its events,
+which the hopper appends. A minting credential kept in a vault backend is read in the hopper, as for a mint. A vault
+container out of reach answers 503, recorded as `database.read_refused`. The sweep crosses too (`database-sweep`, at each
+reconcile pass). So the vault container, not the hopper, needs the route to the database. Tests:
+`test/integration/database-read.test.ts` runs the read with the vault in the hopper and in its own container, and the
+sweep through the container; `test/vault/database-reads.test.ts` hands a read Access allowed to another vault.
+
+**What is left (later parts).** The route to the in-cluster databases and to the private SQL Server (below). The live
+proof on the target clusters.
+
+**The route to an in-cluster database is a person's decision.** The hopper must open a TCP connection to the database
+to mint and to read. A database inside a cluster with no route from where the hopper runs needs one of these, each a
+cluster-side or network-side opening this part does not make:
+1. **`pods/portforward` for the observe role in the database's namespace**, and the vault mints through a bastion's
+   forward: an RBAC change; a forward reaches every port of the database's pod.
+2. **An internal load balancer or a NodePort for the database, reachable from the hopper's network**: a Service change and
+   a security group or firewall rule; the database's port is open to that network.
+3. **A NetworkPolicy that lets a hopper-run runtime in the cluster reach the database**, and the hopper runs there: a
+   policy change, and a hopper part inside the cluster.
+4. **A read replica or an export outside the cluster** that the hopper reaches: no cluster opening, but a copy of the data
+   to keep and secure.
+
+Tests (part 1): `test/vault/database-read-domain.test.ts` (the asset, high radius, the read policy, the credential, the
+CSV), `test/vault/postgres-reads.test.ts` (a real Postgres: the role's attributes and settings, every write refused also
+with the read-only default off and in `BEGIN READ WRITE`, another schema and another database refused, the PUBLIC
+check, the cap, the drop ends a session, the sweep, a credential of tables), `test/vault/sqlserver-reads.test.ts` (part 2,
+a real SQL Server: the login and user, every write refused also in a transaction of its own, another schema, table and
+database refused, a write permission or a procedure through `public` refused at the mint, the hash, one result set, the
+cap, the drop ends a session, the sweep by age and of orphan users), `test/vault/database-reads.test.ts` (Access, the events, no
+password in an event or an answer, the drop after a failed read), `test/skills/database-skill.test.ts`,
+`test/integration/database-read.test.ts` (through the real hopper, `hopper-skill` and Postgres: the wait for a person,
+the CSV, a write refused, every role gone, no password in an answer or an event).

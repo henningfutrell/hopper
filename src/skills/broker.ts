@@ -21,20 +21,20 @@ import { withActionLines, type TemplateActionsAnswer } from '../vault/template-a
 import { PLAN_MAX, PURPOSE_MAX, type TemplateView } from '../domain/vault.ts';
 import { templateReady } from '../domain/sandboxes-before-start.ts';
 import { helpForAgent } from '../help/book.ts';
-import { BASTION_SKILL, bastionAsk, type BastionUser } from './bastion-skill.ts';
+import { BASTION_SKILL, bastionAsk, type BastionUser } from './bastion-skill.ts'; import { DATABASE_SKILL, databaseAsk, type DatabaseUser } from './database-skill.ts';
 import { isServedSkill, repoCopyOf, servedSkill, servedText } from './library.ts';
 
 /** What a job refused for its trust can do (issue #655 part 16): nothing it asks raises its trust. */
 const MIN_TRUST_ADVICE = 'Asking again does not change it: an admin sets the minimum trust in Users & access → Access. Find another way.';
 
 /** The skills whose `template` field names the sandbox itself, never the template a credential is asked for. */
-const SANDBOX_OWN: readonly string[] = [SANDBOX_SKILL, TEMPLATE_SKILL, BASTION_SKILL];
+const SANDBOX_OWN: readonly string[] = [SANDBOX_SKILL, TEMPLATE_SKILL, BASTION_SKILL, DATABASE_SKILL];
 
 /** The statuses whose jobs may ask: the job's processes are at work on its machine. */
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 
 /** One user's side: their jobs, the check of a token, their event log, and what a box of theirs may be given. */
-export interface SkillUser extends Pick<BastionUser, 'bastions'> {
+export interface SkillUser extends Pick<BastionUser, 'bastions'>, Pick<DatabaseUser, 'databases'> {
   id: string;
   holds(parts: ProxyTokenParts): boolean;
   job(jobId: string): Job | undefined;
@@ -194,6 +194,12 @@ export function createSkillBroker(o: SkillBrokerOptions): SkillBroker {
     // Issue #2146: the job's bastion, after the same approvals as its sandbox runs.
     if (name === BASTION_SKILL) {
       return bastionAsk(user, job, { asset: said, template: field(body, 'template'), targets: field(body, 'targets'), why, secrets: field(body, 'secrets'), path: field(body, 'path'), data: field(body, 'data') }, {
+        no, loaded: (text) => { record('skill.loaded'); return { status: 200, text }; }, waiting: (text) => ({ status: 202, text }), waitingText, declinedText,
+      });
+    }
+    // Issue #2231: a database read, after a person approved the template's read on the database and the job's runs of it.
+    if (name === DATABASE_SKILL) {
+      return databaseAsk(user, job, { asset: said, template: field(body, 'template'), database: field(body, 'database'), sql: field(body, 'sql'), why }, {
         no, loaded: (text) => { record('skill.loaded'); return { status: 200, text }; }, waiting: (text) => ({ status: 202, text }), waitingText, declinedText,
       });
     }

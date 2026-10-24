@@ -32,7 +32,7 @@ const VAULT_CHANGES: readonly EventType[] = [
  * vault secrets, egress hosts and image too, or a request with them and no need is asked again with no need, and refused. Issue #2206:
  * its AWS actions, so the action check is asked again.
  */
-const ASKED = ['name', 'asset', 'why', 'plan', 'credential', 'needs', 'template', 'secrets', 'egress', 'image', 'tools', 'actions', 'targets'];
+const ASKED = ['name', 'asset', 'why', 'plan', 'credential', 'needs', 'template', 'secrets', 'egress', 'image', 'tools', 'actions', 'targets', 'database'];
 
 /** One user's side: their job stream, and their event log to hear the vault's changes on. */
 export interface WaitUser {

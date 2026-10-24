@@ -14,8 +14,8 @@ export type CheckedOperation = Extract<Operation, 'read' | 'observe'>;
 export const CHECKED_OPERATIONS: readonly CheckedOperation[] = ['read', 'observe'];
 /** Whether a need is one the check probes: a read or an observe. */
 export const checkedNeed = (p: { operation: string }): boolean => (CHECKED_OPERATIONS as readonly string[]).includes(p.operation);
-/** A template's needs that the check probes. */
-export const checkedNeeds = (profiles: readonly OperationProfile[] | undefined): OperationProfile[] => (profiles ?? []).filter(checkedNeed);
+/** A template's needs that the check probes: not a database's read (issue #2231), which the hopper runs itself, never a box. */
+export const checkedNeeds = (profiles: readonly OperationProfile[] | undefined): OperationProfile[] => (profiles ?? []).filter((p) => checkedNeed(p) && p.asset.kind !== 'database');
 
 /** What a probe expects: the write is refused (`denied`), or the read works (`allowed`). */
 export type ProbeExpect = 'denied' | 'allowed';

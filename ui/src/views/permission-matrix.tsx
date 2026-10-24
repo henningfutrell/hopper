@@ -25,7 +25,7 @@ import type { AccessView, Approval, AssetKind, Operation } from '@/model/wire';
 
 const POLL_MS = 10_000;
 const OPERATIONS: Operation[] = ['read', 'write', 'sync', 'apply', 'observe'];
-const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'];
+const ASSET_KINDS: AssetKind[] = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role', 'database'];
 const ROW_VIEWS: [MatrixRows, string][] = [['requesters', 'Templates, boxes and users'], ['jobs', 'Jobs']];
 
 const profileText = (a: Approval) => `${a.profile.operation} on ${a.profile.asset.kind} ${a.profile.asset.name}`;

@@ -20,8 +20,11 @@ export const CHANGE_OPERATIONS = ['write', 'sync', 'apply'] as const satisfies r
 /** Whether the profile changes its asset (a write, sync or apply), so its mint needs a plan. Read and observe do not. */
 export const changesAsset = (p: { operation: string }): boolean => (CHANGE_OPERATIONS as readonly string[]).includes(p.operation);
 
-/** What a credential is for: a cluster, a namespace (`<cluster>/<namespace>`), an Argo CD app, a Terraform workspace, an AWS account, an AWS role (`<account>/<role>`). */
-export const ASSET_KINDS = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role'] as const;
+/**
+ * What a credential is for: a cluster, a namespace (`<cluster>/<namespace>`), an Argo CD app, a Terraform workspace, an
+ * AWS account, an AWS role (`<account>/<role>`), a database (issue #2231, `<cluster>/<namespace>/<database>`; read only).
+ */
+export const ASSET_KINDS = ['cluster', 'namespace', 'argocd-app', 'terraform-workspace', 'aws-account', 'aws-role', 'database'] as const;
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 export interface Asset { kind: AssetKind; name: string }
@@ -42,6 +45,7 @@ export function profileProblem(p: { operation: string; asset: { kind: string; na
   if (!(OPERATIONS as readonly string[]).includes(p.operation)) return `operation ${JSON.stringify(p.operation)} is not one of ${OPERATIONS.join(', ')}`;
   if (!(ASSET_KINDS as readonly string[]).includes(p.asset.kind)) return `asset kind ${JSON.stringify(p.asset.kind)} is not one of ${ASSET_KINDS.join(', ')}`;
   if (!ASSET_NAME.test(p.asset.name)) return `asset name ${JSON.stringify(p.asset.name)} has a character an asset name may not have (letters, digits and . _ / + = , -; an AWS role as <account>/<role>)`;
+  if (p.asset.kind === 'database' && p.operation !== 'read') return `database ${p.asset.name} takes read only, not ${p.operation}: the hopper reads a database, never changes it`;
   if (p.backend && p.asset.kind !== 'terraform-workspace') return `${p.asset.kind} ${p.asset.name}: only a terraform-workspace need has a state backend`;
   return p.backend ? backendProblem(p.backend) : undefined;
 }
