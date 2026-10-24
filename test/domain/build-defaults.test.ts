@@ -83,3 +83,23 @@ describe('build JVMs sized from the job limits (issue #2737)', () => {
     expect(buildDefaultsEnv({}, { cpuPercent: 100 })).toMatchObject({ MAVEN_OPTS: '-Xmx2g' });
   });
 });
+
+// Issue #2737: vitest starts a worker for each CPU it sees, each a Node process with a heap of its own, whatever the job's
+// memory limit. With a memory limit, VITEST_MAX_WORKERS (which vitest reads over its config) gets the job's worker count,
+// the same as Gradle's; the payload's own value wins. With no memory limit, none.
+describe('test runner workers sized from the job limits (issue #2737)', () => {
+  it('gives vitest a worker for each GiB of half the memory limit, at most one for each CPU of the quota', () => {
+    expect(buildDefaultsEnv({}, { memoryMaxGiB: 9 })).toMatchObject({ VITEST_MAX_WORKERS: '4' });
+    expect(buildDefaultsEnv({}, { memoryMaxGiB: 9, cpuPercent: 200 })).toMatchObject({ VITEST_MAX_WORKERS: '2' });
+    expect(buildDefaultsEnv({}, { memoryMaxGiB: 1 })).toMatchObject({ VITEST_MAX_WORKERS: '1' });
+  });
+
+  it('keeps the payload\'s own worker count', () => {
+    expect(buildDefaultsEnv({ VITEST_MAX_WORKERS: '8' }, { memoryMaxGiB: 9 })).toMatchObject({ VITEST_MAX_WORKERS: '8' });
+  });
+
+  it('sets no worker count with no memory limit', () => {
+    expect(buildDefaultsEnv()).not.toHaveProperty('VITEST_MAX_WORKERS');
+    expect(buildDefaultsEnv({}, { cpuPercent: 100 })).not.toHaveProperty('VITEST_MAX_WORKERS');
+  });
+});
