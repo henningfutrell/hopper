@@ -13,7 +13,7 @@ export interface StickyExecutor extends Executor {
 }
 
 /** Not idempotent (like herdr-claude): runs until aborted, records how it was stopped. `kept`: what its reap keeps (issue #401). */
-export function createStickyExecutor(o: { kept?: string[]; tips?: Reaped['tips']; removed?: Reaped['removed']; used?: Reaped['used']; heap?: Reaped['heap'] } = {}): StickyExecutor {
+export function createStickyExecutor(o: { kept?: string[]; tips?: Reaped['tips']; removed?: Reaped['removed']; used?: Reaped['used']; heap?: Reaped['heap']; cores?: Reaped['cores']; oomKilled?: Reaped['oomKilled'] } = {}): StickyExecutor {
   const runs: string[] = [];
   const abortReasons: unknown[] = [];
   const cleaned: string[] = [];
@@ -34,7 +34,7 @@ export function createStickyExecutor(o: { kept?: string[]; tips?: Reaped['tips']
     },
     async cleanup(job: Job) {
       cleaned.push(job.id);
-      return o.kept || o.removed || o.used || o.heap ? { kept: o.kept ?? [], ...(o.tips ? { tips: o.tips } : {}), ...(o.removed ? { removed: o.removed } : {}), ...(o.used ? { used: o.used } : {}), ...(o.heap ? { heap: o.heap } : {}) } : undefined;
+      return o.kept || o.removed || o.used || o.heap || o.cores || o.oomKilled ? { kept: o.kept ?? [], ...(o.tips ? { tips: o.tips } : {}), ...(o.removed ? { removed: o.removed } : {}), ...(o.used ? { used: o.used } : {}), ...(o.heap ? { heap: o.heap } : {}), ...(o.cores ? { cores: o.cores } : {}), ...(o.oomKilled ? { oomKilled: o.oomKilled } : {}) } : undefined;
     },
   };
 }
