@@ -37,7 +37,15 @@ class Burst {
   memoryPausedAt: Record<string, string> = {};
   lowest: Record<string, number> = {};
 
-  constructor(readonly machines: Record<string, Model & { lanes: number }>, readonly costs: Record<string, ExpectedCost>, readonly runMinutes: number) {}
+  readonly machines: Record<string, Model & { lanes: number }>;
+  readonly costs: Record<string, ExpectedCost>;
+  readonly runMinutes: number;
+
+  constructor(machines: Record<string, Model & { lanes: number }>, costs: Record<string, ExpectedCost>, runMinutes: number) {
+    this.machines = machines;
+    this.costs = costs;
+    this.runMinutes = runMinutes;
+  }
 
   available(id: string): number {
     const m = this.machines[id]!;
