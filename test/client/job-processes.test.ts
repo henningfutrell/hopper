@@ -6,7 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { jobProcessMemory } from '../../src/client/job-processes.ts';
+import { jobProcessMemory, jobProcessMeter } from '../../src/client/job-processes.ts';
 import { createResourceMeter } from '../../src/client/resources.ts';
 
 const KIB = 1024;
@@ -67,5 +67,30 @@ describe('a job\'s processes without a scope', () => {
     mkdirSync(join(root, 'sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service'), { recursive: true });
     t += 30_000;
     expect(read()).not.toHaveProperty('jobMemoryBytes');
+  });
+
+  it('on macOS (no /proc), ps says them: by HOPPER_JOB_ID in the environment ps prints, by parent, each with its resident memory', async () => {
+    const ps = [
+      '    1     0  10240 /sbin/launchd',
+      '  100     1 102400 node run.js PATH=/bin HOPPER_JOB_ID=j1 HOME=/x',
+      '  101   100 307200 node worker.js HOME=/x',
+      '  200     1  51200 zsh HOPPER_JOB_ID=j2',
+      '  300     1 999999 other FOO_HOPPER_JOB_ID=j3',
+      'not a process line',
+    ].join('\n');
+    let t = 1_000_000; let asked = 0;
+    const read = jobProcessMeter(root, { platform: 'darwin', now: () => t, ps: () => { asked++; return Promise.resolve(ps); } });
+    expect(read()).toEqual({});
+    await new Promise((r) => setImmediate(r));
+    expect(read()).toEqual({ jobMemoryBytes: { j1: 400 * MIB, j2: 50 * MIB }, jobUse: { j1: { memoryPeakBytes: 400 * MIB }, j2: { memoryPeakBytes: 50 * MIB } } });
+    expect(asked).toBe(1);
+    t += 10_000;
+    read();
+    expect(asked).toBe(2);
+  });
+
+  it('on macOS, the meter says no limit holds a job\'s memory', () => {
+    const read = createResourceMeter({ root, platform: 'darwin', env: {}, cpus: () => [], parallelism: () => 2, loadavg: () => [0, 0, 0], totalmem: () => 16 * 1024 * MIB, freemem: () => 8 * 1024 * MIB });
+    expect(read()).toMatchObject({ jobMemoryLimit: 'none' });
   });
 });
