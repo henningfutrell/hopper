@@ -12,7 +12,7 @@ import type { Job } from '../../src/domain/types.ts';
 import type { WindowsHost, WindowsStepHost } from '../../src/domain/windows-steps.ts';
 import { createSagaCoordinator, type SagaCoordinator } from '../../src/sagas/coordinator.ts';
 import { openInstanceStore } from '../../src/store/index.ts';
-import { createWindowsSteps, STEP_INTERRUPTED, STEP_RERUN_NOTE, WINDOWS_STEP_SAGA, windowsStepSaga, type StepFields, type WindowsSteps, type WindowsStepsOptions } from '../../src/windows-steps/index.ts';
+import { createWindowsSteps, STEP_HOPPER_ENDED, STEP_INTERRUPTED, STEP_RERUN_NOTE, WINDOWS_STEP_SAGA, windowsStepSaga, type StepFields, type WindowsSteps, type WindowsStepsOptions } from '../../src/windows-steps/index.ts';
 import { endLeases } from '../crash/harness.ts';
 import { fixedClock, useTempStore } from '../store/helpers.ts';
 
@@ -217,6 +217,22 @@ describe('a Windows step as a saga (issue #1611)', () => {
     await expect.poll(() => b.steps.state(JOB, id), { timeout: 10_000 }).toEqual({ result: { exit: 0 } });
     expect(w.runs.get(id)).toBe(2);
     expect(b.steps.log(JOB, id, 0)?.text).toContain(`hopper-step: ${STEP_RERUN_NOTE} (run 2 of 3)\n`);
+    await b.c.drive(sagaOf(b, id));
+    expect(w.scratch.size).toBe(0);
+  });
+
+  it('a step asked with rerun whose hopper ended with no stop is not run again: the step may be what ended it (issue #2690)', async () => {
+    const url = temp.url(), w = world(), clock = fixedClock();
+    const a = hopper(url, 'host-a', w, clock);
+    const blocked = w.block();
+    const id = start(a.steps, 'wsl.exe -l -q', { rerun: true });
+    await blocked;
+    // Hopper a ends with no stop, as a crash does: it is never stopped, and another hopper takes the saga once its lease ends.
+    const b = hopper(url, 'host-b', w, clock);
+    endLeases(url);
+    await b.c.pass();
+    await expect.poll(() => b.steps.state(JOB, id), { timeout: 10_000 }).toEqual({ result: { exit: 125, problem: STEP_HOPPER_ENDED } });
+    expect(w.runs.get(id)).toBe(1);
     await b.c.drive(sagaOf(b, id));
     expect(w.scratch.size).toBe(0);
   });
