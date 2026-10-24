@@ -5113,6 +5113,17 @@ kept as sagas"):
   scratch, counts the run (`runs`, in the step's row), says `STEP_RERUN_NOTE (run N of 3)` in its log, and runs it from
   the start, with the same host lease. At most `STEP_RUNS_MAX` (3) runs in all; cut short a third time, it ends with
   `STEP_INTERRUPTED`. A box or need step takes no `--rerun`: it runs in a new sandbox each time, and keeps "never twice".
+- **A crash is not a stop** (issue #2690). A step whose output ended the hopper ran again at each start, and ended each
+  new hopper too. A stop that cuts a run short — the hopper stops, the saga is aborted, its lease is lost — marks the step
+  `stopped` in its row, in the abort's own listener, before the stop goes on. A step asked with rerun runs again only
+  when its last run has that mark; else a hopper ended with no stop (a crash, a kill), and the step ends with exit 125 and
+  `STEP_HOPPER_ENDED`: its output may be what ended the hopper. Each run again clears the mark.
+- **A step log never ends the hopper** (issue #2690). wsl.exe writes UTF-16LE text, so every other byte is NUL, and
+  Postgres keeps no NUL in text (22021). The append's error, thrown in the handler of the ssh stream, was caught nowhere,
+  and the hopper ended. Now the stores drop each NUL of a Windows, need or box step's log, so UTF-16LE text of ASCII
+  characters reads as it is (one outside ASCII reads as U+FFFD); and each chunk is appended through `keptLog`
+  (`src/windows-steps/step-log.ts`), which never throws: the first append that fails ends the log there, is said once in
+  the hopper's log, and the step's result says so (`STEP_LOG_LOST`), while the step goes on and ends as it ran.
 - **The job reads it**, from any host, after a restart too: `hopper-step` asks with its key, reads the log until it ends
   (a hopper away for a restart is read again for up to 300 s), then the result and the outputs, as for a need step.
 
@@ -5123,7 +5134,9 @@ Tests: `test/windows-steps/step-saga.test.ts` (the real database and coordinator
 read from another host; a hopper stopped mid-step — the next start ends it once, with why, sweeps the host and runs the
 step that waited; one step at a time across two hoppers; a sweep the host does not answer keeps the host lease; the job's stop;
 issue #2117: an end the database did not keep, and a vault that did not answer, on a hopper that stays up, never end as a
-stop; a step asked with rerun runs again after a stop, and at most three times).
+stop; a step asked with rerun runs again after a stop, and at most three times; issue #2690: a step asked with rerun whose
+hopper ended with no stop is not run again), `test/windows-steps/step-log.test.ts` (issue #2690: UTF-16LE and NUL bytes
+in a step's log, and a log the database does not keep).
 
 **Not built.** A minted credential or a shared secret for a step; a step's output on the job stream (its log is read
 from `/job/step/:id/log`); more than one step at a time on one host; a host reached through a jump host.
