@@ -7,7 +7,7 @@ import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { SignedOutTool, UsageLimitPair, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts';
-import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLaneHealth, MachineLeaving } from './machines.ts'; import type { MachineSandboxHost } from './sandbox-host.ts';
+import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLaneHealth, MachineLeaving, PendingLoad, UpdateSwap } from './machines.ts'; import type { MachineSandboxHost } from './sandbox-host.ts';
 import type { ParkedElsewhere } from './checkpoints.ts';
 import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
@@ -374,9 +374,10 @@ export interface MachineSnapshot extends MachineHerdr, MachineInfraCredentials, 
    * `vault`: the vault's helper its client wrote, given to each job there as HOPPER_SECRET (issue #558); `door`: its
    * client door, the loopback URL there its jobs reach the hopper at, given to each as HOPPER_URL (issue #695);
    * `updateHold`: it ran another release than the hopper's too long while jobs were at work there, so it takes no job until
-   * they end and the hopper's is loaded (issue #2715, src/machines/client-release.ts).
+   * they end and the hopper's is loaded (issue #2715, src/machines/client-release.ts); `pendingLoad`: the load of the hopper's
+   * release waits on jobs at work there, and `swapped`: it came by an update swap (issue #2738).
    */
-  client?: { release?: string; current?: boolean; update?: { problem: string }; updateHold?: { since: string }; vault?: string; door?: string };
+  client?: { release?: string; current?: boolean; update?: { problem: string }; updateHold?: { since: string }; pendingLoad?: PendingLoad; swapped?: UpdateSwap; vault?: string; door?: string };
   /**
    * The disk its home is on, as last read (issue #401); `low` by its thresholds, and then it takes no new job (issue #410).
    * `critical` (issue #2494) by its critical thresholds: it takes no job at all, a job back to its pane included. Absent: not read (a container target, a client older than this).

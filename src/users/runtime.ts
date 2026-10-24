@@ -20,7 +20,7 @@ import type { MachineJoin } from '../plugins/attached-edit.ts'; import { machine
 import { hopperSshAuth, pinHostKeys } from '../executors/ssh.ts';
 import { createTopologyDiscovery, type DiscoverAnswer, type TopologyDiscovery } from '../infra-plans/topology-discovery.ts'; import { createTopologyReader } from '../infra-plans/topology-reader.ts'; import { readClusters } from '../vault/clusters.ts'; import type { ContainerRuntime } from '../domain/sandboxes.ts'; import { readPodmanHosts } from '../sandbox/podman-hosts.ts'; import { createPodmanHostRuntime, podmanHostSocket } from '../sandbox/podman-host.ts'; import type { RuntimeSocket } from '../sandbox/socket-http.ts'; import { createSshStepHost, createWindowsSteps, NO_WINDOWS_STEPS, readWindowsHosts, type WindowsStepLedger, type WindowsSteps } from '../windows-steps/index.ts'; import { createNeedSteps, NO_NEED_STEPS, type NeedSteps } from '../sandbox/need-steps.ts'; import { createBastions, type Bastions } from '../sandbox/bastions.ts'; import { approvedTarget } from '../sandbox/bastion.ts'; import { userCommandBoxes } from './command-boxes.ts'; import { createStepSchedules, type StepSchedules } from '../step-schedules/service.ts';
 import { ensureOwnSshKey, type StoredSshKey } from '../executors/ssh-key.ts';
-import { createClientReleaseKeeper, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeSsh } from '../machines/index.ts';
+import { createClientReleaseKeeper, ridesClientRestart, createOwnedHerdrKeeper, createTargetPool, probeOwnedHerdr, withClientWorkTree, probeSsh } from '../machines/index.ts';
 import type { ClientRelease } from '../client/release.ts';
 import { builtinInstances, ensurePluginsConfig } from '../plugins/builtin-instances.ts';
 import { createDetectionKit } from '../plugins/detect.ts';
@@ -232,7 +232,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Client targets on the hopper's client release (issue #545); ssh targets on the hopper's own herdr (issue #741).
   const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger, now: () => clock.now().getTime() }), keepHerdr = createOwnedHerdrKeeper({ logger });
   let executorNames = (): string[] => [];
-  let jobsOnMachine = (_name: string): string[] => [];
+  let jobsOnMachine = (_name: string): string[] => [], ridesRestart = (_jobId: string): boolean => false; // the update swap (issue #2738)
   let applyJobSources = (_built: BuiltJobSource[]): void => {};
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
   const target = createTargetPool({
@@ -242,7 +242,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     reachedAt: (m) => ('client' in m ? o.links.dialledAt(user.id, m.client.key) : 0),
     probe: seams.machineProbe
       ?? ((m) => ('client' in m
-        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name), () => store.lanes.list(m.name).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []))).then((p) => withClientWorkTree(clientTransport(m.name, m.client.key), m.workTree, p))
+        ? keepClient(clientTransport(m.name, m.client.key), () => jobsOnMachine(m.name), () => store.lanes.list(m.name).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : [])), (id) => ridesRestart(id)).then((p) => withClientWorkTree(clientTransport(m.name, m.client.key), m.workTree, p))
         : 'image' in m
           // A container target (issue #865): online while a sandbox box can start for the user.
           ? (commandBoxes?.problem() ?? Promise.resolve('no sandbox module')).then((problem) => ({ online: problem === undefined }))
@@ -378,7 +378,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // A machine's lanes and a waiting job's machine are decider calls too (issue #688).
     jevFirst: minorDecisions, ...(o.jobMoves ? { jobMoves: { begin: (key: string, data: JobMoveData) => o.jobMoves!.begin(user.id, key, data) } } : {}), ...(o.jobRuns ? { jobRuns: { begin: (key: string, data: JobRunData) => o.jobRuns!.begin(user.id, key, data), open: (ids: readonly string[]) => o.jobRuns!.open(user.id, ids) } } : {}),
   });
-  jobsOnMachine = (name) => engine.jobsOnMachine(name);
+  jobsOnMachine = (name) => engine.jobsOnMachine(name); ridesRestart = (id) => { const j = store.jobs.get(id); return ridesClientRestart(j, j && executors.get(j.spec.executor)); };
   const sync = createSourceSync({
     // The in-motion cycle (issue #985): the pull requests in motion every cycle, every followed one each intake sync interval.
     sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions, followEvery,
