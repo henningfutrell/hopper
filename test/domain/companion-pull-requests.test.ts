@@ -22,6 +22,12 @@ describe('companion pull requests (issue #1143 reopened)', () => {
     expect(companionsOf([j], opened, none, always)).toEqual([{ holder: j, companions: [OWN] }]);
   });
 
+  it('it holds the ones it opened in another repository too (issue #2752): a pull request of a repository the hopper does not work on', () => {
+    const j = job('job-1', 0, 'finished', { pullRequest: OWN, follow: 'open' });
+    const opened = (id: string) => (id === 'job-1' ? [OWN, FOLLOWED, 'https://gitlab.example/group/app/-/merge_requests/3'] : []);
+    expect(companionsOf([j], opened, none, always)).toEqual([{ holder: j, companions: [FOLLOWED] }]);
+  });
+
   it('the newest job of the item holds the ones every job of the item opened, but the one it follows', () => {
     const first = job('job-1', 0, 'finished', { pullRequest: OWN, follow: 'tended' });
     const tend = job('job-2', 1, 'finished', { pullRequest: OWN, follow: 'open' }, { rerunOf: 'job-1' });
