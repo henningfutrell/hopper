@@ -109,4 +109,15 @@ describe('the sweep of database read roles (issue #2231)', () => {
       ['database.role_dropped', undefined, { asset: DB, credential: 'ORDERS_DB', role: 'hopper_read_left', reason: 'expired' }],
     ]);
   });
+
+  it('hands a read Access allowed to the vault that holds the minting credential, and mints nothing here (issue #586)', async () => {
+    const w = world();
+    const handed: unknown[] = [];
+    const a = await w.reads.readDatabase(ASK, async (r) => { handed.push(r); return { csv: 'n\n3\n', rows: 1, bytes: 4 }; });
+    expect(a).toEqual({ csv: 'n\n3\n', rows: 1, bytes: 4 });
+    expect(handed).toEqual([{ ...ASK, id: expect.stringMatching(/^[0-9a-f]{16}$/), decision: 'd1' }]);
+    expect(w.done.minted).toEqual([]);
+    expect(await world({ allowed: false }).reads.readDatabase(ASK, async (r) => { handed.push(r); return { status: 500, no: 'not asked' }; })).toMatchObject({ status: 403 });
+    expect(handed).toHaveLength(1);
+  });
 });

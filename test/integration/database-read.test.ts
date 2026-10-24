@@ -10,10 +10,12 @@
 //   Scenario Outline: the first read waits for a person's approval of the template; then a read answers CSV, a write is
 //     refused, each database read role is gone after its read, and no password is in an answer or an event
 //     Examples: the vault in the hopper; the vault in its own container
+//   Scenario: with the vault in its own container, the sweep drops a database read role a stopped hopper left
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { DomainEvent, VaultView } from '../../src/domain/types.ts';
 import { boot, runningJob, skill, stopAll } from '../support/read-only-check.ts';
 import { readDatabases, type ReadDatabases } from '../support/database-read.ts';
+import { createPostgresReader } from '../../src/vault/postgres-reads.ts';
 
 const DB = 'lab/apps/orders';
 let dbs: ReadDatabases;
@@ -85,5 +87,18 @@ describe('a database read (issue #2231)', () => {
     expect(r.stdout).toBe(`no: template ${name} has no read on database ${DB}. Ask for one: sh "$HOPPER_SKILL" sandbox-template --needs "read/database/${DB}" --why "…"\n`);
     expect(await readRoles()).toEqual([]);
     expect((await b.a.events()).filter((e: DomainEvent) => e.type === 'database.role_minted')).toEqual([]);
+  }, 60_000);
+
+  it('with the vault in its own container, the sweep drops a database read role a stopped hopper left', async () => {
+    const b = await boot([], { container: true });
+    const set = await b.a.ui('/ui/api/vault', { action: 'set', name: 'ORDERS_DB', value: JSON.stringify(dbs.credential), mints: { kind: 'database', name: DB } }, { token: b.token });
+    expect(set.status, JSON.stringify(set.body)).toBe(200);
+    const left = `hopper_read_${process.pid.toString(16).padStart(16, '0')}`;
+    await createPostgresReader().mint(dbs.credential, { role: left, password: 'pw-of-a-role-left', validUntil: new Date(Date.now() + 1000) });
+    await new Promise((r) => setTimeout(r, 1500));
+    await b.a.user().vault.reconcileMints();
+    expect(await readRoles()).toEqual([]);
+    expect((await b.a.events()).filter((e: DomainEvent) => e.type === 'database.role_dropped').map((e: DomainEvent) => e.data))
+      .toEqual([{ asset: { kind: 'database', name: DB }, credential: 'ORDERS_DB', role: left, reason: 'expired' }]);
   }, 60_000);
 });
