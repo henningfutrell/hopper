@@ -841,6 +841,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   from the cgroup's limit (`process.constrainedMemory()`), a quarter of it: in a scope with `MemoryMax=9G`, 2144 MB, and
   type-checking the hopper takes about 3.1 GB, so every full `tsc` in a job aborted with "JavaScript heap out of memory"
   while its scope used under half its limit.
+  With a memory limit, the build JVMs also take their sizes from the job's limits (issue #2737), in place of the fixed
+  2 GiB and 2 workers above: the build JVM's heap (`-Dorg.gradle.jvmargs=-Xmx<n>m`, and `MAVEN_OPTS` `-Xmx<n>m`) is half the
+  limit (`JVM_HEAP_SHARE`), and Gradle gets a worker for each GiB of the other half, at most one for each CPU of the job's
+  CPU quota, at least one (`gradleWorkers`): 9 GiB gives `-Xmx4608m` and 4 workers, 2 GiB `-Xmx1024m` and 1. Every other JVM
+  (a test worker, a forked compiler) sizes its own default heap from the scope's cgroup limit, as Node does. With no memory
+  limit, the fixed defaults stay.
 - **`.worktrees` ignores itself.** Before `agent start`, the pane's own shell runs
   `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.worktrees/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361; on a Windows
