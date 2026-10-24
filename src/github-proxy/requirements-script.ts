@@ -87,15 +87,20 @@ if (!repo) {
 }
 if (op === 'check' && git(['status', '--porcelain', '--untracked-files=no']).out.trim() !== '') fail('commit your changes first: the evaluation is of a commit, ' + head.slice(0, 12));
 
-const requirementsFiles = {};
-for (const path of must(['ls-tree', '-r', '-z', '--name-only', 'HEAD'], 'the commit cannot be listed').split('\0')) {
-  if (path === FILE || path.endsWith('/' + FILE)) requirementsFiles[path] = must(['show', 'HEAD:' + path], 'cannot read ' + path);
-}
 const base = flag('--base') ?? (await ask({ op: 'base', repo, branch })).base;
 // The changed files: the commit against where it leaves the base, fetched first, else as this clone last saw it.
 const fetched = git(['fetch', '--quiet', '--no-tags', 'origin', 'refs/heads/' + base]).code === 0;
-let start = git(['merge-base', fetched ? 'FETCH_HEAD' : 'refs/remotes/origin/' + base, 'HEAD']).out.trim();
+const baseTip = must(['rev-parse', fetched ? 'FETCH_HEAD' : 'refs/remotes/origin/' + base], 'no base ' + base + ': fetch it (git fetch origin ' + base + '), or name the base with --base').trim();
+let start = git(['merge-base', baseTip, 'HEAD']).out.trim();
 if (!start) fail('no merge base with ' + base + ': fetch it (git fetch origin ' + base + '), or name the base with --base');
+// The requirements files of the base's tip, and the commit's own, which replaces the base's at the same path: a branch
+// made before its repository kept requirements still meets them, as the git proxy judges the push.
+const requirementsFiles = {};
+for (const ref of [baseTip, 'HEAD']) {
+  for (const path of must(['ls-tree', '-r', '-z', '--name-only', ref], 'cannot list ' + ref).split('\0')) {
+    if (path === FILE || path.endsWith('/' + FILE)) requirementsFiles[path] = must(['show', ref + ':' + path], 'cannot read ' + path);
+  }
+}
 const files = must(['diff', '--name-only', '-z', '--no-renames', start, 'HEAD'], 'the changed files cannot be listed').split('\0').filter(Boolean);
 const pushed = { repo, branch, base, head, files, requirementsFiles };
 const { plan } = await ask({ op: 'plan', ...pushed });
