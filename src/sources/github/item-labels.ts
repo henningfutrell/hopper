@@ -3,7 +3,8 @@
 // (`labelDrift`). The ledger is the truth; GitHub's labels follow it. Only the states whose end labels are certain are
 // judged: an item a job works (queued, working, waiting outside) carries none; an item in PR open carries
 // `hopper:pr-ready`, or `hopper:partly-done` for a part (either is allowed; the one to add follows `part`, issue #1933); a blocked item carries `hopper:blocked`, or `hopper:pr-closed`
-// when its pull request was closed without a merge; a failed item carries `hopper:failed` once its job's failure was reported
+// when its pull request was closed without a merge, or none when it is blocked for want of a pull request (issue #2693: the
+// hopper looks for it and runs the item again, so no pull request found is no resting state and no label says so); a failed item carries `hopper:failed` once its job's failure was reported
 // as failed (`failureReported`, issue #1892): not while the hopper fixes it itself (issue #1230) or its report waits; a
 // culprit whose merge was reverted (failed by its landing, not by its job: its events say done, issue #1175) carries
 // `hopper:done` when it merged as the whole item (part 33): the follow put it on at the merge, the red batch writes no label to
@@ -18,12 +19,13 @@
 // Done by hand (`doneByHand`): the resolution put it on; or once a job's end made it done and its job's final report found
 // the issue closed as complete (`doneReported`, part 24): the report put it on. A done item a job's end made while its issue
 // was open carries what its job's final report put on (`doneReported`, part 28): `hopper:pr-ready`, or `hopper:partly-done`
-// for a part, while the pull request it follows waits; `hopper:blocked` while it found none. Not a done item a read of GitHub
+// for a part, while the pull request it follows waits; none while it found none (issue #2693). Not a done item a read of GitHub
 // made done. A partly done item carries none once its merged
 // part leaves parts to run (`partsLeft`): the follow took `hopper:partly-done` off, so Intake takes it again and the next part
 // runs. A partly done item whose merged part made every declared part done (`lastPartMerged`, part 35) carries `hopper:done`:
 // the follow put it on with that merge. The follow is that of the job that recorded the merge, also an older job's (part 37). An item that needs a person carries
-// none while its job waits on a question, a proposal, a research report or a pick-up of its parked job: no report wrote one.
+// `hopper:needs-decision` while its job waits on a person's decision — a question, a proposal or a research report, parked by
+// itself there or not (issue #2693) —, and none while it waits on a pick-up of its parked job: no report wrote one.
 // A hand-off (`HANDOFF_WAIT`) carries `hopper:failed` once its job's failure was reported as failed (`failureReported`), as a
 // failed item does: its job failed, and the hand-off waits on a person; before, the labels decide. A request card (waiting for
 // approval) carries none: it has no job yet, and no report wrote one. An end label a person puts on a card by hand is their
@@ -41,9 +43,9 @@
 // carries then is not certain. Every other state is not judged.
 // Pure: no I/O, no clock.
 import { RECONCILE_GRACE_MS, type BlockedCause } from '../../domain/item-lifecycle.ts';
-import { HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
+import { DECISION_WAITS, HANDOFF_WAIT, type WorkItem, type WorkItemState } from '../../domain/work-items.ts';
 import { DELIBERATE_CANCELS, type Job } from '../../domain/types.ts';
-import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED } from './labels.ts';
+import { END_LABELS, LABEL_BLOCKED, LABEL_DONE, LABEL_FAILED, LABEL_NEEDS_DECISION, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED } from './labels.ts';
 
 /** The end labels an item's state allows, and the one to add when none of them is on (absent: none is needed). */
 export interface WantedLabels { allowed: readonly string[]; add?: string }
@@ -61,7 +63,7 @@ export interface LabelFacts { part?: boolean; failureReported?: boolean; fixingR
 /**
  * What the final report of a finished job put on its issue (issue #1892 parts 24, 28): `closed`, the issue was closed as
  * complete, `hopper:done`; else the issue was open and the report follows it: `pr_open`, its pull request waits,
- * `hopper:pr-ready`; `part`, a part's, `hopper:partly-done`; `no_pr`, none is open, `hopper:blocked`.
+ * `hopper:pr-ready`; `part`, a part's, `hopper:partly-done`; `no_pr`, none is open, no end label (issue #2693).
  */
 export type DoneReport = 'closed' | 'pr_open' | 'part' | 'no_pr';
 
@@ -109,6 +111,7 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
     case 'waiting_for_approval': case 'queued': case 'working': case 'waiting_outside': return { allowed: [] };
     case 'pr_open': return { allowed: [LABEL_PR_READY, LABEL_PARTLY_DONE], add: facts.part ? LABEL_PARTLY_DONE : LABEL_PR_READY };
     case 'blocked': {
+      if (item.blockedCause === 'no_pr') return { allowed: [] };
       const label = item.blockedCause === 'pr_closed' ? LABEL_PR_CLOSED : LABEL_BLOCKED;
       return { allowed: [label], add: label };
     }
@@ -130,6 +133,7 @@ export function labelsFor(item: LabelledItem, facts: LabelFacts = {}): WantedLab
     case 'partly_done': return item.eventState !== 'partly_done' ? undefined : facts.partsLeft ? { allowed: [] } : facts.lastPartMerged ? { allowed: [LABEL_DONE], add: LABEL_DONE } : undefined;
     case 'needs_you':
       if (item.waitingOn === HANDOFF_WAIT) return facts.failureReported ? { allowed: [LABEL_FAILED], add: LABEL_FAILED } : undefined;
+      if (DECISION_WAITS.includes(item.waitingOn ?? '')) return { allowed: [LABEL_NEEDS_DECISION], add: LABEL_NEEDS_DECISION };
       return item.waitingOn !== undefined ? { allowed: [] } : undefined;
     case 'dropped': {
       if (item.eventState !== 'dropped') return undefined;
@@ -153,13 +157,13 @@ export const handoffSettling = (item: Pick<WorkItem, 'state' | 'waitingOn' | 'ev
 
 /**
  * The label change of a block the item reconciler makes (part 8): the end labels the state it leaves may have put on
- * (PR open's, or partly done's `hopper:partly-done`) come off, and the blocked state's goes on. Written with no read of
+ * (PR open's, or partly done's `hopper:partly-done`) come off, and the blocked state's goes on (none for want of a pull request, issue #2693). Written with no read of
  * the issue's labels: a remove of a label the issue does not carry changes nothing.
  */
 export function blockLabels(from: WorkItemState, cause: BlockedCause): { remove: string[]; add: string[] } {
-  const add = labelsFor({ state: 'blocked', blockedCause: cause })!.add!;
+  const add = labelsFor({ state: 'blocked', blockedCause: cause })!.add;
   const left = from === 'partly_done' ? [LABEL_PARTLY_DONE] : labelsFor({ state: from })?.allowed ?? [];
-  return { remove: left.filter((l) => l !== add), add: [add] };
+  return { remove: left.filter((l) => l !== add), add: add ? [add] : [] };
 }
 
 /**
@@ -261,7 +265,8 @@ export const driftWords = (item: LabelledItem, d: LabelDrift): string =>
  */
 export function labelTakenOff(item: LabelledItem, before: readonly string[], now: readonly string[], facts: LabelFacts = {}): string | undefined {
   const want = labelsFor(item, facts);
-  if (want?.add === undefined || now.some((l) => want.allowed.includes(l))) return undefined;
+  // The decision label (issue #2693) says only what the job waits on: taken off, it asks for nothing.
+  if (want?.add === undefined || want.add === LABEL_NEEDS_DECISION || now.some((l) => want.allowed.includes(l))) return undefined;
   return before.find((l) => want.allowed.includes(l));
 }
 

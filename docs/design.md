@@ -23695,6 +23695,45 @@ item it does not know (`labelReason`), as milestone 2 asked.
 **Verification:** `test/sources/github-label-not-judged.test.ts` (each case: `labelsFor` and `ledgerReason` give no answer,
 whatever the facts).
 
+### No pull request found is no resting state (issue #2693, 2026-10-23)
+
+A job exists to make its pull request, so "no pull request was found" must not be where an item stops. Two cases showed it:
+a job opened its pull request with "Closes #N", and the item sat blocked with `hopper:blocked` until a later read named it;
+and a job ended on a proposal a person rejected, and its item sat blocked for days, with no one to follow it.
+
+- **A job's end names the pull request it opened** (`src/store/work-items.ts` `withOpened`). At a `job.finished` whose
+  report named no pull request yet, the ledger takes the newest pull request the job opened through the hopper before that
+  end (`github_proxy.done` of op `pr.create`, from its own record). So the item is in PR open at once, whatever GitHub's
+  search, its links or the time of the report say. A rebuild reads the same: only a `pr.create` before the end counts.
+- **No `hopper:blocked` for want of a pull request** (`labelsFor`). A `no_pr` block wants no end label: the label mirror
+  takes `hopper:blocked` off, a report that finds none open puts no label on, and the reconciler's block writes none.
+  `hopper:blocked` stays only for a `stale` block. Intake gives the item the reason `NO_PR` ("the hopper looks for one, then
+  runs it again"), with Won't do. A done item whose report found no pull request (`doneReported: 'no_pr'`) wants no label,
+  and keeps out as done but open (`DONE_OPEN`), not taken again.
+- **It runs again by itself** (`runsAgainForPullRequest`, `src/domain/item-lifecycle.ts`). The ledger counts its ends in a
+  row with no pull request (`noPullRequestEnds`; a pull request to wait on, a merge or a done end ends the row; the
+  reconciler's replay of the same end is no second end). Ten minutes after such an end (`BLOCKED_NO_PR_MS`), with no pull
+  request named since, the item reconciler runs it again: Run again on its finished job, `by: reconciler`, with a brief
+  that says the earlier job ended with no pull request (`noPullRequestBrief`). Up to `NO_PR_RUNS_AGAIN` (2) times in a row;
+  past that, a person is asked once (`work_item.person_asked`) and Failures lists it. An item blocked so before the count
+  was kept counts as one end.
+- **A decision is no end** (`src/engine/reviews.ts`). A job of an issue (its source names a repository and a number) whose
+  proposal or research report a person rejects goes back to the issue's work: queued again in its session, in the work
+  phase, told the outcome and the notes, and asked to open its pull request, ask a question first, or close the issue when
+  it needs no change. A job of no issue still ends with the rejection as its result (issue #1659). An accepted one goes on as
+  before: to its next section, to its follow-ons, or on with its work.
+- **`hopper:needs-decision`** (`src/sources/github/labels.ts`), a new end label. An item whose job waits on a person's
+  decision — a question, a proposal or a research report (`DECISION_WAITS`) — wants it, so its issue says it waits on that
+  decision and not on a pull request. A job parked by itself at a person (auto-park, issue #2335) keeps waiting on the
+  decision in the ledger, not on a pick-up. Every other state takes the label off. Taken off by hand, it asks for nothing
+  (no label edit).
+
+**Verification:** `test/store/work-items.test.ts` (a job's end names the pull request it opened through the hopper),
+`test/sources/github-no-pr-label.test.ts`, `test/domain/item-no-pr-run-again.test.ts`,
+`test/work-items/reconcile-no-pr.test.ts` (runs again, then asks a person once),
+`test/integration/proposal-reject-issue.test.ts` (a rejected proposal of an issue's job goes back to its work),
+`test/sources/github-needs-decision-label.test.ts`.
+
 ## One start at a time per repository mirror (issue #1075, 2026-10-13)
 
 The issue asks for one shared object cache per repository per machine, so a job checks out from a local copy instead of

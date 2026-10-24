@@ -90,7 +90,7 @@ describe('the item reconciler', () => {
     expect(store.workItems.get(KEY)).toEqual(live);
   });
 
-  it('a job that ended done naming no pull request leaves its item blocked for want of one, and Failures lists it later', () => {
+  it('a job that ended done naming no pull request leaves its item blocked for want of one, and it runs again by itself (issue #2693)', () => {
     const store = t.open(t.url());
     cleanups.push(() => store.close());
     const job = store.jobs.create(spec, 50, ref);
@@ -100,7 +100,7 @@ describe('the item reconciler', () => {
     expect(item).toMatchObject({ state: 'blocked', blockedCause: 'no_pr' });
     expect(store.workItems.counts()).toMatchObject({ pr_open: 0, blocked: 1 });
     expect(blockedStuck(item, at(5))).toBe(false);
-    expect(blockedStuck(item, at(10))).toBe(true);
+    expect(blockedStuck(item, at(10))).toBe(false);
     // Its report names a pull request: the next pass folds the item again from the job's end, in PR open on it.
     store.jobs.update(job.id, { status: 'finished', finishedAt: T0, sourceState: { source: { pullRequest: PR, follow: 'open' } } });
     expect(reconciler(store, () => at(5)).reconcileOnce()).toBe(1);

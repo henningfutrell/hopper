@@ -29,7 +29,7 @@ describe('the report names the job\'s own pull request the issue\'s links miss (
     const { gh, source, job } = withIssue();
     gh.mentionIssue(REPO, 1, { from: OTHER, text: `Refs ${REPO}#1`, closes: false, createdAt: BEFORE });
     expect(await source.report({ kind: 'finished', job })).toEqual({ follow: 'open' });
-    expect(gh.issue(REPO, 1).labels).toContain('hopper:blocked');
+    expect(gh.issue(REPO, 1).labels).not.toContain('hopper:blocked');
   });
 
   it('a pull request the job opened through the hopper that names the issue nowhere: named, PR open', async () => {
@@ -54,7 +54,7 @@ describe('the report names the job\'s own pull request the issue\'s links miss (
     gh.closePullRequest(pr.url, AFTER);
     opened.push(pr.url);
     expect(await source.report({ kind: 'finished', job })).toEqual({ follow: 'open' });
-    expect(gh.issue(REPO, 1).labels).toContain('hopper:blocked');
+    expect(gh.issue(REPO, 1).labels).not.toContain('hopper:blocked');
   });
 });
 

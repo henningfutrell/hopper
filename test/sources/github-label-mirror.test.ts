@@ -37,8 +37,8 @@ function setup(items: Record<string, Partial<WorkItem>>, o: { parts?: string[]; 
 }
 
 describe('labels mirror the database (issue #1891)', () => {
-  it('#465: an item blocked for want of a pull request loses hopper:pr-ready and gets hopper:blocked, in one coalesced change', async () => {
-    const { gh, source, writes, drifts } = setup({ [url(1)]: { blockedCause: 'no_pr' } });
+  it('#465: an item blocked past its deadline loses hopper:pr-ready and gets hopper:blocked, in one coalesced change', async () => {
+    const { gh, source, writes, drifts } = setup({ [url(1)]: { blockedCause: 'stale' } });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-ready'] });
     await source.discover();
     expect(writes()).toEqual([]);
@@ -49,8 +49,17 @@ describe('labels mirror the database (issue #1891)', () => {
     expect(drifts()[0]).toContain('corrected through the outbox');
   });
 
-  it('idempotent: a second discover before the issue is listed again, and one after, add no row', async () => {
+  it('blocked for want of a pull request (issue #2693): hopper:pr-ready and hopper:blocked come off, and none goes on', async () => {
     const { gh, source, writes } = setup({ [url(1)]: { blockedCause: 'no_pr' } });
+    gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-ready', 'hopper:blocked'] });
+    await source.discover();
+    await source.flushOutbox!();
+    expect(writes()).toEqual([['removeLabels', ['hopper:pr-ready', 'hopper:blocked']]]);
+    expect(gh.issue(REPO, 1).labels).toEqual(['hopper']);
+  });
+
+  it('idempotent: a second discover before the issue is listed again, and one after, add no row', async () => {
+    const { gh, source, writes } = setup({ [url(1)]: { blockedCause: 'stale' } });
     gh.createIssue({ repo: REPO, assignees: ['owner'], labels: ['hopper', 'hopper:pr-ready'] });
     await source.discover();
     await source.discover();

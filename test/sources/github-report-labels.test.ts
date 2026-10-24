@@ -14,8 +14,8 @@ describe('reportLabels: the end labels of the state a report moves the item to',
     expect(reportLabels({ end: 'pr_open', part: false }, ['hopper', 'hopper:pr-ready'])).toEqual({ remove: [], add: [] });
   });
 
-  it('no pull request open: blocked, hopper:blocked', () => {
-    expect(reportLabels({ end: 'no_pr' }, ['hopper'])).toEqual({ remove: [], add: ['hopper:blocked'] });
+  it('no pull request open: no end label (issue #2693)', () => {
+    expect(reportLabels({ end: 'no_pr' }, ['hopper'])).toEqual({ remove: [], add: [] });
   });
 
   it('the issue closed as complete: hopper:done', () => {

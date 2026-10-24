@@ -15,8 +15,8 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelsFor({ state: 'pr_open' }, { part: true })).toEqual({ allowed: ['hopper:pr-ready', 'hopper:partly-done'], add: 'hopper:partly-done' });
   });
 
-  it('blocked: hopper:blocked, or hopper:pr-closed when its pull request was closed without a merge', () => {
-    expect(labelsFor({ state: 'blocked', blockedCause: 'no_pr' })).toEqual({ allowed: ['hopper:blocked'], add: 'hopper:blocked' });
+  it('blocked: hopper:blocked, or hopper:pr-closed when its pull request was closed without a merge; none for want of a pull request (issue #2693)', () => {
+    expect(labelsFor({ state: 'blocked', blockedCause: 'no_pr' })).toEqual({ allowed: [] });
     expect(labelsFor({ state: 'blocked', blockedCause: 'stale' })).toEqual({ allowed: ['hopper:blocked'], add: 'hopper:blocked' });
     expect(labelsFor({ state: 'blocked', blockedCause: 'pr_closed' })).toEqual({ allowed: ['hopper:pr-closed'], add: 'hopper:pr-closed' });
   });
@@ -104,10 +104,10 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     const ended = { state: 'done', eventState: 'done' } as const;
     expect(labelsFor(ended, { doneReported: 'pr_open' })).toEqual({ allowed: ['hopper:pr-ready', 'hopper:partly-done'], add: 'hopper:pr-ready' });
     expect(labelsFor(ended, { doneReported: 'part' })).toEqual({ allowed: ['hopper:pr-ready', 'hopper:partly-done'], add: 'hopper:partly-done' });
-    expect(labelsFor(ended, { doneReported: 'no_pr' })).toEqual({ allowed: ['hopper:blocked'], add: 'hopper:blocked' });
+    expect(labelsFor(ended, { doneReported: 'no_pr' })).toEqual({ allowed: [] });
     expect(labelsFor({ state: 'done', eventState: 'blocked' }, { doneReported: 'no_pr' })).toBeUndefined();
-    expect(labelDrift(ended, ['hopper', 'hopper:failed'], { doneReported: 'no_pr' })).toEqual({ remove: ['hopper:failed'], add: ['hopper:blocked'] });
-    expect(labelTakenOff(ended, ['hopper', 'hopper:blocked'], ['hopper'], { doneReported: 'no_pr' })).toBe('hopper:blocked');
+    expect(labelDrift(ended, ['hopper', 'hopper:failed'], { doneReported: 'no_pr' })).toEqual({ remove: ['hopper:failed'], add: [] });
+    expect(labelTakenOff(ended, ['hopper', 'hopper:blocked'], ['hopper'], { doneReported: 'no_pr' })).toBeUndefined();
   });
 
   it('doneReported: what a finished job\'s final report put on, the issue closed as complete or open', () => {
@@ -139,12 +139,12 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
     expect(labelsFor({ state: 'partly_done', eventState: 'failed' }, { lastPartMerged: true })).toBeUndefined();
   });
 
-  it('needs you (issue #1892): no end label while its job waits on a person; a hand-off is not judged', () => {
-    expect(labelsFor({ state: 'needs_you', waitingOn: 'a question' })).toEqual({ allowed: [] });
+  it('needs you (issue #1892): no end label while its job waits on a pick up; the decision label on a decision (issue #2693); a hand-off is not judged', () => {
+    expect(labelsFor({ state: 'needs_you', waitingOn: 'a question' })).toEqual({ allowed: ['hopper:needs-decision'], add: 'hopper:needs-decision' });
     expect(labelsFor({ state: 'needs_you', waitingOn: 'a person to pick up the parked job' })).toEqual({ allowed: [] });
     expect(labelsFor({ state: 'needs_you', waitingOn: HANDOFF_WAIT })).toBeUndefined();
     expect(labelsFor({ state: 'needs_you' })).toBeUndefined();
-    expect(labelDrift({ state: 'needs_you', waitingOn: 'a research report' }, ['hopper', 'hopper:claimed', 'hopper:pr-ready'])).toEqual({ remove: ['hopper:pr-ready'], add: [] });
+    expect(labelDrift({ state: 'needs_you', waitingOn: 'a research report' }, ['hopper', 'hopper:claimed', 'hopper:pr-ready'])).toEqual({ remove: ['hopper:pr-ready'], add: ['hopper:needs-decision'] });
     expect(labelTakenOff({ state: 'needs_you', waitingOn: 'a question' }, ['hopper', 'hopper:pr-ready'], ['hopper'])).toBeUndefined();
   });
 
@@ -220,12 +220,12 @@ describe('labelsFor: the end labels a state wants (issue #1891)', () => {
 });
 
 describe('labelDrift: what a discover saw against the state (issue #1891)', () => {
-  it('#465: blocked for want of a pull request, hopper:pr-ready still on: it comes off, hopper:blocked goes on', () => {
-    expect(labelDrift({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper', 'hopper:pr-ready'])).toEqual({ remove: ['hopper:pr-ready'], add: ['hopper:blocked'] });
+  it('#465: blocked for want of a pull request, hopper:pr-ready still on: it comes off, and no hopper:blocked goes on (issue #2693)', () => {
+    expect(labelDrift({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper', 'hopper:pr-ready'])).toEqual({ remove: ['hopper:pr-ready'], add: [] });
   });
 
   it('labels that match the state: no drift; labels that are no end labels are never judged', () => {
-    expect(labelDrift({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper', 'hopper:blocked', 'hopper:high'])).toBeUndefined();
+    expect(labelDrift({ state: 'blocked', blockedCause: 'stale' }, ['hopper', 'hopper:blocked', 'hopper:high'])).toBeUndefined();
     expect(labelDrift({ state: 'pr_open' }, ['hopper', 'hopper:partly-done'])).toBeUndefined();
     expect(labelDrift({ state: 'working' }, ['hopper', 'hopper:claimed'])).toBeUndefined();
     expect(labelDrift({ state: 'done' }, ['hopper', 'hopper:pr-ready'])).toBeUndefined();
@@ -245,7 +245,7 @@ describe('labelDrift: what a discover saw against the state (issue #1891)', () =
 describe('blockLabels: the label change of a block the item reconciler makes (issue #1891, part 8)', () => {
   it('PR open blocked as stale: its waiting labels come off, hopper:blocked goes on', () => {
     expect(blockLabels('pr_open', 'stale')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done'], add: ['hopper:blocked'] });
-    expect(blockLabels('pr_open', 'no_pr')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done'], add: ['hopper:blocked'] });
+    expect(blockLabels('pr_open', 'no_pr')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done'], add: [] });
   });
 
   it('partly done blocked as stale: hopper:partly-done comes off', () => {
@@ -260,7 +260,7 @@ describe('blockLabels: the label change of a block the item reconciler makes (is
 describe('labelTakenOff: an end label a person took off by hand (issue #1892)', () => {
   it('blocked: the blocked label seen before and gone now', () => {
     expect(labelTakenOff({ state: 'blocked', blockedCause: 'pr_closed' }, ['hopper', 'hopper:pr-closed'], ['hopper'])).toBe('hopper:pr-closed');
-    expect(labelTakenOff({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper', 'hopper:blocked'], ['hopper', 'hopper:high'])).toBe('hopper:blocked');
+    expect(labelTakenOff({ state: 'blocked', blockedCause: 'stale' }, ['hopper', 'hopper:blocked'], ['hopper', 'hopper:high'])).toBe('hopper:blocked');
   });
 
   it('PR open: its waiting label gone, but not a swap of one waiting label for the other', () => {
@@ -269,8 +269,8 @@ describe('labelTakenOff: an end label a person took off by hand (issue #1892)', 
   });
 
   it('no label seen before, the label still on, or a state with no label to want: no edit', () => {
-    expect(labelTakenOff({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper'], ['hopper'])).toBeUndefined();
-    expect(labelTakenOff({ state: 'blocked', blockedCause: 'no_pr' }, ['hopper', 'hopper:blocked'], ['hopper', 'hopper:blocked'])).toBeUndefined();
+    expect(labelTakenOff({ state: 'blocked', blockedCause: 'stale' }, ['hopper'], ['hopper'])).toBeUndefined();
+    expect(labelTakenOff({ state: 'blocked', blockedCause: 'stale' }, ['hopper', 'hopper:blocked'], ['hopper', 'hopper:blocked'])).toBeUndefined();
     expect(labelTakenOff({ state: 'working' }, ['hopper', 'hopper:done'], ['hopper'])).toBeUndefined();
     expect(labelTakenOff({ state: 'failed' }, ['hopper', 'hopper:failed'], ['hopper'])).toBeUndefined();
   });
