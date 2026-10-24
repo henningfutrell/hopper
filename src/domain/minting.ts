@@ -5,13 +5,14 @@
 // profile to what is minted, and the port the minting adapters sit behind. Pure.
 import type { Asset, AssetKind, Operation, OperationProfile } from './access.ts';
 import type { AwsAction } from './action-grants.ts';
+import { databaseCredentialOf, databaseNameProblem } from './database-read.ts';
 
 /** What the vault mints: an AWS role session (`aws`) or a Kubernetes service account token (`kube`). Also the helper's form. */
 export const MINT_KINDS = ['aws', 'kube'] as const;
 export type MintKind = (typeof MINT_KINDS)[number];
 
-/** The asset kinds a minting credential mints for: an AWS account, a Kubernetes cluster. */
-export const MINTS_FOR_KINDS = ['aws-account', 'cluster'] as const satisfies readonly AssetKind[];
+/** The asset kinds a minting credential mints for: an AWS account, a Kubernetes cluster, a database (issue #2231: its read roles). */
+export const MINTS_FOR_KINDS = ['aws-account', 'cluster', 'database'] as const satisfies readonly AssetKind[];
 export type MintsForKind = (typeof MINTS_FOR_KINDS)[number];
 
 /** How long a minted credential lives: STS's floor (15 minutes), and TokenRequest's floor (10 minutes). */
@@ -328,9 +329,13 @@ export function mintingCredentialFor<S extends { name: string; mints?: Asset }>(
 
 /**
  * Why `value` is no minting credential for `mints`, as a save checks it (issue #1761): an AWS account's keys are one JSON
- * value, never a secret each. A cluster's is not checked here: its EKS sign-in may name a kubeconfig the vault reads later.
+ * value, never a secret each; so is a database's (issue #2231). A cluster's is not checked here: its EKS sign-in may name a kubeconfig the vault reads later.
  */
 export function mintingValueProblem(mints: Asset, value: string): string | undefined {
+  if (mints.kind === 'database') {
+    const d = databaseCredentialOf(value);
+    return typeof d === 'string' ? `mints for database ${mints.name}: ${d}` : undefined;
+  }
   if (mints.kind !== 'aws-account') return undefined;
   const c = mintingCredentialOf('aws', value);
   return typeof c === 'string' ? `mints for aws-account ${mints.name}: ${c}` : undefined;
@@ -339,6 +344,7 @@ export function mintingValueProblem(mints: Asset, value: string): string | undef
 /** A minting credential's asset said in a request: `{kind, name}` of a kind a credential mints for, or why not. */
 export function mintsForProblem(a: { kind: string; name: string }): string | undefined {
   if (!(MINTS_FOR_KINDS as readonly string[]).includes(a.kind)) return `a minting credential mints for ${MINTS_FOR_KINDS.join(' or ')}, not ${a.kind}`;
+  if (a.kind === 'database') return databaseNameProblem(a.name);
   if (!/^[A-Za-z0-9][A-Za-z0-9._+=,-]{0,199}$/.test(a.name)) return `${a.kind} ${JSON.stringify(a.name)} is not a name a minting credential mints for (letters, digits and . _ + = , -)`;
   return undefined;
 }

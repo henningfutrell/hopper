@@ -1,7 +1,7 @@
 // A template's blast radius (issue #584, design.md "A template's blast radius"), pure. A box's tools decide what it
 // could do (`rate.ts`); its template decides what it may do. Rated from the template's operation profiles — the ones it
 // declares and the ones access holds an approval for — and its credential scope, the vault secrets its boxes may ask
-// for. A read profile is low; a write, sync, apply or observe profile is high, approved or not. A vault secret is a credential
+// for. A read profile is low; a write, sync, apply or observe profile, and a database read (issue #2231), is high, approved or not. A vault secret is a credential
 // whose reach the hopper cannot see: it counts as an unconfirmed reach, by the rules. An egress host (issue #1875) is
 // medium: a place off AWS and the minted clusters where a box can send what it reads.
 import {
@@ -15,8 +15,11 @@ import { prodName, reachLevel } from './rate.ts';
  */
 const HIGH_OPERATIONS: readonly string[] = ['write', 'sync', 'apply', 'observe'];
 
-/** Whether a profile is high radius: write, sync, apply or observe. */
-export const highRadius = (p: OperationProfile): boolean => HIGH_OPERATIONS.includes(p.operation);
+/**
+ * Whether a profile is high radius: write, sync, apply or observe, or a read of a database (issue #2231), which reads
+ * rows of data a person may not want a job to see.
+ */
+export const highRadius = (p: OperationProfile): boolean => HIGH_OPERATIONS.includes(p.operation) || p.asset.kind === 'database';
 
 const keyOf = (p: OperationProfile): string => `${p.operation}/${p.asset.kind}/${p.asset.name}`;
 const profileText = (p: OperationProfile): string => `${p.operation} on ${p.asset.kind} ${p.asset.name}`;
