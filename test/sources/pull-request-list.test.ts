@@ -273,7 +273,21 @@ describe('a job\'s pull request in another repository (issue #1778)', () => {
     const other = 'https://github.com/zed/tool/pull/7';
     const job = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', pullRequest: other, seen: seen({ files: ['README.md'], change: { kind: 'docs', why: [], rule: 'x' } }) } } });
     const group = (yolo: { on: boolean; repos: Record<string, boolean> }) => pullRequestList([job], () => job, yolo, [REPO], NOW, () => undefined).repos.find((g) => g.repo === 'zed/tool')!;
-    expect(group({ on: true, repos: {} })).toMatchObject({ yolo: false, pullRequests: [{ yolo: false, waits: 'yolo off' }] });
+    expect(group({ on: true, repos: {} })).toMatchObject({ yolo: false, pullRequests: [{ yolo: false, waits: 'needs merge' }] });
     expect(group({ on: false, repos: { 'zed/tool': true } })).toMatchObject({ yolo: true, pullRequests: [{ yolo: true, waits: 'ready' }] });
+  });
+
+  it('ready in a repository the hopper does not merge in (issue #2752): needs merge, named off or never named', () => {
+    const other = 'https://github.com/zed/tool/pull/7';
+    const job = jobForIssue(1, { status: 'finished', sourceState: { source: { follow: 'open', pullRequest: other, seen: seen() } } });
+    const card = (yolo: { on: boolean; repos: Record<string, boolean> }) => pullRequestList([job], () => job, yolo, [REPO], NOW, () => undefined)
+      .repos.find((g) => g.repo === 'zed/tool')!.pullRequests[0]!;
+    expect(card({ on: true, repos: {} }).waits).toBe('needs merge');
+    expect(card({ on: true, repos: { 'zed/tool': false } }).waits).toBe('needs merge');
+    expect(card({ on: true, repos: {} })).toMatchObject({ checks: 'passing', mergeable: 'mergeable' });
+  });
+
+  it('a job repository with yolo mode off still waits on yolo off, not needs merge', () => {
+    expect(waits(seen(), { yolo: false }).waits).toBe('yolo off');
   });
 });
