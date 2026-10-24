@@ -1,7 +1,7 @@
 // The reap of a scratch dir that a plain `rm -rf` cannot remove (issue #1452), run for real: a real shell, real dirs. The
 // sweep found such a dir again on each pass, and the reap said each time that it removed it. Not as root: root removes
 // what these tests make read-only.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -61,9 +61,25 @@ describe.skipIf(process.getuid?.() === 0)('a scratch dir that resists its remova
     writeFileSync(join(scratch, 'tmp.txt'), 'x');
     chmodSync(area, 0o555);
     try {
-      expect(withoutUse(readReap(reap({ ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` })))).toEqual({ kept: [], left: [scratch] });
+      expect(withoutUse(readReap(reap({ ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` })))).toEqual({ kept: [], left: [scratch], leftWhy: { [scratch]: 'permission' } });
       expect(existsSync(scratch)).toBe(true);
     } finally {
+      chmodSync(area, 0o755);
+    }
+  });
+
+  // Issue #2715: the reap names why, so a failed removal says what to fix in the hopper.
+  it('names a process that still runs in it as the cause', () => {
+    const area = join(root, 'work', '.worktrees', '@scratch');
+    const bin = join(root, 'bin');
+    mkdirSync(bin);
+    writeFileSync(join(bin, 'podman'), '#!/bin/sh\nexit 125\n', { mode: 0o755 });
+    const sleeper = spawn('sleep', ['30'], { cwd: scratch, stdio: 'ignore' });
+    chmodSync(area, 0o555);
+    try {
+      expect(withoutUse(readReap(reap({ ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` })))).toEqual({ kept: [], left: [scratch], leftWhy: { [scratch]: 'process' } });
+    } finally {
+      sleeper.kill('SIGKILL');
       chmodSync(area, 0o755);
     }
   });
