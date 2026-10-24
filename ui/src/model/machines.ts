@@ -358,10 +358,17 @@ export function thisBody(d: ThisDraft, version: string): MachineEdit {
 export function clientReleaseText(client: MachineSnapshot['client']): string | null {
   if (client?.current === undefined) return null;
   if (!client.release) return 'none: older than releases, add it again: Add machine';
-  if (client.current) return `${client.release} (the hopper's)`;
+  // Issue #2738: a client the update swap brought to the hopper's release while jobs were at work says so for a day.
+  if (client.current) return client.swapped ? `${client.release} (the hopper's; swapped in at ${client.swapped.at} while jobs were at work, from ${client.swapped.from})` : `${client.release} (the hopper's)`;
   if (client.update) return `${client.release} (not the hopper's, and it cannot be updated from here)`;
+  const p = client.pendingLoad, waits = p?.waitsOn ?? [];
   // Issue #2715: behind too long while jobs were at work, it takes no new job until they end and it is updated.
-  if (client.updateHold) return `${client.release} (not the hopper's since ${client.updateHold.since}: no new job goes there until the jobs at work end and it is updated)`;
+  if (client.updateHold) {
+    const swap = waits.length ? `; the swap waits on ${waits.length} job${waits.length === 1 ? '' : 's'} that ${waits.length === 1 ? 'does' : 'do'} not ride a client restart: ${waits.join(', ')}` : p ? `; swapped in at ${p.swapsAt} while jobs that ride a client restart run` : '';
+    return `${client.release} (not the hopper's since ${client.updateHold.since}: no new job goes there until the jobs at work end and it is updated${swap})`;
+  }
+  // Issue #2738: the load waits on the jobs at work, and the card says when it holds jobs off and when it swaps.
+  if (p) return `${client.release} (not the hopper's since ${p.since}: loaded once no job is at work there; ${p.atWork.length} at work; no new job goes there from ${p.holdsAt}; swapped in at ${p.swapsAt} while jobs that ride a client restart run)`;
   return `${client.release} (not the hopper's: loaded once no job is at work there)`;
 }
 

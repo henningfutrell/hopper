@@ -5879,7 +5879,8 @@ client target runs a client the hopper did not release.
   restarting client; it loads after). A job on a lane is at work; one that only waits in its pane (a
   question, a wait) is not: its pane is herdr's, which runs apart from the client. Each outcome is one log
   line per machine: `runs the hopper's release`, `loaded release <id> (was <id>)`, `loaded the bridge`,
-  `loading it once no job is at work there`, `no new job goes there until the jobs at work end`, a
+  `loading it once no job is at work there`, `no new job goes there until the jobs at work end`, `swapped in release`,
+  `the update swap waits on`, a
   failed load, `cannot update`, or a client older than releases (it answers no release: still online; add
   it again with Add machine).
 - **The update hold** (issue #2715). A machine that always had a job at work kept its client for a week: the
@@ -5890,6 +5891,21 @@ client target runs a client the hopper did not release.
   back to its pane (`updateHolds`, `src/decider/assign.ts`); the wait reason and the lane's idle reason say so, and
   Machines shows it on the client release. The jobs at work end, the release is loaded, the client restarts, and
   the machine takes jobs again. An hour, so a hopper that updates often does not drain its machines at each update.
+- **The update swap** (issue #2738). The hold alone still left a machine behind for as long as its longest job ran:
+  on 2026-10-24 a busy machine stayed on its old client after a deploy, and the leftover fix of issue #2715 did not
+  run there. Now a client behind for `CLIENT_UPDATE_SWAP_MS` (two hours) while jobs are at work there gets the
+  hopper's release loaded all the same, once each job at work **rides the client's restart**
+  (`ridesClientRestart`): it runs, its agent started in its pane (an agent session is on the job), it is not held on
+  a lost link, and its executor reattaches (the herdr executors). The client's restart leaves its herdr session, and
+  the panes in it, running; each job's watch sees the link drop, the engine holds the job (`job.link_lost`, issue
+  #752) and watches it again from its saved turn once the client dials in again (`job.reattached`). A job still
+  starting, and a print-mode turn (it runs in the client's own process), do not ride it: the swap waits for them,
+  and the hold keeps new ones off. The swap is a warn line (`swapped in release <id> while N jobs are at work
+  there`), and the probe after it says `client.swapped {at, from}` for a day. Until the load, every probe of a
+  client behind while jobs are at work says what it waits on, `client.pendingLoad {since, atWork, holdsAt,
+  swapsAt, waitsOn}` (`waitsOn` past `swapsAt`: the jobs that do not ride the restart), and the machine's card
+  shows it on its client release. Residual risk: while the client restarts (a few seconds), its door and vault
+  helper do not answer the jobs there; hopper-gh sends a request again, and an agent tries a failed command again.
 - **Clients with a fixed file list** (issue #545). A client released before manifests checks a load
   against the list of names fixed in its own `release.ts` (exactly those names, an id hashed over them in
   order) and refuses anything else: on 2026-10-09 a client of seven files refused the hopper's ten, stayed

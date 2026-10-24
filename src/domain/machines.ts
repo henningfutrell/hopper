@@ -39,6 +39,16 @@ export interface MachineInfraCredentials { infraCredentials?: string[] }
 export interface MachineLeaving { leaving?: true }
 
 /**
+ * A client target's load of the hopper's client release, waiting on the jobs at work there (issue #2738,
+ * src/machines/client-release.ts): behind `since`, it holds new jobs off from `holdsAt` (the **update hold**) and makes the
+ * **update swap** from `swapsAt`; `waitsOn`, once past `swapsAt`: the jobs at work that do not ride the client's restart.
+ */
+export interface PendingLoad { since: string; atWork: string[]; holdsAt: string; swapsAt: string; waitsOn?: string[] }
+
+/** A client target's last **update swap** (issue #2738): when it was made, and the release its client ran before. */
+export interface UpdateSwap { at: string; from: string }
+
+/**
  * Who drained a machine, the way, and when (issue #1511): kept in the user's settings, per machine id. Issue #2499: why
  * (`reason`), and when it ends by itself (`until`); a drain kept before them has neither, and ends a day after `at`.
  */
