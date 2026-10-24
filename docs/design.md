@@ -581,6 +581,7 @@ Every event: `{ seq, id, type, at, jobId?, laneId?, machineId?, decisionId?, dat
 | `job.cleanup_deferred` | `{ error }` — issue #371, its cleanup could not reach its machine; tried again every tick ("Deferred cleanup") |
 | `job.cleaned_up` | `{ deferredAt?, dueAt?, by? }` — issue #371, a deferred cleanup went through, or the user marked it closed (`by: "user"`); issue #1570, `dueAt`: a cleanup a stop cut off from the job's end, done at the next start ("The cleanup record") |
 | `job.pod_removed` | `{ executor }` — issue #1570, the sweep deleted an ended job's pod that was still there ("The cleanup record") |
+| `job.processes_stopped` | `{ machineId, status }` — issue #2707, the sweep stopped the processes of a job not ended ("The sweep and a job whose agent still runs") |
 | `lane.opened` | `{}` |
 | `lane.closed` | `{ reason }` — the lane plan's reason, `drained`, or `daemon restart` |
 | `decision.made` | v3 `{ decisionId, trigger, starts, holds, lanes, divergences, waits? }` |
@@ -11523,7 +11524,8 @@ low disk; every threshold a setting that applies without a restart.
 - **The reap through the machine's connection**: this machine, ssh, or a client target's `POST /reap`;
   never keys to a pane. A job whose pane is gone is still reaped.
 - **The sweep**: at startup after recovery, then on each machine every `reapEveryMinutes` (default 10), the
-  scopes and processes of known jobs that are not live are stopped, and an ended job's scratch dir is
+  scopes and processes of known jobs that are not live (nor queued or held with an answer pending, issue #2707) are
+  stopped, and an ended job's scratch dir is
   removed once `scratchMaxAgeHours` old (default 24), or at once while its work was kept and is now pushed
   (`job.work_removed`).
 - **Shared dependencies**: a job worktree's `node_modules` links to the dependencies installed once per
@@ -34778,3 +34780,33 @@ cap, the drop ends a session, the sweep by age and of orphan users), `test/vault
 password in an event or an answer, the drop after a failed read), `test/skills/database-skill.test.ts`,
 `test/integration/database-read.test.ts` (through the real hopper, `hopper-skill` and Postgres: the wait for a person,
 the CSV, a write refused, every role gone, no password in an answer or an event).
+
+## The sweep and a job whose agent still runs (issue #2707, 2026-10-24)
+
+**Problem.** The sweep stopped the agent of a job that still worked, and the failure read as the agent's own exit
+(`claude exited (exit code 143, signal 15)`). The Failures view then grouped such jobs as a Recurring problem and held them.
+Two ways led there:
+- An answered question or an ended wait queues the job again with its answer pending (`pendingAnswer`). Its pane stays
+  open, and its agent waits there for the answer that its next claim types in. The sweep took `queued` and `held` as not
+  live, so it stopped that agent.
+- A pass reads the jobs once, before it surveys each machine. A job that started after that read was still `queued` to
+  the pass, so the sweep stopped what it had just started.
+
+**Decision.**
+- A job whose processes may run (`processesMayRun`, `src/engine/sweep.ts`) is a live job, or a job queued or held with an
+  answer pending. A parked job has no pane: what runs of it is still stopped.
+- Before each reap, the sweep reads the job again from the store. When its processes may run now, the sweep reaps
+  nothing of it.
+- When the sweep stops the processes of a job that has not ended, it records `job.processes_stopped { machineId, status }`
+  and logs the status it read.
+- A failure whose text says that the agent exited, with a `job.processes_stopped` and no `job.failed` of the job after it,
+  names the sweep: `the hopper's sweep stopped its processes on <machine> while it was <status>: <the agent's exit>`
+  (`sweptError`, `src/engine/outcome.ts`). That is the built-in cause **Stopped by the sweep** (`swept`,
+  `src/failures/causes.ts`): transient, retry. So it is never a Recurring problem, it holds no other job, and the failure
+  card names the sweep's reason.
+
+**Residual risk.** The read before the reap and the start of a job are not one transaction: a job claimed during the reap's
+round trip can still lose its processes. Its failure then names the sweep and runs again.
+
+**Verification:** `test/engine/sweep-live.test.ts` (a job with an answer pending is not reaped, a parked one is; a job
+started after the pass read the jobs is not reaped; the event and the log line; the failure text and its cause).

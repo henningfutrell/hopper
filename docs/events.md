@@ -1062,6 +1062,22 @@ Version 1 (`docs/schemas/job.pod_removed.v1.json`). The sweep (issue #1570), at 
 }
 ```
 
+## `job.processes_stopped`
+
+Version 1 (`docs/schemas/job.processes_stopped.v1.json`). The sweep (issue #2707) stopped the scope and processes of a job that has not ended, on machine `machineId`: the job was `status` (queued or held with no answer pending, or parked), as the hopper read it just before the reap, so nothing of it could run there. A failure of the job's agent after it names the sweep, not the agent.
+
+| field | type | required |
+|---|---|---|
+| `machineId` | string | yes |
+| `status` | string | yes |
+
+```json
+{
+  "machineId": "m1",
+  "status": "queued"
+}
+```
+
 ## `job.resources_used`
 
 Version 1 (`docs/schemas/job.resources_used.v1.json`). What the job's scope used on its machine (`machineId`), read by the job's reap at its end from the scope's cgroup before it stopped the scope (issue #2498): `memoryPeakBytes`, the most memory the scope held at once (cgroup `memory.peak`); `cpuSeconds`, the CPU time of every process in it (`cpu.stat` `usage_usec`); `oomKills`, the processes in it the kernel killed for want of memory (`memory.events` `oom_kill`). Each is absent where the cgroup has none (`memory.peak` needs Linux 5.19). Part 4: `diskBytes`, what the job's scratch dir and worktrees held on its machine (`du -skx` of each), read by the same reap before it removed or kept them; absent where the job had neither there. None where the job has no scope there (no systemd user manager, or its scope ended before the reap: a parked job's, a print-mode agent's after its turn) and no scratch dir or worktree, or a client older than this. The job's parts list shows it.

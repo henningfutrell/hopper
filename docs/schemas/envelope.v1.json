@@ -73,6 +73,7 @@
         "job.cleanup_deferred",
         "job.cleaned_up",
         "job.pod_removed",
+        "job.processes_stopped",
         "job.resources_used",
         "job.cleanup_leftover",
         "job.parked",

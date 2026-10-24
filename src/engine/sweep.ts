@@ -3,7 +3,8 @@
 // At startup, after recovery, and then on each machine every `sweep.everyMinutes` (a machine option, default
 // 10), the sweep asks the machine what jobs left there — through an executor that reaches it — and reaps:
 // - a scope or a process of a job this hopper knows that is not live (claimed, running, waiting on an
-//   answer, or led by an operator): stopped;
+//   answer, or led by an operator), nor queued or held with an answer pending (issue #2707: its pane is kept), as the job
+//   is just before the reap: stopped, and, for a job not ended, recorded as job.processes_stopped with its status;
 // - an ended job's scratch dir, once it is `sweep.scratchMaxAgeHours` old (default 24) — or, with a retention set for the
 //   status it ended in (`sweep.retainHours`, issue #2494), that many hours after its end —, or at once while its
 //   work was kept (job.work_kept): removed unless it still holds work not pushed. Its job worktree in the work tree's
@@ -68,6 +69,12 @@ export const STUCK_RETRY_MS = 6 * 3600_000;
 
 /** A job whose processes may run: anything else of its own on a machine is a leftover. */
 const LIVE = new Set<Job['status']>(['claimed', 'running', 'waiting_answer', 'waiting_on', 'operator_led']);
+/**
+ * Whether the job's processes may run (issue #2707): it is live, or queued or held with an answer pending — its pane is kept,
+ * and its agent waits there for the answer its next claim types in. Never a parked job's: it has no pane.
+ */
+export const processesMayRun = (job: Job): boolean =>
+  LIVE.has(job.status) || (job.pendingAnswer !== undefined && (job.status === 'queued' || job.status === 'held'));
 
 /** One reap the sweep asks of a machine. */
 export interface SweepReap { jobId: string; scratch?: string }
@@ -80,7 +87,7 @@ export function planSweep(found: Survey, jobOf: (id: string) => Job | undefined,
   const plan = new Map<string, SweepReap>();
   for (const id of new Set([...found.scopes, ...found.processes])) {
     const job = jobOf(id);
-    if (job && !LIVE.has(job.status)) plan.set(id, { jobId: id });
+    if (job && !processesMayRun(job)) plan.set(id, { jobId: id });
   }
   for (const id of found.containers ?? []) {
     const job = jobOf(id);
@@ -296,7 +303,9 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       const where = `${m.id}/${r.jobId}`;
       // A dir the reap could not remove is tried again only after a wait (issue #1613), unless something of the job still runs.
       if ((stuck.get(where) ?? 0) > c.clock.now().getTime() && !running.has(r.jobId)) continue;
-      let reason = r.scratch !== undefined && kept.has(r.jobId) ? discardReason(jobOf(r.jobId), kept) : undefined;
+      // The job as it is now (issue #2707): the pass read the jobs before its survey, and one may have started since.
+      const fresh = c.store.jobs.get(r.jobId) ?? jobOf(r.jobId); if (fresh && processesMayRun(fresh)) continue;
+      let reason = r.scratch !== undefined && kept.has(r.jobId) ? discardReason(fresh, kept) : undefined;
       let said;
       try {
         said = reason !== undefined ? await shell.reap(r.jobId, r.scratch, false, true) : await shell.reap(r.jobId, r.scratch);
@@ -307,6 +316,12 @@ export function createSweep(c: Pick<EngineContext, 'store' | 'executors' | 'mach
       } catch (e) {
         log(`hopper: the sweep could not reap job ${r.jobId} on ${m.id}: ${(e as Error).message}`);
         continue;
+      }
+      // Processes of a job not ended were stopped (issue #2707): said why, so a failure that follows names the sweep.
+      const ran = running.has(r.jobId) && fresh !== undefined && !TERMINAL_STATUSES.includes(fresh.status) ? fresh.status : undefined;
+      if (ran) {
+        log(`hopper: the sweep stopped the processes of job ${r.jobId} on ${m.id}: it is ${ran}, so nothing of it may run there`);
+        c.store.events.append({ type: 'job.processes_stopped', jobId: r.jobId, machineId: m.id, data: { machineId: m.id, status: ran } });
       }
       recordRemoved(r.jobId, m, said, r.scratch !== undefined); tally.reaped(r.jobId, r.scratch !== undefined, said, said.left?.length ? stuck.has(where) : kept.has(r.jobId));
       // A dir the reap could not remove is still there (issue #1452): never said removed, and told once while it stays.
