@@ -169,7 +169,8 @@ describe('a step schedule runs once per due time (issue #2716)', () => {
 
 describe('a scheduled run (issue #2716)', () => {
   it('runs its script in a new sandbox of its template, its folder at its paths, the secrets only after the grant, masked', async () => {
-    const h = hopper(testDatabaseUrl(), at('2026-10-24T10:00:00Z'));
+    const clock = at('2026-10-24T10:00:00Z');
+    const h = hopper(testDatabaseUrl(), clock);
     h.s.save(FIELDS, 'Pat');
     // No grant: the template gives a vault secret, so the run does not start.
     const first = h.s.runNow(FIELDS.name, 'Pat') as { run: { id: string } };
@@ -180,6 +181,8 @@ describe('a scheduled run (issue #2716)', () => {
     expect(h.s.view().failed).toEqual([FIELDS.name]);
 
     h.s.grant(FIELDS.name, 'Pat');
+    // A minute later: runs started at the same time have no order (issue #2729).
+    clock.set('2026-10-24T10:01:00Z');
     const second = h.s.runNow(FIELDS.name, 'Pat') as { run: { id: string } };
     await h.s.execute(second.run.id, new AbortController().signal);
     const [{ box, inputs, secrets, run }] = h.boxes as [typeof h.boxes[number]];
