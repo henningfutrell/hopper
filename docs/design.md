@@ -34755,20 +34755,28 @@ reconcile pass). So the vault container, not the hopper, needs the route to the 
 `test/integration/database-read.test.ts` runs the read with the vault in the hopper and in its own container, and the
 sweep through the container; `test/vault/database-reads.test.ts` hands a read Access allowed to another vault.
 
-**What is left (later parts).** The route to the in-cluster databases and to the private SQL Server (below). The live
-proof on the target clusters.
+**What is left (later parts).** The live proof on the target clusters, after a person has set up the minting
+credentials and the route below.
 
-**The route to an in-cluster database is a person's decision.** The hopper must open a TCP connection to the database
-to mint and to read. A database inside a cluster with no route from where the hopper runs needs one of these, each a
-cluster-side or network-side opening this part does not make:
-1. **`pods/portforward` for the observe role in the database's namespace**, and the vault mints through a bastion's
-   forward: an RBAC change; a forward reaches every port of the database's pod.
-2. **An internal load balancer or a NodePort for the database, reachable from the hopper's network**: a Service change and
-   a security group or firewall rule; the database's port is open to that network.
-3. **A NetworkPolicy that lets a hopper-run runtime in the cluster reach the database**, and the hopper runs there: a
-   policy change, and a hopper part inside the cluster.
-4. **A read replica or an export outside the cluster** that the hopper reaches: no cluster opening, but a copy of the data
-   to keep and secure.
+**The route to an in-cluster database (owner decision, 2026-10-24).** The hopper must open a TCP connection to the
+database to mint and to read. A database inside a cluster has no route from where the hopper runs. Four ways were put to
+the owner: `pods/portforward` for the observe role and a bastion's forward; an internal load balancer or a NodePort; a
+NetworkPolicy and a hopper part in the cluster; a read replica or an export outside the cluster. The decision: **a person
+runs `kubectl port-forward` to the database and a relay to it, and the hopper ships no tool for either.** The minting
+credential's `host` and `port` name the relay's end, which the hopper (or the vault container) reaches. The same holds for
+the SQL Server behind a private load balancer: a person's relay from a network that routes to it.
+- **Why no tool.** A forward the hopper starts needs an RBAC change for the observe role (`pods/portforward`), which the
+  issue's stop rule forbids, and a hopper part that holds it open. A person's own forward uses the person's own cluster
+  access, is opened only while the person keeps it, and makes no change to the cluster, its RBAC or its network.
+- **What stays the same.** The database read role, Access, the audit and the sweep work as before: the relay carries
+  only the TCP stream. No box reaches the database, and no credential goes to the relay.
+- **The trade-off the person takes.** A forward reaches the pod's ports, and the relay's end is open to whoever reaches
+  it: bind it to loopback, or to an address only the hopper reaches. TLS through a relay: the server's certificate names
+  the database's own host name, not the relay's, so `verify-full` fails on an address. Give the hopper's machine a host
+  name the certificate names that resolves to the relay (a hosts entry), or use `require` only on a path the person trusts.
+- **When the forward or the relay is down**, the mint fails with the connection's error and is recorded as
+  `database.read_refused`; a read role left in the database stays until its `VALID UNTIL` (on SQL Server, until the sweep
+  reaches it again).
 
 Tests (part 1): `test/vault/database-read-domain.test.ts` (the asset, high radius, the read policy, the credential, the
 CSV), `test/vault/postgres-reads.test.ts` (a real Postgres: the role's attributes and settings, every write refused also

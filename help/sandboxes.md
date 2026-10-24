@@ -213,7 +213,7 @@ An operator can stop a bastion.
 
 A job can read rows of a database through the hopper. The job never gets a credential, and no box reaches the database:
 
-1. A person sets up the database's minting credential once (see [The vault](vault.md), "A database's minting credential").
+1. A person sets up the database's minting credential once (see [The vault](vault.md), "A database's minting credential"). For a database in a cluster, the person also keeps a port forward and a relay open (see [The vault](vault.md), "A database the hopper cannot reach").
 2. The job asks for a template with read on the database, for example `read/database/lab/apps/orders`.
 3. A person approves that read on **Access requests**. A database read is high radius: the read policy, the auto-approve policy and skip template approval never approve it.
 4. For each read, the job runs `sh "$HOPPER_SKILL" database read --template <name> --database <name> --sql "SELECT …"`. The hopper makes a database read role in the database, runs the one `SELECT` with it in a read-only transaction, and drops the role. The answer is the rows as CSV, with a header line.

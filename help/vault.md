@@ -195,6 +195,17 @@ What a database read role gets:
 
 The hopper must reach the database's host and port itself: it makes the role there, and runs the read there. When the vault runs in a container of its own, the vault container makes the role and runs the read, so it is the vault container that must reach the database. A box needs no route to the database.
 
+#### A database the hopper cannot reach
+
+The hopper has no tool to reach a database inside a cluster, or behind a private load balancer. A person opens the route:
+
+1. Run `kubectl port-forward` to the database's service with your own cluster access, for example `kubectl -n <namespace> port-forward svc/<database> 15432:5432`.
+2. When the hopper (or the vault container) runs on another computer, run a relay from an address the hopper reaches to the forward, for example with `socat`. Bind it only to an address the hopper reaches: anyone who reaches the relay reaches the database's port.
+3. In the minting credential, set `host` and `port` to the relay's end (or to the forward's end, when the hopper runs on the same computer).
+4. Keep the forward and the relay open while jobs read. When they stop, each read fails with the connection's error, and the job's timeline shows **database.read_refused**.
+
+TLS through the relay: the database's certificate names its own host name, not the relay's. With `verify-full`, give the hopper's computer a host name the certificate names that goes to the relay (a hosts entry), and set `host` to that name. Use `require` only when you trust the path to the database.
+
 ### A SQL Server database's minting credential
 
 On SQL Server, a database read role is a SQL login and its user in the database, both named `hopper_read_<16 hex>`. Set the minting login up once for each database:
