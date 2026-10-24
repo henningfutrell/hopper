@@ -208,7 +208,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const kills = oomWatch();
   const allocFailures = platform === 'linux' ? allocFailureReader(join(root, 'dev/kmsg'), join(root, 'proc/uptime')) : () => undefined;
   let periods = new Map<string, { periods: number; throttled: number }>(); let throttledFrac: number | undefined;
-  let hostAskedAt: number | undefined; let hostAsking = false; const processJobs = jobProcessMeter(root);
+  let hostAskedAt: number | undefined; let hostAsking = false; const processJobs = jobProcessMeter(root, { platform, now });
   /** Each job scope's CPU time at the read before, for its cores busy since. */
   let jobCpu = new Map<string, { at: number; usec: number }>();
 
@@ -352,8 +352,8 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
     const limited = platform === 'linux' ? cgroupMemory(parts) : undefined;
     // Issue #2622: what holds its jobs' memory — each job's scope where its user manager runs, else its own cgroup's limit.
     const manager = platform === 'linux' ? managerOf(parts) : undefined;
-    const held = platform !== 'linux' ? {} : { jobMemoryLimit: manager !== undefined && existsSync(cgroup(manager)) ? 'scope' as const : limited ? 'machine' as const : 'none' as const };
-    // Issue #2737: with no user manager, no scope holds a job: its processes (job-processes.ts) say its memory.
+    const held = platform === 'darwin' ? { jobMemoryLimit: 'none' as const } : platform !== 'linux' ? {} : { jobMemoryLimit: manager !== undefined && existsSync(cgroup(manager)) ? 'scope' as const : limited ? 'machine' as const : 'none' as const };
+    // Issue #2737: with no user manager, or on macOS, no scope holds a job: its processes (job-processes.ts) say its memory.
     const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...jobUseOf(scopes, at) }
       : held.jobMemoryLimit !== undefined && held.jobMemoryLimit !== 'scope' ? processJobs() : {};
     const info = platform === 'linux' ? fields(text(join(root, 'proc/meminfo'))) : new Map<string, number>();

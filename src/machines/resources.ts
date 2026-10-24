@@ -6,8 +6,12 @@
 // or a slice's MemoryMax; the tightest is its memory, as this machine's meter reads it. It prints `um` when its user manager
 // runs (issue #2622): each job's scope there then holds the job's memory. It prints its uptime and each page allocation
 // failure dmesg holds (issue #2622 part 6, `af <seconds since boot> <order>`): the large ones of the last 10 minutes count.
+// Where its user manager does not run, it prints its processes (issue #2737, JOB_PROCESSES_COMMAND), so each job's memory
+// comes from them, as this machine's meter reads it (src/client/job-processes.ts). On macOS (no /proc) it prints its
+// memory, load and cores from sysctl and vm_stat in the same lines, and its processes from ps.
 import { nodeFloorOf } from '../client/node-floor.ts';
 import { allocFailuresIn, ALLOC_FAILURE_MIN_ORDER, uptimeOf } from '../client/kernel-log.ts';
+import { jobProbeMemory } from '../client/job-processes.ts';
 import { pressureOf, type OomCount } from '../client/resources.ts';
 import { WINDOWS_LINK_URL, type JobMemoryLimit, type JobUseNow, type ResourceReading, type WindowsLink } from '../domain/machine-history.ts';
 
@@ -15,14 +19,28 @@ const JOB_MEMORY_LIMITS: readonly JobMemoryLimit[] = ['scope', 'machine', 'none'
 
 const MARK = 'hopper-res ';
 
-/** What an ssh target's probe runs: nothing printed where there is no /proc (the reading is then absent). */
-export const RESOURCES_COMMAND = `if [ -r /proc/stat ]; then { p=$(sed -n 's/^0:://p' /proc/self/cgroup); u=$(id -u); ds=$(while :; do echo "$p"; case $p in /|'') break;; esac; p=\${p%/*}; [ -n "$p" ] || p=/; done);`
+/**
+ * Issue #2737: each process (`jp <pid> <ppid> <KiB of RssAnon and RssShmem>`) and each that has HOPPER_JOB_ID in its
+ * environment (`je <pid> <job id>`). One cat and one grep for all of them: a process gone mid-read is left out.
+ */
+export const JOB_PROCESSES_COMMAND = `cat /proc/[0-9]*/status 2>/dev/null | awk '/^Name:/{if(i!="")print "jp",i,p,k; i="";p="";k=0} /^Pid:/{i=$2} /^PPid:/{p=$2} /^Rss(Anon|Shmem):/{k+=$2} END{if(i!="")print "jp",i,p,k}';`
+  + ` grep -Haoz '^HOPPER_JOB_ID=[A-Za-z0-9_-]*' /proc/[0-9]*/environ 2>/dev/null | tr '\\0' '\\n' | sed -n 's|^/proc/\\([0-9]*\\)/environ:HOPPER_JOB_ID=|je \\1 |p'`;
+
+/** macOS (issue #2737): memory available is the free, inactive and speculative pages; each process from ps, its job id from the environment ps prints. */
+const DARWIN_COMMAND = `{ echo "MemTotal: $(($(sysctl -n hw.memsize)/1024)) kB";`
+  + ` vm_stat | awk '/page size of/{for(i=1;i<=NF;i++)if($i=="of")s=$(i+1)} /^Pages (free|inactive|speculative):/{v=$NF; sub(/\\.$/,"",v); n+=v} END{if(s>0)printf "MemAvailable: %d kB\\n", n*s/1024}';`
+  + ` sysctl -n vm.loadavg | tr -d '{}' | sed 's/^ *//';`
+  + ` ps -axeww -o pid=,ppid=,rss=,command= | sed -E -e 's/^ *([0-9]+) +([0-9]+) +([0-9]+) .*[[:space:]]HOPPER_JOB_ID=([A-Za-z0-9_-]+).*/jp \\1 \\2 \\3 \\4/' -e t -e 's/^ *([0-9]+) +([0-9]+) +([0-9]+).*/jp \\1 \\2 \\3/';`
+  + ` sysctl -n hw.ncpu; } 2>/dev/null | sed 's/^/${MARK}/'`;
+
+/** What an ssh target's probe runs: nothing printed where there is no /proc and no macOS (the reading is then absent). */
+export const RESOURCES_COMMAND = `if [ "$(uname 2>/dev/null)" = Darwin ]; then ${DARWIN_COMMAND}; elif [ -r /proc/stat ]; then { p=$(sed -n 's/^0:://p' /proc/self/cgroup); u=$(id -u); ds=$(while :; do echo "$p"; case $p in /|'') break;; esac; p=\${p%/*}; [ -n "$p" ] || p=/; done);`
   + ` t() { for d in $ds; do f=/sys/fs/cgroup\${d%/}; [ -r $f/cpu.max ] && read q r < $f/cpu.max && [ "$q" != max ] && echo ct$1 $d $(sed -n 's/^nr_periods //p;s/^nr_throttled //p' $f/cpu.stat); done; };`
   + ` head -n1 /proc/stat; t 0; sleep 1; head -n1 /proc/stat; t 1; cat /proc/loadavg;`
   + ` grep -E '^(MemTotal|MemFree|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo; grep -qi microsoft /proc/version && echo wsl; echo boot $(cat /proc/sys/kernel/random/boot_id); cat /proc/pressure/memory; sed -n 's/^oom_kill /oom /p' /proc/vmstat;`
   + ` echo up $(cut -d' ' -f1 /proc/uptime); dmesg | sed -nE 's/^\\[ *([0-9.]+)\\].*page allocation failure: order:([0-9]+).*/af \\1 \\2/p' | tail -n 500;`
   + ` m=$(printf '%s\\n' $ds | grep -m1 '/user@[0-9]*\\.service$') && x= || { m=/user.slice/user-$u.slice/user@$u.service; x=$m; };`
-  + ` [ -d /sys/fs/cgroup$m ] && echo um;`
+  + ` if [ -d /sys/fs/cgroup$m ]; then echo um; else ${JOB_PROCESSES_COMMAND}; fi;`
   + ` for d in $ds $x; do f=/sys/fs/cgroup\${d%/}; [ -r $f/memory.max ] || continue; echo cg $d $(cat $f/memory.max) $(cat $f/memory.current) $(sed -n 's/^inactive_file //p' $f/memory.stat); sed "s|^|cgp $d |" $f/memory.pressure; sed -n "s|^oom_kill |cgo $d |p" $f/memory.events; done;`
   + ` for f in /sys/fs/cgroup$m/*.slice/hopper-job-*.scope; do [ -r $f/memory.current ] || continue; echo cgj \${f#/sys/fs/cgroup} cur=$(cat $f/memory.current) $(sed -n 's/^inactive_file /i=/p' $f/memory.stat) $(sed 's/^/peak=/' $f/memory.peak) $(sed -n 's/^usage_usec /usec=/p' $f/cpu.stat) $(sed -n 's/^oom_kill /oom=/p' $f/memory.events); done;`
   + ` nproc 2>/dev/null || getconf _NPROCESSORS_ONLN; } 2>/dev/null | sed 's/^/${MARK}/'; fi`;
@@ -58,7 +76,10 @@ export function readResources(stdout: string): ResourceReading | undefined {
   const scopes = jobScopesOf(lines);
   const held = { jobMemoryLimit: lines.some((l) => l.trim() === 'um') ? 'scope' as const : limited ? 'machine' as const : 'none' as const, ...allocFailuresOf(lines) };
   const use = Object.fromEntries(scopes.filter((s) => Object.keys(s.use).length).map((s) => [s.id, s.use]));
-  const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...(Object.keys(use).length ? { jobUse: use } : {}) } : {};
+  // Issue #2737: with no user manager, no scope holds a job: its processes say its memory.
+  const procs = scopes.length || held.jobMemoryLimit === 'scope' ? new Map<string, number>() : jobProbeMemory(lines);
+  const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...(Object.keys(use).length ? { jobUse: use } : {}) }
+    : procs.size ? { jobMemoryBytes: Object.fromEntries(procs) } : {};
   const cpu = {
     cores,
     ...(busy !== undefined ? { cpuBusyFrac: busy } : {}),

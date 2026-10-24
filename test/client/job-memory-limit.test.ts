@@ -45,8 +45,9 @@ describe('this machine\'s meter', () => {
     expect(read().jobMemoryLimit).toBe('none');
   });
 
-  it('not said off Linux', () => {
-    expect(read('darwin')).not.toHaveProperty('jobMemoryLimit');
+  it('nothing on macOS (issue #2737: no cgroups there); not said on Windows', () => {
+    expect(read('darwin').jobMemoryLimit).toBe('none');
+    expect(read('win32')).not.toHaveProperty('jobMemoryLimit');
   });
 });
 
