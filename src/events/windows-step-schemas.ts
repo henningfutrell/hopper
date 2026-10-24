@@ -17,6 +17,7 @@ export const WINDOWS_STEP_EVENT_SCHEMAS = {
     outputsBytes: z.number().int().min(0).optional(), outputsSha256: z.string().regex(/^[0-9a-f]{64}$/).optional(), problem: z.string().optional(),
   }),
   'step.refused': strict({ reason: z.string(), host: z.string().optional(), box: z.string().optional() }),
-  'vault.step_delivered': strict({ name: z.string(), host: z.string(), job: z.string(), backend: z.string().optional() }),
-  'vault.step_refused': strict({ name: z.string(), host: z.string(), job: z.string(), backend: z.string().optional(), reason: z.string() }),
+  // A step schedule's run (issue #2716) names its schedule in place of a job.
+  'vault.step_delivered': strict({ name: z.string(), host: z.string(), job: z.string().optional(), schedule: z.string().optional(), backend: z.string().optional() }),
+  'vault.step_refused': strict({ name: z.string(), host: z.string(), job: z.string().optional(), schedule: z.string().optional(), backend: z.string().optional(), reason: z.string() }),
 } as const;

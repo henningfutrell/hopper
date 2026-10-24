@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schedule": {
+      "type": "string"
+    },
+    "run": {
+      "type": "string"
+    },
+    "exit": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "problem": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schedule",
+    "run",
+    "exit",
+    "seconds"
+  ],
+  "additionalProperties": false
+}

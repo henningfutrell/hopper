@@ -32,7 +32,7 @@ import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
 import { TERMINAL_USAGE, terminalCall } from './cli-operator-terminal.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
 import { MACHINE_USAGE, machineCall } from './cli-operator-machine.ts'; import { CLOUD_LINK_USAGE, cloudLinkCall } from './cli-operator-cloud-link.ts';
-import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts'; import { INFRA_USAGE, infraCall } from './cli-operator-infra.ts';
+import { PR_USAGE, prCall, prsCall, yoloCall } from './cli-operator-pr.ts'; import { INFRA_USAGE, infraCall } from './cli-operator-infra.ts'; import { SCHEDULE_USAGE, scheduleCall } from './cli-operator-schedule.ts';
 import { REPO_USAGE, repoCall } from './cli-operator-repo.ts'; import { USAGE_USAGE, usageCall } from './cli-operator-usage.ts'; import { FORECAST_USAGE, forecastCall } from './cli-operator-forecast.ts'; import { INTAKE_USAGE, intakeCall } from './cli-operator-intake.ts';
 import { QUEUE_USAGE, ownWaitOf, queueCall } from './cli-operator-queue.ts';
 import { DIRECT_USAGE, directCall } from './cli-operator-direct.ts'; import { DISMISS_USAGE, dismissCall } from './cli-operator-dismiss.ts';
@@ -42,7 +42,7 @@ import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link', 'infra', 'intake', 'usage', 'forecast'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'proposal', 'typesafe-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link', 'infra', 'intake', 'usage', 'forecast', 'schedule'] as const;
 
 export const OPERATOR_USAGE = `  hopper job show <id>                               one job, by its id or short id: its state, and why it is held or waits (holdReason, waitReason),
                                                      or, on its own wait, what it waits on (waitsOn, waitsFor, wait)
@@ -108,6 +108,7 @@ ${ACCOUNTS_USAGE}
 ${TERMINAL_USAGE}
 ${VAULT_USAGE}
 ${INFRA_USAGE}
+${SCHEDULE_USAGE}
 ${TOKEN_USAGE}
 ${WINDOWS_LINK_USAGE}
   Each prints the daemon's answer as JSON (--json is accepted and changes nothing).`;
@@ -269,7 +270,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'token') return tokenCall(args);
   if (command === 'vault') return vaultCall(args, stdin);
   if (command === 'grant') return grantCall(args);
-  if (command === 'template') return templateCall(args); if (command === 'infra') return infraCall(args);
+  if (command === 'template') return templateCall(args); if (command === 'infra') return infraCall(args); if (command === 'schedule') return scheduleCall(args);
   if (command === 'sandbox') return sandboxCall(args);
   if (command === 'artifact') return artifactCall(args);
   if (command === 'report') return reportCall(args);

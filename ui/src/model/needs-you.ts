@@ -14,10 +14,11 @@
 // Access requests marks the run cards of high-priority jobs (issue #2197), as the nav badge marks a high-priority question.
 // Infra plans names each plan that waits, and marks those a high-priority job recorded (issue #2205): a job that waits on a
 // plan's approval links to it on Infra, where a person approves it.
+// Schedules (issue #2716) counts the step schedules whose newest run failed, each with why: Needs you lists it until a run succeeds.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
-export const NEEDS_YOU_KINDS = ['intake', 'access', 'unknown-assets', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'budgets', 'pull-requests', 'checks', 'landing', 'tagged', 'sorting'] as const;
+export const NEEDS_YOU_KINDS = ['intake', 'access', 'unknown-assets', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'budgets', 'pull-requests', 'checks', 'landing', 'tagged', 'schedules', 'sorting'] as const;
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
@@ -49,6 +50,8 @@ export interface NeedsYouCounts {
   stuckLanding: readonly string[];
   /** Tagged items (issue #1141): open issues and pull requests that ask for the user's review, mention or are assigned to the user. */
   tagged: number;
+  /** The step schedules whose newest run did not succeed (issue #2716), one line each; absent: none. */
+  failedSchedules?: readonly string[];
   /** Jobs that wait on the pre-sort. */
   sorting: number;
   sections: Readonly<Record<SectionKind, { n: number; high: number }>>;
@@ -78,6 +81,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   checks: { label: 'Checks', href: '#pull-requests', what: 'repositories whose pull request checks the hopper may not read: give its connection the permissions' },
   landing: { label: 'Landing', href: '#settings/landing-batches', what: 'landing passes that failed the same way several times in a row: nothing moves to the tested branch until you restart the batch or fix the cause' },
   tagged: { label: 'Tagged', href: '#tagged', what: 'issues and pull requests that ask for your review, mention you, or are assigned to you' },
+  schedules: { label: 'Schedules', href: '#vault', what: 'step schedules whose last run failed, or that the hopper could not start: read its output, fix the cause, and run it again' },
   sorting: { label: 'Waiting to be ordered', href: '#jobs/queue', what: 'jobs waiting to be ordered before a lane takes them' },
 };
 
@@ -97,6 +101,7 @@ export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
     if (k === 'machines') return { n: c.notReady.length, high: 0, ...(c.notReady.length ? { details: c.notReady } : {}) };
     if (k === 'landing') return { n: c.stuckLanding.length, high: 0, ...(c.stuckLanding.length ? { details: c.stuckLanding } : {}) };
     if (k === 'tagged') return { n: c.tagged, high: 0 };
+    if (k === 'schedules') { const failed = c.failedSchedules ?? []; return { n: failed.length, high: 0, ...(failed.length ? { details: failed } : {}) }; }
     if (k === 'sorting') return { n: c.sorting, high: 0 };
     return c.sections[k];
   };
