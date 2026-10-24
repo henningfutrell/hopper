@@ -76,7 +76,7 @@ describe('the reap says the core dumps in the job\'s scope (issue #2722 part 3)'
 });
 
 describe('a core dump of a heap abort is the heap abort\'s (issue #2722 part 3)', () => {
-  it('not said again: neither the core of the process whose report says it, nor its parent\'s that raised its signal again within 5 s', () => {
+  it('not said again: neither the core of the process whose report says it, nor its parent\'s that raised its signal again within 10 s', () => {
     const scratch = join(root, 'w', '.worktrees', '@scratch', JOB);
     mkdirSync(scratch, { recursive: true });
     writeFileSync(join(scratch, 'report.20261024.42.0.001.json'), '{"header":{"event":"Allocation failed - JavaScript heap out of memory","trigger":"OOMError","dumpEventTimeStamp":"1792860571000","processId":42,"commandLine":["node","tsc"],"nodejsVersion":"v26.8.2"}}');

@@ -76,6 +76,8 @@
         "job.processes_stopped",
         "job.resources_used",
         "job.heap_aborted",
+        "job.core_dumped",
+        "job.oom_killed",
         "job.cleanup_leftover",
         "job.parked",
         "job.unparked",

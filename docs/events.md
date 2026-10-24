@@ -1118,6 +1118,40 @@ Version 1 (`docs/schemas/job.heap_aborted.v1.json`). A Node process of the job r
 }
 ```
 
+## `job.core_dumped`
+
+Version 1 (`docs/schemas/job.core_dumped.v1.json`). A process of the job ended with a core dump on its machine (`machineId`, issue #2722 part 3, design.md "Core dumps and OOM kills"): a signal ended it and systemd-coredump took its core, which the job's reap read at its end from the journal entries of the job's scope. `command`: what ran, as for `job.heap_aborted` (the script node ran by its file's name, each path by its file's name, at most 120 characters), from the journal's command line; `a process` when it gave none. `signal`: the signal by its name (`SIGSEGV`, `SIGABRT`), `signal <n>` for another. `dumpedAt`: when. A core dump of a heap abort is the heap abort's (`job.heap_aborted`), and so is its parent's of the same signal at most 10 s after it. A failed part of the job; the job itself does not fail for it.
+
+| field | type | required |
+|---|---|---|
+| `command` | string | yes |
+| `signal` | string | yes |
+| `dumpedAt` | string | no |
+
+```json
+{
+  "command": "cc1plus -O2 big.cpp",
+  "signal": "SIGSEGV",
+  "dumpedAt": "2026-10-24T10:41:00.000Z"
+}
+```
+
+## `job.oom_killed`
+
+Version 1 (`docs/schemas/job.oom_killed.v1.json`). The kernel's OOM killer ended a process of the job on its machine (`machineId`, issue #2722 part 3, design.md "Core dumps and OOM kills"): the job's reap read the kernel's `oom-kill:` line that names the job's scope, only when the scope counted OOM kills (`job.resources_used` `oomKills`). `command`: the killed process's name as the kernel gives it (its `task`, at most 15 characters); `a process` when it gave none. `killedAt`: when. None where the reap's user cannot read the kernel log. A failed part of the job; the job itself does not fail for it.
+
+| field | type | required |
+|---|---|---|
+| `command` | string | yes |
+| `killedAt` | string | no |
+
+```json
+{
+  "command": "tsc",
+  "killedAt": "2026-10-24T10:41:00.000Z"
+}
+```
+
 ## `job.cleanup_leftover`
 
 Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `endedAt`, and more than `graceMinutes` later its resource ledger still holds `entries` (issue #2504, design.md "The resource ledger"): each thing the hopper made for it — on `machineId`, its `kind` and `locator` — that no reap removed (`state` `live`: no reap reached it; `failed`: a reap could not remove it, `reason` says why). The sweep's leftover check records it once per job; Machines counts it while an entry stays, and the cleanup worker tries again (it is no stuck work on Failures, issue #2684). An entry on a retired machine (no machine source lists it, the plugins config does not name it) is then closed `retired` in the ledger (part 12), and the leftover ends.

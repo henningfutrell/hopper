@@ -8,6 +8,7 @@ import type { DomainEvent } from './types.ts';
 
 /** Each heap abort of the job's Node processes (issue #2722), beside what it used. */
 export { heapAborts } from './heap-aborts.ts';
+export { processCrashes } from './process-crashes.ts';
 
 const memoryText = (bytes: number): string =>
   bytes >= 1024 ** 3 ? `${Math.round((bytes / 1024 ** 3) * 10) / 10} GiB` : `${Math.round(bytes / 1024 ** 2)} MiB`;

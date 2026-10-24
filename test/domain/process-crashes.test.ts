@@ -37,13 +37,13 @@ describe('a failed part for each (issue #2722 part 3)', () => {
   const event = (type: string, data: Record<string, unknown>, seq: number): DomainEvent =>
     ({ seq, type, jobId: 'j1', machineId: 'm1', at: '2026-10-24T11:00:00.000Z', data }) as DomainEvent;
 
-  it('under machines: what crashed or was killed, how, and on which machine', () => {
+  it('under machines: what dumped core or was killed, how, and on which machine', () => {
     expect(processCrashes([
       event('job.core_dumped', { command: 'cc1plus -O2 big.cpp', signal: 'SIGSEGV', dumpedAt: '2026-10-24T10:41:00.000Z' }, 4),
       event('job.oom_killed', { command: 'tsc' }, 5),
       event('job.heap_aborted', { command: 'tsc' }, 6),
     ])).toEqual([
-      { id: 'core-dump:4', group: 'machines', kind: 'core_dump', label: 'cc1plus crashed (SIGSEGV)', status: 'failed', at: '2026-10-24T10:41:00.000Z', detail: 'cc1plus -O2 big.cpp: core dumped, on m1', href: '#machines' },
+      { id: 'core-dump:4', group: 'machines', kind: 'core_dump', label: 'cc1plus dumped core (SIGSEGV)', status: 'failed', at: '2026-10-24T10:41:00.000Z', detail: 'cc1plus -O2 big.cpp: SIGSEGV ended it, on m1', href: '#machines' },
       { id: 'oom-kill:5', group: 'machines', kind: 'oom_kill', label: 'tsc was killed: out of memory', status: 'failed', at: '2026-10-24T11:00:00.000Z', detail: 'tsc: the kernel\'s OOM killer ended it, on m1', href: '#machines' },
     ]);
     expect(processCrashes([])).toEqual([]);
