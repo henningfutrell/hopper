@@ -44,9 +44,9 @@ export function companionPullRequests(c: Pick<AfterDoneContext, 'store' | 'enque
     }
   }
 
-  /** The companion rebase due for `job`, the newest job of its item; undefined: none. */
+  /** The companion rebase due for `job`, the newest job of its item; undefined: none. No read for a job with no companions (issue #1154). */
   function due(job: Job): { step: 'rebase'; url: string; checks: { failed: []; rerun: false }; companion: true } | undefined {
-    if (!job.source || store.jobs.getBySourceKey(job.source.key)?.id !== job.id) return undefined;
+    if (!companionsOfJob(job) || !job.source || store.jobs.getBySourceKey(job.source.key)?.id !== job.id) return undefined;
     const d = companionDue(job, get);
     return d && { step: 'rebase', url: d.url, checks: { failed: [], rerun: false }, companion: true };
   }
