@@ -19,6 +19,7 @@
 // whose own pull request has merge conflicts or is a draft goes on to finish it (issue #1265). The same failure as its
 // item's run before stops the item for a person, with no Jev pick (issue #1461). A finished job's kept work is pushed by itself, once (issue #1472, `autoPush`).
 // A failure whose assessment throws is a poison failure (issue #1961, `poison.ts`): handed to a person with the reason.
+// A failure of a job whose command ran out of heap in several jobs waits on that heap abort pattern's problem (issue #2722).
 import type { Clock, RerunBy, UserStore } from '../domain/ports.ts';
 import {
   failureSettingsOf, jobPriorityTag, type ActingPerson, type Discarding, type JevFirst, type FailureOutcome, type FailureRecord, type FailureSettings, type Job, type MachineSnapshot,
@@ -35,7 +36,7 @@ import { createHandoffs, type HandoffsOptions } from './handoffs.ts'; import { c
 import { createWorkCheck } from './work-check.ts'; import { createDoneAtSource, createWorkLook, DONE_NOTE, lookedAgain } from './done-at-source.ts';
 import { createBackfill } from './backfill.ts'; import { autoPush, type Sessions } from './kept-work.ts'; import { killPoint } from '../sagas/kill-points.ts';
 import type { FailureAction, Failures } from './failures.ts'; import { signatureOf } from './signature.ts';
-import { fixLanded, HOPPER_BUG_CAUSE, ownReport, reportReason, reportSignature, reportsOf, reportTitle } from './hopper-bug.ts';
+import { fixLanded, HOPPER_BUG_CAUSE, ownReport, reportReason, reportSignature, reportsOf, reportTitle } from './hopper-bug.ts'; import { createHeapHolds } from './heap-holds.ts'; import { HEAP_ABORT_CAUSE } from './heap-pattern.ts';
 import { highestFirst, newerOf, releasable, viewOf } from './view.ts'; import { soleLease, type SweepLease } from '../domain/leases.ts';
 
 /** `rerun` (the sync loop's Run again, which the assessor's runs again use too), `continueJob`, `finishShipped`, `resumable`, `takesBack`, `dismiss`: as the hand-offs take them. `reopens` (`Engine.reopens`): Push it takes the job. */
@@ -87,7 +88,7 @@ export function createFailures(o: FailuresOptions): Failures {
   const handoffs = createHandoffs({ ...o, settings, live: () => !stopped });
   // Own PR checks red (issue #1230): its pending Continue runs the failed checks again first, and waits while they run.
   const timeouts = createTimeouts({ store, pullRequestOpen: o.pullRequestOpen, logger: o.logger, live: () => !stopped, resumable: o.resumable, continueJob: o.continueJob, rerun: o.rerun }), checksRed = createChecksRed({ ...o, store, now, live: () => !stopped }), unfinished = createUnfinished({ store, unfinishedPullRequest: o.unfinishedPullRequest, resumable: o.resumable, continueJob: o.continueJob, rerun: o.rerun });
-  const doneCheck = createDoneAtSource({ store, doneAtSource: o.doneAtSource, finishShipped: o.finishShipped, now, live: () => !stopped });
+  const doneCheck = createDoneAtSource({ store, doneAtSource: o.doneAtSource, finishShipped: o.finishShipped, now, live: () => !stopped }), heap = createHeapHolds({ store, now, settings });
   const backfill = createBackfill({ store, now, doneAtSource: o.doneAtSource, workState: o.workState, finishShipped: o.finishShipped, live: () => !stopped, logger: o.logger });
   const checkWork = createWorkCheck({ store, clock, workState: o.workState, checked: (id, work) => handoffs.checked(id, work), logger: o.logger, live: () => !stopped });
 
@@ -125,7 +126,7 @@ export function createFailures(o: FailuresOptions): Failures {
       const open = openFor(signature, machineId);
       // A job that reported a hopper bug about itself (issue #1147): its report's problem, open or to open.
       const report = ownReport(store.bugReports.list(), job.id);
-      const reportOpen = report ? openFor(reportSignature(report), machineId) : undefined;
+      const reportOpen = report ? openFor(reportSignature(report), machineId) : undefined, heapOf = heap.patternOf(job); // And a heap abort pattern it is part of (issue #2722).
       const a = assess({
         error, signature, cause, attempt, recent, settings: s,
         newer: newerOf(store, job), failedAgoMs: Math.max(0, at.getTime() - Date.parse(job.finishedAt ?? job.updatedAt)),
@@ -134,16 +135,17 @@ export function createFailures(o: FailuresOptions): Failures {
         ...(open ? { open: { id: open.id, title: open.title, decision: open.decision } } : {}),
         ...causeInputOf(store, job, cause?.id), repeated: repeatedOf(store, job, signature), ...(workReason ? { causeReason: workReason } : {}),
         ...(report ? { hopperBug: { title: reportTitle(report), reason: reportReason(report), ...(reportOpen ? { open: reportOpen.id } : {}) } } : {}),
+        ...(heapOf ? { heapPattern: { title: heapOf.pattern.title, reason: heapOf.pattern.reason, ...(heapOf.open ? { open: heapOf.open.id } : {}) } } : {}),
       });
       let problem: Problem | undefined;
       let opened = false;
       const joinId = a.problem?.kind === 'join' ? a.problem.id : undefined;
-      const joining = [open, reportOpen].find((p) => p !== undefined && p.id === joinId);
+      const joining = [open, reportOpen, heapOf?.open].find((p) => p !== undefined && p.id === joinId);
       if (joining) {
         problem = store.problems.update(joining.id, { jobIds: [...joining.jobIds, job.id], updatedAt: at.toISOString() });
       } else if (a.problem?.kind === 'open') {
         const { kind: _k, ...plan } = a.problem;
-        const of = plan.causeId === HOPPER_BUG_CAUSE && report ? reportSignature(report) : signature;
+        const of = plan.causeId === HOPPER_BUG_CAUSE && report ? reportSignature(report) : plan.causeId === HEAP_ABORT_CAUSE && heapOf ? heapOf.pattern.signature : signature;
         problem = store.problems.create({ ...plan, signature: of, status: 'open', openedAt: at.toISOString(), updatedAt: at.toISOString(), jobIds: [job.id] });
         opened = true;
       }
@@ -214,6 +216,7 @@ export function createFailures(o: FailuresOptions): Failures {
    * ends taken by it, and no hand-off opens.
    */
   async function runPending(r: FailureRecord): Promise<void> {
+    if (r.pending !== 'release' && heap.holdPending(r.jobId)) { o.trigger('failure.grouped'); return; } // A heap abort pattern shown since (issue #2722).
     if (store.tx(() => settleLiveAgain(store, r.jobId, now().toISOString())) || stopped || await checksRed.waits(r, SOURCE_DOWN_MS) || await doneCheck.beforeRun(r, SOURCE_DOWN_MS) || stopped) return;
     const result = r.pending === 'continue' ? await (checksRed.continueOf(r) ?? unfinished.continueOf(r) ?? timeouts.continueOf(r)) : await o.rerun(r.jobId, 'assessor');
     if (stopped) return;
@@ -324,7 +327,8 @@ export function createFailures(o: FailuresOptions): Failures {
         if (stopped) return;
         // A timeout's facts first (issue #630), then the assessment.
         if (e.type === 'job.failed' && e.jobId) { const id = e.jobId; setImmediate(() => { void timeouts.lookUpPullRequest(id).catch(() => {}).then(() => lookAgain(id)).catch(() => {}).then(() => work.look(id)).catch(() => {}).then(() => assessJob(id)); }); }
-        handoffs.onEvent(e);
+        // A heap abort the reap read after the assessment (issue #2722): its pending run again waits on the pattern.
+        if (e.type === 'job.heap_aborted' && e.jobId) { const id = e.jobId; setImmediate(() => { if (!stopped && heap.holdPending(id)) o.trigger('failure.grouped'); }); } handoffs.onEvent(e);
       });
       timer = setInterval(() => { void sweep(); }, o.sweepMs);
       void sweep();
@@ -340,8 +344,8 @@ export function createFailures(o: FailuresOptions): Failures {
     blocks() {
       if (!settings().auto.hold) return [];
       // A Recurring problem (`general`) holds only its own jobs, never its whole scope (issue #637): no known cause says others meet it.
-      // Nor a hopper bug's (issue #1147): only the jobs that reported it are known to meet it.
-      return store.problems.list({ status: 'open' }).filter((p) => !p.general && p.causeId !== HOPPER_BUG_CAUSE).map((p) => ({ id: p.id, title: p.title, ...p.scope }));
+      // Nor a hopper bug's (issue #1147): only the jobs that reported it are known to meet it. Nor a heap abort pattern's (issue #2722).
+      return store.problems.list({ status: 'open' }).filter((p) => !p.general && p.causeId !== HOPPER_BUG_CAUSE && p.causeId !== HEAP_ABORT_CAUSE).map((p) => ({ id: p.id, title: p.title, ...p.scope }));
     },
     settings,
     setSettings(patch) {

@@ -9,9 +9,11 @@
 // failure it would hand to a person, of a job that reported a hopper bug about itself, is held on that report (issue #1147).
 // A job whose own pull request's checks are red (issue #1230) goes on to fix them while under the retry limit, never grouped;
 // so does one whose own pull request has merge conflicts or is a draft (issue #1265). The same failure as the run before it,
-// on the same item, stops the item (issue #1461): a person, once, and nothing runs it again by itself.
+// on the same item, stops the item (issue #1461): a person, once, and nothing runs it again by itself. A failure it would run
+// again or hand to a person, of a job whose command ran out of heap in several jobs, is held on that pattern (issue #2722).
 import type { FailureClass, FailureDecision, FailureSettings, KnownCause, ProblemScope } from '../domain/types.ts';
 import { HOPPER_BUG_CAUSE } from './hopper-bug.ts';
+import { HEAP_ABORT_CAUSE } from './heap-pattern.ts';
 import { DONE_CRITERIA_UNMET, OWN_PR_CHECKS_RED, OWN_PR_UNFINISHED } from './causes.ts';
 import { judgeTimeout, type LivenessFacts, type TimeoutKind } from './timed-out.ts';
 
@@ -45,6 +47,11 @@ export interface AssessInput {
    * and the open problem of its report, if any.
    */
   hopperBug?: { title: string; reason: string; open?: string };
+  /**
+   * The heap abort pattern the job is part of (issue #2722, `heap-pattern.ts`): a command that ran out of heap in it and in
+   * enough other jobs. Its problem's title, why, and the open problem of the command, if any.
+   */
+  heapPattern?: { title: string; reason: string; open?: string };
   /** A job whose own pull request's checks are red (issue #1230): how many times its chain was sent back for them already. */
   checksFixes?: number;
   /** A job whose own pull request has merge conflicts or is a draft (issue #1265): how many times its chain was sent back for it already. */
@@ -137,7 +144,8 @@ export function assess(i: AssessInput): Assessment {
   if (i.newer !== undefined) return superseded(i, i.newer);
   if (i.failedAgoMs !== undefined && i.failedAgoMs > STALE_AFTER_MS) return stale(i, i.failedAgoMs);
   const a = judge(i);
-  if (i.hopperBug && a.decision === 'person' && i.settings.auto.hold) return heldOnReport(i, i.hopperBug, a);
+  if (i.hopperBug && a.decision === 'person' && i.settings.auto.hold) return heldOn(i, i.hopperBug, HOPPER_BUG_CAUSE, a);
+  if (i.heapPattern && a.cls !== 'shared' && a.decision !== 'hold' && i.settings.auto.hold) return heldOn(i, i.heapPattern, HEAP_ABORT_CAUSE, a);
   return i.repeated && stopsOnRepeat(i.cause, a) ? stopped(i, a) : a;
 }
 
@@ -166,11 +174,13 @@ function stopped(i: AssessInput, a: Assessment): Assessment {
 /**
  * A failure the rules hand to a person, of a job that reported a hopper bug about itself (issue #1147): the hopper failed
  * it, so it waits on its report's problem — held, never a person's while it waits — and runs again once the fix landed.
+ * A failure of a heap abort pattern (issue #2722) the same: a run again does not help, so it waits on the command's
+ * problem, which a person resolves once the command is fixed or has more heap.
  */
-function heldOnReport(i: AssessInput, bug: NonNullable<AssessInput['hopperBug']>, a: Assessment): Assessment {
+function heldOn(i: AssessInput, on: { title: string; reason: string; open?: string }, causeId: string, a: Assessment): Assessment {
   return {
-    cls: 'shared', decision: 'hold', reasons: [bug.reason, ...a.reasons], auto: true, summary: summaryOf(i, 'hold', true, bug.title, undefined),
-    problem: bug.open ? { kind: 'join', id: bug.open } : { kind: 'open', title: bug.title, scope: {}, general: false, decision: 'hold', causeId: HOPPER_BUG_CAUSE },
+    cls: 'shared', decision: 'hold', reasons: [on.reason, ...a.reasons], auto: true, summary: summaryOf(i, 'hold', true, on.title, undefined),
+    problem: on.open ? { kind: 'join', id: on.open } : { kind: 'open', title: on.title, scope: {}, general: false, decision: 'hold', causeId },
   };
 }
 
