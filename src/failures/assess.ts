@@ -10,7 +10,9 @@
 // A job whose own pull request's checks are red (issue #1230) goes on to fix them while under the retry limit, never grouped;
 // so does one whose own pull request has merge conflicts or is a draft (issue #1265). The same failure as the run before it,
 // on the same item, stops the item (issue #1461): a person, once, and nothing runs it again by itself. A failure it would run
-// again or hand to a person, of a job whose command ran out of heap in several jobs, is held on that pattern (issue #2722).
+// again or hand to a person, of a job whose command ran out of heap in several jobs, is held on that pattern (issue #2722); one
+// it would hand to a person, of a job whose command ran out of heap with no heap retry in its chain yet, runs again once, with
+// a larger heap (part 4).
 import type { FailureClass, FailureDecision, FailureSettings, KnownCause, ProblemScope } from '../domain/types.ts';
 import { HOPPER_BUG_CAUSE } from './hopper-bug.ts';
 import { HEAP_ABORT_CAUSE } from './heap-pattern.ts';
@@ -52,6 +54,8 @@ export interface AssessInput {
    * enough other jobs. Its problem's title, why, and the open problem of the command, if any.
    */
   heapPattern?: { title: string; reason: string; open?: string };
+  /** The command the job ran out of heap with, when no run of its chain had its heap retry yet (issue #2722 part 4). */
+  heapRetry?: { command: string };
   /** A job whose own pull request's checks are red (issue #1230): how many times its chain was sent back for them already. */
   checksFixes?: number;
   /** A job whose own pull request has merge conflicts or is a draft (issue #1265): how many times its chain was sent back for it already. */
@@ -146,6 +150,7 @@ export function assess(i: AssessInput): Assessment {
   const a = judge(i);
   if (i.hopperBug && a.decision === 'person' && i.settings.auto.hold) return heldOn(i, i.hopperBug, HOPPER_BUG_CAUSE, a);
   if (i.heapPattern && a.cls !== 'shared' && a.decision !== 'hold' && i.settings.auto.hold) return heldOn(i, i.heapPattern, HEAP_ABORT_CAUSE, a);
+  if (i.heapRetry && !i.heapPattern && a.decision === 'person' && a.cls !== 'shared' && i.settings.auto.retry) return heapRetried(i, i.heapRetry.command, a);
   return i.repeated && stopsOnRepeat(i.cause, a) ? stopped(i, a) : a;
 }
 
@@ -182,6 +187,17 @@ function heldOn(i: AssessInput, on: { title: string; reason: string; open?: stri
     cls: 'shared', decision: 'hold', reasons: [on.reason, ...a.reasons], auto: true, summary: summaryOf(i, 'hold', true, on.title, undefined),
     problem: on.open ? { kind: 'join', id: on.open } : { kind: 'open', title: on.title, scope: {}, general: false, decision: 'hold', causeId },
   };
+}
+
+/**
+ * A failure the rules hand to a person, of a job whose command ran out of heap (issue #2722 part 4): it runs again once, after
+ * the first backoff, and its run again starts with a larger memory limit and Node heap when its machine has room
+ * (`src/engine/heap-retry.ts`). Before a repeat stops it: the larger heap is a change, so the same failure may not come again.
+ */
+function heapRetried(i: AssessInput, command: string, a: Assessment): Assessment {
+  const retryInMs = backoffMs(1, i.settings);
+  const reasons = [`${command} ran out of heap: it runs again once, with a larger heap when its machine has room`, ...a.reasons];
+  return { cls: 'transient', decision: 'retry', reasons, auto: true, retryInMs, summary: summaryOf(i, 'retry', true, undefined, retryInMs, `Heap retry in ${duration(retryInMs)}`) };
 }
 
 /** What it would be without its age or a newer job: its class and decision. */

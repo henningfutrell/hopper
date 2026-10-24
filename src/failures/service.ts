@@ -126,7 +126,7 @@ export function createFailures(o: FailuresOptions): Failures {
       const open = openFor(signature, machineId);
       // A job that reported a hopper bug about itself (issue #1147): its report's problem, open or to open.
       const report = ownReport(store.bugReports.list(), job.id);
-      const reportOpen = report ? openFor(reportSignature(report), machineId) : undefined, heapOf = heap.patternOf(job); // And a heap abort pattern it is part of (issue #2722).
+      const reportOpen = report ? openFor(reportSignature(report), machineId) : undefined, heapOf = heap.patternOf(job), heapRetry = heap.retryOf(job); // And a heap abort pattern it is part of, or its heap retry (issue #2722).
       const a = assess({
         error, signature, cause, attempt, recent, settings: s,
         newer: newerOf(store, job), failedAgoMs: Math.max(0, at.getTime() - Date.parse(job.finishedAt ?? job.updatedAt)),
@@ -135,7 +135,7 @@ export function createFailures(o: FailuresOptions): Failures {
         ...(open ? { open: { id: open.id, title: open.title, decision: open.decision } } : {}),
         ...causeInputOf(store, job, cause?.id), repeated: repeatedOf(store, job, signature), ...(workReason ? { causeReason: workReason } : {}),
         ...(report ? { hopperBug: { title: reportTitle(report), reason: reportReason(report), ...(reportOpen ? { open: reportOpen.id } : {}) } } : {}),
-        ...(heapOf ? { heapPattern: { title: heapOf.pattern.title, reason: heapOf.pattern.reason, ...(heapOf.open ? { open: heapOf.open.id } : {}) } } : {}),
+        ...(heapOf ? { heapPattern: { title: heapOf.pattern.title, reason: heapOf.pattern.reason, ...(heapOf.open ? { open: heapOf.open.id } : {}) } } : {}), ...(heapRetry ? { heapRetry } : {}),
       });
       let problem: Problem | undefined;
       let opened = false;
@@ -327,8 +327,9 @@ export function createFailures(o: FailuresOptions): Failures {
         if (stopped) return;
         // A timeout's facts first (issue #630), then the assessment.
         if (e.type === 'job.failed' && e.jobId) { const id = e.jobId; setImmediate(() => { void timeouts.lookUpPullRequest(id).catch(() => {}).then(() => lookAgain(id)).catch(() => {}).then(() => work.look(id)).catch(() => {}).then(() => assessJob(id)); }); }
-        // A heap abort the reap read after the assessment (issue #2722): its pending run again waits on the pattern.
-        if (e.type === 'job.heap_aborted' && e.jobId) { const id = e.jobId; setImmediate(() => { if (!stopped && heap.holdPending(id)) o.trigger('failure.grouped'); }); } handoffs.onEvent(e);
+        // A heap abort the reap read after the assessment (issue #2722): its pending run again waits on the pattern; a
+        // person's failure becomes its heap retry (part 4).
+        if (e.type === 'job.heap_aborted' && e.jobId) { const id = e.jobId; setImmediate(() => { if (stopped) return; if (heap.holdPending(id)) o.trigger('failure.grouped'); else if (heap.retryPending(id)) void sweep(); }); } handoffs.onEvent(e);
       });
       timer = setInterval(() => { void sweep(); }, o.sweepMs);
       void sweep();

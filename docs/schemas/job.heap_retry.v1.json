@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "command": {
+      "type": "string"
+    },
+    "rerunOf": {
+      "type": "string"
+    },
+    "memoryMaxGiB": {
+      "type": "number"
+    },
+    "heapMiB": {
+      "type": "number"
+    },
+    "fromMemoryMaxGiB": {
+      "type": "number"
+    },
+    "fromHeapMiB": {
+      "type": "number"
+    },
+    "skipped": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "command",
+    "rerunOf"
+  ],
+  "additionalProperties": false
+}
