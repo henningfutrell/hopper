@@ -1,0 +1,1 @@
+- On a machine without systemd, such as WSL without it, the hopper now sees how much memory each job uses and its peak.
