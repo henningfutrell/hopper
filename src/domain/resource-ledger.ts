@@ -122,7 +122,7 @@ export function paneClosures(entries: readonly LedgerEntry[], how: 'closed' | 'n
 }
 
 /** What each cause of a dir left by a reap (issue #2715) says after `<path> is still there: `. */
-const LEFT_CAUSE_TEXT: Record<LeftCause, string> = {
+export const LEFT_CAUSE_TEXT: Record<LeftCause, string> = {
   mount: 'a file system is mounted in it', process: 'a process still runs in it',
   userns: 'it holds files of the job\'s user namespace that podman could not remove', permission: 'the hopper\'s user may not remove files in it',
 };

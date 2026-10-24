@@ -27,7 +27,7 @@ import { createIssueDrafts, type IssueDrafter, type IssueDrafts } from '../issue
 import { ISSUE_DRAFT_TIMEOUT_MS } from '../domain/issue-drafts.ts';
 import { createGitHubWatches, createWatchGitHub, type GitHubWatches } from '../github-watch/index.ts';
 import {
-  branchChecksWatcher, createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, stackHealthWatcher, type ComponentWatchers,
+  branchChecksWatcher, cleanupJobsWatcher, createComponentWatchers, createWatcherGitHub, intakeJobsWatcher, lanesJobsWatcher, ledgerGitHubWatcher, ledgerJobsWatcher, stackHealthWatcher, type ComponentWatchers,
 } from '../component-watchers/index.ts';
 import type { StackResources } from '../domain/stack-resources.ts';
 import { createLandingBatchGitHub } from '../landing-batches/github.ts';
@@ -288,7 +288,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // The hopper's own records (issue #1077, the next part): they need no GitHub connection, only their drift issues do.
         ledgerJobsWatcher({ ledger: o.store.workItems, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
         lanesJobsWatcher({ lanes: o.store.lanes, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
-        intakeJobsWatcher({ sources: o.sources, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }),
+        intakeJobsWatcher({ sources: o.sources, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }), cleanupJobsWatcher({ ledger: o.store.resourceLedger, jobs: o.store.jobs, now: () => o.clock.now().toISOString() }), // issue #2715
         // The integration branch's health, and the stack's (issue #1077, the last part).
         branchChecksWatcher({
           repositories: () => o.accounts.jobRepositories('github'), now: () => o.clock.now().toISOString(),

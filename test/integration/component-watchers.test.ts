@@ -25,7 +25,7 @@ const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).s
 const view = async (a: TestApp) => (await a.api<ComponentWatchersView>('GET', '/api/component-watchers')).body;
 
 describe('component watchers', () => {
-  it('lists the ledger-vs-GitHub, ledger-vs-jobs, lanes-vs-jobs, intake-vs-jobs, default-branch-vs-checks and stack-health watchers and keeps the admin\'s setting to file drift issues', { timeout: 40_000 }, async () => {
+  it('lists the ledger-vs-GitHub, ledger-vs-jobs, lanes-vs-jobs, intake-vs-jobs, cleanup-vs-jobs, default-branch-vs-checks and stack-health watchers and keeps the admin\'s setting to file drift issues', { timeout: 40_000 }, async () => {
     const db = tempDbPath();
     cleanups.push(db.cleanup);
     const app = await startTestApp({ dbPath: db.dbPath });
@@ -40,12 +40,13 @@ describe('component watchers', () => {
       { name: 'ledger-jobs', component: 'the work-item ledger', truth: 'the job records', intervalSeconds: 300, drifts: [] },
       { name: 'lanes-jobs', component: 'the lanes', truth: 'the job records', intervalSeconds: 300, drifts: [] },
       { name: 'intake-jobs', component: 'intake', truth: 'the job records and the sync timers', intervalSeconds: 300, drifts: [] },
+      { name: 'cleanup-jobs', component: 'the resource ledger', truth: 'the job records', intervalSeconds: 300, drifts: [] },
       { name: 'branch-checks', component: 'the job repositories\' default branches', truth: 'their checks on GitHub', intervalSeconds: 900, drifts: [] },
       { name: 'stack-health', component: 'the hopper\'s stack', truth: 'a healthy stack', intervalSeconds: 300, instance: true, drifts: [] },
     ]);
-    await expect.poll(async () => (await view(app)).watchers[4]?.error, { timeout: 10_000 }).toMatch(/not connected/);
+    await expect.poll(async () => (await view(app)).watchers[5]?.error, { timeout: 10_000 }).toMatch(/not connected/);
     // The store's own watchers need no GitHub connection: they checked, and a fresh hopper has no drift.
-    await expect.poll(async () => (await view(app)).watchers.filter((w) => !['ledger-github', 'branch-checks'].includes(w.name)).map((w) => [w.checkedAt !== undefined, w.error]), { timeout: 10_000 }).toEqual([[true, undefined], [true, undefined], [true, undefined], [true, undefined]]);
+    await expect.poll(async () => (await view(app)).watchers.filter((w) => !['ledger-github', 'branch-checks'].includes(w.name)).map((w) => [w.checkedAt !== undefined, w.error]), { timeout: 10_000 }).toEqual([[true, undefined], [true, undefined], [true, undefined], [true, undefined], [true, undefined]]);
 
     const r = await app.ui<ComponentWatchersView>('/ui/api/component-watchers', { fileIssues: true }, { token });
     expect(r.status).toBe(200);
