@@ -131,6 +131,7 @@ The vault can mint a short-lived credential for one job and one operation profil
 | AWS | `aws-role/<account>/<role>` | an STS `AssumeRole` session on that role. A `read` session carries the `ReadOnlyAccess` session policy. | 15 minutes |
 | Kubernetes | `namespace/<cluster>/<ns>` | a TokenRequest token for the service account `hopper-<operation>` in that namespace | 10 minutes |
 | Kubernetes | `cluster/<name>` | the same, in the namespace `hopper` | 10 minutes |
+| Postgres | `database/<cluster>/<namespace>/<database>` | a login role in that database for one read: `SELECT` only on the schemas you name, read-only. The hopper uses it itself and drops it after the read. A job never gets it. | one read, at most 15 minutes |
 
 A Kubernetes token minted for a sandbox (a need step, a box step or a read-only check) stops working when its sandbox ends, whatever the outcome. An AWS session cannot be stopped one by one: it works for up to its 15 minutes after its sandbox ends.
 
@@ -156,6 +157,41 @@ hopper vault set AWS_UTILITY --mints none < aws-credential.json   # a plain secr
 A `set` without `--mints` keeps what the secret mints for. A shared secret mints nothing: `--mints` with `--shared` is refused.
 
 A minting credential is never given to a box. No template can list it in its scope.
+
+### A database's minting credential
+
+A job reads a database through the hopper (see [Sandboxes](sandboxes.md), "Database reads"). For each read, the hopper makes a new login role in the database, runs the job's one `SELECT` with it, and drops the role. The minting credential is the login that makes and drops these roles. Set it up once for each database:
+
+1. In the database, make the minting login. It needs only these privileges. Run as the database's owner or an admin:
+
+   ```sql
+   CREATE ROLE hopper_minter LOGIN CREATEROLE PASSWORD '<a long random password>';
+   GRANT CONNECT ON DATABASE orders TO hopper_minter WITH GRANT OPTION;
+   GRANT USAGE ON SCHEMA app TO hopper_minter WITH GRANT OPTION;
+   GRANT SELECT ON ALL TABLES IN SCHEMA app TO hopper_minter WITH GRANT OPTION;
+   ```
+
+   - `CREATEROLE` lets it make and drop the database read roles. On Postgres 16 and later, it can change and drop only the roles it made.
+   - Each `WITH GRANT OPTION` lets it give a database read role what it has itself, and nothing more. Give it `SELECT` on the tables a job may read, not more.
+   - Do not give it `SUPERUSER`, `CREATEDB`, `BYPASSRLS` or a write privilege. It needs none.
+2. Close every other database of the same server to `PUBLIC`: `REVOKE CONNECT ON DATABASE <other> FROM PUBLIC;`. A role is a login of the whole server: without this, a database read role could connect to another database. The hopper connects a database read role only to the credential's database, but close them all the same.
+3. Do not give a write privilege on a table to `PUBLIC`. When a database read role could change anything — through its own grants or `PUBLIC`'s —, the hopper drops it at once and the read fails. It says what the role could change.
+4. In **Settings → Vault**, click **Add secret**. In **Mints for**, type `database/<cluster>/<namespace>/<database>`, as jobs will name it. Type the value as JSON:
+
+   ```json
+   {"engine": "postgres", "host": "orders-db.internal", "database": "orders", "user": "hopper_minter", "password": "…", "schemas": ["app"]}
+   ```
+
+   Optional: `port` (5432 when absent), `sslmode` — `verify-full` (when absent: TLS with the certificate and the host name checked), `require` (TLS, no check) or `disable` (no TLS) —, and `ca` (the PEM the certificate is checked against).
+
+What a database read role gets:
+
+- `LOGIN`, `NOINHERIT`, a connection limit of 2, and `VALID UNTIL` 15 minutes from its mint.
+- `default_transaction_read_only = on`, `statement_timeout` 60 s and `idle_in_transaction_session_timeout` 30 s.
+- `CONNECT` on the database, and `USAGE` and `SELECT` on each schema in `schemas`. Nothing else.
+- Its password is random for each read, made in the hopper and sent to the database as a SCRAM verifier. The password itself never reaches the database's log, an event, a box or the job.
+
+The hopper must reach the database's host and port itself: it makes the role there, and runs the read there. A box needs no route to the database.
 
 ### Session names
 

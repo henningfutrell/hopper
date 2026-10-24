@@ -11,7 +11,7 @@ import { databaseCredentialOf, databaseNameProblem } from './database-read.ts';
 export const MINT_KINDS = ['aws', 'kube'] as const;
 export type MintKind = (typeof MINT_KINDS)[number];
 
-/** The asset kinds a minting credential mints for: an AWS account, a Kubernetes cluster, a database (issue #2231: its read roles). */
+/** The asset kinds a minting credential mints for: an AWS account, a Kubernetes cluster, a database (issue #2231: its database read roles). */
 export const MINTS_FOR_KINDS = ['aws-account', 'cluster', 'database'] as const satisfies readonly AssetKind[];
 export type MintsForKind = (typeof MINTS_FOR_KINDS)[number];
 

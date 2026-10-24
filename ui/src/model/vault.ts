@@ -65,8 +65,8 @@ export function mintsValueOf(mints: Asset | undefined, value: string): { shape?:
 }
 
 /**
- * A database's minting credential (issue #2231): one JSON value, the login that makes and drops the read roles and the
- * schemas a read role may SELECT from. `problem`: why the typed value is not one, never the value.
+ * A database's minting credential (issue #2231): one JSON value, the login that makes and drops the database read roles and the
+ * schemas a database read role may SELECT from. `problem`: why the typed value is not one, never the value.
  */
 function databaseValueOf(value: string): { shape: string; problem?: string } {
   const shape = 'JSON: {"engine": "postgres", "host": "…", "database": "…", "user": "<the minting login>", "password": "…", "schemas": ["public"]} (and port, sslmode — verify-full, require or disable — or ca when it has them)';

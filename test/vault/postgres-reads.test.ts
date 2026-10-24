@@ -1,10 +1,10 @@
-// Issue #2231: the Postgres side of a database read, against a real Postgres. A read role is minted with SELECT only on
+// Issue #2231: the Postgres side of a database read, against a real Postgres. A database read role is minted with SELECT only on
 // the schemas its minting credential names, read-only by default, short timeouts, two connections, VALID UNTIL its TTL;
 // every write is refused, also after it turns the read-only default off; it reaches neither another schema nor another
 // database; a read answers CSV up to a cap; a drop ends its sessions; the sweep drops a role whose VALID UNTIL passed.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createPostgresReader, scramVerifier } from '../../src/vault/postgres-reads.ts';
-import { READ_CONNECTION_LIMIT, READ_ROLE_TTL_SECONDS } from '../../src/domain/database-read.ts';
+import { READ_CONNECTION_LIMIT, DATABASE_ROLE_TTL_SECONDS } from '../../src/domain/database-read.ts';
 import { readDatabases, type ReadDatabases } from '../support/database-read.ts';
 
 let dbs: ReadDatabases;
@@ -14,7 +14,7 @@ afterAll(async () => { await dbs?.close(); });
 const reader = createPostgresReader();
 let n = 0;
 const role = (): string => `hopper_read_t${process.pid}x${(n++).toString(16)}${Date.now().toString(16)}`;
-const soon = (): Date => new Date(Date.now() + READ_ROLE_TTL_SECONDS * 1000);
+const soon = (): Date => new Date(Date.now() + DATABASE_ROLE_TTL_SECONDS * 1000);
 const PASSWORD = 'pw-of-the-read-role';
 
 const minted = async (): Promise<string> => {
@@ -36,13 +36,13 @@ const refusal = async (r: string, sql: string | string[], db?: string): Promise<
   }
 };
 
-describe('a read role (issue #2231)', () => {
+describe('a database read role (issue #2231)', () => {
   it('is a login of its own: two connections, VALID UNTIL within the TTL, nothing it may create', async () => {
     const before = Date.now();
     const r = await minted();
     const { rows: [a] } = await dbs.admin('SELECT rolcanlogin, rolconnlimit, rolvaliduntil, rolsuper, rolcreaterole, rolcreatedb, rolinherit FROM pg_roles WHERE rolname = $1', [r]);
     expect(a).toMatchObject({ rolcanlogin: true, rolconnlimit: READ_CONNECTION_LIMIT, rolsuper: false, rolcreaterole: false, rolcreatedb: false, rolinherit: false });
-    expect(new Date(a.rolvaliduntil).getTime()).toBeLessThanOrEqual(before + READ_ROLE_TTL_SECONDS * 1000 + 1000);
+    expect(new Date(a.rolvaliduntil).getTime()).toBeLessThanOrEqual(before + DATABASE_ROLE_TTL_SECONDS * 1000 + 1000);
     const { rows: [s] } = await dbs.admin('SELECT setconfig FROM pg_db_role_setting WHERE setrole = (SELECT oid FROM pg_roles WHERE rolname = $1)', [r]);
     expect(s.setconfig).toEqual(expect.arrayContaining(['default_transaction_read_only=on', 'statement_timeout=60000', 'idle_in_transaction_session_timeout=30000']));
   });
@@ -78,7 +78,7 @@ describe('a read role (issue #2231)', () => {
     await dbs.admin('CREATE TABLE app.open (id int); GRANT INSERT ON app.open TO PUBLIC');
     try {
       const r = role();
-      await expect(reader.mint(dbs.credential, { role: r, password: PASSWORD, validUntil: soon() })).rejects.toThrow('the read role could change app.open: take that grant from PUBLIC, or name other schemas');
+      await expect(reader.mint(dbs.credential, { role: r, password: PASSWORD, validUntil: soon() })).rejects.toThrow('the database read role could change app.open: take that grant from PUBLIC, or name other schemas');
       expect(await exists(r)).toBe(false);
     } finally {
       await dbs.admin('DROP TABLE app.open');
@@ -114,7 +114,7 @@ describe('a read (issue #2231)', () => {
   });
 });
 
-describe('the end of a read role (issue #2231)', () => {
+describe('the end of a database read role (issue #2231)', () => {
   it('drops it and ends its sessions', async () => {
     const r = await minted();
     const held = await dbs.connectAs(r, PASSWORD, dbs.a);

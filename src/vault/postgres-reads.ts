@@ -1,14 +1,14 @@
 // A database read on Postgres (issue #2231, design.md "Database reads"): the `DatabaseReader` seam with `pg`. The
-// minting login makes each read role: LOGIN, NOINHERIT, its connections limited, `VALID UNTIL` its TTL, its password as
+// minting login makes each database read role: LOGIN, NOINHERIT, its connections limited, `VALID UNTIL` its TTL, its password as
 // a SCRAM verifier (the clear password never reaches the server or its log), read-only by default with short timeouts,
 // CONNECT on the credential's database, and USAGE and SELECT on the named schemas only. Before it is used, the minting
 // login checks the role can change nothing — through a grant to PUBLIC too —, and drops it when it could. The read runs
 // the job's one statement as a cursor in a read-only transaction, so it is a SELECT and nothing else, and answers its rows
-// as CSV up to the caps. The drop ends the role's sessions; the sweep drops each read role whose `VALID UNTIL` passed.
+// as CSV up to the caps. The drop ends the role's sessions; the sweep drops each database read role whose `VALID UNTIL` passed.
 import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import {
-  CONNECT_TIMEOUT_MS, csvLine, READ_CONNECTION_LIMIT, READ_IDLE_IN_TRANSACTION_MS, READ_MAX_BYTES, READ_MAX_ROWS, READ_ROLE_PREFIX, READ_STATEMENT_TIMEOUT_MS,
+  CONNECT_TIMEOUT_MS, csvLine, READ_CONNECTION_LIMIT, READ_IDLE_IN_TRANSACTION_MS, READ_MAX_BYTES, READ_MAX_ROWS, DATABASE_ROLE_PREFIX, READ_STATEMENT_TIMEOUT_MS,
   type DatabaseMintingCredential, type DatabaseReader,
 } from '../domain/database-read.ts';
 
@@ -61,7 +61,7 @@ const CHANGES = `
   UNION ALL SELECT format('database %I', datname) FROM pg_database WHERE datname = current_database() AND has_database_privilege($1, oid, 'CREATE')
   LIMIT 5`;
 
-/** The end of a read role: no new login, its sessions ended, its grants taken back, then the role itself. */
+/** The end of a database read role: no new login, its sessions ended, its grants taken back, then the role itself. */
 async function dropRole(client: pg.Client, role: string): Promise<void> {
   const known = await client.query('SELECT 1 FROM pg_roles WHERE rolname = $1', [role]);
   if (known.rowCount === 0) return;
@@ -83,7 +83,8 @@ export function createPostgresReader(o: { maxRows?: number; maxBytes?: number } 
         const r = ident(role);
         await client.query(`CREATE ROLE ${r} LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE CONNECTION LIMIT ${READ_CONNECTION_LIMIT} VALID UNTIL ${lit(validUntil.toISOString())} PASSWORD ${lit(scramVerifier(password))}`);
         try {
-          // The minting login takes the role's privileges too (a subset of its own), so it may end the role's sessions and take its grants back.
+          // The minting login takes the role's privileges too (a subset of its own), so it may end the role's sessions
+          // and take its grants back.
           await client.query(`GRANT ${r} TO CURRENT_USER`);
           for (const [k, v] of [['default_transaction_read_only', 'on'], ['statement_timeout', String(READ_STATEMENT_TIMEOUT_MS)], ['idle_in_transaction_session_timeout', String(READ_IDLE_IN_TRANSACTION_MS)]]) {
             await client.query(`ALTER ROLE ${r} SET ${k} = ${lit(v!)}`);
@@ -94,7 +95,7 @@ export function createPostgresReader(o: { maxRows?: number; maxBytes?: number } 
             await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA ${ident(s)} TO ${r}`);
           }
           const changes = (await client.query<{ what: string }>(CHANGES, [role])).rows.map((x) => x.what);
-          if (changes.length) throw new Error(`the read role could change ${changes.join(', ')}: take that grant from PUBLIC, or name other schemas`);
+          if (changes.length) throw new Error(`the database read role could change ${changes.join(', ')}: take that grant from PUBLIC, or name other schemas`);
         } catch (e) {
           await dropRole(client, role).catch(() => {});
           throw e;
@@ -139,7 +140,7 @@ export function createPostgresReader(o: { maxRows?: number; maxBytes?: number } 
       return asMinter(c, async (client) => {
         const due = await client.query<{ rolname: string }>(
           "SELECT rolname FROM pg_roles WHERE rolname LIKE $1 AND rolvaliduntil < now() AND pg_has_role(current_user, oid, 'USAGE') ORDER BY rolname",
-          [`${READ_ROLE_PREFIX.replace(/_/g, '\\_')}%`],
+          [`${DATABASE_ROLE_PREFIX.replace(/_/g, '\\_')}%`],
         );
         const dropped: string[] = [];
         for (const { rolname } of due.rows) {

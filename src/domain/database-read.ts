@@ -10,13 +10,13 @@ import { ASSET_NAME } from './access.ts';
 export const DATABASE_ENGINES = ['postgres'] as const;
 export type DatabaseEngine = (typeof DATABASE_ENGINES)[number];
 
-/** How long a read role lives at most: its `VALID UNTIL`, the backstop to the drop at the read's end. */
-export const READ_ROLE_TTL_SECONDS = 900;
-/** The start of each read role's name: the sweep drops only roles of this name whose `VALID UNTIL` passed. */
-export const READ_ROLE_PREFIX = 'hopper_read_';
-/** The connections a read role may hold at once. */
+/** How long a database read role lives at most: its `VALID UNTIL`, the backstop to the drop at the read's end. */
+export const DATABASE_ROLE_TTL_SECONDS = 900;
+/** The start of each database read role's name: the sweep drops only roles of this name whose `VALID UNTIL` passed. */
+export const DATABASE_ROLE_PREFIX = 'hopper_read_';
+/** The connections a database read role may hold at once. */
 export const READ_CONNECTION_LIMIT = 2;
-/** How long one statement of a read role may run, and how long it may idle in a transaction. */
+/** How long one statement of a database read role may run, and how long it may idle in a transaction. */
 export const READ_STATEMENT_TIMEOUT_MS = 60_000;
 export const READ_IDLE_IN_TRANSACTION_MS = 30_000;
 /** The most a read answers: more rows or bytes is refused, never cut, so the job narrows or pages its query. */
@@ -33,14 +33,14 @@ export type SslMode = (typeof SSL_MODES)[number];
 
 /**
  * A database's minting credential (a vault secret that mints for `database/<name>`): where the database is, the login
- * that may create, grant and drop the read roles, and the schemas a read role may SELECT from. `ca`: the PEM the
- * database's certificate is checked against, when it is not one the system trusts.
+ * that may create, grant and drop the database read roles, and the schemas a database read role may SELECT from.
+ * `ca`: the PEM the database's certificate is checked against, when it is not one the system trusts.
  */
 export interface DatabaseMintingCredential {
   engine: DatabaseEngine; host: string; port: number; database: string; user: string; password: string; sslmode: SslMode; ca?: string; schemas: string[];
 }
 
-/** A schema's name as a read role is granted it: a plain identifier, so no quoting can change what is granted. */
+/** A schema's name as a database read role is granted it: a plain identifier, so no quoting can change what is granted. */
 const SCHEMA = /^[A-Za-z_][A-Za-z0-9_$]{0,62}$/;
 /** A host: a DNS name or an address. */
 const HOST = /^[A-Za-z0-9]([A-Za-z0-9.:-]{0,252})$/;
@@ -60,7 +60,7 @@ export function databaseCredentialOf(value: string): DatabaseMintingCredential |
   const sslmode = str('sslmode') ?? 'verify-full';
   if (!(SSL_MODES as readonly string[]).includes(sslmode)) return `${said}'s sslmode is ${SSL_MODES.join(', ').replace(/, (\w+)$/, ' or $1')}`;
   const schemas = v.schemas as unknown[];
-  if (schemas.length === 0) return `${said} names schemas: the schemas a read role may SELECT from, at least one`;
+  if (schemas.length === 0) return `${said} names schemas: the schemas a database read role may SELECT from, at least one`;
   const bad = schemas.find((s) => typeof s !== 'string' || !SCHEMA.test(s));
   if (bad !== undefined) return `${said}'s schema ${JSON.stringify(bad)} is no plain schema name (letters, digits, _ and $)`;
   const ca = str('ca');
@@ -77,8 +77,8 @@ export function sqlProblem(sql: string | undefined): string | undefined {
   return undefined;
 }
 
-/** A read role's name: the prefix and a random id, nothing of the job or the person. */
-export const readRoleName = (id: string): string => `${READ_ROLE_PREFIX}${id}`;
+/** A database read role's name: the prefix and a random id, nothing of the job or the person. */
+export const databaseRoleName = (id: string): string => `${DATABASE_ROLE_PREFIX}${id}`;
 
 /** One CSV cell: NULL empty, a value quoted when it holds a comma, a quote or a line end, or is empty. */
 const cell = (v: string | null): string => (v === null ? '' : v === '' || /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
@@ -96,7 +96,7 @@ export interface DatabaseReadResult { csv: string; rows: number; bytes: number }
  */
 export interface DatabaseReader {
   /**
-   * Makes the read role `role` with the login `password` (sent as a SCRAM verifier, never in clear), valid until
+   * Makes the database read role `role` with the login `password` (sent as a SCRAM verifier, never in clear), valid until
    * `validUntil`, then checks it can change nothing: a role that could is dropped, and the call throws.
    */
   mint(c: DatabaseMintingCredential, r: { role: string; password: string; validUntil: Date }): Promise<void>;
@@ -104,6 +104,6 @@ export interface DatabaseReader {
   read(c: DatabaseMintingCredential, r: { role: string; password: string; sql: string }): Promise<DatabaseReadResult>;
   /** Ends the role's sessions and drops it. A role already gone is no error. */
   drop(c: DatabaseMintingCredential, role: string): Promise<void>;
-  /** Drops each read role whose `VALID UNTIL` passed (a hopper that stopped mid-read left it): their names. */
+  /** Drops each database read role whose `VALID UNTIL` passed (a hopper that stopped mid-read left it): their names. */
   sweep(c: DatabaseMintingCredential): Promise<string[]>;
 }

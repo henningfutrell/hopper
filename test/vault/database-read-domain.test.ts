@@ -1,12 +1,12 @@
 // Issue #2231: a database read. The asset kind `database` takes read only; its read is high radius, so only its own
 // approval approves it and the read policy never holds it. Its minting credential is one JSON value: where the database
-// is, the login that mints the read roles, and the schemas a read role may SELECT from.
+// is, the login that mints the database read roles, and the schemas a database read role may SELECT from.
 import { describe, expect, it } from 'vitest';
 import { profileProblem } from '../../src/domain/access.ts';
 import { highRadius } from '../../src/blast-radius/template.ts';
 import { inReadPolicy, readPolicyProblem } from '../../src/domain/read-policy.ts';
 import { mintingValueProblem, mintsForProblem } from '../../src/domain/minting.ts';
-import { csvOf, databaseCredentialOf, READ_ROLE_PREFIX, readRoleName, sqlProblem } from '../../src/domain/database-read.ts';
+import { csvOf, databaseCredentialOf, DATABASE_ROLE_PREFIX, databaseRoleName, sqlProblem } from '../../src/domain/database-read.ts';
 
 const DB = { kind: 'database', name: 'lab/apps/orders' } as const;
 const value = (v: Record<string, unknown>): string => JSON.stringify({ engine: 'postgres', host: 'db.lab.internal', database: 'orders', user: 'hopper_minter', password: 'p', schemas: ['public'], ...v });
@@ -46,7 +46,7 @@ describe('a database minting credential (issue #2231)', () => {
   it('says what is wrong, never the value', () => {
     expect(databaseCredentialOf('nope')).toBe('a database minting credential holds JSON with engine (postgres), host, database, user, password and schemas (and port, sslmode or ca when it has them)');
     expect(databaseCredentialOf(value({ engine: 'mysql' }))).toBe('a database minting credential\'s engine is postgres');
-    expect(databaseCredentialOf(value({ schemas: [] }))).toBe('a database minting credential names schemas: the schemas a read role may SELECT from, at least one');
+    expect(databaseCredentialOf(value({ schemas: [] }))).toBe('a database minting credential names schemas: the schemas a database read role may SELECT from, at least one');
     expect(databaseCredentialOf(value({ schemas: ['a"b'] }))).toBe('a database minting credential\'s schema "a\\"b" is no plain schema name (letters, digits, _ and $)');
     expect(databaseCredentialOf(value({ port: 0 }))).toBe('a database minting credential\'s port is 1 to 65535');
     expect(databaseCredentialOf(value({ sslmode: 'prefer' }))).toBe('a database minting credential\'s sslmode is verify-full, require or disable');
@@ -67,8 +67,8 @@ describe('a read (issue #2231)', () => {
   });
 
   it('runs as a role of its own, named for nothing but a random id', () => {
-    expect(readRoleName('0123456789abcdef')).toBe(`${READ_ROLE_PREFIX}0123456789abcdef`);
-    expect(READ_ROLE_PREFIX).toBe('hopper_read_');
+    expect(databaseRoleName('0123456789abcdef')).toBe(`${DATABASE_ROLE_PREFIX}0123456789abcdef`);
+    expect(DATABASE_ROLE_PREFIX).toBe('hopper_read_');
   });
 
   it('answers CSV with a header: NULL empty, an empty string quoted', () => {

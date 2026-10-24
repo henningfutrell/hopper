@@ -1,13 +1,13 @@
 // Issue #2231, through the real composition root, the real HTTP server, the real `hopper-skill` and a real Postgres: a
 // job reads rows of a database through the hopper. A person sets the database's minting credential on Vault once; a job
 // asks for a template with read on the database; a person approves it, as every database read is high radius; then each
-// `database read` mints a read role, runs the job's SELECT with it, answers CSV and drops the role. A write is refused;
+// `database read` mints a database read role, runs the job's SELECT with it, answers CSV and drops the role. A write is refused;
 // no password reaches an answer or an event; the read and its SQL are on the job's timeline. OpenFGA is a double at its
 // seam.
 //
 // Feature: a database read
 //   Scenario: the first read waits for a person's approval of the template; then a read answers CSV, a write is refused,
-//     each read role is gone after its read, and no password is in an answer or an event
+//     each database read role is gone after its read, and no password is in an answer or an event
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { DomainEvent, VaultView } from '../../src/domain/types.ts';
 import { boot, runningJob, skill, stopAll } from '../support/read-only-check.ts';
@@ -23,7 +23,7 @@ const readRoles = async (): Promise<string[]> =>
   (await dbs.admin("SELECT rolname FROM pg_roles WHERE rolname LIKE 'hopper\\_read\\_%' AND pg_has_role($1, oid, 'USAGE')", [dbs.credential.user])).rows.map((r: { rolname: string }) => r.rolname);
 
 describe('a database read (issue #2231)', () => {
-  it('waits for a person first, then answers CSV through a read role that is gone after it', async () => {
+  it('waits for a person first, then answers CSV through a database read role that is gone after it', async () => {
     const b = await boot([]);
     const set = await b.a.ui('/ui/api/vault', { action: 'set', name: 'ORDERS_DB', value: JSON.stringify(dbs.credential), mints: { kind: 'database', name: DB } }, { token: b.token });
     expect(set.status, JSON.stringify(set.body)).toBe(200);

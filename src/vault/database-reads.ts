@@ -1,7 +1,7 @@
 // A database read on the vault's side (issue #2231, design.md "Database reads"). A job at work names a template, a
 // database and one SELECT. As for a need step's mint, Access decides it for the template (`decideCheckMint`, the read
 // as the check), so only a template a person approved for read on that database reads it; a deny mints nothing. The
-// vault then mints a read role from the database's minting credential, the hopper runs the SELECT with it, and drops it
+// vault then mints a database read role from the database's minting credential, the hopper runs the SELECT with it, and drops it
 // at the read's end, whatever happened; its `VALID UNTIL` and the sweep are the backstop. The role's password is made
 // here and never leaves the hopper. `database.role_minted`, `database.role_dropped` and `database.read` record each step,
 // with the job, the read, the database, the role, Access's decision and the expiry; the read carries its SQL. No
@@ -9,7 +9,7 @@
 import { randomBytes } from 'node:crypto';
 import type { Clock, UserStore } from '../domain/ports.ts';
 import type { Asset, VaultAccess } from '../domain/access.ts';
-import { databaseCredentialOf, READ_ROLE_TTL_SECONDS, readRoleName, sqlProblem, type DatabaseMintingCredential, type DatabaseReader, type DatabaseReadResult } from '../domain/database-read.ts';
+import { databaseCredentialOf, DATABASE_ROLE_TTL_SECONDS, databaseRoleName, sqlProblem, type DatabaseMintingCredential, type DatabaseReader, type DatabaseReadResult } from '../domain/database-read.ts';
 import { mintingCredentialFor } from '../domain/minting.ts';
 import type { VaultSecret } from '../domain/vault.ts';
 import { AT_WORK } from './box.ts';
@@ -20,9 +20,9 @@ export interface DatabaseReadAsk { job: string; template: string; asset: Asset; 
 export type DatabaseReadAnswer = DatabaseReadResult | { status: number; no: string };
 
 export interface DatabaseReads {
-  /** One read (issue #2231): Access, a read role minted, the SELECT, the role dropped. Never rejects. */
+  /** One read (issue #2231): Access, a database read role minted, the SELECT, the role dropped. Never rejects. */
   readDatabase(ask: DatabaseReadAsk): Promise<DatabaseReadAnswer>;
-  /** Drops each read role whose `VALID UNTIL` passed, in each database a minting credential mints for: at start and every few minutes. */
+  /** Drops each database read role whose `VALID UNTIL` passed, in each database a minting credential mints for: at start and every few minutes. */
   sweepDatabaseRoles(): Promise<void>;
 }
 
@@ -54,20 +54,20 @@ export function databaseReads(store: Pick<UserStore, 'vault' | 'events' | 'jobs'
       if (bad) return { status: 400, no: bad };
       if (asset.kind !== 'database') return { status: 400, no: `a database read names a database (database/<cluster>/<namespace>/<database>), not ${asset.kind} ${asset.name}` };
       if (!o.access) return refuse(503, 'access is not part of this hopper: the vault mints nothing without it');
-      const id = randomBytes(8).toString('hex'), role = readRoleName(id);
+      const id = randomBytes(8).toString('hex'), role = databaseRoleName(id);
       const decision = await o.access.decideCheckMint({ template, check: `database-read-${id}`, operation: 'read', asset });
       if (!decision.allowed) return refuse(403, `Access denied it: ${decision.reason}. A person approves read on database ${asset.name} for template ${template} on Access requests`, decision.id);
       const found = await credentialOf(asset);
       if ('no' in found) return refuse(found.status, found.no, decision.id);
       const { secret, credential: c } = found;
-      // The read role's login: made here, used here, never kept or said. Hidden from any message the database answers too.
+      // The database read role's login: made here, used here, never kept or said. Hidden from any message the database answers too.
       const password = randomBytes(24).toString('base64url');
       const hide = (m: string): string => m.split(password).join('***').split(c.password).join('***');
-      const validUntil = new Date(o.clock.now().getTime() + READ_ROLE_TTL_SECONDS * 1000);
+      const validUntil = new Date(o.clock.now().getTime() + DATABASE_ROLE_TTL_SECONDS * 1000);
       try {
         await o.reader.mint(c, { role, password, validUntil });
       } catch (e) {
-        return refuse(502, `minting a read role in database ${asset.name} failed: ${hide((e as Error).message)}`, decision.id);
+        return refuse(502, `minting a database read role in database ${asset.name} failed: ${hide((e as Error).message)}`, decision.id);
       }
       const at = { job, read: id };
       events.append({ type: 'database.role_minted', jobId: job, data: { ...at, template, asset, credential: secret.name, role, decision: decision.id, expiresAt: validUntil.toISOString() } });
@@ -101,7 +101,7 @@ export function databaseReads(store: Pick<UserStore, 'vault' | 'events' | 'jobs'
             events.append({ type: 'database.role_dropped', data: { asset, credential: secret.name, role, reason: 'expired' } });
           }
         } catch (e) {
-          o.logger.warn(`hopper: the sweep of read roles in database ${asset.name} failed: ${(e as Error).message.split(found.credential.password).join('***')}`);
+          o.logger.warn(`hopper: the sweep of database read roles in database ${asset.name} failed: ${(e as Error).message.split(found.credential.password).join('***')}`);
         }
       }
     },

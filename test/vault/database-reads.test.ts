@@ -1,5 +1,5 @@
 // Issue #2231: a database read on the vault's side. Access decides each read for the template, as a need step's mint;
-// a deny mints nothing. The vault mints a read role from the database's minting credential, runs the job's SELECT with
+// a deny mints nothing. The vault mints a database read role from the database's minting credential, runs the job's SELECT with
 // it, and drops it at the read's end, whatever happened. Each mint, read and drop is an event with the job, the read,
 // the database, the role, the decision and the expiry; the read carries its SQL. No password reaches an event or an
 // answer. The sweep drops roles a hopper that stopped left. The database is a double at its seam (DatabaseReader); the
@@ -92,15 +92,15 @@ describe('a database read (issue #2231)', () => {
   });
 
   it('reads nothing when the mint fails', async () => {
-    const w = world({ mint: async () => { throw new Error(`the read role could change app.open (minter ${MINTER_PASSWORD})`); } });
+    const w = world({ mint: async () => { throw new Error(`the database read role could change app.open (minter ${MINTER_PASSWORD})`); } });
     const a = await w.reads.readDatabase(ASK);
-    expect(a).toEqual({ status: 502, no: 'minting a read role in database lab/apps/orders failed: the read role could change app.open (minter ***)' });
+    expect(a).toEqual({ status: 502, no: 'minting a database read role in database lab/apps/orders failed: the database read role could change app.open (minter ***)' });
     expect(w.done.read).toEqual([]);
     expect(w.events.map((e) => e.type)).toEqual(['database.read_refused']);
   });
 });
 
-describe('the sweep of read roles (issue #2231)', () => {
+describe('the sweep of database read roles (issue #2231)', () => {
   it('drops, with each database\'s minting credential, the roles whose VALID UNTIL passed', async () => {
     const w = world();
     await w.reads.sweepDatabaseRoles();
