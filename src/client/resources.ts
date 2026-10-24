@@ -20,6 +20,7 @@ import { existsSync, readdirSync, readFileSync, statfsSync } from 'node:fs';
 import { availableParallelism, cpus, freemem, homedir, loadavg, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { inCluster, podLimits, type Env } from './cluster.ts';
+import { jobProcessMeter } from './job-processes.ts';
 import { allocFailureReader, type AllocFailures } from './kernel-log.ts';
 import { nodeFloorOf } from './node-floor.ts';
 
@@ -139,13 +140,7 @@ const windowsMemory: HostMemoryReader = async () => {
 /** A read sooner than this after the last keeps the last CPU busy: the share over a few ms is noise. */
 const MIN_CPU_INTERVAL_MS = 1000;
 
-const text = (path: string): string | undefined => {
-  try {
-    return readFileSync(path, 'utf8');
-  } catch {
-    return undefined;
-  }
-};
+const text = (path: string): string | undefined => { try { return readFileSync(path, 'utf8'); } catch { return undefined; } };
 
 /** A number in a cgroup file (`max`, absent or unreadable: none). */
 const limit = (path: string): number | undefined => {
@@ -213,7 +208,7 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const kills = oomWatch();
   const allocFailures = platform === 'linux' ? allocFailureReader(join(root, 'dev/kmsg'), join(root, 'proc/uptime')) : () => undefined;
   let periods = new Map<string, { periods: number; throttled: number }>(); let throttledFrac: number | undefined;
-  let hostAskedAt: number | undefined; let hostAsking = false;
+  let hostAskedAt: number | undefined; let hostAsking = false; const processJobs = jobProcessMeter(root);
   /** Each job scope's CPU time at the read before, for its cores busy since. */
   let jobCpu = new Map<string, { at: number; usec: number }>();
 
@@ -354,12 +349,13 @@ export function createResourceMeter(d: ResourceMeterDeps = {}): () => ResourceRe
   const memory = (at: number): Memory => {
     const parts = platform === 'linux' ? ownCgroup() : [];
     const scopes = platform === 'linux' ? jobScopes(parts) : [];
-    const use = jobUseOf(scopes, at);
-    const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...use } : {};
     const limited = platform === 'linux' ? cgroupMemory(parts) : undefined;
     // Issue #2622: what holds its jobs' memory — each job's scope where its user manager runs, else its own cgroup's limit.
     const manager = platform === 'linux' ? managerOf(parts) : undefined;
     const held = platform !== 'linux' ? {} : { jobMemoryLimit: manager !== undefined && existsSync(cgroup(manager)) ? 'scope' as const : limited ? 'machine' as const : 'none' as const };
+    // Issue #2737: with no user manager, no scope holds a job: its processes (job-processes.ts) say its memory.
+    const jobs = scopes.length ? { jobMemoryBytes: Object.fromEntries(scopes.map((s) => [s.id, s.bytes])), ...jobUseOf(scopes, at) }
+      : held.jobMemoryLimit !== undefined && held.jobMemoryLimit !== 'scope' ? processJobs() : {};
     const info = platform === 'linux' ? fields(text(join(root, 'proc/meminfo'))) : new Map<string, number>();
     const kib = (k: string) => (info.has(k) ? info.get(k)! * 1024 : undefined);
     const total = kib('MemTotal');
