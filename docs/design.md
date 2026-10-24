@@ -34716,9 +34716,36 @@ the step, short-lived, audited, approved as other profiles are, and no new clust
   tests run on a real Postgres already, so every requirement (writes refused, other schemas and databases refused, the
   drop, the TTL) is checked against the real engine; the seam takes a second engine.
 
-**What is left (later parts).** A SQL Server engine (a contained login or a login and user with SELECT on named tables,
-`CHECK_EXPIRATION` is no TTL: the drop and a sweep by name are the backstop). A vault in its own container (issue #586)
-reads no database yet (`Vault.readDatabase` absent). The live proof on the target clusters.
+**Part 2: SQL Server** (`src/vault/sqlserver-reads.ts`, `mssql` on tedious; `readerByEngine` picks the reader by the
+credential's `engine`, `sqlserver`, port 1433 by default).
+- **Tables as well as schemas.** The credential takes `tables` (`<schema>.<table>`) beside `schemas`, at least one of the
+  two, on both engines: the CRM read joins two tables of a schema that holds many more. On SQL Server the minting login
+  needs the grant option on each such table itself; the schema's does not let it grant one table.
+- **The read role** is a SQL login and its user in the credential's database, `hopper_read_<16 hex>` both: SQL Server
+  has no role that logs in. A contained user would need a contained database. The login's password goes as a SQL Server
+  2012 hash (`PASSWORD = 0x0200… HASHED`, SHA-512 of the UTF-16LE password and a 4-byte salt), so the clear password
+  never reaches the server or its log; no password policy (a hash cannot be checked), its default database the
+  credential's. The user gets `SELECT ON SCHEMA::` or `ON OBJECT::` for what the credential names.
+- **The check.** SQL Server has no read-only transaction and no role setting for one, so nothing stops a write but what
+  the login may do. The hopper connects as the new login and asks `fn_my_permissions` (server and database) and
+  `HAS_PERMS_BY_NAME` for each table, view, procedure and schema it can see: a permission that changes something (a
+  write, ALTER, CREATE, CONTROL, EXECUTE, IMPERSONATE, …), a table or view it could write or alter, a procedure it could
+  run (one granted to `public` may write for it by ownership chaining), or a schema it could alter. Any of them, and the
+  login is dropped and the read fails. Running the check as the login needs no IMPERSONATE for the minting login.
+- **The read** runs in a transaction the hopper rolls back, streamed, rows counted against the same caps; more than one
+  result set, or none, fails. One statement is not checked by construction as on Postgres (a batch may hold more); the
+  check above is what keeps a second statement from changing anything. Values are text: a date as ISO 8601 UTC, `bit`
+  1 or 0, binary `0x…`; tedious reads `decimal` as a JavaScript number (the help says to CAST it).
+- **The end.** `ALTER LOGIN … DISABLE`, `KILL` each session the minting login can see (with `VIEW SERVER STATE` and
+  `ALTER ANY CONNECTION`), `DROP USER`, `DROP LOGIN`. Without those two permissions a held session keeps the login, the
+  drop fails and the sweep tries again: an outcome the help names, as the permissions are optional.
+- **The backstop.** No `VALID UNTIL`: the sweep drops each read login whose `create_date` is older than the TTL (the
+  server's own clock) and each read user in the database whose login is gone or old. A login left while the hopper is
+  stopped stays until it starts again; only the hopper had its password.
+
+**What is left (later parts).** A vault in its own container (issue #586) reads no database yet (`Vault.readDatabase`
+absent). The route to the in-cluster databases and to the private SQL Server (below). The live proof on the target
+clusters.
 
 **The route to an in-cluster database is a person's decision.** The hopper must open a TCP connection to the database
 to mint and to read. A database inside a cluster with no route from where the hopper runs needs one of these, each a
@@ -34735,7 +34762,10 @@ cluster-side or network-side opening this part does not make:
 Tests (part 1): `test/vault/database-read-domain.test.ts` (the asset, high radius, the read policy, the credential, the
 CSV), `test/vault/postgres-reads.test.ts` (a real Postgres: the role's attributes and settings, every write refused also
 with the read-only default off and in `BEGIN READ WRITE`, another schema and another database refused, the PUBLIC
-check, the cap, the drop ends a session, the sweep), `test/vault/database-reads.test.ts` (Access, the events, no
+check, the cap, the drop ends a session, the sweep, a credential of tables), `test/vault/sqlserver-reads.test.ts` (part 2,
+a real SQL Server: the login and user, every write refused also in a transaction of its own, another schema, table and
+database refused, a write permission or a procedure through `public` refused at the mint, the hash, one result set, the
+cap, the drop ends a session, the sweep by age and of orphan users), `test/vault/database-reads.test.ts` (Access, the events, no
 password in an event or an answer, the drop after a failed read), `test/skills/database-skill.test.ts`,
 `test/integration/database-read.test.ts` (through the real hopper, `hopper-skill` and Postgres: the wait for a person,
 the CSV, a write refused, every role gone, no password in an answer or an event).

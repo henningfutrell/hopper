@@ -131,7 +131,7 @@ The vault can mint a short-lived credential for one job and one operation profil
 | AWS | `aws-role/<account>/<role>` | an STS `AssumeRole` session on that role. A `read` session carries the `ReadOnlyAccess` session policy. | 15 minutes |
 | Kubernetes | `namespace/<cluster>/<ns>` | a TokenRequest token for the service account `hopper-<operation>` in that namespace | 10 minutes |
 | Kubernetes | `cluster/<name>` | the same, in the namespace `hopper` | 10 minutes |
-| Postgres | `database/<cluster>/<namespace>/<database>` | a login role in that database for one read: `SELECT` only on the schemas you name, read-only. The hopper uses it itself and drops it after the read. A job never gets it. | one read, at most 15 minutes |
+| Postgres, SQL Server | `database/<cluster>/<namespace>/<database>` | a login in that database for one read: `SELECT` only on the schemas and tables you name. The hopper uses it itself and drops it after the read. A job never gets it. | one read, at most 15 minutes |
 
 A Kubernetes token minted for a sandbox (a need step, a box step or a read-only check) stops working when its sandbox ends, whatever the outcome. An AWS session cannot be stopped one by one: it works for up to its 15 minutes after its sandbox ends.
 
@@ -160,7 +160,7 @@ A minting credential is never given to a box. No template can list it in its sco
 
 ### A database's minting credential
 
-A job reads a database through the hopper (see [Sandboxes](sandboxes.md), "Database reads"). For each read, the hopper makes a new login role in the database, runs the job's one `SELECT` with it, and drops the role. The minting credential is the login that makes and drops these roles. Set it up once for each database:
+A job reads a database through the hopper (see [Sandboxes](sandboxes.md), "Database reads"). For each read, the hopper makes a new login role in the database, runs the job's one `SELECT` with it, and drops the role. The minting credential is the login that makes and drops these roles. Set it up once for each database. For SQL Server, see "A SQL Server database's minting credential" below.
 
 1. In the database, make the minting login. It needs only these privileges. Run as the database's owner or an admin:
 
@@ -184,14 +184,56 @@ A job reads a database through the hopper (see [Sandboxes](sandboxes.md), "Datab
 
    Optional: `port` (5432 when absent), `sslmode` — `verify-full` (when absent: TLS with the certificate and the host name checked), `require` (TLS, no check) or `disable` (no TLS) —, and `ca` (the PEM the certificate is checked against).
 
+   In place of `schemas`, or with it, `tables` names single tables as `<schema>.<table>`, for example `"tables": ["app.users"]`. A database read role then gets `SELECT` on those tables only. Give the minting login `USAGE` on their schemas and `SELECT` on each table, each `WITH GRANT OPTION`.
+
 What a database read role gets:
 
 - `LOGIN`, `NOINHERIT`, a connection limit of 2, and `VALID UNTIL` 15 minutes from its mint.
 - `default_transaction_read_only = on`, `statement_timeout` 60 s and `idle_in_transaction_session_timeout` 30 s.
-- `CONNECT` on the database, and `USAGE` and `SELECT` on each schema in `schemas`. Nothing else.
+- `CONNECT` on the database, `USAGE` and `SELECT` on each schema in `schemas`, and `SELECT` on each table in `tables`. Nothing else.
 - Its password is random for each read, made in the hopper and sent to the database as a SCRAM verifier. The password itself never reaches the database's log, an event, a box or the job.
 
 The hopper must reach the database's host and port itself: it makes the role there, and runs the read there. A box needs no route to the database.
+
+### A SQL Server database's minting credential
+
+On SQL Server, a database read role is a SQL login and its user in the database, both named `hopper_read_<16 hex>`. Set the minting login up once for each database:
+
+1. Make the minting login. Run as a server admin:
+
+   ```sql
+   CREATE LOGIN hopper_minter WITH PASSWORD = '<a long random password>';
+   GRANT ALTER ANY LOGIN TO hopper_minter;
+   GRANT ALTER ANY CONNECTION TO hopper_minter;   -- to end a read login's sessions
+   GRANT VIEW SERVER STATE TO hopper_minter;      -- to find those sessions
+   USE crm;
+   CREATE USER hopper_minter FOR LOGIN hopper_minter;
+   GRANT ALTER ANY USER TO hopper_minter;
+   GRANT SELECT ON dbo.customers TO hopper_minter WITH GRANT OPTION;
+   GRANT SELECT ON dbo.contacts TO hopper_minter WITH GRANT OPTION;
+   ```
+
+   - `ALTER ANY LOGIN` lets it make, disable and drop the read logins. It does not let it give a login a server role or a server permission it does not have.
+   - `ALTER ANY USER` lets it make and drop the read users in this database only.
+   - Each `SELECT … WITH GRANT OPTION` lets it give a read user `SELECT` on that table, and nothing more. For a table named in `tables`, grant on the table itself: the grant option on its schema does not let it grant one table. For a schema named in `schemas`, `GRANT SELECT ON SCHEMA::<schema> … WITH GRANT OPTION`.
+   - `ALTER ANY CONNECTION` and `VIEW SERVER STATE` let it end a read login's sessions when it drops the login. Without them, a session left open keeps the login until the session ends, and the sweep drops it later. `VIEW SERVER STATE` also shows other sessions' queries: leave both out when that is not acceptable.
+   - Do not give it `sysadmin`, `securityadmin`, `db_owner`, `CONTROL` or a write permission. It needs none.
+2. Keep `guest` off in every other database of the server (it is off by default). A read login has no user there, so it cannot open them.
+3. Do not give a write permission, or `EXECUTE` on a procedure, to `public`. SQL Server has no read-only transaction: the hopper connects as each new read login and checks what it could change — a table or view it could write or alter, a procedure it could run, a schema it could alter, a database or server permission that changes something —, and drops the login when it could. It says what the login could change.
+4. In **Settings → Vault**, add the secret as above, with `"engine": "sqlserver"`:
+
+   ```json
+   {"engine": "sqlserver", "host": "crm-db.internal", "database": "crm", "user": "hopper_minter", "password": "…", "tables": ["dbo.customers", "dbo.contacts"]}
+   ```
+
+   `port` is 1433 when absent. `sslmode` and `ca` work as for Postgres.
+
+What a SQL Server read login gets:
+
+- A SQL login with no password policy, its default database the credential's, and a user in that database with `SELECT` on the named schemas and tables. Nothing else.
+- Its password is random for each read, made in the hopper and sent to SQL Server as a password hash (`PASSWORD = 0x… HASHED`). The password itself never reaches the server's log, an event, a box or the job.
+- A statement stops after 60 s. The read runs in a transaction that the hopper rolls back.
+- SQL Server has no `VALID UNTIL` and no connection limit for a login. The hopper drops the login at the read's end. When the hopper stops during a read, the sweep drops a read login older than 15 minutes, at the next start or within 5 minutes after that. While the hopper is stopped, the login stays, but only the hopper knew its password.
 
 ### Session names
 

@@ -49,7 +49,7 @@ export async function readDatabases(): Promise<ReadDatabases> {
   ].join(';\n'));
   await run(urlOf(b), 'CREATE TABLE things (id int); INSERT INTO things VALUES (1)');
   const credential: DatabaseMintingCredential = {
-    engine: 'postgres', host: base.hostname, port: Number(base.port || 5432), database: a, user: minter, password, sslmode: 'disable', schemas: ['app'],
+    engine: 'postgres', host: base.hostname, port: Number(base.port || 5432), database: a, user: minter, password, sslmode: 'disable', schemas: ['app'], tables: [],
   };
   return {
     credential, a, b,

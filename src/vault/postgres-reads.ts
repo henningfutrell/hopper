@@ -1,7 +1,7 @@
 // A database read on Postgres (issue #2231, design.md "Database reads"): the `DatabaseReader` seam with `pg`. The
 // minting login makes each database read role: LOGIN, NOINHERIT, its connections limited, `VALID UNTIL` its TTL, its password as
 // a SCRAM verifier (the clear password never reaches the server or its log), read-only by default with short timeouts,
-// CONNECT on the credential's database, and USAGE and SELECT on the named schemas only. Before it is used, the minting
+// CONNECT on the credential's database, and USAGE and SELECT on the named schemas and tables only. Before it is used, the minting
 // login checks the role can change nothing — through a grant to PUBLIC too —, and drops it when it could. The read runs
 // the job's one statement as a cursor in a read-only transaction, so it is a SELECT and nothing else, and answers its rows
 // as CSV up to the caps. The drop ends the role's sessions; the sweep drops each database read role whose `VALID UNTIL` passed.
@@ -9,7 +9,7 @@ import { createHash, createHmac, pbkdf2Sync, randomBytes } from 'node:crypto';
 import pg from 'pg';
 import {
   CONNECT_TIMEOUT_MS, csvLine, READ_CONNECTION_LIMIT, READ_IDLE_IN_TRANSACTION_MS, READ_MAX_BYTES, READ_MAX_ROWS, DATABASE_ROLE_PREFIX, READ_STATEMENT_TIMEOUT_MS,
-  type DatabaseMintingCredential, type DatabaseReader,
+  tableParts, type DatabaseMintingCredential, type DatabaseReader,
 } from '../domain/database-read.ts';
 
 /** The rows a read fetches at a time. */
@@ -90,10 +90,9 @@ export function createPostgresReader(o: { maxRows?: number; maxBytes?: number } 
             await client.query(`ALTER ROLE ${r} SET ${k} = ${lit(v!)}`);
           }
           await client.query(`GRANT CONNECT ON DATABASE ${ident(c.database)} TO ${r}`);
-          for (const s of c.schemas) {
-            await client.query(`GRANT USAGE ON SCHEMA ${ident(s)} TO ${r}`);
-            await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA ${ident(s)} TO ${r}`);
-          }
+          for (const s of new Set([...c.schemas, ...c.tables.map((t) => tableParts(t)[0])])) await client.query(`GRANT USAGE ON SCHEMA ${ident(s)} TO ${r}`);
+          for (const s of c.schemas) await client.query(`GRANT SELECT ON ALL TABLES IN SCHEMA ${ident(s)} TO ${r}`);
+          for (const t of c.tables) await client.query(`GRANT SELECT ON TABLE ${tableParts(t).map(ident).join('.')} TO ${r}`);
           const changes = (await client.query<{ what: string }>(CHANGES, [role])).rows.map((x) => x.what);
           if (changes.length) throw new Error(`the database read role could change ${changes.join(', ')}: take that grant from PUBLIC, or name other schemas`);
         } catch (e) {

@@ -27,7 +27,7 @@ import { highRadius, rateTemplate, type TemplateScope } from '../blast-radius/te
 import type { SealerState } from '../secrets/sealer.ts';
 import { MASTER_KEY_VARIABLE } from '../secrets/token-box.ts';
 
-import { probeMarksFor, recheckUnminted, templateChecks, type TemplateChecks } from './checks.ts'; import { needMinting, type NeedMinting } from './need-mint.ts'; import { databaseReads, type DatabaseReads } from './database-reads.ts'; import { createPostgresReader } from './postgres-reads.ts'; import type { DatabaseReader } from '../domain/database-read.ts';
+import { probeMarksFor, recheckUnminted, templateChecks, type TemplateChecks } from './checks.ts'; import { needMinting, type NeedMinting } from './need-mint.ts'; import { databaseReads, type DatabaseReads } from './database-reads.ts'; import { createPostgresReader } from './postgres-reads.ts'; import { createSqlServerReader } from './sqlserver-reads.ts'; import { readerByEngine, type DatabaseReader } from '../domain/database-read.ts';
 import { agentCredentialProblem, agentCredentials, type AgentCredentials } from './agent-credential.ts';
 import { resealRows, vaultContext } from './reseal.ts';
 export { vaultContext };
@@ -182,7 +182,7 @@ export function createVaultService(o: {
 
   const mintFrom = mintHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) });
   // A sandbox's tokens end with it (issue #1371): bound for the need box or check box, released at its end.
-  const unbindFrom = unbindHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) }), bindings = mintBindings({ events: o.store.events, clock: o.clock, unbindFrom, logger: o.logger, ...(o.elsewhere ? { elsewhere: o.elsewhere } : {}) }), reads = databaseReads(o.store, { access: o.access, reader: o.databases ?? createPostgresReader(), valueOf, clock: o.clock, logger: o.logger });
+  const unbindFrom = unbindHere({ vault, valueOf, ...(o.minter ? { minter: o.minter } : {}) }), bindings = mintBindings({ events: o.store.events, clock: o.clock, unbindFrom, logger: o.logger, ...(o.elsewhere ? { elsewhere: o.elsewhere } : {}) }), reads = databaseReads(o.store, { access: o.access, reader: o.databases ?? readerByEngine({ postgres: createPostgresReader(), sqlserver: createSqlServerReader() }), valueOf, clock: o.clock, logger: o.logger });
 
   const mint = createMinting({
     store: o.store, userId: o.userId ?? '', clock: o.clock,

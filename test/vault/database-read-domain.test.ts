@@ -1,12 +1,13 @@
 // Issue #2231: a database read. The asset kind `database` takes read only; its read is high radius, so only its own
 // approval approves it and the read policy never holds it. Its minting credential is one JSON value: where the database
-// is, the login that mints the database read roles, and the schemas a database read role may SELECT from.
+// is (Postgres or SQL Server), the login that mints the database read roles, and the schemas and tables a database read
+// role may SELECT from. One reader for each engine.
 import { describe, expect, it } from 'vitest';
 import { profileProblem } from '../../src/domain/access.ts';
 import { highRadius } from '../../src/blast-radius/template.ts';
 import { inReadPolicy, readPolicyProblem } from '../../src/domain/read-policy.ts';
 import { mintingValueProblem, mintsForProblem } from '../../src/domain/minting.ts';
-import { csvOf, databaseCredentialOf, DATABASE_ROLE_PREFIX, databaseRoleName, sqlProblem } from '../../src/domain/database-read.ts';
+import { csvOf, databaseCredentialOf, DATABASE_ROLE_PREFIX, databaseRoleName, readerByEngine, sqlProblem, type DatabaseReader } from '../../src/domain/database-read.ts';
 
 const DB = { kind: 'database', name: 'lab/apps/orders' } as const;
 const value = (v: Record<string, unknown>): string => JSON.stringify({ engine: 'postgres', host: 'db.lab.internal', database: 'orders', user: 'hopper_minter', password: 'p', schemas: ['public'], ...v });
@@ -36,7 +37,11 @@ describe('the database asset kind (issue #2231)', () => {
 
 describe('a database minting credential (issue #2231)', () => {
   it('is read with its defaults: port 5432, TLS checked', () => {
-    expect(databaseCredentialOf(value({}))).toEqual({ engine: 'postgres', host: 'db.lab.internal', port: 5432, database: 'orders', user: 'hopper_minter', password: 'p', sslmode: 'verify-full', schemas: ['public'] });
+    expect(databaseCredentialOf(value({}))).toEqual({ engine: 'postgres', host: 'db.lab.internal', port: 5432, database: 'orders', user: 'hopper_minter', password: 'p', sslmode: 'verify-full', schemas: ['public'], tables: [] });
+  });
+
+  it('is read for SQL Server with its port 1433, and tables one at a time', () => {
+    expect(databaseCredentialOf(value({ engine: 'sqlserver', schemas: undefined, tables: ['dbo.customers', 'dbo.contacts'] }))).toMatchObject({ engine: 'sqlserver', port: 1433, schemas: [], tables: ['dbo.customers', 'dbo.contacts'] });
   });
 
   it('keeps a port, a TLS mode and a CA', () => {
@@ -44,9 +49,11 @@ describe('a database minting credential (issue #2231)', () => {
   });
 
   it('says what is wrong, never the value', () => {
-    expect(databaseCredentialOf('nope')).toBe('a database minting credential holds JSON with engine (postgres), host, database, user, password and schemas (and port, sslmode or ca when it has them)');
-    expect(databaseCredentialOf(value({ engine: 'mysql' }))).toBe('a database minting credential\'s engine is postgres');
-    expect(databaseCredentialOf(value({ schemas: [] }))).toBe('a database minting credential names schemas: the schemas a database read role may SELECT from, at least one');
+    expect(databaseCredentialOf('nope')).toBe('a database minting credential holds JSON with engine (postgres or sqlserver), host, database, user, password, and schemas or tables (and port, sslmode or ca when it has them)');
+    expect(databaseCredentialOf(value({ schemas: 'public' }))).toMatch(/holds JSON with engine/);
+    expect(databaseCredentialOf(value({ engine: 'mysql' }))).toBe('a database minting credential\'s engine is postgres or sqlserver');
+    expect(databaseCredentialOf(value({ schemas: [] }))).toBe('a database minting credential names schemas or tables: what a database read role may SELECT from, at least one');
+    expect(databaseCredentialOf(value({ tables: ['users'] }))).toBe('a database minting credential\'s table "users" is no plain <schema>.<table> name (letters, digits, _ and $)');
     expect(databaseCredentialOf(value({ schemas: ['a"b'] }))).toBe('a database minting credential\'s schema "a\\"b" is no plain schema name (letters, digits, _ and $)');
     expect(databaseCredentialOf(value({ port: 0 }))).toBe('a database minting credential\'s port is 1 to 65535');
     expect(databaseCredentialOf(value({ sslmode: 'prefer' }))).toBe('a database minting credential\'s sslmode is verify-full, require or disable');
@@ -73,5 +80,23 @@ describe('a read (issue #2231)', () => {
 
   it('answers CSV with a header: NULL empty, an empty string quoted', () => {
     expect(csvOf(['id', 'name', 'note'], [['1', 'a,b', null], ['2', 'say "hi"', ''], ['3', 'two\nlines', 'x']])).toBe('id,name,note\n1,"a,b",\n2,"say ""hi""",""\n3,"two\nlines",x\n');
+  });
+});
+
+describe('the reader of a database (issue #2231)', () => {
+  it('is the one of its credential\'s engine', async () => {
+    const said: string[] = [];
+    const fake = (engine: string): DatabaseReader => ({
+      mint: async () => { said.push(`${engine} mint`); }, read: async () => { said.push(`${engine} read`); return { csv: '', rows: 0, bytes: 0 }; },
+      drop: async () => { said.push(`${engine} drop`); }, sweep: async () => { said.push(`${engine} sweep`); return []; },
+    });
+    const reader = readerByEngine({ postgres: fake('postgres'), sqlserver: fake('sqlserver') });
+    const c = databaseCredentialOf(value({ engine: 'sqlserver' }));
+    if (typeof c === 'string') throw new Error(c);
+    await reader.mint(c, { role: 'r', password: 'p', validUntil: new Date() });
+    await reader.read({ ...c, engine: 'postgres' }, { role: 'r', password: 'p', sql: 'SELECT 1' });
+    await reader.drop(c, 'r');
+    await reader.sweep(c);
+    expect(said).toEqual(['sqlserver mint', 'postgres read', 'sqlserver drop', 'sqlserver sweep']);
   });
 });

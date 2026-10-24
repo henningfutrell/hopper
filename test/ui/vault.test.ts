@@ -111,9 +111,10 @@ describe('a minting credential on the page (issue #580)', () => {
 
   it('shows a database\'s minting credential as one JSON value, and says why a value is not one (issue #2231)', () => {
     const db = { kind: 'database', name: 'lab/apps/orders' } as const;
-    expect(mintsValueOf(db, '')).toEqual({ shape: expect.stringContaining('"engine": "postgres"') });
+    expect(mintsValueOf(db, '')).toEqual({ shape: expect.stringContaining('"engine": "postgres" or "sqlserver"') });
     expect(mintsValueOf(db, JSON.stringify({ engine: 'postgres', host: 'db', database: 'orders', user: 'm', password: 'p', schemas: ['app'] })).problem).toBeUndefined();
-    expect(mintsValueOf(db, JSON.stringify({ engine: 'postgres', host: 'db', password: 'secret-pw' })).problem).toBe('a database\'s minting credential is JSON with engine, host, database, user, password and schemas');
+    expect(mintsValueOf(db, JSON.stringify({ engine: 'sqlserver', host: 'db', database: 'crm', user: 'm', password: 'p', tables: ['dbo.contacts'] })).problem).toBeUndefined();
+    expect(mintsValueOf(db, JSON.stringify({ engine: 'postgres', host: 'db', password: 'secret-pw' })).problem).toBe('a database\'s minting credential is JSON with engine, host, database, user, password, and schemas or tables');
     expect(mintsValueOf(db, 'secret-pw').problem).not.toContain('secret-pw');
   });
 

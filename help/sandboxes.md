@@ -221,10 +221,11 @@ A job can read rows of a database through the hopper. The job never gets a crede
 The limits:
 
 - One statement, a `SELECT` (or `WITH … SELECT`, `VALUES`). A write fails: the role can change nothing, and the transaction is read-only.
+- On SQL Server, the statement must answer one result set. A write fails: the read login can change nothing, and the hopper rolls the transaction back. Dates come as ISO 8601 in UTC, `bit` as 1 or 0, binary as `0x…`. A `decimal`, `numeric` or `money` value is read as a JavaScript number: for every digit, `CAST` it to `varchar` in the `SELECT`.
 - At most 100000 rows or 16 MiB in one answer. A bigger answer fails, and is never cut: page the query.
 - A statement stops after 60 s.
 
-The job's timeline shows each read with its SQL, the role, and the Access decision: **database.role_minted**, **database.read** and **database.role_dropped**. When the hopper stops during a read, the role ends at its `VALID UNTIL`, and the hopper drops it at the next start or within 5 minutes after that time.
+The job's timeline shows each read with its SQL, the role, and the Access decision: **database.role_minted**, **database.read** and **database.role_dropped**. When the hopper stops during a read, the role ends at its `VALID UNTIL`, and the hopper drops it at the next start or within 5 minutes after that time. SQL Server has no `VALID UNTIL`: there the hopper drops a read login older than 15 minutes at the same times.
 
 ## Windows sandbox steps
 
