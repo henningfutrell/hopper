@@ -14,13 +14,14 @@ import {
   type PassFetches,
 } from './job-worktree.ts';
 import { SCOPE_MARK, enterScopeCommand, scopeCheckCommand, scopeOutcome } from './job-scope.ts';
-import { scopeLimitsOf } from '../../domain/job-limits.ts';
+import { scopeLimitsOf, type JobLimits } from '../../domain/job-limits.ts';
 import { DEPS_MARK, depsOutcome, shareDepsCommand } from './shared-deps.ts';
 import { scopeUnitOf } from '../../client/reap.ts';
 import { enterRuntime, enterSandbox } from './start-isolation.ts';
 import { restoreCheckpoint } from './restore.ts';
 import { windowsShellOf } from './windows-shell.ts';
 import { buildDefaultsEnv } from '../../domain/build-defaults.ts';
+import { nodeReportEnv } from '../../domain/heap-aborts.ts';
 import { jobScratchOf, worktreesOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
 import { seedClaudeConfig, settleStartup } from './startup.ts';
@@ -191,8 +192,17 @@ export const jobTmpOf = (jobId: string): string => `/tmp/hopper-${jobId}`;
  */
 export const JOB_TOOL_ENV: Readonly<Record<string, string>> = { CHECKPOINT_DISABLE: '1' };
 
-/** JOB_TOOL_ENV and the build defaults (issue #2622, src/domain/build-defaults.ts) with Gradle's idle timeout (issue #2489). */
-export const jobToolEnv = (env: Readonly<Record<string, string>> = {}): Record<string, string> => ({ ...JOB_TOOL_ENV, ...buildDefaultsEnv(env) });
+/**
+ * JOB_TOOL_ENV and the build defaults (issue #2622, src/domain/build-defaults.ts) with Gradle's idle timeout (issue #2489),
+ * and with the job's memory limit (`limits`, its scope's) Node's heap at a share of it (issue #2721); with the job's temp dir
+ * (`tmp`), Node's report on a heap that runs out written there (issue #2722, src/domain/heap-aborts.ts), before the
+ * NODE_OPTIONS the build defaults give, else the payload's own.
+ */
+export const jobToolEnv = (env: Readonly<Record<string, string>> = {}, limits?: JobLimits, tmp?: string): Record<string, string> => {
+  const tools: Record<string, string> = { ...JOB_TOOL_ENV, ...buildDefaultsEnv(env, limits) };
+  const own = tools.NODE_OPTIONS ?? env.NODE_OPTIONS;
+  return tmp ? { ...tools, ...nodeReportEnv(tmp, own ? { NODE_OPTIONS: own } : {}) } : tools;
+};
 
 /** Points the job's temp link at its scratch dir; fails when the link there is not that. */
 export const linkTmpCommand = (scratch: string, jobId: string): string => {
@@ -231,8 +241,10 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
     // which takes longer than its two minutes.
     // Unattended (issue #533), Claude never updates itself in a job's pane, so no update notice stands in its way.
     // JOB_TOOL_ENV (issue #1502): terraform's version check off, so it writes nothing into the machine's home; Gradle's
-    // daemon idles 5 minutes at most (issue #2489); Gradle, Kotlin and Maven get capped build defaults (issue #2622).
-    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', ...jobToolEnv(env), ...(d.unattended ? { DISABLE_AUTOUPDATER: '1' } : {}) },
+    // daemon idles 5 minutes at most (issue #2489); Gradle, Kotlin and Maven get capped build defaults (issue #2622); Node a
+    // heap of its scope's memory limit (issue #2721), and it writes a report into the job's temp dir when its heap runs out
+    // (issue #2722).
+    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', ...jobToolEnv(env, scopeLimitsOf(ctx.machine), tmp), ...(d.unattended ? { DISABLE_AUTOUPDATER: '1' } : {}) },
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),

@@ -31,10 +31,12 @@ export const REQUIREMENTS_CLIENT = String.raw`// hopper-requirements (issue #255
 //   --json          the hopper's answer as JSON
 // A repository keeps its requirements in .hopper/requirements.yaml; one in a folder's .hopper/ holds for changes in that folder.
 // A check passes when it exits 0 and each threshold holds on what it measured: it prints a line "hopper-measure NAME=NUMBER".
+// A check whose node ran out of heap (V8's "JavaScript heap out of memory" abort) says so, with the heap limit and the command.
 // Exit 0: passed (or the dry run); 1: a requirement failed, or the hopper refused; 2: a bad call.
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { getHeapStatistics } from 'node:v8';
 
 const FILE = '.hopper/requirements.yaml';
 const USAGE = 'usage: sh "$HOPPER_REQUIREMENTS" check|dry-run [--base BRANCH] [--repo OWNER/NAME] [--json]';
@@ -119,7 +121,19 @@ if (op === 'dry-run') {
   process.exit(0);
 }
 
-/** One check, run here: its exit code, what it measured, its output. */
+/** A node's heap size flag: the last one on the command, else in its NODE_OPTIONS; "-" and "_" mean the same. */
+const HEAP_FLAG = /--max[-_]old[-_]space[-_]size[= ]([0-9]+)/g;
+const lastHeapFlag = (text) => { const all = [...(text ?? '').matchAll(HEAP_FLAG)]; return all.length ? all[all.length - 1][1] : undefined; };
+/** What a check that ran out of heap says (issue #2721): the heap limit its node had, as near as can be told, and the command. */
+const heapAbortOf = (text, run, env) => {
+  if (!/JavaScript heap out of memory/.test(text)) return undefined;
+  const flag = lastHeapFlag(run) ?? lastHeapFlag(env.NODE_OPTIONS);
+  const limit = flag !== undefined ? flag + ' MB (--max-old-space-size)'
+    : Math.round(getHeapStatistics().heap_size_limit / 2 ** 20) + " MB (Node's default here)";
+  return 'the check ran out of JavaScript heap: heap limit ' + limit + ', command: ' + run;
+};
+
+/** One check, run here: its exit code, what it measured, its output, and why it aborted when its node ran out of heap. */
 const runCheck = (q, c) => new Promise((resolve) => {
   const env = { ...process.env, ...(c.env ?? {}) };
   for (const [n, t] of Object.entries(c.thresholds ?? {})) {
@@ -136,15 +150,21 @@ const runCheck = (q, c) => new Promise((resolve) => {
     const text = Buffer.concat(out).toString('utf8');
     const measured = {};
     for (const m of text.matchAll(/^hopper-measure\s+([A-Za-z][A-Za-z0-9_]*)=(-?[0-9.]+)\s*$/gm)) measured[m[1]] = Number(m[2]);
-    resolve({ run: { name: c.name, exit: code ?? (signal ? 128 : 1), ...(Object.keys(measured).length ? { measured } : {}) }, text });
+    resolve({ run: { name: c.name, exit: code ?? (signal ? 128 : 1), ...(Object.keys(measured).length ? { measured } : {}) }, text, heap: heapAbortOf(text, c.run, env) });
   });
 });
 
 const runs = [];
 const outputs = {};
+const heaps = {};
 for (const q of plan.matched) {
   const checks = [];
-  for (const c of q.checks) { const r = await runCheck(q, c); checks.push(r.run); outputs[q.id + '/' + c.name] = r.text; }
+  for (const c of q.checks) {
+    const r = await runCheck(q, c);
+    checks.push(r.run);
+    outputs[q.id + '/' + c.name] = r.text;
+    if (r.heap) heaps[q.id + '/' + c.name] = r.heap;
+  }
   runs.push({ id: q.id, checks });
 }
 const judged = await ask({ op: 'record', ...pushed, runs });
@@ -156,6 +176,7 @@ else {
       const m = Object.entries(c.measured ?? {}).map(([n, v]) => n + '=' + v).join(', ');
       console.log('  ' + (c.passed ? 'ok  ' : 'FAIL') + ' ' + c.run + ' (exit ' + c.exit + (m ? ', ' + m : '') + ')' + (c.problem ? ': ' + c.problem : ''));
       if (!c.passed) {
+        if (heaps[q.id + '/' + c.name]) console.log('  ' + heaps[q.id + '/' + c.name]);
         const lines = (outputs[q.id + '/' + c.name] ?? '').split('\n');
         console.log('  --- the last ' + Math.min(lines.length, 200) + ' lines of its output ---');
         console.log(lines.slice(-200).map((l) => '  | ' + l).join('\n'));

@@ -8,6 +8,8 @@ import type { KeptReason } from './kept-work.ts';
 import type { ExitedContainer, Pruned } from './storage-prune.ts';
 import type { Trimmed } from './disk-trim.ts';
 import type { CappedKind, Cleared } from './cache-caps.ts';
+import type { HeapReport } from './heap-aborts.ts';
+import type { CoreDump, OomKill } from './process-crashes.ts';
 
 /**
  * What the reap at a job's end kept: repositories in its scratch dir holding uncommitted or unpushed work. `pushed`
@@ -24,6 +26,10 @@ export interface Reaped {
   pushed?: string[]; left?: string[]; removed?: ContainersRemoved; used?: ResourceUse;
   /** Why each dir in `left` is still there (issue #2715); none from a client older than that. */
   leftWhy?: Record<string, LeftCause>;
+  /** The reports of the job's Node processes whose heap ran out (issue #2722); none from a client older than that. */
+  heap?: HeapReport[];
+  /** The core dumps and OOM kills of its processes (issue #2722 part 3); none from a client older than that. */
+  cores?: CoreDump[]; oomKilled?: OomKill[];
 }
 
 /**

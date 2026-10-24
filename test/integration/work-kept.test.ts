@@ -1,6 +1,7 @@
 // The reap at a job's end (issue #401): what it kept for uncommitted or unpushed work is flagged on the
 // job's trail as job.work_kept, never removed silently; a reap that kept nothing records nothing. What the job's scope
-// used (issue #2498) is recorded as job.resources_used.
+// used (issue #2498) is recorded as job.resources_used, and each heap abort it read (issue #2722) as job.heap_aborted;
+// each core dump and OOM kill of its processes (part 3) as job.core_dumped and job.oom_killed.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Reaped } from '../../src/domain/ports.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -17,10 +18,10 @@ afterEach(async () => {
   cleanup?.();
 });
 
-async function cancelled(kept?: string[], removed?: Reaped['removed'], tips?: Reaped['tips'], heads?: string[], used?: Reaped['used']) {
+async function cancelled(kept?: string[], removed?: Reaped['removed'], tips?: Reaped['tips'], heads?: string[], used?: Reaped['used'], heap?: Reaped['heap'], crashes: Pick<Reaped, 'cores' | 'oomKilled'> = {}) {
   const db = tempDbPath();
   cleanup = db.cleanup;
-  const sticky = createStickyExecutor({ ...(kept ? { kept } : {}), ...(tips ? { tips } : {}), ...(removed ? { removed } : {}), ...(used ? { used } : {}) });
+  const sticky = createStickyExecutor({ ...(kept ? { kept } : {}), ...(tips ? { tips } : {}), ...(removed ? { removed } : {}), ...(used ? { used } : {}), ...(heap ? { heap } : {}), ...crashes });
   app = await startTestApp({ dbPath: db.dbPath, source: createManualSource(), seams: { executors: [sticky] } });
   const job = await app.pull({}, { executor: 'sticky' });
   await app.waitForStatus(job.id, 'running');
@@ -89,5 +90,30 @@ describe('what the job\'s scope used (issue #2498)', () => {
     const { a } = await cancelled([]);
     await new Promise((r) => setTimeout(r, 100));
     expect(await a.events('types=job.resources_used')).toEqual([]);
+  });
+});
+
+describe('the heap aborts the reap read (issue #2722)', () => {
+  it('are recorded on the job: job.heap_aborted for each, with its command and no path', async () => {
+    const heap = [{ commandLine: ['node', '/w/node_modules/typescript/bin/tsc', '--noEmit'], heapLimitBytes: 2248146944, rssPeakBytes: 2400000000, abortedAtMs: Date.parse('2026-10-24T10:41:00.000Z') }, {}];
+    const { a, job } = await cancelled(undefined, undefined, undefined, undefined, undefined, heap);
+    await waitFor(async () => (await a.events('types=job.heap_aborted')).length === 2);
+    const events = await a.events('types=job.heap_aborted');
+    expect(events.map((e) => e.data)).toEqual(expect.arrayContaining([
+      { command: 'tsc --noEmit', heapLimitBytes: 2248146944, rssPeakBytes: 2400000000, abortedAt: '2026-10-24T10:41:00.000Z' }, { command: 'node' },
+    ]));
+    expect(events.every((e) => e.jobId === job.id)).toBe(true);
+  });
+});
+
+describe('the core dumps and OOM kills the reap read (issue #2722 part 3)', () => {
+  it('are recorded on the job: job.core_dumped and job.oom_killed, with the command and no path', async () => {
+    const at = Date.parse('2026-10-24T10:41:00.000Z');
+    const crashes = { cores: [{ pid: 41, signal: 11, commandLine: '/usr/bin/cc1plus -O2 big.cpp', dumpedAtMs: at }], oomKilled: [{ pid: 3001, task: 'tsc', killedAtMs: at }] };
+    const { a, job } = await cancelled(undefined, undefined, undefined, undefined, undefined, undefined, crashes);
+    await waitFor(async () => (await a.events('types=job.oom_killed')).length === 1);
+    const [core] = await a.events('types=job.core_dumped'), [oom] = await a.events('types=job.oom_killed');
+    expect(core).toMatchObject({ jobId: job.id, data: { command: 'cc1plus -O2 big.cpp', signal: 'SIGSEGV', dumpedAt: '2026-10-24T10:41:00.000Z' } });
+    expect(oom).toMatchObject({ jobId: job.id, data: { command: 'tsc', killedAt: '2026-10-24T10:41:00.000Z' } });
   });
 });
