@@ -835,6 +835,12 @@ which is how a job drifted out of its tree. So the hopper directs it three ways:
   every `gradle.properties`, and Maven puts `MAVEN_OPTS` after `.mvn/jvm.config`, so a project's own files cannot raise
   them; a payload's own options come after them and win. 2 GiB is a job's memory (`MEMORY_PER_JOB_GIB`), which admission
   counts. Each option is one word: `gradlew` splits `GRADLE_OPTS` at spaces.
+  With a memory limit on the job's scope (`scopeLimitsOf`), the build defaults also give Node its heap (issue #2721):
+  `NODE_OPTIONS` gets `--max-old-space-size` at 75% of the limit in MiB (`NODE_HEAP_SHARE`, below MemoryHigh's 90%), after
+  the payload's own `NODE_OPTIONS`, and none when the payload's own already sets a heap size. Node sizes its default heap
+  from the cgroup's limit (`process.constrainedMemory()`), a quarter of it: in a scope with `MemoryMax=9G`, 2144 MB, and
+  type-checking the hopper takes about 3.1 GB, so every full `tsc` in a job aborted with "JavaScript heap out of memory"
+  while its scope used under half its limit.
 - **`.worktrees` ignores itself.** Before `agent start`, the pane's own shell runs
   `[mkdir -p <cwd> && ]cd <cwd> && mkdir -p <scratch> && printf '*\n' > <cwd>/.worktrees/.gitignore && ln -sfn <scratch> <temp link> && [ "$(readlink <temp link>)" = <scratch> ] && printf 'hopper-scratch-%s\n' ready || printf 'hopper-scratch-%s\n' unusable`
   (`pane run`; the `mkdir` for the machine's work tree, never for a routing rule's: issue #361; on a Windows
@@ -34343,7 +34349,9 @@ requirements:
   and each of its thresholds holds on what it measured: it prints a line `hopper-measure <name>=<number>`, and gets each
   bound as `HOPPER_MIN_<name>` and `HOPPER_MAX_<name>`. A threshold it measured nothing for fails, saying which line it
   must print. So the pass criteria are the CI gate's own, by the same command. `ci` names the CI check it stands for
-  (part 5, below).
+  (part 5, below). A failed check whose output holds V8's `JavaScript heap out of memory` says so on its own line (issue
+  #2721): the heap limit its node had — the last `--max-old-space-size` on the command, else in its `NODE_OPTIONS`, else
+  Node's default where the client runs — and the command, so a heap too small is not read as a failing test.
 - **Levels.** The hopper's default, the repository's file, a folder's `.hopper/requirements.yaml` (**path-scoped**: its
   requirements apply only when the commit changes a file in that folder, and their checks run in it), the job's override.
   A requirement of the same id at a higher level replaces a lower one whole, its thresholds too, stricter or looser

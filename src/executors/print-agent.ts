@@ -161,14 +161,15 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     // and the one a run would hand them is never closed (issue #307).
     // The job's way to the hopper (issues #563, #652: no GitHub token, git through the hopper), HOPPER_JOB_ID, the scratch dir and JOB_TOOL_ENV (issue #1502) with Gradle's idle timeout (issue #2489) come from the hopper; a payload cannot move them.
     const credentials = await ctx.credentials?.(scratch);
-    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id, ...jobToolEnv(p.env) }).map(([k, v]) => shellQuote(`${k}=${v}`));
+    const limits = scopeLimitsOf(ctx.machine);
+    const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id, ...jobToolEnv(p.env, limits) }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
     // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.
     const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, ...(p.repoUrl ? { url: p.repoUrl } : {}), worktrees: false })} ) >&2; ` : '';
     // The job's own container runtime and its sandbox (issue #1295), in the turn's scope.
     const isolated = isolatedTurn(ctx.job.id, scratch, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`);
-    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `sh -c ${shellQuote(isolated)}`, scopeLimitsOf(ctx.machine))}; }`;
+    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `sh -c ${shellQuote(isolated)}`, limits)}; }`;
     const where = ctx.machine.id;
     try {
       ctx.progress(`${label} ${chatId ? 'resumed' : 'started'} on ${where}`);

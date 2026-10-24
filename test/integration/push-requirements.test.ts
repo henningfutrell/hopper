@@ -12,6 +12,8 @@
 //     Then the base's requirements apply: a push with no evaluation is refused, and the check runs them
 //   Scenario: a check that exits 1 or 2 (issue #2712: a gate that cannot run where the job runs exits 2)
 //     Then the requirement fails, and the push is refused, saying the exit code
+//   Scenario: a check whose node runs out of heap (issue #2721)
+//     Then its failure says so, with the heap limit and the command, not only the exit code
 //   Scenario: a repository with no requirements file
 //     Then a push goes through with no evaluation
 //   Scenario: the hopper's default requirements (Settings → Push requirements), an admin's setting
@@ -148,6 +150,15 @@ describe('push requirements (issue #2555)', () => {
     expect(eventsOf(t.app, 'push_requirements.evaluated')).toEqual([expect.objectContaining({
       jobId: r.job.id, data: expect.objectContaining({ head, passed: false, requirements: expect.arrayContaining([expect.objectContaining({ id: 'kotlin-coverage', status: 'failed' })]) }),
     })]);
+  }, 60_000);
+
+  it('a check whose node runs out of heap says so, with the heap limit and the command (issue #2721)', async () => {
+    const t = await start();
+    const run = "node --max-old-space-size=16 -e 'const a = []; for (;;) a.push(new Array(1e5).fill(1))'";
+    const r = await jobOnBranch(t, REQUIREMENTS.replace('run: cat coverage.txt', `run: ${run}`));
+    const failed = await r.requirements('check');
+    expect(failed.code).toBe(1);
+    expect(failed.stdout).toContain(`  the check ran out of JavaScript heap: heap limit 16 MB (--max-old-space-size), command: ${run}`);
   }, 60_000);
 
   it('a check is of a commit: changes not committed are refused', async () => {
