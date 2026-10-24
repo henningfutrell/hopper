@@ -56,9 +56,8 @@ import { useCanonicalHash, type MergedPage, type Tab } from './routes';
 
 const tabs = (page: MergedPage, views: Partial<Record<Tab, () => React.ReactNode>>) => () => <PageTabs page={page} views={views} />;
 const VIEW: Record<View, () => React.ReactNode> = {
-  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, intake: Intake, tagged: Tagged, questions: Questions, proposals: Proposals, research: Research, 'pull-requests': PullRequests, artifacts: Artifacts, reports: BugReports, sources: Sources, infra: Infra, topology: Topology, skills: Skills, plugins: Plugins, vault: Vault, 'users-access': UsersAccess, settings: Settings, job: JobView,
+  'needs-you': NeedsYou, dashboard: Dashboard, search: Search, intake: Intake, tagged: Tagged, questions: Questions, proposals: Proposals, research: Research, 'pull-requests': PullRequests, artifacts: Artifacts, reports: BugReports, sources: Sources, infra: Infra, topology: Topology, skills: Skills, plugins: Plugins, vault: Vault, 'users-access': UsersAccess, settings: Settings, job: JobView, failures: Failures, parked: Parked,
   approvals: tabs('approvals', { 'access-requests': AccessRequests, 'pending-approvals': PendingApprovals }),
-  failures: tabs('failures', { failures: Failures, parked: Parked }),
   jobs: tabs('jobs', { jobs: Jobs, queue: Queue }),
   ask: AskHopper,
   activity: tabs('activity', { events: Events, decisions: Decisions }),

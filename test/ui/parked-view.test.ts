@@ -105,8 +105,9 @@ describe('a parked job\'s question', () => {
     await boot('admin', '#questions');
     expect([...document.querySelectorAll('[data-question]')].map((c) => c.getAttribute('data-question'))).toEqual(['q-later', 'q-live', 'q-old']);
     expect(navBadge('#questions')!.getAttribute('title')).toBe('3 questions wait on you; 1 high priority');
-    // Issue #2374: Parked is a tab of Failures, whose entry sums it.
-    const badge = navBadge('#failures')!;
+    // Issue #2713: Parked is an entry of its own; the Failures entry never counts a parked job.
+    expect(navBadge('#failures')).toBeFalsy();
+    const badge = navBadge('#parked')!;
     expect(badge.textContent).toBe('2');
     expect(badge.getAttribute('data-high')).toBe('1');
     expect(badge.getAttribute('title')).toBe('2 parked jobs wait to be picked up; 1 high priority');

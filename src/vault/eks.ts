@@ -155,7 +155,10 @@ export async function mintDiscovered(o: EksOptions, d: ClusterDiscovery, jobId: 
   if (d.role === EKS_READ_ROLE) return { ...await signedFor(o, f.session, f.cluster, f.roleArn, f.sessionName, identify), ...where };
   // A write signs in as the role its write is granted to, an observe as hopper-observe (issue #2146): EKS maps that role, and the cluster's access entry decides.
   const roleArn = `arn:aws:iam::${f.account}:role/${d.role}`;
-  const session = await o.minter.awsSession(f.keys, { roleArn, sessionName: f.sessionName, ...awsReadSession(roleArn), durationSeconds: AWS_SESSION_SECONDS });
+  // Issue #2340: the minting identity may assume hopper-read and not this role. Say both places a person changes.
+  const session = await o.minter.awsSession(f.keys, { roleArn, sessionName: f.sessionName, ...awsReadSession(roleArn), durationSeconds: AWS_SESSION_SECONDS }).catch((e: unknown) => {
+    throw new Error(`${(e as Error).message}. The identity of the minting credential ${f.credential} needs sts:AssumeRole on ${roleArn} in its own policy, and that role's trust policy must let it assume the role (docs/deploy.md "The observe role")`, { cause: e });
+  });
   return { ...await signedFor(o, session, f.cluster, roleArn, f.sessionName, identify), ...where };
 }
 

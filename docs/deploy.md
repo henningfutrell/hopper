@@ -1226,6 +1226,89 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
   It reads the role first (`iam:GetRole`, which `ReadOnlyAccess` holds): when the account has no role of that name, the
   check refuses the template request at once and names the role, so make `hopper-action` in each account a job may
   change before a job asks for it.
+- **The clusters cluster discovery finds** (issue #1766, issue #2340). A cluster with no minting credential of its own
+  is read as the account's `hopper-read`, and a bastion's **observe** on it signs in as the account's role
+  `hopper-observe` (issue #2146). STS and EKS each decide one half, so each role needs both:
+  1. The minting identity may assume the role: `sts:AssumeRole` on it in the minting identity's own policy, and the
+     minting identity in the role's trust policy. A refusal of either is "not authorized to perform: sts:AssumeRole".
+  2. The cluster maps the role: an access entry in each cluster. Without it, the token is Unauthorized, and the
+     read-only check's `kube.get` fails with the write probes.
+
+  **The observe role**, `hopper-observe`. It reads, as `hopper-read` does, and port-forwards to the pods of the
+  namespaces you name (the monitoring services, for example). It changes no asset. Make it, and let the minting identity
+  assume it:
+
+  ```sh
+  aws iam create-role --role-name hopper-observe --max-session-duration 3600 \
+    --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::<id>:user/hopper-minter"},"Action":"sts:AssumeRole"}]}'
+  aws iam attach-role-policy --role-name hopper-observe --policy-arn arn:aws:iam::aws:policy/ReadOnlyAccess
+  aws iam put-user-policy --user-name hopper-minter --policy-name hopper-mint \
+    --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Resource":["arn:aws:iam::<id>:role/hopper-read","arn:aws:iam::<id>:role/hopper-observe"]}]}'
+  ```
+
+  `put-user-policy` replaces the policy of that name: keep each role the minting identity assumes now in its
+  `Resource` (`hopper-action` too, when you made it). Then, in each cluster, map both roles. `hopper-read` gets view:
+
+  ```sh
+  aws eks create-access-entry --cluster-name <cluster> --principal-arn arn:aws:iam::<id>:role/hopper-read
+  aws eks associate-access-policy --cluster-name <cluster> --principal-arn arn:aws:iam::<id>:role/hopper-read \
+    --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy --access-scope type=cluster
+  aws eks create-access-entry --cluster-name <cluster> --principal-arn arn:aws:iam::<id>:role/hopper-observe \
+    --kubernetes-groups hopper:observe
+  aws eks associate-access-policy --cluster-name <cluster> --principal-arn arn:aws:iam::<id>:role/hopper-observe \
+    --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy --access-scope type=cluster
+  ```
+
+  `hopper-observe` also gets `pods/portforward` through its group, only in the namespaces it may forward to:
+
+  ```yaml
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: Role
+  metadata: { name: hopper-observe, namespace: <namespace> }
+  rules:
+    - { apiGroups: [""], resources: [pods/portforward], verbs: [create] }
+    - { apiGroups: [""], resources: [pods, services], verbs: [get, list] }
+  ---
+  apiVersion: rbac.authorization.k8s.io/v1
+  kind: RoleBinding
+  metadata: { name: hopper-observe, namespace: <namespace> }
+  roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: hopper-observe }
+  subjects: [{ apiGroup: rbac.authorization.k8s.io, kind: Group, name: hopper:observe }]
+  ```
+
+  Or, to keep it in your infrastructure code, the IAM half in Terraform:
+
+  ```hcl
+  resource "aws_iam_role" "hopper_observe" {
+    name                 = "hopper-observe"
+    max_session_duration = 3600
+    assume_role_policy = jsonencode({
+      Version   = "2012-10-17"
+      Statement = [{ Effect = "Allow", Principal = { AWS = "arn:aws:iam::<id>:user/hopper-minter" }, Action = "sts:AssumeRole" }]
+    })
+  }
+
+  resource "aws_iam_role_policy_attachment" "hopper_observe" {
+    role       = aws_iam_role.hopper_observe.name
+    policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+  }
+
+  resource "aws_eks_access_entry" "hopper_observe" {
+    cluster_name      = "<cluster>"
+    principal_arn     = aws_iam_role.hopper_observe.arn
+    kubernetes_groups = ["hopper:observe"]
+  }
+
+  resource "aws_eks_access_policy_association" "hopper_observe" {
+    cluster_name  = "<cluster>"
+    principal_arn = aws_iam_role.hopper_observe.arn
+    policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSViewPolicy"
+    access_scope { type = "cluster" }
+  }
+  ```
+
+  Check each: `hopper vault mint-test cluster/<cluster>` mints as `hopper-read` and shows who the cluster says it is.
+  When STS refuses `hopper-observe`, the bastion's refusal names the minting credential and the role.
 - **The template** declares the operation profiles (`read` on `namespace/<cluster>/<ns>`, on `cluster/<name>` or on
   `aws-role/<id>/<role>`), and a person approves them on Vault. A minting credential is never given to a box,
   and no template lists it in its scope.
