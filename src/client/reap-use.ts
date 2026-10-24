@@ -1,5 +1,5 @@
-// The job's heap aborts (issue #2722, design.md "Heap aborts"): the reap's part of them, beside reap.ts for its size.
-// Imports nothing of hopper.
+// What a job used, as its reap reads it, beside reap.ts for its size: its scope's (issue #2498), and its heap aborts (issue
+// #2722, design.md "Heap aborts"). Imports nothing of hopper.
 
 // Each report a Node process of the job wrote to its temp dir (its scratch dir, `$s`) when its heap ran out (NODE_OPTIONS,
 // src/domain/heap-aborts.ts), said as `hopper-heap <ms> <heap limit> <peak RSS> <argv JSON>`,
@@ -38,3 +38,25 @@ const argvOf = (text: string): string[] | undefined => {
     return Array.isArray(v) && v.every((a) => typeof a === 'string') ? v : undefined;
   } catch { return undefined; }
 };
+
+/**
+ * What a job used (issue #2498), as `job.resources_used` records it: its scope's, each field absent where its cgroup had
+ * none, and the disk its scratch dir and worktrees held (part 4), absent where it had neither.
+ */
+export interface ResourceUse { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; diskBytes?: number }
+
+/**
+ * The reap's `hopper-used <peak bytes> <CPU µs> <OOM kills>` line, each `-` when unread, and its `hopper-disk <KiB>` line;
+ * nothing when no field was read.
+ */
+export function usedOf(lines: readonly string[]): { used?: ResourceUse } {
+  const m = lines.map((l) => /^hopper-used (\S+) (\S+) (\S+)$/.exec(l)).find((x) => x !== null);
+  const n = (v: string | undefined): number | undefined => (v && /^\d+$/.test(v) ? Number(v) : undefined);
+  const peak = n(m?.[1]), usec = n(m?.[2]), oom = n(m?.[3]);
+  const kib = n(lines.map((l) => /^hopper-disk (\d+)$/.exec(l)?.[1]).find((x) => x !== undefined));
+  const used: ResourceUse = {
+    ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}),
+    ...(kib !== undefined ? { diskBytes: kib * 1024 } : {}),
+  };
+  return Object.keys(used).length ? { used } : {};
+}

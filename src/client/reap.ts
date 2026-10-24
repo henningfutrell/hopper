@@ -5,7 +5,7 @@
 // target runs them, and a client release is the files in that directory. Imports nothing of hopper but its own directory.
 
 import { DETAILS_FORMAT, DETAILS_MARK, JOB_LABEL, REAP_RUNTIME_SH, SURVEY_RUNTIME_SH } from './job-runtime.ts';
-import { HEAP_REPORTS_SH, heapOf, type HeapReport } from './heap-reports.ts';
+import { HEAP_REPORTS_SH, heapOf, usedOf, type HeapReport, type ResourceUse } from './reap-use.ts';
 
 /** A job id the scripts take: a uuid, or a test's plain name. Never a pattern, a path or an option. */
 const JOB_ID = /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/;
@@ -353,27 +353,6 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
 }
 
 
-/**
- * What a job used (issue #2498), as `job.resources_used` records it: its scope's, each field absent where its cgroup had
- * none, and the disk its scratch dir and worktrees held (part 4), absent where it had neither.
- */
-export interface ResourceUse { memoryPeakBytes?: number; cpuSeconds?: number; oomKills?: number; diskBytes?: number }
-
-/**
- * The reap's `hopper-used <peak bytes> <CPU µs> <OOM kills>` line, each `-` when unread, and its `hopper-disk <KiB>` line;
- * nothing when no field was read.
- */
-function usedOf(lines: readonly string[]): { used?: ResourceUse } {
-  const m = lines.map((l) => /^hopper-used (\S+) (\S+) (\S+)$/.exec(l)).find((x) => x !== null);
-  const n = (v: string | undefined): number | undefined => (v && /^\d+$/.test(v) ? Number(v) : undefined);
-  const peak = n(m?.[1]), usec = n(m?.[2]), oom = n(m?.[3]);
-  const kib = n(lines.map((l) => /^hopper-disk (\d+)$/.exec(l)?.[1]).find((x) => x !== undefined));
-  const used: ResourceUse = {
-    ...(peak !== undefined ? { memoryPeakBytes: peak } : {}), ...(usec !== undefined ? { cpuSeconds: usec / 1e6 } : {}), ...(oom !== undefined ? { oomKills: oom } : {}),
-    ...(kib !== undefined ? { diskBytes: kib * 1024 } : {}),
-  };
-  return Object.keys(used).length ? { used } : {};
-}
 
 /** One scratch dir the survey found: its job, path and age. */
 export interface SurveyedDir { jobId: string; path: string; ageMs: number }
