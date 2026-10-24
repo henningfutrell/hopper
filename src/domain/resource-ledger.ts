@@ -7,7 +7,7 @@ import type { JobDiskUse } from './hopper-disk.ts';
 import { jobScratchOf, scratchParts, worktreeJobOf, worktreeParts } from './job-layout.ts';
 import type { SweepSettings } from './machines.ts';
 import { sweepReapAtOf } from './retention.ts';
-import type { Reaped, Survey } from './machine-shell.ts';
+import type { LeftCause, Reaped, Survey } from './machine-shell.ts';
 import { TERMINAL_STATUSES, type Job } from './types.ts';
 
 /** What a ledger entry is. */
@@ -121,6 +121,12 @@ export function paneClosures(entries: readonly LedgerEntry[], how: 'closed' | 'n
   return entries.filter((e) => e.kind === 'herdr_pane' && e.state !== 'reaped' && (e.state !== to.state || e.reason !== to.reason)).map((entry) => ({ entry, ...to }));
 }
 
+/** What each cause of a dir left by a reap (issue #2715) says after `<path> is still there: `. */
+const LEFT_CAUSE_TEXT: Record<LeftCause, string> = {
+  mount: 'a file system is mounted in it', process: 'a process still runs in it',
+  userns: 'it holds files of the job\'s user namespace that podman could not remove', permission: 'the hopper\'s user may not remove files in it',
+};
+
 const within = (path: string, dir: string): boolean => path === dir || path.startsWith(`${dir}/`);
 
 /**
@@ -134,7 +140,8 @@ export function reapClosures(entries: readonly LedgerEntry[], said: Reaped, scra
   return entries.filter((e) => e.state !== 'reaped' && e.kind !== 'herdr_pane' && (scratch || stopped(e.kind))).map((entry) => {
     if (stopped(entry.kind)) return { entry, state: 'reaped' as const };
     const left = said.left?.find((p) => within(p, entry.locator) || within(entry.locator, p));
-    if (left) return { entry, state: 'failed' as const, reason: `${left} is still there` };
+    const why = left !== undefined ? said.leftWhy?.[left] : undefined;
+    if (left) return { entry, state: 'failed' as const, reason: `${left} is still there${why ? `: ${LEFT_CAUSE_TEXT[why]}` : ''}` };
     return { entry, state: said.kept.length > 0 && (entry.kind === 'scratch_dir' || entry.kind === 'job_worktree') ? 'kept' as const : 'reaped' as const };
   }).filter((c) => c.state !== c.entry.state || c.reason !== c.entry.reason);
 }

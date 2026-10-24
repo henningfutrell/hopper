@@ -132,6 +132,13 @@ const REAP_SCRIPT = [
   '  $nt env -u CONTAINER_HOST -u CONTAINER_CONNECTION ${h:+"XDG_RUNTIME_DIR=$h"} "$pp" unshare rm -rf -- "$1" >/dev/null 2>&1; [ -e "$1" ] || return 0;',
   '  grep -q "^NoNewPrivs:[[:space:]]*1" /proc/self/status 2>/dev/null && command -v systemd-run >/dev/null 2>&1'
     + ' && $nt systemd-run --user --quiet --wait --collect env -u CONTAINER_HOST -u CONTAINER_CONNECTION "$pp" unshare rm -rf -- "$1" >/dev/null 2>&1; };',
+  // Why $1 is still there after gone() (issue #2715): a file system mounted in it, a process that runs in it, files of
+  // another user (the job's user namespace) in it, else a permission the hopper's user does not have.
+  // The kernel names a dir by its path with no link in it: $1 resolved, as `lp`.
+  'whyleft() { lp=$(cd "$1" 2>/dev/null && pwd -P) || lp=$1;',
+  '  if awk -v p="$lp" \'$5 == p || index($5, p "/") == 1 { f = 1 } END { exit !f }\' /proc/self/mountinfo 2>/dev/null; then echo mount;',
+  '  elif find /proc -mindepth 2 -maxdepth 2 -path "/proc/[0-9]*" \\( -name cwd -o -name exe -o -name root \\) \\( -lname "$lp" -o -lname "$lp/*" \\) -print 2>/dev/null | grep -q .; then echo process;',
+  '  elif [ -n "$(find "$1" ! -user "$(id -u)" -print 2>/dev/null | head -n 1)" ]; then echo userns; else echo permission; fi; };',
   'dirs() { for d in "$n" "$o"; do [ -d "$d" ] && [ ! -L "$d" ] && printf "%s\\n" "$d"; done; };',
   `trees() { for t in "$w"/${LAYOUT.worktrees}/*/"$id" "$w"/${LAYOUT.oldWorktrees}/*-"$id"; do case $t in "$w"/${LAYOUT.worktrees}/@*) continue;; esac; [ -d "$t" ] && [ ! -L "$t" ] && printf "%s\\n" "$t"; done; };`,
   // The disk the job's scratch dir and worktrees hold (issue #2498 part 4), read before the reap removes or keeps them: one
@@ -170,7 +177,7 @@ const REAP_SCRIPT = [
   '  trees | while IFS= read -r t; do gone "$t"; rmdir "${t%/*}" 2>/dev/null; done;',
   '  gone "$n"; gone "$o";',
   // What is still there (issue #1452) is named: the sweep then never says it removed it.
-  '  { dirs; trees; } | sed "s/^/hopper-left /";',
+  '  { dirs; trees; } | while IFS= read -r d; do printf "hopper-left %s\\n" "$d"; printf "hopper-left-why %s %s\\n" "$(whyleft "$d")" "$d"; done;',
   'fi;',
   // The layout before issue #1188, once it holds no job's scratch dir or worktree: its scratch area (with the shared
   // dependencies and repository mirrors only its jobs used) and its worktrees dir go. Then git forgets every worktree
@@ -291,6 +298,9 @@ function detailsOf(line: string): ContainerDetails | undefined {
 
 /** Why the reap kept a checkout (issue #2494): a change not committed, a stash, commits no remote has. */
 export const KEPT_REASONS = ['dirty', 'stash', 'unpushed'] as const;
+/** Why a dir the reap set out to remove is still there (issue #2715). */
+export const LEFT_CAUSES = ['mount', 'process', 'userns', 'permission'] as const;
+export type LeftCause = typeof LEFT_CAUSES[number];
 export type KeptReason = typeof KEPT_REASONS[number];
 
 /**
@@ -298,7 +308,7 @@ export type KeptReason = typeof KEPT_REASONS[number];
  * could not remove (issue #1452), why it kept each it kept (`reasons`, issue #2494; none from a client older than that), and the containers and volumes of the job it removed (issue #1120), with what it said of
  * each container (issue #975; none from a client older than that). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse } | undefined {
+export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; leftWhy?: Record<string, LeftCause>; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
@@ -317,9 +327,14 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
     const w = /^hopper-kept-why (\S+) (\/.*)$/.exec(l);
     if (w && kept.includes(w[2]!) && (KEPT_REASONS as readonly string[]).includes(w[1]!) && !reasons[w[2]!]?.includes(w[1] as KeptReason)) (reasons[w[2]!] ??= []).push(w[1] as KeptReason);
   }
+  const leftWhy: Record<string, LeftCause> = {};
+  for (const l of lines) {
+    const w = /^hopper-left-why (\S+) (\/.*)$/.exec(l);
+    if (w && left.includes(w[2]!) && (LEFT_CAUSES as readonly string[]).includes(w[1]!)) leftWhy[w[2]!] = w[1] as LeftCause;
+  }
   const details = [...new Map(named(DETAILS_MARK).map(detailsOf).filter((d) => d !== undefined && containers.includes(d.id)).map((d) => [d!.id, d!])).values()];
   return {
-    kept, ...(Object.keys(tips).length ? { tips } : {}), ...(Object.keys(reasons).length ? { reasons } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}),
+    kept, ...(Object.keys(tips).length ? { tips } : {}), ...(Object.keys(reasons).length ? { reasons } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}), ...(Object.keys(leftWhy).length ? { leftWhy } : {}),
     ...(containers.length || volumes.length ? { removed: { containers, volumes, ...(details.length ? { details } : {}) } } : {}),
     ...usedOf(lines),
   };
