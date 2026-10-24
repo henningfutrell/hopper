@@ -24,6 +24,12 @@ const FAILED_PROCESSES_READ = 50;
 
 export type Cleanup = (jobId: string) => Promise<void>;
 
+/** What the reap read the job used, with the meter's peak (`metered`) where it read no peak; undefined when neither read anything. */
+export function withMeteredPeak(used: Reaped['used'], metered: number | undefined): Reaped['used'] {
+  if (metered === undefined || used?.memoryPeakBytes !== undefined) return used;
+  return { ...used, memoryPeakBytes: metered };
+}
+
 export interface Cleanups {
   run: Cleanup;
   /** Every cleanup a record says is due or deferred (a stop before it went through), done now; ends when each ended. */
@@ -42,7 +48,7 @@ const ENDED = TERMINAL_STATUSES;
 /** The cleanup's record, for the patch of the transaction that records the job's end (issue #1570). */
 export const cleanupDue = (c: Pick<EngineContext, 'clock'>): Pick<Job, 'cleanupDue'> => ({ cleanupDue: { at: nowIso(c) } });
 
-export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'keepPanes' | 'clock' | 'trigger' | 'stopping'>): Cleanups {
+export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'machines' | 'keepPanes' | 'clock' | 'trigger' | 'stopping' | 'jobPeaks'>): Cleanups {
   const running = new Set<string>();
   /** The jobs whose cleanup `resume` found due from a stop: said so once it goes through. */
   const resumed = new Set<string>();
@@ -115,8 +121,10 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
         if (removed && (removed.containers.length > 0 || removed.volumes.length > 0)) {
           c.store.events.append({ type: 'job.containers_removed', jobId, ...(machineId ? { machineId } : {}), data: removed });
         }
-        // What the job's scope used (issue #2498), as its reap read it before it stopped the scope.
-        if (reaped?.used) c.store.events.append({ type: 'job.resources_used', jobId, ...(machineId ? { machineId } : {}), data: reaped.used });
+        // What the job's scope used (issue #2498), as its reap read it before it stopped the scope; its meter's peak where
+        // the reap read none (issue #2737: no scope, or one that ended before the reap).
+        const used = withMeteredPeak(reaped?.used, c.jobPeaks?.take(jobId));
+        if (used) c.store.events.append({ type: 'job.resources_used', jobId, ...(machineId ? { machineId } : {}), data: used });
         // Each heap abort of its Node processes (issue #2722), as the reap read the report each wrote.
         for (const h of reaped?.heap ?? []) c.store.events.append({ type: 'job.heap_aborted', jobId, ...(machineId ? { machineId } : {}), data: heapAbortedOf(h) });
         // And each core dump and OOM kill of its processes (part 3), as the reap read them from the journal.
