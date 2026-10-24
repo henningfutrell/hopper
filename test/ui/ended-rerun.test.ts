@@ -87,3 +87,17 @@ describe('Run again in the Ended panel (issues #362, #354)', () => {
     expect(runAgain('1')).toBeUndefined();
   });
 });
+
+describe('a job that ended well, with a process of it that failed (issue #2722 part 7)', () => {
+  it('its Ended card says what failed, and asks to make sure that its checks ran', async () => {
+    ended = [
+      { ...failed('41', {}, 'finished'), failedProcesses: { said: 'a process of the job failed: tsc ran out of heap', processes: 1 } },
+      failed('42', {}, 'finished'),
+      { ...failed('43', {}, 'finished'), failedProcesses: { said: 'its scope did not stop (failed)', processes: 0 } },
+    ];
+    await boot();
+    expect(row('41').querySelector('[data-failed-processes]')?.textContent).toBe('Done, but a process of the job failed: tsc ran out of heap. Make sure that its checks ran and passed.');
+    expect(row('42').querySelector('[data-failed-processes]')).toBeNull();
+    expect(row('43').querySelector('[data-failed-processes]')?.textContent).toBe('Done, but its scope did not stop (failed).');
+  });
+});

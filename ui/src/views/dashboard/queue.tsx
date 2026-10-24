@@ -5,6 +5,7 @@ import { Archive, Check, DoorOpen, Hourglass, Lock, Play, RotateCcw, SquareX, X 
 import { Confirm } from '@/components/confirm';
 import { gateHoldText, heldAtGate } from '@/model/blast-radius';
 import { adviceText, goalOf } from '@/model/job';
+import { FailedProcessesLine } from './failed-processes';
 import { Button } from '@/components/ui/button';
 import { JobTitle, Since, UnassignedFlag } from '@/components/job';
 import { RejectButton } from '@/components/reject';
@@ -336,6 +337,7 @@ export function EndedPanel() {
           </div>
           {job.error && <div className="line-clamp-2 text-xs text-bad/90" title={job.error}>{job.error}</div>}
           <AssessmentLine job={job} />
+          <FailedProcessesLine job={job} />
           <CleanupDeferredFlag job={job} />
         </div>
       )) : <Empty>nothing ended in 24 h</Empty>}

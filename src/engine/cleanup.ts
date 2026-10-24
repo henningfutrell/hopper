@@ -17,6 +17,10 @@ import type { SweepSettings } from '../domain/machines.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { heapAbortedOf } from '../domain/heap-aborts.ts';
 import { coreDumpedOf, oomKilledOf } from '../domain/process-crashes.ts';
+import { FAILED_PROCESS_EVENTS, failedProcessNote } from '../domain/failed-processes.ts';
+
+/** The events of failed processes a job's cleanup reads for its note (issue #2722 part 7). */
+const FAILED_PROCESSES_READ = 50;
 
 export type Cleanup = (jobId: string) => Promise<void>;
 
@@ -120,6 +124,10 @@ export function createCleanups(c: Pick<EngineContext, 'store' | 'executors' | 'm
         for (const k of reaped?.oomKilled ?? []) c.store.events.append({ type: 'job.oom_killed', jobId, ...(machineId ? { machineId } : {}), data: oomKilledOf(k) });
         // Its scope, when the reap could not stop it (part 6): the sweep reaps it again while it is there.
         if (reaped?.scopeNotStopped) c.store.events.append({ type: 'job.scope_not_stopped', jobId, ...(machineId ? { machineId } : {}), data: { ...reaped.scopeNotStopped } });
+        // A job that ended well keeps what failed for its cards (part 7): they read no events of a job.
+        const failedNote = reaped?.heap?.length || reaped?.cores?.length || reaped?.oomKilled?.length || reaped?.scopeNotStopped
+          ? failedProcessNote(job.status, c.store.events.recent(FAILED_PROCESSES_READ, [...FAILED_PROCESS_EVENTS], jobId)) : undefined;
+        if (failedNote) c.store.jobs.update(jobId, { failedProcesses: failedNote });
         // Its resource ledger (issue #2504) closed as the reap said: reaped, kept with the work, or failed with why.
         // A reap that kept the scratch dir for a time (part 5) closes the scope only; the sweep judges the rest after.
         if (said) closeLedger(c.store, jobId, said, nowIso(c), retainedUntil === undefined, panes);

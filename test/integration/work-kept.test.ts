@@ -2,7 +2,7 @@
 // job's trail as job.work_kept, never removed silently; a reap that kept nothing records nothing. What the job's scope
 // used (issue #2498) is recorded as job.resources_used, and each heap abort it read (issue #2722) as job.heap_aborted;
 // each core dump and OOM kill of its processes (part 3) as job.core_dumped and job.oom_killed; a scope that did not stop
-// (part 6) as job.scope_not_stopped.
+// (part 6) as job.scope_not_stopped. A job that ended well keeps a note of them (part 7) for its cards.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Reaped } from '../../src/domain/ports.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
@@ -124,5 +124,29 @@ describe('a scope the reap could not stop (issue #2722 part 6)', () => {
     const { a, job } = await cancelled(undefined, undefined, undefined, undefined, undefined, undefined, { scopeNotStopped: { state: 'failed', processes: 2 } });
     await waitFor(async () => (await a.events('types=job.scope_not_stopped')).length === 1);
     expect((await a.events('types=job.scope_not_stopped'))[0]).toMatchObject({ jobId: job.id, data: { state: 'failed', processes: 2 } });
+  });
+});
+
+describe('a job that ended well, with a process of it that failed (issue #2722 part 7)', () => {
+  it('keeps the note its cards show: what failed, and its scope that did not stop', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const sticky = createStickyExecutor({ finish: true, heap: [{ commandLine: ['node', '/w/node_modules/typescript/bin/tsc', '--noEmit'] }], scopeNotStopped: { state: 'failed' } });
+    app = await startTestApp({ dbPath: db.dbPath, source: createManualSource(), seams: { executors: [sticky] } });
+    const job = await app.pull({}, { executor: 'sticky' });
+    await app.waitForStatus(job.id, 'finished');
+    await waitFor(() => app!.user().store.jobs.get(job.id)?.failedProcesses !== undefined);
+    expect(app.user().store.jobs.get(job.id)?.failedProcesses).toEqual({ said: 'a process of the job failed: tsc ran out of heap, and its scope did not stop (failed)', processes: 1 });
+  });
+
+  it('keeps none when no process of it failed', async () => {
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const sticky = createStickyExecutor({ finish: true, kept: [] });
+    app = await startTestApp({ dbPath: db.dbPath, source: createManualSource(), seams: { executors: [sticky] } });
+    const job = await app.pull({}, { executor: 'sticky' });
+    await app.waitForStatus(job.id, 'finished');
+    await waitFor(() => sticky.cleaned.includes(job.id));
+    expect(app.user().store.jobs.get(job.id)?.failedProcesses).toBeUndefined();
   });
 });

@@ -6,9 +6,8 @@ import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { SignedOutTool, UsageLimitPair, UsageReading } from './usage.ts';
-import type { ResourceReading } from './machine-history.ts';
-import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLaneHealth, MachineLeaving, PendingLoad, UpdateSwap } from './machines.ts'; import type { MachineSandboxHost } from './sandbox-host.ts';
-import type { ParkedElsewhere } from './checkpoints.ts';
+import type { ResourceReading } from './machine-history.ts'; import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLaneHealth, MachineLeaving, PendingLoad, UpdateSwap } from './machines.ts'; import type { MachineSandboxHost } from './sandbox-host.ts';
+import type { ParkedElsewhere } from './checkpoints.ts'; import type { FailedProcessNote } from './failed-processes.ts';
 import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
 import type { PriorityLanesInput } from './priority.ts';
 import type { BlastRadiusInput, GatePass } from './blast-radius.ts';
@@ -252,6 +251,11 @@ export interface Job extends JobPhaseFields, JobMachineLink {
   liveness?: JobLiveness;
   /** The failure assessor's judgement of this failed job (issue #509): its decision, summary and reasons. */
   assessment?: JobAssessment;
+  /**
+   * A job that ended well (`finished`) whose reap read a process of it that failed, or a scope it could not stop (issue
+   * #2722 part 7): what its cards say after where it stands. Written by its cleanup, from its events.
+   */
+  failedProcesses?: FailedProcessNote;
   /** Let through the blast-radius gate by a person (issue #542): it may run on a gated machine. */
   gatePass?: GatePass;
   /**

@@ -22,6 +22,7 @@ import { countStages, treesOf } from './job-trees.ts';
 import { awaitBatch, ITEM_STAGE, rollUp, settleIssues, stageInItem, stageSinceOf } from './job-rollup.ts';
 import { isInFlight, type WorkItem } from './work-items.ts';
 import type { Job, JobStatus } from './types.ts';
+import type { FailedProcessNote } from './failed-processes.ts';
 import type { WaitOn } from './wait-on.ts';
 
 /** Where a job stands in its life, in the words the Jobs view uses. */
@@ -108,6 +109,8 @@ export interface JobGraphNode {
   inFlight?: true;
   /** A job queued or parked because a job of higher priority took its lane (issue #1525): that job, as people read it. */
   preemptedBy?: string;
+  /** A job that ended well with a process of it that failed (issue #2722 part 7, `Job.failedProcesses`): said after where it stands. */
+  failedProcesses?: FailedProcessNote;
   /**
    * An issue that waits on its batch (issue #1337): its work merged into the landing branch, and its batch run's merge closes
    * it. Done, whatever its job's end or the ledger says.
@@ -305,7 +308,7 @@ export function jobGraph(input: JobGraphInput): JobGraph {
       ...(job.tasks ? { tasks: job.tasks } : {}), ...(job.laneId ? { laneId: job.laneId } : {}),
       ...(pr ? { pullRequest: pr } : {}), ...(job.dismissedAt !== undefined && stage === 'superseded' ? { dismissed: true as const } : {}),
       ...(stage === 'waiting' && (job.status === 'failed' || job.status === 'cancelled') ? { handedOff: true as const } : {}),
-      ...(inFlightOn(job) ? { inFlight: true as const } : {}),
+      ...(inFlightOn(job) ? { inFlight: true as const } : {}), ...(job.status === 'finished' && job.failedProcesses ? { failedProcesses: job.failedProcesses } : {}),
       ...preemptedByOf(job, (by) => preempterLabel(byId.get(by), by)),
       ...(job.partlyDone && stage === 'partly_done' ? {
         partlyDone: { pullRequest: job.partlyDone, afterMerge: s?.repo && s.number !== undefined ? `the next part of ${ref(s.repo, s.number)} runs` : 'the next part of its issue runs' },

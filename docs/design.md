@@ -13867,8 +13867,16 @@ cannot be killed until the core is written) was stopped silently: the reap went 
   not stop (failed, 2 processes in it)", and the header says it after where the job stands; what is next stays as it
   was. The sweep reaps the scope again while the survey still finds it (`planSweep`, as before).
 
-Not built: the same note on the Jobs graph and the dashboard's cards (their routes read no events of a job), and a check
-by the hopper of the job's own checks. A hung wait after a failed process is the wait checks' case already: a wait on its
+- **The cards say it too** (part 7). The Jobs graph and the dashboard's cards read no events of a job, so the cleanup
+  keeps the header's words on the job when it records a failed process or a scope that did not stop:
+  `Job.failedProcesses` `{ said, processes }` (`failedProcessNote`, `src/domain/failed-processes.ts`, read from the job's
+  `FAILED_PROCESS_EVENTS`), only for a job that ended well. A job graph node of it carries the note, and its `stageText`
+  (and its issue's, while the issue says what its newest job says) reads "Done, but a process of the job failed: tsc ran
+  out of heap". The dashboard's Ended card shows the same line, linked to the job page, and asks to make sure that its
+  checks ran when a process failed (`processes` > 0). A job that ended before this change keeps no note: its parts list
+  still says it.
+
+Not built: a check by the hopper of the job's own checks. A hung wait after a failed process is the wait checks' case already: a wait on its
 own command whose command ended is nudged, then ended ("A wait on its own command"); a heavy step's slot ends with its
 renewals.
 
