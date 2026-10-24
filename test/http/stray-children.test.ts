@@ -66,8 +66,9 @@ describe('the stray children counter', () => {
   it('counts a live child the process did not start as an orphan, and not one it started', async () => {
     const p = parentOf('sleep 30 & exec sleep 31');
     try {
+      // The background child is a fork of sh until it runs sleep: wait until /proc names it sleep.
       let r = strayChildrenOf(p.pid, new Set());
-      for (let i = 0; i < 40 && r.orphans === 0; i++) { await sleep(50); r = strayChildrenOf(p.pid, new Set()); }
+      for (let i = 0; i < 40 && r.programs[0] !== 'sleep'; i++) { await sleep(50); r = strayChildrenOf(p.pid, new Set()); }
       expect(r).toEqual({ zombies: 0, orphans: 1, programs: ['sleep'] });
     } finally { await p.stop(); }
   });
