@@ -36,6 +36,11 @@ export const SURVEY_DONE = 'hopper-surveyed';
  * holds these to): `.worktrees/<name>/<job id>` its worktrees, `.worktrees/@scratch/<job id>` its scratch dir. The layout
  * before (`.hopper-scratch/<job id>`, `workspace/worktrees/<name>-<job id>`) is only found, to be removed.
  */
+/** How long an entry of no job in the scratch area stays unchanged before a reap there removes it (issue #2715). */
+export const LOOSE_GRACE_DAYS = 7;
+/** A job id as the hopper makes one (a UUID, `randomUUID`), as a shell glob. */
+const UUID_GLOB = [8, 4, 4, 4, 12].map((n) => '[0-9a-f]'.repeat(n)).join('-');
+
 export const LAYOUT = { worktrees: '.worktrees', scratch: '.worktrees/@scratch', oldScratch: '.hopper-scratch', oldWorktrees: 'workspace/worktrees' } as const;
 
 /**
@@ -187,6 +192,11 @@ const REAP_SCRIPT = [
   '  if [ -z "$(ls -A "$x" 2>/dev/null | grep -vx -e .gitignore -e deps -e repos)" ] && [ -z "$(ls -A "$y" 2>/dev/null | grep -vx .gitignore)" ]; then',
   '    [ -d "$x" ] && [ ! -L "$x" ] && rm -rf "$x"; [ -d "$y" ] && [ ! -L "$y" ] && rm -rf "$y";',
   '  fi;',
+  // What else is in the scratch area (issue #2715): a file or a dir of no job — not named as a job's (a UUID), the jobs' own
+  // judged by the sweep —, gone once nothing in it changed for LOOSE_GRACE_DAYS. Each one removed is named.
+  `  x=$w/${LAYOUT.scratch}; [ -d "$x" ] && [ ! -L "$x" ] && for p in "$x"/* "$x"/.[!.]* "$x"/..?*; do { [ -e "$p" ] || [ -L "$p" ]; } && [ "$p" != "$n" ] || continue;`,
+  `    case \${p##*/} in ${UUID_GLOB}|.gitignore) continue;; esac; [ -n "$(find "$p" -mtime -${LOOSE_GRACE_DAYS} -print 2>/dev/null | head -n 1)" ] && continue;`,
+  '    if [ -L "$p" ] || [ ! -d "$p" ]; then rm -f "$p"; else gone "$p"; fi; [ -e "$p" ] || [ -L "$p" ] || printf "hopper-loose-removed %s\\n" "$p"; done;',
   '  for g in "$w/.git" "$w"/workspace/*/.git; do [ -d "$g" ] && git --git-dir="$g" worktree prune 2>/dev/null; done;',
   'fi;',
   'printf "%s\\n" hopper-reaped',
@@ -308,14 +318,14 @@ export type KeptReason = typeof KEPT_REASONS[number];
  * could not remove (issue #1452), why it kept each it kept (`reasons`, issue #2494; none from a client older than that), and the containers and volumes of the job it removed (issue #1120), with what it said of
  * each container (issue #975; none from a client older than that). Undefined when it did not finish.
  */
-export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; leftWhy?: Record<string, LeftCause>; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse } | undefined {
+export function readReap(stdout: string): { kept: string[]; tips?: Record<string, string[]>; reasons?: Record<string, KeptReason[]>; pushed?: string[]; left?: string[]; leftWhy?: Record<string, LeftCause>; loose?: string[]; removed?: { containers: string[]; volumes: string[]; details?: ContainerDetails[] }; used?: ResourceUse } | undefined {
   const lines = stdout.split('\n').map((l) => l.trimEnd());
   if (!lines.includes(REAP_DONE)) return undefined;
   const named = (prefix: string): string[] => [...new Set(lines.filter((l) => l.startsWith(prefix)).map((l) => l.slice(prefix.length)))];
   const pushed = named('hopper-pushed ');
   const containers = named('hopper-removed-container ');
   const volumes = named('hopper-removed-volume ');
-  const left = named('hopper-left ');
+  const left = named('hopper-left '), loose = named('hopper-loose-removed ');
   const kept = named('hopper-kept ');
   const tips: Record<string, string[]> = {};
   for (const l of lines) {
@@ -334,7 +344,7 @@ export function readReap(stdout: string): { kept: string[]; tips?: Record<string
   }
   const details = [...new Map(named(DETAILS_MARK).map(detailsOf).filter((d) => d !== undefined && containers.includes(d.id)).map((d) => [d!.id, d!])).values()];
   return {
-    kept, ...(Object.keys(tips).length ? { tips } : {}), ...(Object.keys(reasons).length ? { reasons } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}), ...(Object.keys(leftWhy).length ? { leftWhy } : {}),
+    kept, ...(Object.keys(tips).length ? { tips } : {}), ...(Object.keys(reasons).length ? { reasons } : {}), ...(pushed.length ? { pushed } : {}), ...(left.length ? { left } : {}), ...(Object.keys(leftWhy).length ? { leftWhy } : {}), ...(loose.length ? { loose } : {}),
     ...(containers.length || volumes.length ? { removed: { containers, volumes, ...(details.length ? { details } : {}) } } : {}),
     ...usedOf(lines),
   };
