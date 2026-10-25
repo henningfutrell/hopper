@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "by": {
+      "type": "string"
+    },
+    "step": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "coding",
+        "pr_checks",
+        "landing",
+        "landing_checks",
+        "promotion_set",
+        "test_gate",
+        "production"
+      ]
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "by",
+    "step"
+  ],
+  "additionalProperties": false
+}
