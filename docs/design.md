@@ -10110,6 +10110,29 @@ search; chosen: only those repositories' issues become jobs; changed while conne
 disconnect; refusals), `test/store/tenant-migration-10.test.ts`, `test/ui/sources-view.test.ts` (count,
 filter, Choose shown, Save sends the whole list, an unreached chosen repository).
 
+### Every repository the app reaches, ready to choose (issue #2774, 2026-10-25)
+
+Owner decision: a read of the installations has one job, to show every repository the person can choose. It chooses
+nothing. The auto-adopt of issue #2766 (a repository new to a read became a job repository, and the source synced) is
+removed: after a restart it took nothing that was installed before, and it changed the person's choice by itself.
+
+- **Each read lists all.** Every read (Refresh, the schedule's every 30 minutes, the read at connect) asks GitHub again
+  for every installation and every repository each reaches (`installations`, `src/connected-accounts/identity.ts`), and
+  keeps the whole answer. What a read lists does not depend on what the read before it saw: a 304 is GitHub's own answer
+  that nothing changed (issue #1250). So the list is the same after a restart or an update, and a repository installed
+  or added since the last read is in the next one. A failed read keeps the read before it, with why.
+- **Nothing is chosen.** A read never changes the job repositories (issue #321) and never makes the source sync. A
+  repository the app reaches is unchosen until the person ticks it and saves.
+- **Shown.** Sources lists the repositories by installation, so by owner, each with the owner's picture
+  (`AppInstallation.avatarUrl`, GitHub's `account.avatar_url`; for a personal access token, each repository's
+  `owner.avatar_url`). The field is optional in the kept read: a read from before it has no picture, and the build
+  before reads the new one.
+
+**Verification:** `test/integration/installations-complete-local.test.ts` (the first read after a restart with an
+installation there before; a repository added between reads; a new installation between reads; the job repositories
+unchanged), `test/connected-accounts/installations.test.ts` (the schedule's read lists a new owner and a new repository),
+`test/ui/installations-read-view.test.ts` (each owner's picture, the new repositories unchosen).
+
 ## Default work trees per machine and per repository (issue #324, 2026-10-07)
 
 **Superseded in part by issue #361** ("Per-machine work trees"): the source's `repoPaths` and

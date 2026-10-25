@@ -27,9 +27,11 @@ export const CONNECTED_VIA = 'the hopper\'s app';
  * installed on and the repositories it reaches there that this account can see. `all`: every repository
  * of that account; `selected`: only the chosen ones. `settingsUrl`: where to choose them on GitHub.
  * `permissions`: what the installation grants there, as GitHub says it (`issues: 'write'`, …; issue #352).
+ * `avatarUrl`: the picture of the account it is installed on, which Sources shows by its repositories (issue #2774).
  */
 export interface AppInstallation {
   account: string;
+  avatarUrl?: string;
   repositorySelection: 'all' | 'selected';
   repositories: string[];
   settingsUrl?: string;

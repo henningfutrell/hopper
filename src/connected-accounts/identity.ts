@@ -43,7 +43,7 @@ async function all<T>(get: (page: number) => Promise<unknown>, pick: (data: unkn
   }
 }
 
-interface Installation { id: number; account?: { login?: string } | null; html_url?: string; repository_selection?: string; permissions?: Record<string, string> }
+interface Installation { id: number; account?: { login?: string; avatar_url?: string | null } | null; html_url?: string; repository_selection?: string; permissions?: Record<string, string> }
 
 const LEVELS = ['read', 'write', 'admin'];
 
@@ -75,7 +75,7 @@ export async function installations(app: HopperApp, token: string, answers: Cond
     const repositories = await all((page) => get('GET /user/installations/{installation_id}/repositories', { installation_id: i.id, per_page: PER_PAGE, page }),
       (d) => (d as { repositories: { full_name: string }[] }).repositories.map((r) => r.full_name));
     return {
-      account: i.account!.login!, repositorySelection: i.repository_selection === 'selected' ? 'selected' : 'all', repositories,
+      account: i.account!.login!, ...(i.account!.avatar_url ? { avatarUrl: i.account!.avatar_url } : {}), repositorySelection: i.repository_selection === 'selected' ? 'selected' : 'all', repositories,
       ...(i.html_url ? { settingsUrl: i.html_url } : {}),
       ...(i.permissions ? { permissions: i.permissions } : {}),
       ...(asked ? { permissionRequest: permissionRequest(asked, i.permissions ?? {}) } : {}),
@@ -85,17 +85,22 @@ export async function installations(app: HopperApp, token: string, answers: Cond
 
 /**
  * The repositories a personal access token reaches (issue #1380): GitHub's list for the token's user, every page, one entry
- * per owner, `selected` (the token, not an app, decides what it reaches). Each GET through `answers`, as `installations`.
+ * per owner with the owner's picture (issue #2774), `selected` (the token, not an app, decides what it reaches). Each GET
+ * through `answers`, as `installations`.
  */
 export async function tokenRepositories(app: HopperApp, token: string, answers: ConditionalAnswers): Promise<AppInstallation[]> {
   const req = makeRequest(app.apiUrl) as unknown as Get;
   const headers = { authorization: `token ${token}` };
-  const names = await all((page) => answers.get<unknown>(req, 'GET /user/repos', { per_page: PER_PAGE, page, headers }),
-    (d) => (d as { full_name: string }[]).map((r) => r.full_name));
+  const found = await all((page) => answers.get<unknown>(req, 'GET /user/repos', { per_page: PER_PAGE, page, headers }),
+    (d) => d as { full_name: string; owner?: { avatar_url?: string | null } | null }[]);
   const by = new Map<string, string[]>();
-  for (const name of names) {
-    const owner = name.split('/')[0]!;
-    by.set(owner, [...(by.get(owner) ?? []), name]);
+  const avatars = new Map<string, string>();
+  for (const r of found) {
+    const owner = r.full_name.split('/')[0]!;
+    by.set(owner, [...(by.get(owner) ?? []), r.full_name]);
+    if (r.owner?.avatar_url) avatars.set(owner, r.owner.avatar_url);
   }
-  return [...by.keys()].sort().map((account) => ({ account, repositorySelection: 'selected', repositories: by.get(account)!.sort() }));
+  return [...by.keys()].sort().map((account) => ({
+    account, ...(avatars.has(account) ? { avatarUrl: avatars.get(account)! } : {}), repositorySelection: 'selected', repositories: by.get(account)!.sort(),
+  }));
 }

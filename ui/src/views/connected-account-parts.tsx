@@ -128,12 +128,13 @@ function JobRepositories({ installations, installUrl, where, saved, canAdmin, sa
   );
 }
 
-/** One installation of the app: the account, the repositories it reaches there (each with its box), and where to choose them. */
+/** One installation of the app: the account with its picture (issue #2774), the repositories it reaches there (each with its box), and where to choose them. */
 function Installation({ installation: i, matches, box }: { installation: AppInstallation; matches: (r: string) => boolean; box: (r: string) => React.ReactNode }) {
   const n = i.repositories.length;
   return (
     <div data-installation={i.account} className="space-y-1">
       <div>
+        {i.avatarUrl && <img data-owner-avatar src={i.avatarUrl} alt="" width={16} height={16} loading="lazy" referrerPolicy="no-referrer" className="mr-1 inline-block size-4 rounded-full align-text-bottom" />}
         On <span className="font-mono">{i.account}</span>: {i.repositorySelection === 'all' ? 'all repositories' : 'chosen repositories'}
         {n === 0 ? <span className="text-warn"> — it reaches no repository there yet.</span> : <> — {n} {n === 1 ? 'repository' : 'repositories'}:</>}
       </div>
