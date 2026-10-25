@@ -40,7 +40,7 @@ export function InstallAppNudge() {
   const [s, setS] = useState<ConnectedAccountStatus>();
   useEffect(() => {
     let live = true;
-    void get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts').then((v) => { if (live) setS(v.accounts.find((a) => a.key === 'github')); }, () => {});
+    void get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts').then((v) => { if (live) setS(v.accounts?.find((a) => a.key === 'github')); }, () => {});
     return () => { live = false; };
   }, []);
   return s && installNeeded(s) === true ? <InstallAppCallout s={s} /> : null;
