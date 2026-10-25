@@ -35385,3 +35385,58 @@ taken back), `test/integration/step-schedules.test.ts` (the real daemon, saga co
 now, a run that cannot read its files fails and is listed for Needs you, revoke, remove), `test/vault/step-delivery-schedule.test.ts`,
 `test/sandbox/files-tar-prefix.test.ts`, `test/cli-operator-schedule.test.ts`, `test/plugins/grokbot-step-schedules.test.ts`,
 `test/ui/step-schedules-needs-you.test.ts`.
+
+## Kept delivery tracks and deployment records (issue #2775, part 1, 2026-10-25)
+
+Owner requirement: every job says where its work is and where it ended up. A finished fix must never sit unshipped with
+nobody able to see it: #2766 merged to `main`, and was not on `dev` or running anywhere. The issue names a "saga object"
+per job and a "deployment object". "Saga" is the coordinator's word ("Sagas: work that survives a stop"), and the issue's
+saga is one job's way through the **delivery steps**, which the glossary calls its **delivery track**. So the object is
+the **kept delivery track**: the delivery track ("Delivery forecasts"), kept in the database, with its end.
+
+- **The kept delivery track** (`KeptTrack`, `src/domain/kept-tracks.ts`, table `delivery_tracks`, tenant migration 101).
+  Born at the job's `job.queued`. It keeps the marks its events gave (each the first one: queued, started, finished, its
+  pull request, merged, the batch runs that carried it, landed, its pull request closed), every delivery step it started
+  and ended (the transitions), the step it is in, since when, its **blocker** and what it waits on in plain words. A change
+  merged on the landing branch but not promoted is open in `landing_checks`, "a green run of the checks on the landing
+  branch", never done. Past its landing checks, the scheduled steps come from its repository's promotion set schedule and
+  gate clearances, as the forecast's do; a repository with no schedule holds it in `promotion_set`, and it says it waits
+  on one.
+- **It closes only with its deployment record** (`DeploymentRecord`, table `deployment_records`): `deploy` once its
+  production step ended — the artifact (its pull request), the target (`production`), the expected state (`delivered`), the
+  observed state at each hop (each step) —; `none` once its job ended with no change to deliver — failed, cancelled or
+  rejected before a merge, finished with no pull request (a research or a proposal job: `report`), or its pull request
+  closed with no merge — with its source and its outcome; or a person's **no-deploy mark**. Every job gets exactly one: the
+  record's row is written once, and a closed track's row is never written over (the store's `WHERE state = 'open'`).
+- **The kept-track pass** (`src/engine/kept-tracks.ts`): every minute, under its lease `kept-tracks` ("Several hoppers on
+  one database"), the events after its cursor are folded into the open tracks' marks, and every open track is judged
+  again: its job's status and the scheduled steps move with no event. The tracks it changed, their records and the new
+  cursor are one transaction, so a pass a stop cut short is done again from the same cursor, on any host. The fold is
+  idempotent: each mark is the first one, so an event folded twice changes nothing. The first pass of a hopper keeps the
+  tracks of the last 30 days, not the whole log. A job the store no longer holds closes by its events.
+- **Read on its own.** `GET /api/delivery-tracks` (by job, repository, state) and `GET /api/deployments` (by job,
+  repository, target, kind). `POST /ui/api/delivery-tracks/no-deploy` (operator) is the no-deploy mark,
+  `delivery_track.no_deploy_marked`; it changes no job, pull request or promotion.
+- **The job page** shows its Delivery panel (`ui/src/views/job-delivery.tsx`): in progress, the step, since when and what
+  it waits on; completed, its deployment record; then each step.
+
+**Decisions:**
+- **Not a coordinator saga.** A saga's steps are acts the hopper does, tried five times and then compensated. A track's
+  steps are things that happen elsewhere — a merge, a batch run, a cutoff, a person's gate clearance — over days. A pass
+  that folds events from a cursor gives the same durability (state in the database, idempotent folds, any host under a
+  lease) with nothing to retry.
+- **The delivery steps, not new stages.** The issue's "built, promoted, image ready, running, deployed" are the delivery
+  steps the forecast already measures and the glossary already names; a second set of names for the same way would be a
+  synonym.
+- **A pass, not a hook at each job start.** A job is made on many paths; the pass reads the one log they all write. The
+  record is at most a minute late; its times are the events', not the pass's.
+
+**What is left** (later parts): the hopper's own stages past `dev` — `beta`, `canary` and `stable`, the image built for
+each, and which instance runs it — as observed hops of a `deploy` record; the commit of the merge in the artifact; a
+no-deploy button on the job page and in the operator CLI; the in-progress position on the Jobs list.
+
+**Verification:** `test/domain/kept-tracks.test.ts` (the fold, the step and what it waits on, each kind of close, a fold
+twice), `test/engine/kept-tracks.test.ts` (the real database: a track from the start, a merged fix open in
+`landing_checks`, a restart that goes on from the cursor, a deploy record and two `none` records, the records queried on
+their own, a closed track final, the first pass's window), `test/integration/delivery-tracks.test.ts` (the HTTP routes,
+the no-deploy mark, 404 and 409), `test/ui/job-delivery-view.test.ts`.

@@ -427,6 +427,7 @@
         "push_requirements.defaults_changed",
         "delivery_expedite.changed",
         "delivery_gate.cleared",
+        "delivery_track.no_deploy_marked",
         "push_requirements.summarized",
         "push_requirements.ci_missed",
         "jev.mode_changed",

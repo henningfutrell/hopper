@@ -4,7 +4,8 @@
 // already holds (a lane's machine and number, a webhook's name, a setting, a config record) is `keep`'s.
 // Two exceptions: the plugins config takes the instances only `from` names, and the connected account is
 // `from`'s — its user's own connection, its tokens in the vault with it (issue #658). The work-item ledger (issue #1067)
-// does not move: `keep`'s store rebuilds it from the moved events when it next opens; nor do the event cursors (issue #1572).
+// does not move: `keep`'s store rebuilds it from the moved events when it next opens; nor do the event cursors (issue #1572)
+// or the kept-track pass's cursor (issue #2775).
 // Runs inside the caller's transaction.
 import type { Db, Param } from './db.ts';
 import { quoteIdent } from './tenant-migrations.ts';
@@ -40,7 +41,7 @@ export function foldUserSchema(db: Db, keep: string, from: string): void {
   const k = quoteIdent(keep);
   const f = quoteIdent(from);
   const tables = db.all("SELECT table_name AS t FROM information_schema.tables WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name", from)
-    .map((r) => String(r.t)).filter((t) => !['schema_version', 'work_items', 'work_items_applied', 'event_cursors'].includes(t));
+    .map((r) => String(r.t)).filter((t) => !['schema_version', 'work_items', 'work_items_applied', 'event_cursors', 'delivery_track_cursor'].includes(t));
   // Deliveries name their subscription and their event: after webhooks and events.
   const ordered = [...tables.filter((t) => t !== 'deliveries'), ...tables.filter((t) => t === 'deliveries')];
   for (const table of ordered) {
@@ -83,4 +84,6 @@ export function foldUserSchema(db: Db, keep: string, from: string): void {
   }
   // The event cursors (issue #1572) stay `keep`'s, past the moved events: a consumer is not handed `from`'s history again.
   if (columnsOf(db, keep, 'event_cursors').length > 0) db.run(`UPDATE ${k}.event_cursors SET seq = (SELECT COALESCE(MAX(seq), 0) FROM ${k}.events)`);
+  // So does the kept-track pass's (issue #2775): `from`'s tracks moved with their events.
+  if (columnsOf(db, keep, 'delivery_track_cursor').length > 0) db.run(`UPDATE ${k}.delivery_track_cursor SET seq = (SELECT COALESCE(MAX(seq), 0) FROM ${k}.events)`);
 }
