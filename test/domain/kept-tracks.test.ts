@@ -19,6 +19,10 @@
 //   Scenario: a held canary candidate and a later one that carries it too: stable at the later one's promotion
 //   Scenario: Run again of a job whose change is on its way closes its track none, outcome rerouted, with the new job
 //   Scenario: a person's flip to deploy after the run again opens it again
+//   Scenario: on stable, a change no install of the hopper runs yet is open in production; it closes when one runs it
+//   Scenario: beta carries its merge commit: a hop on its track, which waits on the promotion to canary
+//   Scenario: an install that runs it is a hop; one that runs another commit is not
+//   Scenario: the deploy record names every hop: landed, beta, canary, stable and the install
 import { describe, expect, it } from 'vitest';
 import { expectOf, foldTrackEvents, lockedOf, trackOf, type TrackContext, type TrackMarks } from '../../src/domain/kept-tracks.ts';
 import type { PromotionSetSchedule } from '../../src/domain/promotion-sets.ts';
@@ -223,6 +227,8 @@ describe('kept delivery tracks', () => {
       ev('landing_batch.canary_started', hhmm, { repo: 'octo/shed', canary: 'canary', stable: 'stable', tip, hours: 24, mergeCommits });
     const stable = (hhmm: string, tip: string) =>
       ev('landing_batch.canary_promoted', hhmm, { repo: 'octo/shed', canary: 'canary', stable: 'stable', tip, why: 'no bug report named it in 24 hours' });
+    const installSeen = (hhmm: string, commit: string, mergeCommits: string[]) => ev('install.seen', hhmm, { commit, branch: 'stable', mergeCommits });
+    const INSTALLED = 'i'.repeat(40);
 
     it('on dev, its batch merge commit is kept; on canary it is in the test gate; on stable it is delivered', () => {
       const onDev = fold([...merged('j'), ...promoted()]).get('j')!;
@@ -238,23 +244,79 @@ describe('kept delivery tracks', () => {
         ['test_gate', at('12:00'), undefined],
       ]);
       const s = fold([stable('20:00', TIP1)], new Map([['j', structuredClone(c)]])).get('j')!;
-      const t = trackOf('j', s, ctx({ now: at('21:00') }), onCanary);
-      expect(t).toMatchObject({ state: 'closed', closedAt: at('20:00') });
-      expect(t.deployment).toMatchObject({ kind: 'deploy', at: at('20:00'), artifact: { pullRequest: PR, commit: MERGE }, target: 'production', expected: 'delivered' });
-      expect(t.steps.slice(-2)).toEqual([{ step: 'test_gate', start: at('12:00'), end: at('20:00') }, { step: 'production', start: at('20:00'), end: at('20:00') }]);
+      // On stable, but no install of the hopper runs it yet (part 10): open in production.
+      const onStable = trackOf('j', s, ctx({ now: at('21:00') }), onCanary);
+      expect(onStable).toMatchObject({ state: 'open', current: { step: 'production', since: at('20:00') } });
+      expect(onStable.current.waitingOn).toMatch(/an install of the hopper that runs it/);
+      const r = fold([installSeen('22:00', INSTALLED, [MERGE])], new Map([['j', structuredClone(s)]])).get('j')!;
+      const t = trackOf('j', r, ctx({ now: at('23:00') }), onStable);
+      expect(t).toMatchObject({ state: 'closed', closedAt: at('22:00') });
+      expect(t.deployment).toMatchObject({ kind: 'deploy', at: at('22:00'), artifact: { pullRequest: PR, commit: MERGE }, target: 'production', expected: 'delivered' });
+      expect(t.steps.slice(-2)).toEqual([{ step: 'test_gate', start: at('12:00'), end: at('20:00') }, { step: 'production', start: at('20:00'), end: at('22:00') }]);
       expect(lockedOf(t)).toBe(true);
     });
 
     it('a canary candidate without its merge commit leaves it in the promotion set; a held one, then a later one that carries it', () => {
       const other = fold([...merged('j'), ...promoted(), canary('11:00', TIP1, ['x'.repeat(40)])]).get('j')!;
       expect(trackOf('j', other, ctx()).current.step).toBe('promotion_set');
-      const events = [...merged('j'), ...promoted(), canary('12:00', TIP1, [MERGE]), canary('14:00', TIP2, [MERGE, 'y'.repeat(40)]), stable('18:00', TIP2)];
+      // An install in the canary subset runs the later candidate before stable moves to it.
+      const events = [...merged('j'), ...promoted(), canary('12:00', TIP1, [MERGE]), canary('14:00', TIP2, [MERGE, 'y'.repeat(40)]), installSeen('15:00', TIP2, [MERGE]), stable('18:00', TIP2)];
       const marks = fold(events);
-      expect(marks.get('j')).toMatchObject({ canary: at('12:00'), canaryTips: [TIP1, TIP2], stable: at('18:00') });
+      expect(marks.get('j')).toMatchObject({ canary: at('12:00'), canaryTips: [TIP1, TIP2], stable: at('18:00'), stableTip: TIP2 });
       expect(foldTrackEvents(marks, events).size).toBe(0);
       expect(trackOf('j', marks.get('j')!, ctx()).deployment).toMatchObject({ kind: 'deploy', at: at('18:00') });
       // An older candidate's promotion that never carried it moves nothing.
       expect(fold([...merged('k'), ...promoted(), stable('18:00', TIP1)]).get('k')!.stable).toBeUndefined();
+    });
+  });
+
+  describe('beta and the install that runs it (part 10)', () => {
+    const MERGE = 'm'.repeat(40);
+    const TIP0 = '0'.repeat(40);
+    const TIP1 = '1'.repeat(40);
+    const INSTALLED = 'i'.repeat(40);
+    const promoted = () => [
+      ev('landing_batch.started', '09:30', { repo: 'octo/shed', pullRequest: 900, merges: [11, 12] }),
+      ev('landing_batch.promoted', '10:30', { repo: 'octo/shed', pullRequest: 900, merge: MERGE }),
+    ];
+    const beta = (hhmm: string, tip: string, mergeCommits: string[]) =>
+      ev('landing_batch.beta_moved', hhmm, { repo: 'octo/shed', beta: 'beta', canary: 'canary', tip, mergeCommits });
+    const installSeen = (hhmm: string, commit: string, mergeCommits: string[]) => ev('install.seen', hhmm, { commit, branch: 'beta', mergeCommits });
+
+    it('beta carries its merge commit: a hop on its track, which waits on the promotion to canary', () => {
+      const marks = fold([...merged('j'), ...promoted(), beta('11:00', TIP0, ['x'.repeat(40), MERGE])]);
+      expect(marks.get('j')).toMatchObject({ beta: at('11:00'), betaTip: TIP0 });
+      const t = trackOf('j', marks.get('j')!, ctx());
+      expect(t).toMatchObject({ state: 'open', current: { step: 'promotion_set', since: at('10:30') } });
+      expect(t.current.waitingOn).toMatch(/promotion of beta to canary/);
+      expect(t.hops).toEqual([{ hop: 'landed', at: at('10:30'), commit: MERGE }, { hop: 'beta', at: at('11:00'), commit: TIP0 }]);
+      // A later move of beta, and the same events again, change nothing.
+      expect(foldTrackEvents(marks, [beta('12:00', TIP1, [MERGE])]).size).toBe(0);
+      // A beta move that does not carry it is not its hop.
+      expect(fold([...merged('k'), ...promoted(), beta('11:00', TIP0, ['x'.repeat(40)])]).get('k')!.beta).toBeUndefined();
+    });
+
+    it('an install that runs it is a hop; one that runs another commit is not', () => {
+      const runs = fold([...merged('j'), ...promoted(), installSeen('11:30', INSTALLED, [MERGE])]).get('j')!;
+      expect(runs.install).toEqual({ at: at('11:30'), commit: INSTALLED, branch: 'beta' });
+      expect(fold([...merged('k'), ...promoted(), installSeen('11:30', INSTALLED, ['x'.repeat(40)])]).get('k')!.install).toBeUndefined();
+    });
+
+    it('the deploy record names every hop: landed, beta, canary, stable and the install', () => {
+      const events = [
+        ...merged('j'), ...promoted(), beta('11:00', TIP0, [MERGE]), installSeen('11:30', INSTALLED, [MERGE]),
+        ev('landing_batch.canary_started', '12:00', { repo: 'octo/shed', canary: 'canary', stable: 'stable', tip: TIP1, hours: 24, mergeCommits: [MERGE] }),
+        ev('landing_batch.canary_promoted', '20:00', { repo: 'octo/shed', canary: 'canary', stable: 'stable', tip: TIP1, why: 'no bug report named it in 24 hours' }),
+      ];
+      const t = trackOf('j', fold(events).get('j')!, ctx({ now: at('21:00') }));
+      expect(t).toMatchObject({ state: 'closed', closedAt: at('20:00') });
+      const hops = [
+        { hop: 'landed', at: at('10:30'), commit: MERGE }, { hop: 'beta', at: at('11:00'), commit: TIP0 },
+        { hop: 'install', at: at('11:30'), commit: INSTALLED, branch: 'beta' }, { hop: 'canary', at: at('12:00'), commit: TIP1 },
+        { hop: 'stable', at: at('20:00'), commit: TIP1 },
+      ];
+      expect(t.hops).toEqual(hops);
+      expect(t.deployment).toMatchObject({ kind: 'deploy', at: at('20:00'), hops });
     });
   });
 
