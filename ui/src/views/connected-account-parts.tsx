@@ -24,7 +24,6 @@ export function Repositories({ s, name, byToken, where, canAdmin, send, refresh 
   return <>
     <InstallationsRead s={s} name={name} what={byToken ? 'Repositories the token reaches' : 'Where the app is installed'} refresh={refresh} />
     {s.installations !== undefined && s.installationsError && <div data-installations-error className="text-warn break-words">{s.installationsError}. Shown: the read before it.</div>}
-    {s.jobRepositoriesAdded && <RepositoriesAdded added={s.jobRepositoriesAdded} />}
     {s.installations === undefined
       ? <div data-installations className="space-y-1">
         {s.installationsError
@@ -40,12 +39,6 @@ export function Repositories({ s, name, byToken, where, canAdmin, send, refresh 
           {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app</a></div>}
         </div>}
   </>;
-}
-
-/** The repositories the app came to reach that the hopper made job repositories (issue #2761), and when. */
-function RepositoriesAdded({ added }: { added: NonNullable<Connected['jobRepositoriesAdded']> }) {
-  const now = useServerNow();
-  return <div data-job-repositories-added className="text-muted-foreground break-words">The app came to reach new repositories; the hopper added them for jobs {ago(added.at, now)}: {added.repositories.join(', ')}</div>;
 }
 
 /** When where the app is installed was read from GitHub (issue #1250), and Refresh to read it again. */
@@ -135,12 +128,13 @@ function JobRepositories({ installations, installUrl, where, saved, canAdmin, sa
   );
 }
 
-/** One installation of the app: the account, the repositories it reaches there (each with its box), and where to choose them. */
+/** One installation of the app: the account with its picture (issue #2774), the repositories it reaches there (each with its box), and where to choose them. */
 function Installation({ installation: i, matches, box }: { installation: AppInstallation; matches: (r: string) => boolean; box: (r: string) => React.ReactNode }) {
   const n = i.repositories.length;
   return (
     <div data-installation={i.account} className="space-y-1">
       <div>
+        {i.avatarUrl && <img data-owner-avatar src={i.avatarUrl} alt="" width={16} height={16} loading="lazy" referrerPolicy="no-referrer" className="mr-1 inline-block size-4 rounded-full align-text-bottom" />}
         On <span className="font-mono">{i.account}</span>: {i.repositorySelection === 'all' ? 'all repositories' : 'chosen repositories'}
         {n === 0 ? <span className="text-warn"> — it reaches no repository there yet.</span> : <> — {n} {n === 1 ? 'repository' : 'repositories'}:</>}
       </div>

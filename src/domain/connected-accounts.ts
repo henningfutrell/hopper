@@ -27,9 +27,11 @@ export const CONNECTED_VIA = 'the hopper\'s app';
  * installed on and the repositories it reaches there that this account can see. `all`: every repository
  * of that account; `selected`: only the chosen ones. `settingsUrl`: where to choose them on GitHub.
  * `permissions`: what the installation grants there, as GitHub says it (`issues: 'write'`, …; issue #352).
+ * `avatarUrl`: the picture of the account it is installed on, which Sources shows by its repositories (issue #2774).
  */
 export interface AppInstallation {
   account: string;
+  avatarUrl?: string;
   repositorySelection: 'all' | 'selected';
   repositories: string[];
   settingsUrl?: string;
@@ -41,9 +43,6 @@ export interface AppInstallation {
    */
   permissionRequest?: Record<string, string>;
 }
-
-/** Repositories the app came to reach after the first read, made job repositories by the hopper (issue #2761), and when. */
-export interface JobRepositoriesAdded { at: string; repositories: string[] }
 
 /**
  * A user's connected account at one provider, by its key (issue #1448), as GET /api/connected-accounts reports it: connected
@@ -77,8 +76,6 @@ export type ConnectedAccountStatus = {
     installationsCheckedAt?: string;
     /** GitHub: a read of where the app is installed is under way (issue #1250). */
     installationsReading?: true;
-    /** GitHub: the repositories the app came to reach since the first read, made job repositories by the hopper (issue #2761). */
-    jobRepositoriesAdded?: JobRepositoriesAdded;
     /** When the token now kept expires; absent: it does not. The hopper renews it an hour before (issue #441). */
     expiresAt?: string;
     /** Why the last renewal failed, while it is tried again (issue #441): GitHub not answering, or this hopper set up so it cannot renew. The sign-in goes on. */
@@ -131,8 +128,6 @@ export interface AppInstallationsRead {
   installations?: AppInstallation[];
   error?: string;
   etags: Record<string, KeptAnswer>;
-  /** The repositories a read found new and made job repositories, the newest such read's (issue #2761). */
-  added?: JobRepositoriesAdded;
 }
 
 /** The kept reads (tenant migration 66): one row per connected account, by its key (issue #1448: the first's is its provider). */

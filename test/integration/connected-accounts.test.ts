@@ -146,8 +146,8 @@ describe('a user connects their own GitHub', () => {
     const connected = await account(app, 'github');
     const permissions = { contents: 'write', issues: 'write', metadata: 'read', pull_requests: 'write' };
     expect(connected.state === 'connected' && connected.installations).toEqual([
-      { account: 'octo-user', repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1`, permissions, permissionRequest: {} },
-      { account: 'octo-org', repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2`, permissions, permissionRequest: {} },
+      { account: 'octo-user', avatarUrl: `${f.github.url}/avatars/octo-user`, repositorySelection: 'all', repositories: ['octo-user/tools'], settingsUrl: `${f.github.url}/settings/installations/1`, permissions, permissionRequest: {} },
+      { account: 'octo-org', avatarUrl: `${f.github.url}/avatars/octo-org`, repositorySelection: 'selected', repositories: chosen, settingsUrl: `${f.github.url}/settings/installations/2`, permissions, permissionRequest: {} },
     ]);
   });
 
