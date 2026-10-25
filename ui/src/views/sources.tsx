@@ -6,7 +6,7 @@
 // More than one GitHub account (issue #1448): each further account has a panel of its own, with its source inside it, and Add
 // another GitHub account, in the first account's panel once it is connected, takes a personal access token of another account.
 // Below GitHub, the GitLab account (issue #1448 part 2), with its source's sync inside its panel. Each section and source
-// folds, and stays folded over a reload (issue #2353).
+// folds, and stays folded over a reload (issue #2353). At the top of the GitHub section, Install the app on GitHub (issue #2759).
 import { useCallback, useEffect, useState } from 'react';
 import { CopyX, Inbox, Trash2 } from 'lucide-react';
 import { sendPluginsEdit } from '@/components/plugin-form';
@@ -19,6 +19,7 @@ import { refreshPlugins, useHopper } from '@/store';
 import { AfterAnswer } from './after-answer';
 import { ConnectedAccountPanel } from './connected-account';
 import { GitLabSection } from './gitlab-account';
+import { InstallAppCallout } from './install-app';
 import { get } from '@/lib/api';
 import { RepoSetupSection } from './repo-setup';
 import { SourceSync } from './source-sync';
@@ -76,6 +77,7 @@ export function Sources() {
     <div className="space-y-4">
       <DuplicateBanner duplicates={v.duplicates} />
       <FoldSection id="sources-github" title="GitHub" fold="sources.github" line={<p data-github-summary className="text-xs text-muted-foreground">{v.summary}</p>}>
+        <InstallAppCallout s={signIn} />
         <div className="grid gap-3 lg:grid-cols-2">
           <ConnectedAccountPanel provider="github" source={v.account} onStatus={setSignIn} onAdded={readFurther} />
           {further.map((k) => <ConnectedAccountPanel key={k} provider="github" accountKey={k} source={v.further[k]} onRemoved={readFurther} />)}

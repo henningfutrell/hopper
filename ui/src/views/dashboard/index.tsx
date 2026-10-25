@@ -1,6 +1,7 @@
 // Dashboard: numbers, charts, the board, live activity — everything at a glance, laid out as the
 // viewer's dashboard layout says (model/dashboard-layout.ts, issue #73). Arrange (issue #86) lets the
-// viewer drag panels where they see fit, or step them with Move earlier / Move later.
+// viewer drag panels where they see fit, or step them with Move earlier / Move later. While the hopper's GitHub app reaches no
+// repository, Install the app on GitHub leads (issue #2759).
 import { useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, GripVertical, LayoutGrid, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,7 @@ import { LanesPanel } from './lanes';
 import { EndedPanel, WaitingPanel } from './queue';
 import { TokenHistoryPanel } from './token-history';
 import { UsageHistoryPanel } from './usage-history';
+import { InstallAppNudge } from '../install-app';
 
 // Literal class names, so Tailwind finds them.
 const SPAN: Record<PanelWidth, string> = { 1: 'lg:col-span-1', 2: 'lg:col-span-2', 3: 'lg:col-span-3' };
@@ -66,6 +68,7 @@ export function Dashboard() {
           <Button variant="ghost" size="xs" className="text-muted-foreground"><Settings2 />Customize</Button>
         </Customize>
       </div>
+      <InstallAppNudge />
       <div className="grid gap-3 lg:grid-cols-3">
         {shown.map((p, i) => (
           <div key={p.id} data-dashboard-panel={p.id} {...drag(p.id)}
