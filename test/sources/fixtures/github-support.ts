@@ -74,7 +74,7 @@ export function testTrust(logins?: string[], o: { assignedHere?: string[] | ((ke
   };
 }
 
-export function setup(over: Record<string, unknown> = {}, o: Partial<Pick<GitHubSourceOptions, 'knownKeys' | 'rerunnable' | 'rejections' | 'whoami' | 'yoloMode' | 'landingBranch' | 'changeRule' | 'jobArtifacts' | 'trust' | 'doneCriteria' | 'allowedDeletes' | 'openedPullRequests' | 'needsMerge'>> = {}) {
+export function setup(over: Record<string, unknown> = {}, o: Partial<Pick<GitHubSourceOptions, 'knownKeys' | 'rerunnable' | 'rejections' | 'whoami' | 'yoloMode' | 'landingBranch' | 'changeRule' | 'jobArtifacts' | 'trust' | 'doneCriteria' | 'allowedDeletes' | 'openedPullRequests' | 'needsMerge' | 'deliveryHold'>> = {}) {
   const gh = createFakeGitHub();
   const config = githubConfig(over);
   const clock = { now: () => new Date('2026-10-02T10:00:00.000Z') };

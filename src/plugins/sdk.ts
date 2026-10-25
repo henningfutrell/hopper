@@ -217,6 +217,8 @@ export interface JobSourceContext {
   jobDoneCriteria?(jobId: string): { skill: string; done: DoneCriterion[]; paths?: string[] }[];
   /** The deletes a job's issue allows by resource address (issue #1924 part 2), from the text it runs. Absent: none. */
   jobAllowedDeletes?(jobId: string): string[];
+  /** Why a delivery hold holds a job's change (issue #2775 part 7): yolo mode does not merge it. Absent or undefined: none. */
+  jobDeliveryHold?(jobId: string): string | undefined;
   /** The user's issue graph (issue #437): a source keeps the place of each issue it sees there. Store only. */
   issueGraph: Pick<IssueGraphRepository, 'record' | 'lastRead'>;
   /** The user's listing cache (issue #985): each repository's latest repository listing. Absent: a source keeps it in memory. */

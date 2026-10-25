@@ -100,6 +100,8 @@ export interface GitHubSourceOptions {
   openedPullRequests?: JobOpenedPullRequests;
   /** The done criteria of the conditional skills a job got (issue #1924): checked on its own pull request before it is done. Absent: none. */
   doneCriteria?: JobDoneCriteria;
+  /** Why a delivery hold holds a job's change (issue #2775 part 7): yolo mode does not merge it. Absent or undefined: none. */
+  deliveryHold?: (jobId: string) => string | undefined;
   /** The deletes a job's issue allows by resource address (issue #1924 part 2): a plan's delete of one does not count. Absent: none. */
   allowedDeletes?: JobAllowedDeletes;
   /** The user's issue graph (issue #437): each listed issue's place is kept there. Absent: none is kept. */
@@ -154,7 +156,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   const reportContext = () => ({ api, ensuredLabels, issueClosed, ...(o.needsMerge ? { needsMerge: o.needsMerge } : {}), ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.openedPullRequests ? { opened: o.openedPullRequests } : {}) });
   const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
   const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, ...(o.openedPullRequests ? { opened: o.openedPullRequests } : {}), batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}),
-    ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}), labels: labelRows('follow'), ...(o.intake?.workItem ? { item: o.intake.workItem } : {}) });
+    ...(o.doneCriteria || o.deliveryHold ? { mergeHold: async (job, repo, url) => o.deliveryHold?.(job.id) ?? doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}), labels: labelRows('follow'), ...(o.intake?.workItem ? { item: o.intake.workItem } : {}) });
   /** A follow's or a report's label change (issue #1892 parts 14 and 15): outbox rows, once per end, sent in its own pass. */
   const labelRows = (act: 'follow' | 'report'): LabelSink => async (key, repo, change, tag, replaces) => {
     if (replaces !== undefined) outbox.drop(act, key, replaces);

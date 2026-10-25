@@ -5,7 +5,7 @@
 // none, `stable` moves to it as a fast-forward (`canary_promoted`). The rules and the text are
 // `src/domain/landing-canary.ts`; each step an event, with the user's own GitHub connection. A pass that stopped after
 // `stable` moved records the promotion at the next; the issue is found before it is filed again (issue #1589).
-import type { LandingBatchState } from '../domain/landing-batches.ts';
+import { mergedPullRequests, type LandingBatchState } from '../domain/landing-batches.ts';
 import { CANARY_BRANCH, canaryIssueText, canaryNext, canaryVerdict, STABLE_BRANCH, type Canary } from '../domain/landing-canary.ts';
 import type { NewEvent } from '../domain/types.ts';
 import { JOB_LABEL } from '../repo-checks/service.ts';
@@ -16,6 +16,8 @@ export interface CanaryPass {
   gh: LandingBatchGitHub;
   repo: string;
   hours: number;
+  /** The pull requests whose change a delivery hold holds (issue #2775 part 7): `stable` does not move to a candidate that carries one. */
+  held(): ReadonlySet<number>;
   record(event: NewEvent): void;
   state(): LandingBatchState | undefined;
   note(f: { why?: string; problem?: string }): void;
@@ -51,6 +53,11 @@ export async function canaryPass(p: CanaryPass): Promise<void> {
   const verdict = canaryVerdict(running, reports, p.hours, p.now());
   if (verdict.kind === 'wait') { p.note({ why: verdict.why }); return; }
   if (verdict.kind === 'promote') {
+    const held = mergedPullRequests(cmp.commits.map((m) => m.message)).filter((n) => p.held().has(n));
+    if (held.length > 0) {
+      p.note({ why: `${STABLE_BRANCH} waits: the candidate ${running.tip.slice(0, 12)} carries ${held.map((n) => `#${n}`).join(', ')}, and its delivery is held` });
+      return;
+    }
     await p.gh.fastForward(p.repo, STABLE_BRANCH, running.tip);
     p.record({ type: 'landing_batch.canary_promoted', data: { ...at, tip: running.tip, why: verdict.why } });
     p.note({ why: `${STABLE_BRANCH} moved to ${running.tip.slice(0, 12)}: ${verdict.why}` });
