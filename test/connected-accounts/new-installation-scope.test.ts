@@ -1,12 +1,11 @@
 // Issue #2761: the hopper's app installed on a new owner (or a repository added to an installation) after GitHub was
-// connected. The installations' schedule reads it, the new repositories become job repositories of the connected account
+// connected. A read of the installations (the schedule's, every 30 minutes, or a Refresh) finds it, the new repositories become job repositories of the connected account
 // — not one another account holds, and none of a personal access token's —, the account's job source syncs at once, and
 // Sources shows what was added. No reconnect.
 import { afterEach, describe, expect, it } from 'vitest';
 import { createConnectedAccounts, type ConnectedAccountsOptions } from '../../src/connected-accounts/service.ts';
 import type { DeviceFlow, Grant } from '../../src/connected-accounts/device-flow.ts';
 import { hopperApps } from '../../src/connected-accounts/hopper-app.ts';
-import { FRESH_MS } from '../../src/connected-accounts/installations.ts';
 import type { AppInstallation } from '../../src/domain/types.ts';
 import { memoryAccountStore, systemOf } from '../support/system-secrets.ts';
 import { waitFor } from '../support/wait.ts';
@@ -26,7 +25,7 @@ const approved = (grantedBy: Grant['grantedBy'] = 'device'): DeviceFlow => ({
 });
 
 function setup(o: Partial<ConnectedAccountsOptions> = {}) {
-  let now = T0;
+  const now = T0;
   let found: AppInstallation[] = [USER];
   let chosen: string[] = ['octo-user/tools'];
   const changes: string[] = [], logs: string[] = [];
@@ -47,7 +46,6 @@ function setup(o: Partial<ConnectedAccountsOptions> = {}) {
     service, changes, logs,
     chosen: () => chosen,
     install: (i: AppInstallation[]) => { found = i; },
-    later: () => { now += FRESH_MS; },
   };
 }
 
@@ -58,13 +56,12 @@ async function connected(s: ReturnType<typeof setup>) {
 }
 
 describe('the app installed on a new owner after GitHub was connected (issue #2761)', () => {
-  it('the schedule finds the new owner: its repositories become job repositories, the source syncs, and Sources shows it', async () => {
+  it('a read finds the new owner: its repositories become job repositories, the source syncs, and Sources shows it', async () => {
     const s = setup();
     await connected(s);
     expect(s.chosen()).toEqual(['octo-user/tools']); // a connect chooses nothing by itself
     s.install([USER, ORG]);
-    s.later();
-    s.service.start();
+    s.service.refresh('github'); // as the schedule's read does (installations.test.ts)
     await waitFor(() => s.chosen().length === 3, { what: 'the new owner\'s repositories chosen' });
     expect(s.chosen()).toEqual(['octo-user/tools', 'acme/api', 'acme/web']);
     expect(s.changes).toEqual(['github']);
@@ -84,7 +81,7 @@ describe('the app installed on a new owner after GitHub was connected (issue #27
   });
 
   it('a repository another account holds is not taken', async () => {
-    const s = setup({ takenElsewhere: (repo) => repo === 'acme/web' });
+    const s = setup({ takenElsewhere: (_p, repo) => repo === 'acme/web' });
     await connected(s);
     s.install([USER, ORG]);
     s.service.refresh('github');
