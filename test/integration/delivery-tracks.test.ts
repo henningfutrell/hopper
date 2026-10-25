@@ -1,11 +1,13 @@
 // The kept delivery tracks and deployment records (issue #2775, design.md "Kept delivery tracks") over the real HTTP server
 // and database: GET /api/delivery-tracks answers each job's track as the kept-track pass kept it, GET /api/deployments the
-// deployment records on their own, and a person's no-deploy mark closes an open track.
+// deployment records on their own, and a person flips a track's deployment expectation until its deployment completes.
 //
 // Feature: kept delivery tracks over the API
 //   Scenario: a fix merged on the landing branch but not promoted shows as open in landing_checks, with what it waits on
 //   Scenario: a research job's deployment record carries its source and outcome, and is listed on its own
 //   Scenario: a person marks an open track no-deploy: it closes with a none record; again, 409; an unknown job, 404
+//   Scenario: a none record flipped to deploy reopens its track, with every flip kept; the pass judges it again
+//   Scenario: a completed deployment is locked: every flip is refused (409) and changes nothing
 //   Scenario: a bad query is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DeliveryTracksView, DeploymentsView, KeptTrack } from '../../src/domain/kept-tracks.ts';
@@ -70,11 +72,42 @@ describe('kept delivery tracks over the API', () => {
     expect((await tracksOf(a, 'job=fix'))[0]!.state).toBe('closed');
     expect(await deploymentsOf(a, 'job=fix')).toHaveLength(1);
     expect(a.user().store.events.recent(5, ['delivery_track.no_deploy_marked'])).toHaveLength(1);
-    // The pass leaves a closed track as it was.
+    // The pass leaves a closed none track as it was.
     keepDeliveryTracks(a.user().store, new Date());
     expect((await tracksOf(a, 'job=fix'))[0]).toEqual(r.body);
     expect((await a.ui('/ui/api/delivery-tracks/no-deploy', { job: 'fix' }, { token })).status).toBe(409);
     expect((await a.ui('/ui/api/delivery-tracks/no-deploy', { job: 'nope' }, { token })).status).toBe(404);
+  });
+
+  it('a none record flipped to deploy reopens its track, with every flip kept; the pass judges it again', async () => {
+    const { a, token } = await boot();
+    const r = await a.ui<KeptTrack>('/ui/api/delivery-tracks/deploy', { job: 'research', note: 'ship the report' }, { token });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ state: 'open', expectations: [{ expect: 'deploy', by: expect.any(String), note: 'ship the report' }], deployment: { kind: 'none' } });
+    expect(a.user().store.events.recent(5, ['delivery_track.deploy_expected'])).toHaveLength(1);
+    // The record stays, and says a person now expects a deployment.
+    expect((await deploymentsOf(a, 'job=research'))[0]).toMatchObject({ kind: 'none', expectations: [{ expect: 'deploy' }] });
+    keepDeliveryTracks(a.user().store, new Date());
+    expect((await tracksOf(a, 'job=research'))[0]).toMatchObject({ state: 'open', expectations: [{ expect: 'deploy' }] });
+    expect((await a.ui('/ui/api/delivery-tracks/deploy', { job: 'research' }, { token })).status).toBe(409);
+    const back = await a.ui<KeptTrack>('/ui/api/delivery-tracks/no-deploy', { job: 'research' }, { token });
+    expect(back.body).toMatchObject({ state: 'closed', expectations: [{ expect: 'deploy' }, { expect: 'none' }], deployment: { kind: 'none', outcome: { status: 'marked' } } });
+    expect((await deploymentsOf(a, 'job=research'))[0]!.expectations).toHaveLength(2);
+  });
+
+  it('a completed deployment is locked: every flip is refused (409) and changes nothing', async () => {
+    const { a, token } = await boot();
+    const store = a.user().store;
+    const kept = store.keptTracks.get('fix')!;
+    const at = new Date().toISOString();
+    const locked: KeptTrack = { ...kept, state: 'closed', closedAt: at, deployment: { jobId: 'fix', repo: REPO, at, kind: 'deploy', artifact: { pullRequest: pr(11) }, target: 'production', expected: 'delivered', observed: kept.steps } };
+    store.keptTracks.save([locked]);
+    for (const path of ['no-deploy', 'deploy']) expect((await a.ui(`/ui/api/delivery-tracks/${path}`, { job: 'fix' }, { token })).status).toBe(409);
+    expect(store.keptTracks.get('fix')).toEqual(locked);
+    // The store writes over neither a locked track nor its record.
+    store.keptTracks.save([{ ...kept, state: 'open' }]);
+    expect(store.keptTracks.get('fix')).toEqual(locked);
+    expect((await deploymentsOf(a, 'job=fix'))[0]).toMatchObject({ kind: 'deploy' });
   });
 
   it('refuses a bad query (400)', async () => {

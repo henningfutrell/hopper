@@ -1,7 +1,9 @@
 // Kept delivery tracks and deployment records (issue #2775, design.md "Kept delivery tracks"): each job's delivery track,
 // kept from its `job.queued` on, with every step it started and ended, the step it is in, since when and what it waits
 // on; it closes only with its one deployment record — `deploy` once the change is delivered, `none` once the job ended
-// with no change to deliver, or a person's no-deploy mark. The fold is incremental: a pass gives it the kept marks and
+// with no change to deliver, or a person's no-deploy mark. A person flips its deployment expectation (deploy or none) any
+// number of times, each flip kept, until a deployment completes: a `deploy` record is locked, a `none` one never is
+// (part 2). The fold is incremental: a pass gives it the kept marks and
 // the events after its cursor, and the same event folded twice changes nothing (each mark is the first one). Pure.
 import { scheduledActuals } from './delivery-forecast.ts';
 import type { DeliveryRepo } from './delivery-settings.ts';
@@ -28,9 +30,15 @@ export interface TrackMarks {
 /** `note`: a person's, with their mark; for a pull request the hopper closed, why it closed it (`job.pull_request_closed`'s `superseded`). */
 export interface NoDeployOutcome { status: JobStatus | 'pull_request_closed' | 'marked'; report?: 'research' | 'proposal'; by?: string; note?: string }
 
-/** A job's one deployment record, made when its kept track closes (issue #2775). */
+/** A person's flip of a track's deployment expectation (issue #2775 part 2): `deploy` or `none`, by whom, when, and why. */
+export interface DeploymentExpectation { expect: 'deploy' | 'none'; by: string; at: string; note?: string }
+
+/**
+ * A job's one deployment record, made when its kept track closes (issue #2775). A `deploy` record is locked: its deployment
+ * completed. A `none` record stays open: a person can flip it to deploy at any later time. `expectations`: every flip, in order.
+ */
 export type DeploymentRecord = {
-  jobId: string; repo?: string; at: string;
+  jobId: string; repo?: string; at: string; expectations?: DeploymentExpectation[];
 } & (
   | {
     kind: 'deploy';
@@ -62,8 +70,14 @@ export interface KeptTrack {
   current: { step: DeliveryStep; since: string; blocker: Blocker; waitingOn: string };
   state: 'open' | 'closed';
   closedAt?: string;
+  /** Its deployment record: once it closed, and kept when a person reopens it by a flip to deploy. */
   deployment?: DeploymentRecord;
+  /** Every flip of its deployment expectation, in order; the last one holds. */
+  expectations?: DeploymentExpectation[];
 }
+
+/** A track whose deployment completed: its record is final, and no flip changes it. */
+export const lockedOf = (t: Pick<KeptTrack, 'deployment'>): boolean => t.deployment?.kind === 'deploy';
 
 const first = <K extends keyof TrackMarks>(m: TrackMarks, k: K, v: TrackMarks[K]): void => { m[k] ??= v; };
 
@@ -182,12 +196,14 @@ export interface TrackContext {
 const sourceOf = (m: TrackMarks): string => m.issue ?? m.source ?? 'unknown';
 
 /**
- * The track of `jobId` from its marks at `now`. A track kept closed stays as it was: its close is final. It closes with its
- * deployment record: `deploy` once its production step ended; `none` once its job ended with no change (failed, cancelled
- * or rejected before a merge; finished with no pull request; its pull request closed with no merge). A person's mark is `noDeployOf`.
+ * The track of `jobId` from its marks at `now`. A track kept closed stays as it was: only a person's flip opens it again
+ * (`expectOf`). It closes with its deployment record: `deploy` once its production step ended, whatever a person said;
+ * `none` once its job ended with no change (failed, cancelled or rejected before a merge; finished with no pull request;
+ * its pull request closed with no merge), unless a person's last flip expects a deployment.
  */
 export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?: KeptTrack): KeptTrack {
   if (kept?.state === 'closed') return kept;
+  const expectations = kept?.expectations ?? [];
   const measured = measuredOf(marks);
   const steps = [...measured.steps];
   let current = measured.current;
@@ -202,14 +218,15 @@ export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?
   const track: KeptTrack = {
     jobId, ...(marks.repo ? { repo: marks.repo } : {}), ...(marks.issue ? { issue: marks.issue } : {}), ...(marks.pr ? { pullRequest: marks.pr } : {}),
     marks, steps, current: { ...current, ...waitingOnOf(current.step, current.since, c.delivery) }, state: 'open',
+    ...(kept?.deployment ? { deployment: kept.deployment } : {}), ...(expectations.length > 0 ? { expectations } : {}),
   };
   const close = (at: string, deployment: DeploymentRecord): KeptTrack => ({ ...track, state: 'closed', closedAt: at, deployment });
-  const base = { jobId, ...(marks.repo ? { repo: marks.repo } : {}) };
+  const base = { jobId, ...(marks.repo ? { repo: marks.repo } : {}), ...(expectations.length > 0 ? { expectations } : {}) };
   if (deliveredAt !== undefined && marks.pr) {
     return close(deliveredAt, { ...base, at: deliveredAt, kind: 'deploy', artifact: { pullRequest: marks.pr }, target: 'production', expected: 'delivered', observed: steps });
   }
   const none = (at: string, outcome: NoDeployOutcome) => close(at, { ...base, at, kind: 'none', source: sourceOf(marks), outcome });
-  if (marks.merged) return track;
+  if (marks.merged || expectations.at(-1)?.expect === 'deploy') return track;
   // A job the store no longer holds: its events say how it ended.
   const status = c.job?.status ?? (marks.finished ? 'finished' : undefined);
   const report: Partial<NoDeployOutcome> = c.job?.researchId ? { report: 'research' } : c.job?.proposalId ? { report: 'proposal' } : {};
@@ -219,22 +236,36 @@ export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?
   return track;
 }
 
-/** An open track closed by a person's no-deploy mark (`POST /ui/api/delivery-tracks/no-deploy`), at `at`. */
-export function noDeployOf(t: KeptTrack, mark: { by: string; at: string; note?: string }): KeptTrack {
-  return {
-    ...t, state: 'closed', closedAt: mark.at,
-    deployment: {
-      jobId: t.jobId, ...(t.repo ? { repo: t.repo } : {}), at: mark.at, kind: 'none', source: sourceOf(t.marks),
-      outcome: { status: 'marked', by: mark.by, ...(mark.note ? { note: mark.note } : {}) },
-    },
-  };
+/**
+ * A person's flip of a track's deployment expectation (`POST /ui/api/delivery-tracks/no-deploy|deploy`), kept after the
+ * flips before it. `none` closes the track with a `none` record, outcome `marked`; `deploy` opens it again, its record kept,
+ * so the kept-track pass judges it again and closes it only once its deployment completes. A locked track throws: its
+ * deployment completed, and a change goes to a new job.
+ */
+export function expectOf(t: KeptTrack, flip: DeploymentExpectation): KeptTrack {
+  if (lockedOf(t)) throw new Error(`the deployment of job ${t.jobId} completed: its record is locked`);
+  const expectations = [...t.expectations ?? [], flip];
+  if (flip.expect === 'none') {
+    return {
+      ...t, expectations, state: 'closed', closedAt: flip.at,
+      deployment: {
+        jobId: t.jobId, ...(t.repo ? { repo: t.repo } : {}), at: flip.at, expectations, kind: 'none', source: sourceOf(t.marks),
+        outcome: { status: 'marked', by: flip.by, ...(flip.note ? { note: flip.note } : {}) },
+      },
+    };
+  }
+  const { closedAt: _closed, ...open } = t;
+  return { ...open, expectations, state: 'open', ...(t.deployment ? { deployment: { ...t.deployment, expectations } } : {}) };
 }
+
+/** What the last flip of a track asks, if a person flipped it. */
+export const expectationOf = (t: Pick<KeptTrack, 'expectations'>): DeploymentExpectation['expect'] | undefined => t.expectations?.at(-1)?.expect;
 
 /** GET /api/delivery-tracks's answer, and GET /api/deployments's. */
 export interface DeliveryTracksView { tracks: KeptTrack[] }
 export interface DeploymentsView { deployments: DeploymentRecord[] }
 
-/** The kept tracks and deployment records (tenant migration 101): a closed track, and its deployment record, never change. */
+/** The kept tracks and deployment records (tenant migration 101): a locked track, and its `deploy` record, never change. */
 export interface KeptTrackRepository {
   /** The newest event seq the pass folded; none before its first pass. */
   cursor(): number | undefined;
@@ -243,7 +274,7 @@ export interface KeptTrackRepository {
   /** Which of these jobs have a closed track. */
   closedOf(jobIds: readonly string[]): Set<string>;
   get(jobId: string): KeptTrack | undefined;
-  /** Keeps each track, and the deployment record of each closed one, and the cursor, in one transaction. A track kept closed is not written over. */
+  /** Keeps each track, and its deployment record, and the cursor, in one transaction. A locked track and its record are not written over. */
   save(tracks: readonly KeptTrack[], cursor?: number): void;
   /** Newest first, by the time of its first step. */
   list(q?: { job?: string; repo?: string; state?: KeptTrack['state']; limit?: number }): KeptTrack[];

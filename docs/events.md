@@ -9423,7 +9423,7 @@ Version 1 (`docs/schemas/delivery_gate.cleared.v1.json`). A person cleared a del
 
 ## `delivery_track.no_deploy_marked`
 
-Version 1 (`docs/schemas/delivery_track.no_deploy_marked.v1.json`). A person marked a job no-deploy (issue #2775): its kept delivery track, open until then, is closed with a deployment record of kind `none`, outcome `marked`, `by` who and their `note`. A closed track is final. It changes no job, pull request or promotion: the hopper records the act.
+Version 1 (`docs/schemas/delivery_track.no_deploy_marked.v1.json`). A person marked a job no-deploy (issue #2775): its kept delivery track is closed with a deployment record of kind `none`, outcome `marked`, `by` who and their `note`. The record stays open: a later flip to deploy opens the track again. Refused once the job's deployment completed. It changes no job, pull request or promotion: the hopper records the act.
 
 | field | type | required |
 |---|---|---|
@@ -9434,6 +9434,22 @@ Version 1 (`docs/schemas/delivery_track.no_deploy_marked.v1.json`). A person mar
 {
   "by": "release-owner",
   "note": "a docs change: nothing is deployed"
+}
+```
+
+## `delivery_track.deploy_expected`
+
+Version 1 (`docs/schemas/delivery_track.deploy_expected.v1.json`). A person said a job's change is to be deployed (issue #2775 part 2), `by` who and their `note`: its kept delivery track opens again, its `none` record kept with the flip, and the kept-track pass follows it until its deployment completes, which locks the record. Refused once the job's deployment completed. It changes no job, pull request or promotion: the hopper records the act.
+
+| field | type | required |
+|---|---|---|
+| `by` | string | yes |
+| `note` | string | no |
+
+```json
+{
+  "by": "release-owner",
+  "note": "ship it with the next set"
 }
 ```
 
