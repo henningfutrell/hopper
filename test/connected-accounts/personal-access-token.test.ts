@@ -127,7 +127,7 @@ describe('a personal access token as the GitHub source', () => {
 });
 
 describe('the repositories a token reaches', () => {
-  it('reads every page of GitHub\'s list, grouped by owner', async () => {
+  it('reads every page of GitHub\'s list, grouped by owner, with the owner\'s picture (issue #2774)', async () => {
     const forge = await createFakeGitHub({ clientId: 'gh-client-id', issues: [
       { repo: 'octo-user/tools', number: 1, title: 'a', body: '', labels: [], author: 'octo-user' },
       { repo: 'octo-org/site', number: 2, title: 'b', body: '', labels: [], author: 'octo-user' },
@@ -137,8 +137,8 @@ describe('the repositories a token reaches', () => {
     const app = hopperApps({ github: { url: forge.url, clientId: '' } }).github;
     const reached = await tokenRepositories(app, 'github_pat_1', conditionalAnswers());
     expect(reached).toEqual([
-      { account: 'octo-org', repositorySelection: 'selected', repositories: ['octo-org/site'] },
-      { account: 'octo-user', repositorySelection: 'selected', repositories: ['octo-user/tools'] },
+      { account: 'octo-org', avatarUrl: `${forge.url}/avatars/octo-org`, repositorySelection: 'selected', repositories: ['octo-org/site'] },
+      { account: 'octo-user', avatarUrl: `${forge.url}/avatars/octo-user`, repositorySelection: 'selected', repositories: ['octo-user/tools'] },
     ]);
   });
 });

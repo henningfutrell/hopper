@@ -6,11 +6,6 @@
 // `RETRY_MS` that doubles with each failure in a row, at most `MAX_RETRY_MS`, and never before GitHub's rate limit lets
 // it). One read per provider at a time: a Refresh while one runs joins it. Each read is conditional (conditional.ts), with
 // the answers kept from the read before. A failed read keeps the installations read before, with why.
-//
-// New repositories (issue #2761): a repository a read finds that the read before it, of the same account, did not — the app
-// installed on a new owner, or a repository added to an installation, both a person's act on GitHub — is offered to
-// `adopt`, which makes it a job repository; what it took is kept with the read (`added`) and shown. The first read of an
-// account offers nothing: what the app reaches at connect is the person's to choose (issue #321).
 import { CONNECTED_ACCOUNT_PROVIDERS, type AppInstallation, type AppInstallationsReadRepository, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import { conditionalAnswers, type ConditionalAnswers } from '../repo-checks/conditional.ts';
 
@@ -32,15 +27,13 @@ export interface InstallationReadsOptions {
   account(provider: ConnectedAccountProvider): string | undefined;
   /** The installations, read from GitHub now, each GET through `answers`. */
   read(provider: ConnectedAccountProvider, answers: ConditionalAnswers): Promise<AppInstallation[]>;
-  /** The repositories this read found that the read before did not (issue #2761): answers those it made job repositories. */
-  adopt?(provider: ConnectedAccountProvider, repositories: string[]): string[];
   now(): number;
   log(line: string): void;
   tickMs?: number;
 }
 
 /** The part of a connected account's status that says where the app is installed. */
-export type InstallationsView = Pick<Extract<ConnectedAccountStatus, { state: 'connected' }>, 'installations' | 'installationsError' | 'installationsCheckedAt' | 'installationsReading' | 'jobRepositoriesAdded'>;
+export type InstallationsView = Pick<Extract<ConnectedAccountStatus, { state: 'connected' }>, 'installations' | 'installationsError' | 'installationsCheckedAt' | 'installationsReading'>;
 
 export interface InstallationReads {
   /** What the database holds for `account`: never reads GitHub. */
@@ -58,12 +51,6 @@ export interface InstallationReads {
 /** The backoff after `failures` failed reads in a row. */
 const backoff = (failures: number): number => Math.min(RETRY_MS * 2 ** Math.max(0, failures - 1), MAX_RETRY_MS);
 
-/** The repositories of `now` that `before` does not hold, in any case. */
-const newIn = (before: AppInstallation[], now: AppInstallation[]): string[] => {
-  const seen = new Set(before.flatMap((i) => i.repositories.map((r) => r.toLowerCase())));
-  return [...new Set(now.flatMap((i) => i.repositories))].filter((r) => !seen.has(r.toLowerCase()));
-};
-
 export function createInstallationReads(o: InstallationReadsOptions): InstallationReads {
   const reading = new Map<ConnectedAccountProvider, Promise<void>>();
   let timer: ReturnType<typeof setInterval> | undefined;
@@ -77,10 +64,7 @@ export function createInstallationReads(o: InstallationReadsOptions): Installati
     const answers = conditionalAnswers(before?.etags);
     try {
       const installations = await o.read(provider, answers);
-      const fresh = before?.installations && o.adopt ? newIn(before.installations, installations) : [];
-      const adopted = fresh.length > 0 ? o.adopt!(provider, fresh) : [];
-      const added = adopted.length > 0 ? { at: iso(at), repositories: adopted } : before?.added;
-      o.reads.put({ provider, account, at: iso(at), nextAt: iso(at + FRESH_MS), failures: 0, installations, etags: answers.kept(), ...(added ? { added } : {}) });
+      o.reads.put({ provider, account, at: iso(at), nextAt: iso(at + FRESH_MS), failures: 0, installations, etags: answers.kept() });
     } catch (e) {
       const failures = (before?.failures ?? 0) + 1;
       const error = `${PROVIDER_NAME[provider]} could not say where the app is installed: ${(e as Error).message}`;
@@ -122,7 +106,6 @@ export function createInstallationReads(o: InstallationReadsOptions): Installati
         ...(mine?.installations ? { installations: mine.installations } : {}),
         ...(mine?.error ? { installationsError: mine.error } : {}),
         ...(mine?.at ? { installationsCheckedAt: mine.at } : {}),
-        ...(mine?.added ? { jobRepositoriesAdded: mine.added } : {}),
         ...(reading.has(provider) ? { installationsReading: true as const } : {}),
       };
     },

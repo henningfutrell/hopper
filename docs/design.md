@@ -10110,33 +10110,28 @@ search; chosen: only those repositories' issues become jobs; changed while conne
 disconnect; refusals), `test/store/tenant-migration-10.test.ts`, `test/ui/sources-view.test.ts` (count,
 filter, Choose shown, Save sends the whole list, an unreached chosen repository).
 
-### New repositories the app comes to reach (issue #2761, 2026-10-25)
+### Every repository the app reaches, ready to choose (issue #2774, 2026-10-25)
 
-Owner report: the hopper's app was installed on a new organization after GitHub was connected, and a labelled,
-assigned issue there never became a job until GitHub was connected again. The installations were read again (every
-30 minutes, issue #1250), but the job repositories stayed as chosen, so the source never listed the new owner.
+Owner decision: a read of the installations has one job, to show every repository the person can choose. It chooses
+nothing. The auto-adopt of issue #2766 (a repository new to a read became a job repository, and the source synced) is
+removed: after a restart it took nothing that was installed before, and it changed the person's choice by itself.
 
-- **What is new.** A read of the installations that finds a repository the read before it, of the same account, did
-  not (`src/connected-accounts/installations.ts`, any case): the app installed on a new owner, or a repository added
-  to an installation, by the owner's choice or by an `all` installation's new repository. Each is a person's act on
-  GitHub, so it counts as the choice issue #321 asks for. The first read of an account finds nothing new: what the app
-  reaches at connect stays the person's to choose. A failed read, or a read of another account, finds nothing new.
-- **Taken.** Each new repository becomes a job repository of that account (`adopt`, `src/connected-accounts/service.ts`),
-  appended to the choice, unless it is chosen already, another of the user's accounts holds it (`takenElsewhere`,
-  `account-set.ts`: a repository is a job repository of one account only), or the account is a personal access
-  token (it reaches every repository its user does). Then the account's job source syncs at once (`onChange`), as
-  after a choose, so the new repositories' labelled issues are listed in that sync. A repository the person cleared
-  stays cleared: only a repository new to the read is taken.
-- **Shown.** The read keeps what it took (`AppInstallationsRead.added`, the newest such read's; an optional field of
-  the kept JSON, so the build before reads it); `GET /api/connected-accounts` answers it as `jobRepositoriesAdded`
-  (`at`, `repositories`), and the Sources panel names them, with when. The log says it too.
-- **When.** At the next read: the schedule's (at most 30 minutes after the read before), or Refresh at once. GitHub's
-  `installation` and `installation_repositories` deliveries are not taken: the GitHub delivery takes only `issues`
-  events (issue #1079), and the schedule is enough at this scale.
+- **Each read lists all.** Every read (Refresh, the schedule's every 30 minutes, the read at connect) asks GitHub again
+  for every installation and every repository each reaches (`installations`, `src/connected-accounts/identity.ts`), and
+  keeps the whole answer. What a read lists does not depend on what the read before it saw: a 304 is GitHub's own answer
+  that nothing changed (issue #1250). So the list is the same after a restart or an update, and a repository installed
+  or added since the last read is in the next one. A failed read keeps the read before it, with why.
+- **Nothing is chosen.** A read never changes the job repositories (issue #321) and never makes the source sync. A
+  repository the app reaches is unchosen until the person ticks it and saves.
+- **Shown.** Sources lists the repositories by installation, so by owner, each with the owner's picture
+  (`AppInstallation.avatarUrl`, GitHub's `account.avatar_url`; for a personal access token, each repository's
+  `owner.avatar_url`). The field is optional in the kept read: a read from before it has no picture, and the build
+  before reads the new one.
 
-**Verification:** `test/connected-accounts/installations.test.ts` (new owner, added repository, nothing on a first,
-failed or other-account read), `test/connected-accounts/new-installation-scope.test.ts` (taken, source synced, shown;
-a cleared repository stays cleared; another account's; a token's), `test/ui/installations-read-view.test.ts`.
+**Verification:** `test/integration/installations-complete-local.test.ts` (the first read after a restart with an
+installation there before; a repository added between reads; a new installation between reads; the job repositories
+unchanged), `test/connected-accounts/installations.test.ts` (the schedule's read lists a new owner and a new repository),
+`test/ui/installations-read-view.test.ts` (each owner's picture, the new repositories unchosen).
 
 ## Default work trees per machine and per repository (issue #324, 2026-10-07)
 
