@@ -68,8 +68,8 @@ export function JobTableHead() {
   );
 }
 
-/** Where an open kept delivery track is: its step, since when, what it waits on. */
-export type DeliveryPosition = KeptTrack['current'];
+/** Where an open kept delivery track is: its step, since when, what it waits on, and who owns its delivery hold, if one holds it. */
+export type DeliveryPosition = KeptTrack['current'] & { held?: 'hopper' | 'person' };
 
 interface RowProps {
   node: JobGraphNode; lane: string; last: DomainEvent | undefined; since: string | undefined; delivery: DeliveryPosition | undefined;
@@ -77,7 +77,7 @@ interface RowProps {
 }
 
 const sameDelivery = (a: DeliveryPosition | undefined, b: DeliveryPosition | undefined): boolean =>
-  a?.step === b?.step && a?.since === b?.since && a?.waitingOn === b?.waitingOn;
+  a?.step === b?.step && a?.since === b?.since && a?.waitingOn === b?.waitingOn && a?.held === b?.held;
 
 const same = (a: RowProps, b: RowProps): boolean =>
   a.node.id === b.node.id && a.node.stage === b.node.stage && a.node.stageText === b.node.stageText && a.node.status === b.node.status && a.node.stageSince === b.node.stageSince
@@ -117,8 +117,8 @@ export const JobRow = memo(function JobRow({ node, lane, last, since, delivery, 
         )}
       </td>
       <td data-slot="row-delivery" className={cn(CELL, COL['row-delivery'])}
-        title={delivery ? `in ${stepLabel(delivery.step)} since ${delivery.since}; waits on ${delivery.waitingOn}` : undefined}>
-        {delivery ? stepLabel(delivery.step) : ''}
+        title={delivery ? `in ${stepLabel(delivery.step)} since ${delivery.since}; ${delivery.held ? `held: ${delivery.held === 'person' ? 'a person took ownership of it' : 'paused'}` : `waits on ${delivery.waitingOn}`}` : undefined}>
+        {delivery ? `${stepLabel(delivery.step)}${delivery.held ? ', held' : ''}` : ''}
       </td>
       <td data-slot="row-last-event" className={cn(CELL, COL['row-last-event'])} title={last ? `${last.at} ${last.type}${detail ? ` — ${detail}` : ''}` : undefined}>
         {last ? <>

@@ -8,6 +8,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { expectationOf, expectOf, foldTrackEvents, KEPT_TRACK_EVENTS, lockedOf, type KeptTrack } from '../../domain/kept-tracks.ts';
 import type { UserStore } from '../../domain/store.ts';
+import { withActs } from '../../users/delivery-holds.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -19,8 +20,8 @@ export const expectationBody = z.strictObject({ job: z.string().min(1).max(200),
 
 const refusals = '404: the job has no kept track (the kept-track pass keeps it within a minute of its start). 409: its deployment completed (its record is locked), or its expectation is so already.';
 export const DELIVERY_EXPECTATION_OPERATIONS: Operation[] = [
-  { method: 'post', path: '/ui/api/delivery-tracks/no-deploy', tag: 'Jobs', summary: 'Mark a job no-deploy', description: `Issue #2775: a person closes the kept delivery track of \`job\` with a deployment record of kind \`none\`, outcome \`marked\`, with who and their \`note\` (\`delivery_track.no_deploy_marked\`) — for a change that is not deployed anywhere. The record stays open: a flip to deploy opens the track again. Each flip is kept in \`expectations\`. It changes no job, pull request or promotion. ${refusals}`, role: 'operator', body: expectationBody, returns: '`KeptTrack`, closed', errors: [400, 404, 409] },
-  { method: 'post', path: '/ui/api/delivery-tracks/deploy', tag: 'Jobs', summary: 'Expect a deployment of a job', description: `Issue #2775: a person says the change of \`job\` is to be deployed, with their \`note\` (\`delivery_track.deploy_expected\`). Its kept delivery track opens again, its \`none\` record kept with the flip, and the kept-track pass follows its change until its deployment completes, which locks the record. A job that ends with no change does not close it as \`none\` meanwhile. Each flip is kept in \`expectations\`. It changes no job, pull request or promotion. ${refusals}`, role: 'operator', body: expectationBody, returns: '`KeptTrack`, open', errors: [400, 404, 409] },
+  { method: 'post', path: '/ui/api/delivery-tracks/no-deploy', tag: 'Jobs', summary: 'Mark a job no-deploy', description: `Issue #2775: a person closes the kept delivery track of \`job\` with a deployment record of kind \`none\`, outcome \`marked\`, with who and their \`note\` (\`delivery_track.no_deploy_marked\`) — for a change that is not deployed anywhere. The record stays open: a flip to deploy opens the track again. Each flip is kept in \`expectations\`. It changes no job, pull request or promotion. ${refusals}`, role: 'operator', body: expectationBody, returns: '`KeptTrack`, closed, with its `acts`', errors: [400, 404, 409] },
+  { method: 'post', path: '/ui/api/delivery-tracks/deploy', tag: 'Jobs', summary: 'Expect a deployment of a job', description: `Issue #2775: a person says the change of \`job\` is to be deployed, with their \`note\` (\`delivery_track.deploy_expected\`). Its kept delivery track opens again, its \`none\` record kept with the flip, and the kept-track pass follows its change until its deployment completes, which locks the record. A job that ends with no change does not close it as \`none\` meanwhile. Each flip is kept in \`expectations\`. It changes no job, pull request or promotion. ${refusals}`, role: 'operator', body: expectationBody, returns: '`KeptTrack`, open, with its `acts`', errors: [400, 404, 409] },
 ];
 
 /** The track's marks folded again from its job's events: a track a flip opens again missed the events since it closed. */
@@ -49,7 +50,7 @@ export function registerDeliveryExpectationRoutes(app: FastifyInstance, o: { ope
         const e = store.events.append({ type: expect === 'none' ? 'delivery_track.no_deploy_marked' : 'delivery_track.deploy_expected', jobId: b.job, data });
         const flipped = expectOf(kept.state === 'closed' ? refolded(store, kept) : kept, { expect, at: e.at, ...data });
         store.keptTracks.save([flipped]);
-        return flipped;
+        return withActs(store, [flipped])[0]!;
       });
     });
   }

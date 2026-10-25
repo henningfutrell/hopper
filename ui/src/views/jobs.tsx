@@ -5,7 +5,8 @@
 // item is in flight, on at #jobs/in-flight — the header badge's link — and off at #jobs.
 // - List (the default, issue #2372): a table, one row per job (job-row.tsx); a click on a row opens its run graph — the
 //   job tree it is in, as Graph draws it — under the row, and a second click folds it. A job whose kept delivery track is
-//   open (GET /api/delivery-tracks?state=open, read again with the graph; issue #2775) shows its delivery step.
+//   open (GET /api/delivery-tracks?state=open, read again with the graph; issue #2775) shows its delivery step, and a held
+//   mark while a delivery hold holds its change.
 // - Graph: a section per job tree, named by its root, laid out from it; nodes are jobs, issues and pull
 //   requests, coloured by stage, a job with its task count; edges are typed. What blocks the root is ringed, and the
 //   edges to it are drawn bold. A settled tree starts folded. Select a node to read its details.
@@ -225,7 +226,7 @@ export function Jobs() {
     let live = true;
     const soon = setTimeout(() => {
       get<JobGraph>('/api/jobs/graph').then((g) => { if (live) setGraph(g); }, () => {});
-      get<DeliveryTracksView>('/api/delivery-tracks?state=open').then((v) => { if (live) setDelivery(new Map((v.tracks ?? []).map((t) => [t.jobId, t.current]))); }, () => {});
+      get<DeliveryTracksView>('/api/delivery-tracks?state=open').then((v) => { if (live) setDelivery(new Map((v.tracks ?? []).map((t) => [t.jobId, { ...t.current, ...(t.hold ? { held: t.hold.owner } : {}) }]))); }, () => {});
     }, graph ? 150 : 0);
     return () => { live = false; clearTimeout(soon); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- read again on the store's change only, not on its own answer
