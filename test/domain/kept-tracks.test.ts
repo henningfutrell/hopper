@@ -17,6 +17,8 @@
 //   Scenario: an edit of a job's item is a text edit on its track: when, at which step, and the hashes of the change
 //   Scenario: the hopper's own channels: its batch's merge commit on canary is in the test gate, on stable it is delivered
 //   Scenario: a held canary candidate and a later one that carries it too: stable at the later one's promotion
+//   Scenario: Run again of a job whose change is on its way closes its track none, outcome rerouted, with the new job
+//   Scenario: a person's flip to deploy after the run again opens it again
 import { describe, expect, it } from 'vitest';
 import { expectOf, foldTrackEvents, lockedOf, trackOf, type TrackContext, type TrackMarks } from '../../src/domain/kept-tracks.ts';
 import type { PromotionSetSchedule } from '../../src/domain/promotion-sets.ts';
@@ -253,6 +255,40 @@ describe('kept delivery tracks', () => {
       expect(trackOf('j', marks.get('j')!, ctx()).deployment).toMatchObject({ kind: 'deploy', at: at('18:00') });
       // An older candidate's promotion that never carried it moves nothing.
       expect(fold([...merged('k'), ...promoted(), stable('18:00', TIP1)]).get('k')!.stable).toBeUndefined();
+    });
+  });
+
+  describe('run again', () => {
+    const rerun = (by: string, extra: Record<string, unknown> = {}) => ev('job.rerun', '10:00', { by, nextJobId: 'j2', ...extra }, 'j');
+
+    it('Run again of a job whose change is on its way closes its track none, outcome rerouted, with the new job', () => {
+      // Merged on the landing branch, in its batch run: landing_checks.
+      const t = trackOf('j', fold([...merged('j'), rerun('user', { person: 'ana', via: 'ui' })]).get('j')!, ctx());
+      expect(t).toMatchObject({ state: 'closed', closedAt: at('10:00'), current: { step: 'landing_checks' } });
+      expect(t.deployment).toEqual({ jobId: 'j', repo: 'octo/shed', at: at('10:00'), kind: 'none', source: 'octo/shed#7', outcome: { status: 'rerouted', by: 'ana', nextJob: 'j2' } });
+      // Its pull request still open, the hopper's tending ran it again: no person, the new job still linked.
+      const tended = trackOf('j', fold([...merged('j').slice(0, 4), rerun('tending')]).get('j')!, ctx());
+      expect(tended.deployment).toMatchObject({ kind: 'none', outcome: { status: 'rerouted', nextJob: 'j2' } });
+      expect((tended.deployment as { outcome: object }).outcome).not.toHaveProperty('by');
+      // An older event names no new job: rerouted all the same.
+      const old = trackOf('j', fold([...merged('j'), ev('job.rerun', '10:00', { by: 'user' }, 'j')]).get('j')!, ctx());
+      expect(old.deployment).toMatchObject({ kind: 'none', outcome: { status: 'rerouted' } });
+      // The new job's own track starts with its own job.queued.
+      const both = fold([...merged('j'), queued('j2', '09:59'), rerun('user')]);
+      expect(trackOf('j2', both.get('j2')!, ctx({ job: { status: 'queued' } }))).toMatchObject({ state: 'open', current: { step: 'queued' } });
+    });
+
+    it('a change delivered before the run again stays delivered', () => {
+      const delivered = [...merged('j'), ...batch()];
+      const t = trackOf('j', fold([...delivered, rerun('user')]).get('j')!, ctx({ now: at('14:00'), delivery: { schedule, gates: {} } }));
+      expect(t.deployment?.kind).toBe('deploy');
+    });
+
+    it("a person's flip to deploy after the run again opens it again", () => {
+      const marks = fold([...merged('j'), rerun('user')]).get('j')!;
+      const closed = trackOf('j', marks, ctx());
+      const reopened = expectOf(closed, { expect: 'deploy', by: 'ana', at: at('10:30') });
+      expect(trackOf('j', marks, ctx(), reopened)).toMatchObject({ state: 'open' });
     });
   });
 });

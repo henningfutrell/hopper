@@ -808,17 +808,19 @@ Version 1 (`docs/schemas/job.claimed_by_operator.v1.json`). An operator claimed 
 
 ## `job.rerun`
 
-Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the failure assessor (`by: "assessor"`: a retry, a redirect, a held job released — issue #509), or the hopper's tending of a waiting pull request (`by: "tending"`: merge conflicts or failing checks, issue #736; `job.pull_request_tended` follows), or the item reconciler (`by: "reconciler"`: its pull request closed without a merge on GitHub, the first time in a row, issue #1891), asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job. The ended job is kept as it ended; a failed one is no longer a locked entry. A person's run again from Failures — a failure's Retry, a hand-off's I fixed it, or Continue in a new job — names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
+Version 1 (`docs/schemas/job.rerun.v1.json`). The user (`by: "user"`), or the failure assessor (`by: "assessor"`: a retry, a redirect, a held job released — issue #509), or the hopper's tending of a waiting pull request (`by: "tending"`: merge conflicts or failing checks, issue #736; `job.pull_request_tended` follows), or the item reconciler (`by: "reconciler"`: its pull request closed without a merge on GitHub, the first time in a row, issue #1891), asked for an ended job's item to run again (UI Run again, a re-run): its source gave the item back (on GitHub: a closed issue reopened, the end labels gone) and the new job was queued in the same step, its `job.queued` just before this event and its `rerunOf` this job; `nextJobId`: the new job (issue #2775 part 9; older events name none). The ended job is kept as it ended; a failed one is no longer a locked entry. A person's run again from Failures — a failure's Retry, a hand-off's I fixed it, or Continue in a new job — names who: `person`, and the way, `via` `ui` or `cli` (issue #623).
 
 | field | type | required |
 |---|---|---|
 | `by` | `user` \| `assessor` \| `tending` \| `reconciler` | yes |
+| `nextJobId` | string | no |
 | `person` | string | no |
 | `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {
-  "by": "user"
+  "by": "user",
+  "nextJobId": "b2c3d4e5"
 }
 ```
 

@@ -72,7 +72,7 @@ describe('tending a waiting pull request (issue #736)', () => {
     const finished = await app.waitForStatus(tender!.id, 'finished');
     expect(String(app.scripted.payloads.at(-1)!.prompt)).toContain(tendBrief(url, 'rebase'));
     expect((await app.events('types=job.pull_request_tended')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { pullRequest: url, step: 'rebase', nextJobId: tender!.id }]]);
-    expect((await app.events('types=job.rerun')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { by: 'tending' }]]);
+    expect((await app.events('types=job.rerun')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { by: 'tending', nextJobId: tender!.id }]]);
     expect(finished.status).toBe('finished');
     await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready again' });
     // The tended job follows no more; the new one follows the same pull request.
