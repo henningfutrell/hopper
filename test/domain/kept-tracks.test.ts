@@ -12,7 +12,7 @@
 //   Scenario: a person's no-deploy mark closes an open track; a closed track stays as it was
 //   Scenario: the same events folded again change nothing; folded in two halves give the same track
 import { describe, expect, it } from 'vitest';
-import { foldTrackEvents, trackOf, type TrackContext, type TrackMarks } from '../../src/domain/kept-tracks.ts';
+import { foldTrackEvents, noDeployOf, trackOf, type TrackContext, type TrackMarks } from '../../src/domain/kept-tracks.ts';
 import type { PromotionSetSchedule } from '../../src/domain/promotion-sets.ts';
 import type { DomainEvent, EventType } from '../../src/domain/types.ts';
 
@@ -120,7 +120,8 @@ describe('kept delivery tracks', () => {
 
   it('a person\'s no-deploy mark closes an open track; a closed track stays as it was', () => {
     const marks = fold([...merged('j'), ...batch()]).get('j')!;
-    const t = trackOf('j', marks, ctx({ noDeploy: { by: 'owner', at: at('11:00'), note: 'not deployed anywhere' } }));
+    const t = noDeployOf(trackOf('j', marks, ctx()), { by: 'owner', at: at('11:00'), note: 'not deployed anywhere' });
+    expect(t).toMatchObject({ state: 'closed', closedAt: at('11:00') });
     expect(t.deployment).toMatchObject({ kind: 'none', at: at('11:00'), outcome: { status: 'marked', by: 'owner', note: 'not deployed anywhere' } });
     expect(trackOf('j', marks, ctx({ now: at('23:00'), delivery: { schedule, gates: {} } }), t)).toBe(t);
   });
