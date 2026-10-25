@@ -38,6 +38,7 @@ import { observeTemplatesChecked } from './migration-observe-checked.ts';
 import { DISK_MEASURE_TABLE } from './disk-measures.ts';
 import { DELIVERY_LEDGER_TABLE } from './delivery-ledger.ts';
 import { STEP_SCHEDULE_TABLES } from './step-schedules.ts';
+import { KEPT_TRACK_TABLES } from './kept-tracks.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -204,4 +205,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   DELIVERY_LEDGER_TABLE,
   // 100: The step schedules and their runs (issue #2716). Tables only: the build before runs on them, and never reads them.
   STEP_SCHEDULE_TABLES,
+  // 101: The kept delivery tracks, the deployment records and the cursor of the pass that keeps them (issue #2775). Tables
+  // only: the build before runs on them, and never reads them.
+  KEPT_TRACK_TABLES,
 ];

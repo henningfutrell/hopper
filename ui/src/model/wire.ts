@@ -133,6 +133,7 @@ export type { GitHubCallKind, HourlyCalls, RateBucket, RateLimiterSettings, Rate
 export type { DeliveryGates, DeliveryRepo, DeliverySettings, DeliverySettingsView } from '../../../src/domain/delivery-settings.ts';
 export type { DeliveryForecast, DeliveryForecastView, PromotionSetForecastView, StepForecast } from '../../../src/domain/delivery-forecast.ts';
 export type { AccuracyOverTime, DeliveryLedgerView } from '../../../src/domain/forecast-accuracy.ts';
+export type { DeliveryTracksView, DeploymentRecord, KeptTrack } from '../../../src/domain/kept-tracks.ts';
 export type { DeliverySecretView, GitHubDeliveriesView } from '../../../src/domain/github-deliveries.ts';
 export type { AfterAnswerTiming, TimingSpread } from '../../../src/domain/sources.ts';
 export type { CredentialMeta, RemoteAccessChange, RemoteAccessLinks, RemoteAccessProvider, RemoteAccessState, RemoteAccessStatus, RemoteAccessView } from '../../../src/domain/remote-access.ts';
