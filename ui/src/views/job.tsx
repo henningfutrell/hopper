@@ -7,7 +7,8 @@
 // as a filterable table. A new event of the job reads the parts list again. A direct job's job shows its promotion to
 // GitHub under its facts (issue #946), as Direct jobs does. Its notes and Add note follow its facts (issue #997). Its
 // transcript, the agent session its checkpoint keeps, follows its terminal (issue #1169), then its token use and estimated
-// cost (issue #2302). Its facts name the GitHub
+// cost (issue #2302). Its kept delivery track — where its change is, or its deployment record — follows its facts (issue
+// #2775). Its facts name the GitHub
 // identity that acts for it (issue #1380): the login its GitHub requests named, else its user's connected account; for a
 // GitLab job (issue #1448 part 3), the GitLab username its pushes named, else its user's GitLab account. A held
 // job says why it is held (issue #874), a gate hold with the machines' names. File an issue beside its state opens with
@@ -36,6 +37,7 @@ import { JobNotes } from './job-notes';
 import { JobTerminal } from './job-terminal';
 import { JobTranscript } from './job-transcript';
 import { JobTokens } from './job-tokens';
+import { JobDelivery } from './job-delivery';
 import { JobTrust } from './job-trust';
 import { JobCritical } from './job-critical';
 import { BomGraph, BomTable, JobHeader, useJobBom, WaitingPinned } from './job-bom';
@@ -161,6 +163,7 @@ export function JobView() {
           </>
         )}
       </Panel>
+      {read.state === 'found' && <JobDelivery job={read.job} />}
       {read.state === 'found' && <JobTerminal job={read.job} />}
       {read.state === 'found' && <JobTranscript job={read.job} />}
       {read.state === 'found' && <JobTokens job={read.job} />}
