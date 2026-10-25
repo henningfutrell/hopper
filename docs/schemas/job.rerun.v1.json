@@ -11,6 +11,9 @@
         "reconciler"
       ]
     },
+    "nextJobId": {
+      "type": "string"
+    },
     "person": {
       "type": "string"
     },

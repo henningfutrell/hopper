@@ -6,7 +6,8 @@
 // Each text edit of its item is listed too: when, at which step, and who edited it (part 3). A delivered record names the
 // merge commit of the batch run that landed it, when the hopper knows it (part 4). The acts its step allows (part 8): Hold
 // and Take ownership put a delivery hold on the change (POST /ui/api/delivery-tracks/hold), Release lets it go on or hands it
-// back (POST /ui/api/delivery-tracks/release); its hold and each person's act on its change are listed.
+// back (POST /ui/api/delivery-tracks/release); its hold and each person's act on its change are listed. A record of a job
+// that ran again links the new job, whose own track carries the work on (part 9).
 import { Truck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -15,12 +16,14 @@ import { Empty, Panel } from '@/components/panel';
 import { Button } from '@/components/ui/button';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import { stepLabel } from '@/model/delivery-forecast';
+import { jobHref } from '@/model/job';
 import type { DeliveryTracksView, DeploymentRecord, Job, KeptTrack } from '@/model/wire';
 import { useHopper } from '@/store';
 
 const OUTCOMES: Record<string, string> = {
   finished: 'the job finished with no change to deliver', failed: 'the job failed', cancelled: 'the job was cancelled', rejected: 'the job was turned away',
   pull_request_closed: 'its pull request was closed with no merge', marked: 'a person marked it no-deploy',
+  rerouted: 'its item ran again in a new job',
 };
 
 function Record({ d }: { d: DeploymentRecord }) {
@@ -34,7 +37,7 @@ function Record({ d }: { d: DeploymentRecord }) {
   const o = d.outcome;
   return (
     <div data-slot="job-delivery-record">
-      No deployment expected: {OUTCOMES[o.status] ?? o.status}{o.report ? ` (a ${o.report} report)` : ''}{o.by ? `, by ${o.by}` : ''}{o.note ? ` — ${o.note}` : ''}. From {d.source}.
+      No deployment expected: {OUTCOMES[o.status] ?? o.status}{o.report ? ` (a ${o.report} report)` : ''}{o.by ? `, by ${o.by}` : ''}{o.note ? ` — ${o.note}` : ''}. From {d.source}.{o.nextJob ? <> <a data-slot="job-delivery-next" href={jobHref(o.nextJob)} className="underline underline-offset-4">The new job's track</a>.</> : ''}
     </div>
   );
 }

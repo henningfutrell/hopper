@@ -210,7 +210,7 @@ export const EVENT_SCHEMAS = {
   'job.claimed_by_operator': strict({}),
   // Run again (a re-run, issue #313): the user gave a failed job's item back to its source to run again.
   // `assessor` (issue #509): the failure assessor ran it again — a retry, a redirect, a release of a held job.
-  'job.rerun': strict({ by: z.enum(['user', 'assessor', 'tending', 'reconciler']), ...actingIfPerson }),
+  'job.rerun': strict({ by: z.enum(['user', 'assessor', 'tending', 'reconciler']), nextJobId: z.string().optional(), ...actingIfPerson }),
   // A person sent the job's open pull request back for rework (issue #724): the new job reworks it, told the notes.
   'job.rework_requested': strict({ pullRequest: z.string(), notes: z.string(), nextJobId: z.string(), ...actingIfPerson }),
   // A locked entry dismissed (issue #355): the failed job stays failed, out of the queue.
