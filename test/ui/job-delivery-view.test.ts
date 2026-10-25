@@ -3,7 +3,8 @@
 // a job in progress shows the step it is in, since when and what it waits on; a completed job shows its deployment record.
 // A person flips the deployment expectation from it (POST /ui/api/delivery-tracks/deploy|no-deploy) until a deployment
 // completes: a delivered record is final and offers no flip; each flip is listed. Each text edit of its item is listed,
-// with when and at which step (issue #2775 part 3).
+// with when and at which step (issue #2775 part 3). The acts its step allows are buttons (part 8): Hold and Take ownership
+// post a delivery hold, Release lets the change go on; the hold and each intervention are listed.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -128,6 +129,29 @@ describe('a job\'s delivery on its job view', () => {
     expect(listed[0]).toContain('Coding');
     expect(listed[0]).toContain('2026-10-20T08:30:00.000Z');
     expect(listed[0]).toContain('ed');
+  });
+
+  it('offers the acts its step allows: Hold and Take ownership post a delivery hold for the job (part 8)', async () => {
+    await boot([{ ...OPEN, acts: ['hold', 'take_ownership'] } as KeptTrack]);
+    const button = (slot: string) => document.querySelector<HTMLButtonElement>(`[data-slot="${slot}"]`);
+    expect(button('job-delivery-release')).toBeNull();
+    await act(async () => { button('job-delivery-hold')!.click(); await new Promise((r) => setTimeout(r, 0)); });
+    await act(async () => { button('job-delivery-take-ownership')!.click(); await new Promise((r) => setTimeout(r, 0)); });
+    expect(posts).toEqual([{ path: '/ui/api/delivery-tracks/hold', body: { job: 'j1' } }, { path: '/ui/api/delivery-tracks/hold', body: { job: 'j1', owner: 'person' } }]);
+  });
+
+  it('a held change shows its hold and offers Release only; each intervention is listed (part 8)', async () => {
+    const hold = { by: 'release-owner', at: '2026-10-20T09:30:00.000Z', step: 'landing_checks', owner: 'person', reason: 'by hand' } as const;
+    const interventions: KeptTrack['interventions'] = [{ seq: 4, at: hold.at, by: hold.by, step: 'landing_checks', act: 'hold', owner: 'person', reason: 'by hand' }];
+    await boot([{ ...OPEN, hold, interventions, acts: ['release'] } as KeptTrack]);
+    expect(text('job-delivery-hold-state')).toContain('release-owner');
+    expect(text('job-delivery-hold-state')).toContain('by hand');
+    expect(document.querySelector('[data-slot="job-delivery-hold"]')).toBeNull();
+    const listed = [...document.querySelectorAll('[data-slot="job-delivery-intervention"]')].map((e) => e.textContent ?? '');
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toContain('Landing checks');
+    await act(async () => { document.querySelector<HTMLButtonElement>('[data-slot="job-delivery-release"]')!.click(); await new Promise((r) => setTimeout(r, 0)); });
+    expect(posts).toEqual([{ path: '/ui/api/delivery-tracks/release', body: { job: 'j1' } }]);
   });
 
   it('says so when the job has no kept track yet', async () => {

@@ -168,4 +168,15 @@ describe('the Jobs table (issue #2372)', () => {
     expect(row('job-2').querySelector('[data-slot="row-delivery"]')?.textContent).toBe('Coding');
     expect(row('job-3').querySelector('[data-slot="row-delivery"]')?.textContent).toBe('');
   });
+
+  it('marks a job whose change a delivery hold holds (issue #2775 part 8)', async () => {
+    jobs = [pointed(1, 'finished')];
+    tracks = [{
+      jobId: 'job-1', marks: {}, steps: [], state: 'open', current: { step: 'landing_checks', since: '2026-10-01T02:00:00.000Z', blocker: 'ci_red', waitingOn: 'a green run' },
+      hold: { by: 'release-owner', at: '2026-10-01T03:00:00.000Z', step: 'landing_checks', owner: 'person' },
+    }] as unknown as KeptTrack[];
+    await boot();
+    await vi.waitFor(() => expect(row('job-1')?.querySelector('[data-slot="row-delivery"]')?.textContent).toBe('Landing checks, held'));
+    expect(row('job-1').querySelector<HTMLElement>('[data-slot="row-delivery"]')!.title).toContain('held: a person took ownership of it');
+  });
 });
