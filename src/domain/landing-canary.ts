@@ -8,6 +8,7 @@
 
 /** The branch a stable candidate waits on, and the branch it goes to: the hopper's update channels (src/domain/update.ts). */
 export const CANARY_BRANCH = 'canary';
+export const BETA_BRANCH = 'beta';
 export const STABLE_BRANCH = 'stable';
 export const DEFAULT_CANARY_HOURS = 24;
 

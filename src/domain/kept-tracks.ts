@@ -20,7 +20,7 @@ import type { DomainEvent, Job, JobStatus } from './types.ts';
 export const KEPT_TRACK_EVENTS = [
   'job.queued', 'job.started', 'job.finished', 'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed',
   'github_proxy.done', 'landing_batch.started', 'landing_batch.promoted', 'item.changed_since_snapshot', 'item.edit_seen',
-  'landing_batch.canary_started', 'landing_batch.canary_promoted', ...INTERVENTION_EVENTS,
+  'landing_batch.canary_started', 'landing_batch.canary_promoted', 'landing_batch.beta_moved', 'install.seen', ...INTERVENTION_EVENTS,
 ] as const;
 const INTERVENTIONS = new Set<string>(INTERVENTION_EVENTS);
 
@@ -44,12 +44,36 @@ export interface TrackMarks {
   /** The hopper's own channels (part 4): when a canary candidate first carried `commit`, every such candidate's tip, and
    * when `stable` moved to one of them. */
   canary?: string; canaryTips?: string[]; stable?: string;
+  /** Part 10: when `beta` first carried `commit`, and its tip then; the candidate `stable` moved to; the install of this
+   * hopper that first ran a commit that carries it, and the branch it was built from. */
+  beta?: string; betaTip?: string; stableTip?: string; install?: { at: string; commit: string; branch?: string };
   /** Every text edit, in order. */
   textEdits?: TextEdit[];
   /** Every intervention, in order (part 6). */
   interventions?: Intervention[];
   /** The first run again of its job (part 9): when, the new job, and the person who asked, if a person did. */
   rerouted?: { at: string; nextJob?: string; by?: string };
+}
+
+/**
+ * One observed hop of a change (issue #2775 parts 4 and 10), in order of time: `landed` on the tested branch by its batch
+ * run (with the merge commit, when the event names it); on the hopper's own channels `beta`, `canary` and `stable` (each
+ * the tip that carried it), and the `install` of this hopper that runs it (the commit it runs, and its branch).
+ */
+export interface Hop { hop: 'landed' | 'beta' | 'canary' | 'stable' | 'install'; at: string; commit?: string; branch?: string }
+
+/** The hops the marks observed, in order of time. */
+export function hopsOf(m: TrackMarks): Hop[] {
+  const hops: Hop[] = [];
+  const add = (hop: Hop['hop'], at: string | undefined, commit?: string, branch?: string) => {
+    if (at !== undefined) hops.push({ hop, at, ...(commit ? { commit } : {}), ...(branch ? { branch } : {}) });
+  };
+  if (m.merged) add('landed', m.landed, m.commit);
+  add('beta', m.beta, m.betaTip);
+  add('canary', m.canary, m.canaryTips?.[0]);
+  add('stable', m.stable, m.stableTip);
+  add('install', m.install?.at, m.install?.commit, m.install?.branch);
+  return hops.sort((a, b) => a.at.localeCompare(b.at));
 }
 
 /** Why a job's deployment record expects no deployment: its job ended with no change, or a person marked it. */
@@ -75,6 +99,8 @@ export type DeploymentRecord = {
     expected: 'delivered';
     /** The observed state at each hop: every delivery step it went through, with its start and end. */
     observed: StepActual[];
+    /** On the hopper's own channels, each branch and the install that carried it (part 10). */
+    hops?: Hop[];
   }
   | {
     kind: 'none';
@@ -101,6 +127,8 @@ export interface KeptTrack {
   deployment?: DeploymentRecord;
   /** Every flip of its deployment expectation, in order; the last one holds. */
   expectations?: DeploymentExpectation[];
+  /** Its observed hops on the hopper's own channels (part 10): its marks'. */
+  hops?: Hop[];
   /** Every text edit of its item, in order: its marks'. */
   textEdits?: TextEdit[];
   /** Every intervention on its change, in order: its marks'. */
@@ -162,7 +190,16 @@ export function foldTrackEvents(marks: Map<string, TrackMarks>, events: readonly
       continue;
     }
     if (e.type === 'landing_batch.canary_promoted') {
-      for (const [jobId, m] of marks) if (m.canaryTips?.includes(String(d.tip))) set(jobId, m, () => first(m, 'stable', e.at));
+      for (const [jobId, m] of marks) if (m.canaryTips?.includes(String(d.tip))) set(jobId, m, () => { first(m, 'stable', e.at); first(m, 'stableTip', String(d.tip)); });
+      continue;
+    }
+    if (e.type === 'landing_batch.beta_moved' || e.type === 'install.seen') {
+      const carried = new Set((d.mergeCommits as string[] | undefined) ?? []);
+      for (const [jobId, m] of marks) {
+        if (!m.commit || !carried.has(m.commit)) continue;
+        if (e.type === 'install.seen') set(jobId, m, () => first(m, 'install', { at: e.at, commit: String(d.commit), ...(typeof d.branch === 'string' ? { branch: d.branch } : {}) }));
+        else set(jobId, m, () => { first(m, 'beta', e.at); first(m, 'betaTip', String(d.tip)); });
+      }
       continue;
     }
     if (e.type === 'delivery_expedite.changed') {
@@ -213,15 +250,17 @@ export function foldTrackEvents(marks: Map<string, TrackMarks>, events: readonly
 /**
  * The measured steps from the marks, as `deliveryTracks` reads them: each step ends where the next one starts. On the
  * hopper's own channels (part 4) the promotion set ends when a canary candidate carries the change, the test gate is its
- * canary window, and production starts and ends when `stable` moves to it.
+ * canary window, production starts when `stable` moves to it, and ends when an install of the hopper runs it too (part 10).
  */
 export function measuredOf(m: TrackMarks): { steps: StepActual[]; current: { step: DeliveryStep; since: string } } {
   const landed = m.merged ? m.landed : undefined;
   const canary = landed ? m.canary : undefined;
   const stable = canary ? m.stable : undefined;
+  // An install in the canary subset can run it before stable moves: then production ends with the move.
+  const runs = stable && m.install ? (m.install.at > stable ? m.install.at : stable) : undefined;
   const bounds: [DeliveryStep, string | undefined][] = [
     ['queued', m.queued], ['coding', m.started], ['pr_checks', m.finished], ['landing', m.merged], ['landing_checks', m.merged], ['promotion_set', landed],
-    ['test_gate', canary], ['production', stable], ['production', stable],
+    ['test_gate', canary], ['production', stable], ['production', runs],
   ];
   const steps: StepActual[] = [];
   let current = { step: 'queued' as DeliveryStep, since: m.queued };
@@ -273,6 +312,15 @@ export interface TrackContext {
 }
 
 const sourceOf = (m: TrackMarks): string => m.issue ?? m.source ?? 'unknown';
+
+/** What a step waits on, on the hopper's own channels (part 10), where the marks say more than the step does; a gate first. */
+function ownWaitingOn(m: TrackMarks, step: DeliveryStep, since: string, d: DeliveryRepo): { blocker: Blocker; waitingOn: string } {
+  const said = waitingOnOf(step, since, d);
+  if (d.gates[step]) return said;
+  if (step === 'production' && m.stable) return { ...said, waitingOn: 'an install of the hopper that runs it: none ran it yet' };
+  if (step === 'promotion_set' && m.beta && !m.canary) return { ...said, waitingOn: 'the promotion of beta to canary (scripts/promote.sh canary)' };
+  return said;
+}
 const hold = (m: TrackMarks): { hold?: DeliveryHold } => { const h = holdOf(m.interventions); return h ? { hold: h } : {}; };
 
 /**
@@ -297,17 +345,18 @@ export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?
     if (last.end !== undefined) deliveredAt = last.end;
     current = { step: last.step, since: last.start };
   }
+  const hops = hopsOf(marks);
   const track: KeptTrack = {
     jobId, ...(marks.repo ? { repo: marks.repo } : {}), ...(marks.issue ? { issue: marks.issue } : {}), ...(marks.pr ? { pullRequest: marks.pr } : {}),
-    marks, steps, current: { ...current, ...waitingOnOf(current.step, current.since, c.delivery) }, state: 'open',
+    marks, steps, current: { ...current, ...ownWaitingOn(marks, current.step, current.since, c.delivery) }, state: 'open',
     ...(kept?.deployment ? { deployment: kept.deployment } : {}), ...(expectations.length > 0 ? { expectations } : {}),
-    ...(marks.textEdits ? { textEdits: marks.textEdits } : {}),
+    ...(marks.textEdits ? { textEdits: marks.textEdits } : {}), ...(hops.length > 0 ? { hops } : {}),
     ...(marks.interventions ? { interventions: marks.interventions } : {}), ...hold(marks),
   };
   const close = (at: string, deployment: DeploymentRecord): KeptTrack => ({ ...track, state: 'closed', closedAt: at, deployment });
   const base = { jobId, ...(marks.repo ? { repo: marks.repo } : {}), ...(expectations.length > 0 ? { expectations } : {}) };
   if (deliveredAt !== undefined && marks.pr) {
-    return close(deliveredAt, { ...base, at: deliveredAt, kind: 'deploy', artifact: { pullRequest: marks.pr, ...(marks.commit ? { commit: marks.commit } : {}) }, target: 'production', expected: 'delivered', observed: steps });
+    return close(deliveredAt, { ...base, at: deliveredAt, kind: 'deploy', artifact: { pullRequest: marks.pr, ...(marks.commit ? { commit: marks.commit } : {}) }, target: 'production', expected: 'delivered', observed: steps, ...(hops.length > 0 ? { hops } : {}) });
   }
   const none = (at: string, outcome: NoDeployOutcome) => close(at, { ...base, at, kind: 'none', source: sourceOf(marks), outcome });
   // Run again: the new job carries the work on, unless a person expected a deployment of this one after it.

@@ -108,6 +108,8 @@ export interface LandingBatchState extends BackMergeState, CanaryState {
   restarted?: { at: string; by: string };
   /** The pull requests merged into the landing branch that wait for a batch run, as last recorded (part 3); none once one starts. */
   pending?: { tip: string; merges: number[] };
+  /** Where `beta` was last seen ahead of `canary` (issue #2775 part 10): its tip, and when. */
+  beta?: { tip: string; at: string };
 }
 
 export const LANDING_BATCH_EVENT_TYPES = [
@@ -116,7 +118,7 @@ export const LANDING_BATCH_EVENT_TYPES = [
   'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
   'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed',
   'landing_batch.back_merge_issue_filed', 'landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed',
-  'landing_batch.canary_promoted', 'landing_batch.stuck', 'landing_batch.restarted',
+  'landing_batch.canary_promoted', 'landing_batch.beta_moved', 'landing_batch.stuck', 'landing_batch.restarted',
 ] as const;
 
 /** A batch or bisect run that ended: its pull request stays closed. */
@@ -206,6 +208,8 @@ export function landingBatchStates(events: readonly DomainEvent[]): Record<strin
       delete s.running;
       delete s.bisect;
       s.restarted = { at: e.at, by: String(d.by ?? '') };
+    } else if (e.type === 'landing_batch.beta_moved') {
+      s.beta = { tip, at: e.at };
     } else if (e.type === 'landing_batch.stuck') {
       // Only said: what is stuck is the runner's, in memory.
     } else if (e.type.startsWith('landing_batch.back_merge')) reduceBackMerge(s, e.type, d, e.at);

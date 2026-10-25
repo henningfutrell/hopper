@@ -22,6 +22,8 @@ export interface GitMirror {
   contains(commit: string, ancestor: string): Promise<boolean>;
   /** How many commits are in `to` and not in `from` (all of `to`'s when `from` is unknown). */
   count(from: string, to: string): Promise<number>;
+  /** The merge commits `to` carries beyond `from` (all its own when `from` is absent or unknown), newest first, at most `limit`. */
+  merges(to: string, from: string | undefined, limit: number): Promise<string[]>;
   /** The text of `path` at `commit`, or undefined when it has no such file. */
   read(commit: string, path: string): Promise<string | undefined>;
   /** The text of each of `paths` at `commit`, as `read`, from one git process (issue #2367). */
@@ -97,6 +99,10 @@ export function createGitMirror(dir: string, o: { onGit?: (args: string[]) => vo
     async count(from, to) {
       const range = (await this.has(from)) ? [`${from}..${to}`] : [to];
       return Number(await git('rev-list', '--count', ...range, '--'));
+    },
+    async merges(to, from, limit) {
+      const beyond = from !== undefined && (await this.has(from)) ? [`^${from}`] : [];
+      return (await git('rev-list', '--merges', `--max-count=${limit}`, to, ...beyond, '--')).split('\n').filter(Boolean);
     },
     async read(commit, path) {
       return (await this.has(commit)) ? git('show', `${commit}:${path}`).catch(() => undefined) : undefined;

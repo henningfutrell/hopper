@@ -5,7 +5,8 @@
 // completes: a delivered record is final and offers no flip; each flip is listed. Each text edit of its item is listed,
 // with when and at which step (issue #2775 part 3). The acts its step allows are buttons (part 8): Hold and Take ownership
 // post a delivery hold, Release lets the change go on; the hold and each intervention are listed. A job that ran again
-// links the new job's track (part 9).
+// links the new job's track (part 9). Each observed hop is listed, and a delivered record says whether an install of the
+// hopper runs it (part 10).
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -86,6 +87,26 @@ describe('a job\'s delivery on its job view', () => {
   it('a delivered record with the merge commit of its batch run names the commit, short (part 4)', async () => {
     await boot([{ ...DELIVERED, deployment: { ...DELIVERED.deployment!, artifact: { pullRequest: PR, commit: '0123456789abcdef0123456789abcdef01234567' } } as KeptTrack['deployment'] }]);
     expect(text('job-delivery-record')).toContain('commit 0123456789ab');
+  });
+
+  it('lists each observed hop; a delivered record says an install of the hopper runs it, or that none does yet (part 10)', async () => {
+    const at = (h: string) => `2026-10-20T${h}:00:00.000Z`;
+    const hops = [
+      { hop: 'landed', at: at('10'), commit: 'm'.repeat(40) }, { hop: 'beta', at: at('11'), commit: '0'.repeat(40) },
+      { hop: 'canary', at: at('12'), commit: '1'.repeat(40) }, { hop: 'stable', at: at('13'), commit: '1'.repeat(40) },
+      { hop: 'install', at: at('14'), commit: 'i'.repeat(40), branch: 'stable' },
+    ] as KeptTrack['hops'];
+    await boot([{ ...DELIVERED, hops, deployment: { ...DELIVERED.deployment!, hops } as KeptTrack['deployment'] }]);
+    const lines = [...document.querySelectorAll('[data-slot="job-delivery-hop"]')].map((e) => e.textContent);
+    expect(lines).toEqual([
+      `Landed on the tested branch at ${at('10')}, commit mmmmmmmmmmmm`, `On beta at ${at('11')}, tip 000000000000`,
+      `On canary at ${at('12')}, tip 111111111111`, `On stable at ${at('13')}, tip 111111111111`,
+      `This hopper runs it since ${at('14')}: commit iiiiiiiiiiii, from stable`,
+    ]);
+    expect(text('job-delivery-record')).toContain('This hopper runs it.');
+    // Delivered before part 10, with no install hop.
+    await boot([DELIVERED]);
+    expect(text('job-delivery-record')).not.toContain('This hopper runs it');
   });
 
   it('a research job shows no deployment expected, with its source and outcome', async () => {

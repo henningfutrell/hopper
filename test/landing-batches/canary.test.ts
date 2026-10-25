@@ -8,6 +8,8 @@
 //   Scenario: a bug report names the candidate: held, and one issue filed for Intake
 //   Scenario: nothing new on canary: no event
 //   Scenario: no canary window set: canary is not read
+//   Scenario: beta moved ahead of canary: one event with its tip and the merge commits it carries; none again for the same tip
+//   Scenario: no beta branch: the canary step goes on
 import { describe, expect, it } from 'vitest';
 import type { LandingBatchSettings } from '../../src/domain/landing-batches.ts';
 import type { DomainEvent, NewEvent } from '../../src/domain/types.ts';
@@ -21,13 +23,15 @@ const COMMITS = [{ sha: MERGE, parents: ['p1', 'p2'], message: 'Merge pull reque
 const START = new Date('2026-10-14T00:00:00.000Z');
 const later = (h: number) => new Date(START.getTime() + h * 3_600_000);
 
-interface World { aheadBy: number; reports: number[]; calls: string[]; issues: { title: string; body: string; labels: string[]; assignees: string[] }[] }
+interface Compared { aheadBy: number; tip: string; commits: { sha: string; parents: string[]; message: string }[] }
+interface World { aheadBy: number; reports: number[]; calls: string[]; issues: { title: string; body: string; labels: string[]; assignees: string[] }[]; beta?: Compared }
 
 function fake(w: World): LandingBatchGitHub {
   const no = async (): Promise<never> => { throw new Error('not in this test'); };
   return {
     compare: async (_repo, base, head) => {
       w.calls.push(`compare ${base}...${head}`);
+      if (head === 'beta') { if (!w.beta) throw new Error('GitHub answered 404: no beta branch'); return w.beta; }
       return base === 'stable' ? { aheadBy: w.aheadBy, tip: TIP, commits: COMMITS } : { aheadBy: 0, tip: 'landing', commits: [] };
     },
     createBranch: no, deleteBranch: no, openPullRequest: no, pullRequest: no, checkRuns: no, merge: no, close: no, mergeInto: no,
@@ -105,6 +109,35 @@ describe('the canary step (issue #1073 part 5)', () => {
     await r.pass();
     expect(events).toEqual([]);
     expect(r.view().repos[0]!.canary).toMatchObject({ why: 'nothing new on canary beyond stable' });
+  });
+
+  it('beta moved ahead of canary: one event with its tip and the merge commits it carries; none again for the same tip', async () => {
+    const w = world();
+    const BETA = 'beta0123456789abcdef0123456789abcdef0123';
+    w.beta = { aheadBy: 2, tip: BETA, commits: COMMITS };
+    const { r, events } = runner(w, withCanary);
+    await r.pass();
+    expect(w.calls).toContain('compare canary...beta');
+    const moved = () => events.filter((e) => e.type === 'landing_batch.beta_moved');
+    expect(moved().map((e) => e.data)).toEqual([{ repo: REPO, beta: 'beta', canary: 'canary', tip: BETA, mergeCommits: [MERGE] }]);
+    await r.pass();
+    expect(moved()).toHaveLength(1);
+    w.beta = { aheadBy: 3, tip: TIP, commits: COMMITS };
+    await r.pass();
+    expect(moved().map((e) => e.data.tip)).toEqual([BETA, TIP]);
+    expect(r.view().repos[0]!.state.beta).toMatchObject({ tip: TIP });
+    // Nothing on beta beyond canary: no event.
+    w.beta = { aheadBy: 0, tip: 'other', commits: [] };
+    await r.pass();
+    expect(moved()).toHaveLength(2);
+  });
+
+  it('no beta branch: the canary step goes on', async () => {
+    const w = world();
+    const { r, events } = runner(w, withCanary);
+    await r.pass();
+    expect(events.map((e) => e.type)).toEqual(['landing_batch.canary_started']);
+    expect(r.view().repos[0]!.canary).not.toHaveProperty('problem');
   });
 
   it('no canary window set: canary is not read', async () => {

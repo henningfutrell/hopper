@@ -53,6 +53,7 @@ export const LANDING_BATCH_EVENT_SCHEMAS = {
   'landing_batch.canary_held': strict({ ...canaryAt, reports: z.array(z.number().int()), reason: z.string() }),
   'landing_batch.canary_issue_filed': strict({ repo: z.string(), tip: z.string(), issue: z.number().int(), url: z.string() }),
   'landing_batch.canary_promoted': strict({ ...canaryAt, why: z.string() }),
+  'landing_batch.beta_moved': strict({ repo: z.string(), beta: z.string(), canary: z.string(), tip: z.string(), mergeCommits: z.array(z.string()) }),
   'landing_batch.stuck': strict({ repo: z.string(), error: z.string(), since: z.iso.datetime(), passes: z.number().int() }),
   'landing_batch.restarted': strict({ repo: z.string(), tip: z.string().optional(), by: z.string(), closed: z.array(z.number().int()) }),
 } as const;
