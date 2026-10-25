@@ -54,11 +54,10 @@ class FakeEventSource {
 
 let root: Root | undefined;
 
-/** Boots the app over the fake daemon, on `hash` (default: Sources). */
-export async function boot(over?: Record<string, unknown>, hash = '#sources') {
+export async function boot(over?: Record<string, unknown>) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
-  window.location.hash = hash;
+  window.location.hash = '#sources';
   localStorage.clear();
   localStorage.setItem('jh_session', 'a'.repeat(64));
   vi.stubGlobal('fetch', fakeDaemon(over));
