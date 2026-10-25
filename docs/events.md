@@ -9095,7 +9095,7 @@ Version 1 (`docs/schemas/landing_batch.back_merge_issue_filed.v1.json`). The hop
 
 ## `landing_batch.canary_started`
 
-Version 1 (`docs/schemas/landing_batch.canary_started.v1.json`). A new stable candidate is on the `canary` branch, ahead of `stable` (issue #1073 part 5, design.md "Landing batches: the canary"): `tip`, and its canary window of `hours` starts now. The installs that take stable releases early update to it first.
+Version 1 (`docs/schemas/landing_batch.canary_started.v1.json`). A new stable candidate is on the `canary` branch, ahead of `stable` (issue #1073 part 5, design.md "Landing batches: the canary"): `tip`, and its canary window of `hours` starts now. The installs that take stable releases early update to it first. `mergeCommits` (issue #2775 part 4): the merge commits it carries beyond `stable`, so a job's kept delivery track finds its batch run's merge among them.
 
 | field | type | required |
 |---|---|---|
@@ -9104,6 +9104,7 @@ Version 1 (`docs/schemas/landing_batch.canary_started.v1.json`). A new stable ca
 | `stable` | string | yes |
 | `tip` | string | yes |
 | `hours` | integer | yes |
+| `mergeCommits` | string[] | no |
 
 ```json
 {
@@ -9111,7 +9112,10 @@ Version 1 (`docs/schemas/landing_batch.canary_started.v1.json`). A new stable ca
   "canary": "canary",
   "stable": "stable",
   "tip": "0123456789abcdef0123456789abcdef01234567",
-  "hours": 24
+  "hours": 24,
+  "mergeCommits": [
+    "89abcdef0123456789abcdef0123456789abcdef"
+  ]
 }
 ```
 

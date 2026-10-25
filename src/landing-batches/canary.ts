@@ -29,7 +29,9 @@ export async function canaryPass(p: CanaryPass): Promise<void> {
   const c = p.state()?.canary;
   const next = canaryNext(c, cmp);
   if (next.kind === 'start') {
-    p.record({ type: 'landing_batch.canary_started', data: { ...at, tip: cmp.tip, hours: p.hours } });
+    // The merge commits it carries (issue #2775 part 4): a job's track finds its batch run's merge among them.
+    const mergeCommits = cmp.commits.filter((c) => c.parents.length > 1).map((c) => c.sha);
+    p.record({ type: 'landing_batch.canary_started', data: { ...at, tip: cmp.tip, hours: p.hours, mergeCommits } });
     p.note({ why: next.why });
     return;
   }

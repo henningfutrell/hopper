@@ -3,7 +3,7 @@
 // report, `stable` moves to it (a fast-forward). Fake GitHub at the LandingBatchGitHub seam.
 //
 // Feature: the canary step
-//   Scenario: a new candidate on canary starts the window, then waits while it runs
+//   Scenario: a new candidate on canary starts the window, with the merge commits it carries, then waits while it runs
 //   Scenario: the window passed with no bug report: stable moves to the candidate
 //   Scenario: a bug report names the candidate: held, and one issue filed for Intake
 //   Scenario: nothing new on canary: no event
@@ -15,6 +15,9 @@ import { createLandingBatches, type LandingBatchGitHub } from '../../src/landing
 
 const REPO = 'owner/app';
 const TIP = 'abcdef0123456789abcdef0123456789abcdef01';
+// The candidate's commits beyond stable: one batch run's merge (two parents) and a plain commit.
+const MERGE = '0123456789abcdef0123456789abcdef01234567';
+const COMMITS = [{ sha: MERGE, parents: ['p1', 'p2'], message: 'Merge pull request #900' }, { sha: TIP, parents: [MERGE], message: 'a plain commit' }];
 const START = new Date('2026-10-14T00:00:00.000Z');
 const later = (h: number) => new Date(START.getTime() + h * 3_600_000);
 
@@ -25,7 +28,7 @@ function fake(w: World): LandingBatchGitHub {
   return {
     compare: async (_repo, base, head) => {
       w.calls.push(`compare ${base}...${head}`);
-      return base === 'stable' ? { aheadBy: w.aheadBy, tip: TIP, commits: [] } : { aheadBy: 0, tip: 'landing', commits: [] };
+      return base === 'stable' ? { aheadBy: w.aheadBy, tip: TIP, commits: COMMITS } : { aheadBy: 0, tip: 'landing', commits: [] };
     },
     createBranch: no, deleteBranch: no, openPullRequest: no, pullRequest: no, checkRuns: no, merge: no, close: no, mergeInto: no,
     openPullRequests: async () => [], retarget: no, findIssue: async () => undefined, comment: no, pullRequestOf: no, revert: no, checkLog: no,
@@ -60,7 +63,7 @@ describe('the canary step (issue #1073 part 5)', () => {
     const w = world();
     const { r, events, at } = runner(w, withCanary);
     await r.pass();
-    expect(events.map((e) => [e.type, e.data])).toEqual([['landing_batch.canary_started', { repo: REPO, canary: 'canary', stable: 'stable', tip: TIP, hours: 24 }]]);
+    expect(events.map((e) => [e.type, e.data])).toEqual([['landing_batch.canary_started', { repo: REPO, canary: 'canary', stable: 'stable', tip: TIP, hours: 24, mergeCommits: [MERGE] }]]);
     at(later(20));
     await r.pass();
     expect(w.calls).toContain(`reports abcdef012345 ${START.toISOString()}`);

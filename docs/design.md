@@ -35514,3 +35514,38 @@ the in-progress position on the Jobs list; the intercession design, written down
 **Verification:** `test/domain/kept-tracks.test.ts` (both events folded, each at its step, kept once),
 `test/integration/trust-edit.test.ts` (one `item.edit_seen` per new text, with its hashes and editor),
 `test/ui/job-delivery-view.test.ts` (the text edits listed).
+
+### Part 4: the hopper's own channels as observed hops (issue #2775, 2026-10-25)
+
+The issue's example is a fix merged to `main` that was not on `dev` or anywhere it runs. Parts 1 to 3 follow a change to
+`dev` (the batch run's promotion). After that, a repository with a **promotion set schedule** has scheduled steps; the
+hopper's own repository moves `dev` → `beta` → `canary` → `stable` instead (issue #1073), with no schedule. This part reads
+those moves as observed hops.
+
+- **The merge commit.** `landing_batch.promoted` has `merge`: the batch run's merge commit on the tested branch. The fold
+  keeps it on the track's marks (`commit`), and a `deploy` record's artifact names it (`artifact.commit`) beside its pull
+  request.
+- **On canary.** `landing_batch.canary_started` now has `mergeCommits`: the merge commits (two parents or more) of the
+  compare of `stable` with `canary` that started the candidate. A track whose `commit` is one of them is on that candidate:
+  the first such event ends its **promotion set** step and starts its **test gate** (the canary window). Each such
+  candidate's tip is kept (`canaryTips`), because a held candidate can be followed by a later one that carries it too.
+- **On stable.** `landing_batch.canary_promoted` of one of those tips is the move of `stable` to it: the **production**
+  step starts and ends then, and the track closes with its `deploy` record, locked. Observed hops win over a schedule.
+- **Not observed yet.** `beta` (moved by `scripts/promote.sh`, with no event), and the install that runs it: an
+  update's `update.applied` is written to the instance's events, not to a user's, so the kept-track pass does not read it.
+  A track in the promotion set with no canary hop still says what the schedule says.
+- **No migration**: the new marks and `artifact.commit` are optional fields of the JSON bodies; `mergeCommits` is an
+  optional field of the event, so an older event moves no track.
+
+**Decisions:**
+- **A merge commit, not every commit, of the candidate.** The batch run's merge is a merge commit, and the compare answers
+  at most 250 commits: the merge commits keep the event small.
+- **Delivered at stable.** `stable` is the channel every install that is not in the canary subset follows. The
+  install that runs it is not seen from a user's events, so the record says what the hopper observed.
+
+**What is left** (later parts): the in-progress position on the Jobs list; the intercession design, written down and
+agreed before it is built.
+
+**Verification:** `test/domain/kept-tracks.test.ts` (on canary in the test gate, on stable delivered with its commit; a
+held candidate, then a later one), `test/landing-batches/canary.test.ts` (`mergeCommits` on the start),
+`test/ui/job-delivery-view.test.ts` (the commit on the record).
