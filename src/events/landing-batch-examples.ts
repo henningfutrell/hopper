@@ -2,7 +2,7 @@
 import type { EventType } from '../domain/types.ts';
 
 export const LANDING_BATCH_EXAMPLES: Record<Extract<EventType, `landing_batch${string}`>, Record<string, unknown>> = {
-  'landing_batch.canary_started': { repo: 'owner/repo', canary: 'canary', stable: 'stable', tip: '0123456789abcdef0123456789abcdef01234567', hours: 24 },
+  'landing_batch.canary_started': { repo: 'owner/repo', canary: 'canary', stable: 'stable', tip: '0123456789abcdef0123456789abcdef01234567', hours: 24, mergeCommits: ['89abcdef0123456789abcdef0123456789abcdef'] },
   'landing_batch.canary_held': { repo: 'owner/repo', canary: 'canary', stable: 'stable', tip: '0123456789abcdef0123456789abcdef01234567', reports: [1112], reason: 'bug reports name it: #1112' },
   'landing_batch.canary_issue_filed': { repo: 'owner/repo', tip: '0123456789abcdef0123456789abcdef01234567', issue: 1113, url: 'https://github.com/owner/repo/issues/1113' },
   'landing_batch.stuck': { repo: 'owner/repo', error: 'the start of a batch run: GitHub answered 422', since: '2026-10-15T13:44:00.000Z', passes: 3 },
