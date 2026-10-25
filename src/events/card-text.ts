@@ -20,4 +20,5 @@ export const ITEM_EVENT_SCHEMAS = {
   'item.changed_since_snapshot': strict({ key: z.string(), snapshotHash: sha256, liveHash: sha256, editors: z.array(z.string()), newComments: z.number().int().min(0) }),
   'item.original_kept': strict({ key: z.string(), snapshotHash: sha256, liveHash: sha256, ...acting }),
   'item.new_text_accepted': strict({ key: z.string(), fromHash: sha256, toHash: sha256, editors: z.array(z.string()), ...acting }),
+  'item.edit_seen': strict({ key: z.string(), fromHash: sha256, toHash: sha256, editors: z.array(z.string()) }),
 };

@@ -14,6 +14,7 @@
 //   Scenario: a none record flipped to deploy reopens the track; it locks once that deployment completes
 //   Scenario: a completed deployment locks the record, whatever a person said before; a locked track stays as it was
 //   Scenario: the same events folded again change nothing; folded in two halves give the same track
+//   Scenario: an edit of a job's item is a text edit on its track: when, at which step, and the hashes of the change
 import { describe, expect, it } from 'vitest';
 import { expectOf, foldTrackEvents, lockedOf, trackOf, type TrackContext, type TrackMarks } from '../../src/domain/kept-tracks.ts';
 import type { PromotionSetSchedule } from '../../src/domain/promotion-sets.ts';
@@ -184,5 +185,25 @@ describe('kept delivery tracks', () => {
     const marks = new Map<string, TrackMarks>();
     foldTrackEvents(marks, [queued('x', '08:00')], new Set(['x']));
     expect(marks.size).toBe(0);
+  });
+
+  it('an edit of a job\'s item is a text edit on its track: when, at which step, and the hashes; folded twice, kept once', () => {
+    const from = 'a'.repeat(64);
+    const to = 'b'.repeat(64);
+    const events = [
+      queued('j', '08:00'),
+      ev('item.changed_since_snapshot', '08:02', { key: 'k', snapshotHash: from, liveHash: to, editors: ['ed'], newComments: 0 }, 'j'),
+      ev('job.started', '08:05', { attempts: 1 }, 'j'),
+      ev('item.edit_seen', '08:30', { key: 'k', fromHash: to, toHash: 'c'.repeat(64), editors: [] }, 'j'),
+    ];
+    const marks = fold(events);
+    expect(foldTrackEvents(marks, events).size).toBe(0);
+    const t = trackOf('j', marks.get('j')!, ctx({ job: { status: 'running' } }));
+    expect(t.textEdits).toEqual([
+      { seq: events[1]!.seq, at: at('08:02'), step: 'queued', event: 'item.changed_since_snapshot', key: 'k', fromHash: from, toHash: to, editors: ['ed'] },
+      { seq: events[3]!.seq, at: at('08:30'), step: 'coding', event: 'item.edit_seen', key: 'k', fromHash: to, toHash: 'c'.repeat(64), editors: [] },
+    ]);
+    // A text edit changes no step and closes nothing.
+    expect(t).toMatchObject({ state: 'open', current: { step: 'coding' } });
   });
 });

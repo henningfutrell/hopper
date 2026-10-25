@@ -334,6 +334,7 @@
         "item.changed_since_snapshot",
         "item.original_kept",
         "item.new_text_accepted",
+        "item.edit_seen",
         "lanes.recommended",
         "lanes.tuning_changed",
         "lanes.applied",

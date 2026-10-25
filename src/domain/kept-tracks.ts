@@ -3,7 +3,7 @@
 // on; it closes only with its one deployment record — `deploy` once the change is delivered, `none` once the job ended
 // with no change to deliver, or a person's no-deploy mark. A person flips its deployment expectation (deploy or none) any
 // number of times, each flip kept, until a deployment completes: a `deploy` record is locked, a `none` one never is
-// (part 2). The fold is incremental: a pass gives it the kept marks and
+// (part 2). Each edit of its item's text a sync saw is a text edit on it, at the step it was in (part 3). The fold is incremental: a pass gives it the kept marks and
 // the events after its cursor, and the same event folded twice changes nothing (each mark is the first one). Pure.
 import { scheduledActuals } from './delivery-forecast.ts';
 import type { DeliveryRepo } from './delivery-settings.ts';
@@ -16,14 +16,26 @@ import type { DomainEvent, Job, JobStatus } from './types.ts';
 /** The events a kept track is folded from: the delivery track's, and a pull request closed with no merge. */
 export const KEPT_TRACK_EVENTS = [
   'job.queued', 'job.started', 'job.finished', 'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed',
-  'github_proxy.done', 'landing_batch.started', 'landing_batch.promoted',
+  'github_proxy.done', 'landing_batch.started', 'landing_batch.promoted', 'item.changed_since_snapshot', 'item.edit_seen',
 ] as const;
+
+/**
+ * An edit of a job's item text a sync saw (issue #2775 part 3): `item.changed_since_snapshot` while the job waits,
+ * `item.edit_seen` once it started; when, at which step, the item's key, the hashes before and after, and who edited it.
+ * The track records it only: it tells the job nothing.
+ */
+export interface TextEdit {
+  seq: number; at: string; step: DeliveryStep; event: 'item.changed_since_snapshot' | 'item.edit_seen';
+  key: string; fromHash: string; toHash: string; editors: string[];
+}
 
 /** What a track's events said so far: each the first one. `batches`: the batch runs (`owner/name#n`) that carried its pull request. */
 export interface TrackMarks {
   repo?: string; issue?: string; source?: string;
   queued: string; started?: string; finished?: string; pr?: string; merged?: string; prClosed?: string; prClosedWhy?: string; landed?: string;
   batches?: string[];
+  /** Every text edit, in order. */
+  textEdits?: TextEdit[];
 }
 
 /** Why a job's deployment record expects no deployment: its job ended with no change, or a person marked it. */
@@ -74,6 +86,8 @@ export interface KeptTrack {
   deployment?: DeploymentRecord;
   /** Every flip of its deployment expectation, in order; the last one holds. */
   expectations?: DeploymentExpectation[];
+  /** Every text edit of its item, in order: its marks'. */
+  textEdits?: TextEdit[];
 }
 
 /** A track whose deployment completed: its record is final, and no flip changes it. */
@@ -129,7 +143,13 @@ export function foldTrackEvents(marks: Map<string, TrackMarks>, events: readonly
       if (e.type === 'job.started') first(m, 'started', e.at);
       else if (e.type === 'job.finished') first(m, 'finished', e.at);
       else if (e.type === 'github_proxy.done' && d.op === 'pr.create' && typeof d.url === 'string') first(m, 'pr', d.url);
-      else if (e.type === 'job.pull_request_followed') first(m, 'pr', String(d.pullRequest));
+      else if ((e.type === 'item.changed_since_snapshot' || e.type === 'item.edit_seen') && !m.textEdits?.some((x) => x.seq === e.seq)) {
+        const snap = e.type === 'item.changed_since_snapshot';
+        m.textEdits = [...m.textEdits ?? [], {
+          seq: e.seq, at: e.at, step: measuredOf(m).current.step, event: e.type, key: String(d.key),
+          fromHash: String(snap ? d.snapshotHash : d.fromHash), toHash: String(snap ? d.liveHash : d.toHash), editors: (d.editors as string[] | undefined) ?? [],
+        }];
+      } else if (e.type === 'job.pull_request_followed') first(m, 'pr', String(d.pullRequest));
       else if (e.type === 'job.pull_request_merged') { first(m, 'pr', String(d.pullRequest)); first(m, 'merged', e.at); }
       else if (e.type === 'job.pull_request_closed' && (m.pr === undefined || m.pr === String(d.pullRequest))) {
         first(m, 'prClosed', e.at);
@@ -219,6 +239,7 @@ export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?
     jobId, ...(marks.repo ? { repo: marks.repo } : {}), ...(marks.issue ? { issue: marks.issue } : {}), ...(marks.pr ? { pullRequest: marks.pr } : {}),
     marks, steps, current: { ...current, ...waitingOnOf(current.step, current.since, c.delivery) }, state: 'open',
     ...(kept?.deployment ? { deployment: kept.deployment } : {}), ...(expectations.length > 0 ? { expectations } : {}),
+    ...(marks.textEdits ? { textEdits: marks.textEdits } : {}),
   };
   const close = (at: string, deployment: DeploymentRecord): KeptTrack => ({ ...track, state: 'closed', closedAt: at, deployment });
   const base = { jobId, ...(marks.repo ? { repo: marks.repo } : {}), ...(expectations.length > 0 ? { expectations } : {}) };

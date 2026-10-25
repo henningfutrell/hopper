@@ -35483,3 +35483,34 @@ step, how it meets the stage-ownership hand-off), written down and agreed before
 **Verification:** `test/domain/kept-tracks.test.ts` (the flips, the reopen and its lock, the lock whatever was said),
 `test/integration/delivery-tracks.test.ts` (both routes, 409 on a locked record, the store's guard),
 `test/ui/job-delivery-view.test.ts` (the buttons, the final record, the flips listed), `test/cli/deployment.test.ts`.
+
+### Part 3: text edits on the track (issue #2775, 2026-10-25)
+
+The issue asks the track to record a change of the job's spec while it runs: when, at which step, and a reference to
+the change. It asks the track to record it only: telling the running agent is the agent-execution layer's concern.
+
+- **What a spec change is here: an edit of the job's item text** (its title or body; the **item snapshot**'s text,
+  issue #662). A sync already sees it: for a job that waits, `item.changed_since_snapshot` holds it; for a started job,
+  `refreshEdit` (`src/engine/item-snapshots.ts`) lowers its trust (issue #655 part 7) and keeps the text it saw
+  (`editSeen`). That second case now also appends **`item.edit_seen`**: the item's key, the SHA-256 of the text the job
+  last saw (`fromHash`) and of the live text (`toHash`), and who edited it. Once per new text, as `editSeen` already
+  ensures. Never the text. New comments are no edit (issue #747).
+- **The track folds both events** into `textEdits` (`TextEdit`, `src/domain/kept-tracks.ts`): the event's seq, when, the
+  delivery step the track was in at that event, which event, the key, the two hashes and the editors. The same event
+  folded twice is kept once (by its seq). A text edit changes no step and closes nothing. The hashes are the reference:
+  the item snapshot and the job's `editSeen` hold the texts.
+- **The job page** lists each text edit: when, at which step, and by whom.
+- **No migration**: `textEdits` is a new optional field in the track's JSON body and its marks.
+
+**Decisions:**
+- **No word "spec change".** The job's `spec` is its executor, model and work tree (`job.respecified`), not its
+  text. The issue's "spec change" is an edit of the item text, so the track calls it a **text edit**.
+- **A new event for a started job, not `job.trust_lowered`.** That one is written only when the stamp drops, so a second
+  edit of a job already `untrusted` would be lost.
+
+**What is left** (later parts): the hopper's own stages past `dev` as observed hops; the merge commit in the artifact;
+the in-progress position on the Jobs list; the intercession design, written down and agreed before it is built.
+
+**Verification:** `test/domain/kept-tracks.test.ts` (both events folded, each at its step, kept once),
+`test/integration/trust-edit.test.ts` (one `item.edit_seen` per new text, with its hashes and editor),
+`test/ui/job-delivery-view.test.ts` (the text edits listed).
