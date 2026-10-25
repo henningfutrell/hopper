@@ -131,7 +131,7 @@ describe('jobs pulled from a source', () => {
     expect((await jobsFor()).map((j) => j.id)).toEqual([r.body.id, failed.id]);
     expect(t.source.reports.filter((x) => x.job.id === failed.id).map((x) => x.kind)).toEqual(['claimed', 'failed']);
     // Who asked, and the way (issue #1194).
-    expect((await t.events('types=job.rerun')).find((e) => e.jobId === failed.id)?.data).toEqual({ by: 'user', person: expect.any(String), via: 'ui' });
+    expect((await t.events('types=job.rerun')).find((e) => e.jobId === failed.id)?.data).toEqual({ by: 'user', nextJobId: r.body.id, person: expect.any(String), via: 'ui' });
     await t.sync();
     expect(await jobsFor()).toHaveLength(2);
   });

@@ -198,7 +198,7 @@ describe('across a restart', () => {
 
     const second = await boot({ dbPath: db.dbPath, source });
     const rerun = await waitFor(async () => (await second.events('types=job.rerun')).find((e) => e.jobId === job.id), { timeoutMs: 10_000, what: 'the retry after the restart' });
-    expect(rerun.data).toEqual({ by: 'assessor' });
+    expect(rerun.data).toEqual({ by: 'assessor', nextJobId: expect.any(String) });
     expect((await chain(second, job.source!.key)).length).toBeGreaterThanOrEqual(2);
     expect((await second.events('types=job.assessed')).filter((e) => e.jobId === job.id)).toHaveLength(1);
   });

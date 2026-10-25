@@ -35707,3 +35707,34 @@ to the new job's track; `beta` and the install that runs a change, as observed h
 **Verification:** `test/integration/delivery-hold-acts.test.ts` (a hold and a release, each kept once; taking ownership and
 handing it back; each refused act changes nothing), `test/integration/delivery-tracks.test.ts`, `test/cli/deployment.test.ts`,
 `test/ui/job-delivery-view.test.ts`, `test/ui/jobs-table.test.ts`.
+
+
+### Part 9: Run again reroutes a change (issue #2775, 2026-10-25)
+
+Run again is the reroute back of the design of part 6. The new job carries the work on, so the ended job's change is no
+longer on its way. Before this part the ended job's track stayed open, at `pr_checks` or later, and waited on a merge or a
+promotion that its new job did instead.
+
+- **`job.rerun` names the new job**: `nextJobId`. An older event names none.
+- **The fold** keeps the first run again on the track's marks (`rerouted`): when, the new job, and the person who asked,
+  if a person did.
+- **The close.** A track whose job ran again closes `none`, outcome `rerouted`, at the time of the run again, with
+  `nextJob`, the new job, and `by`, the person. A change delivered before it stays delivered: its `deploy` record is
+  locked. A person's flip to deploy after the run again opens the track again, as for any `none` record.
+- **The job page** says the item ran again in a new job, and links the new job, whose own track carries the work on.
+- **No migration**: `rerouted` and `nextJob` are optional fields of the JSON bodies; `nextJobId` is an optional field of
+  the event.
+
+**Decisions:**
+- **Every run again, not only a person's.** Tending, the failure assessor and the item reconciler also start a new job of
+  the item, and the old track would wait on that job's change all the same. Only a person's run again is an
+  intervention (part 6).
+- **At any step before delivery, not only from `landing_checks` on.** A finished job whose pull request is open, run
+  again, also hands its change to the new job.
+
+**What is left** (later parts): `beta` and the install that runs a change, as observed hops.
+
+**Verification:** `test/domain/kept-tracks.test.ts` (run again closes the track `rerouted`, with the new job; a delivered
+change stays delivered; a flip to deploy after it), `test/ui/job-delivery-view.test.ts` (the link to the new job),
+`test/integration/jobs.test.ts`, `test/integration/failures.test.ts`, `test/integration/operator-cli-failures.test.ts`
+(`nextJobId` on `job.rerun`).

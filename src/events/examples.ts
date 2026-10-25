@@ -53,7 +53,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'job.rejected': { by: 'user', reason: 'rejected by the user' },
   'queue.ordered': { jobIds: ['j2', 'j1'] },
   'job.claimed_by_operator': {},
-  'job.rerun': { by: 'user' },
+  'job.rerun': { by: 'user', nextJobId: 'b2c3d4e5' },
   'job.rework_requested': { pullRequest: 'https://github.com/owner/repo/pull/14', notes: 'Rename the flag.', nextJobId: 'j-2', person: 'operator', via: 'ui' },
   'job.dismissed': { by: 'user' },
   'job.work_kept': { paths: ['/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f'], reasons: { '/home/me/hopper-jobs/.worktrees/hopper/7d0c9b1e-2f4a-4c55-9e3b-1a2b3c4d5e6f': ['dirty', 'unpushed'] } },

@@ -4,7 +4,8 @@
 // A person flips the deployment expectation from it (POST /ui/api/delivery-tracks/deploy|no-deploy) until a deployment
 // completes: a delivered record is final and offers no flip; each flip is listed. Each text edit of its item is listed,
 // with when and at which step (issue #2775 part 3). The acts its step allows are buttons (part 8): Hold and Take ownership
-// post a delivery hold, Release lets the change go on; the hold and each intervention are listed.
+// post a delivery hold, Release lets the change go on; the hold and each intervention are listed. A job that ran again
+// links the new job's track (part 9).
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -92,6 +93,12 @@ describe('a job\'s delivery on its job view', () => {
     expect(text('job-delivery-record')).toContain('No deployment expected');
     expect(text('job-delivery-record')).toContain('octo/shed#7');
     expect(text('job-delivery-record')).toContain('research');
+  });
+
+  it('a job that ran again says so and links the new job (part 9)', async () => {
+    await boot([{ ...RESEARCH, deployment: { ...RESEARCH.deployment!, outcome: { status: 'rerouted', by: 'ana', nextJob: 'j2' } } as KeptTrack['deployment'] }]);
+    expect(text('job-delivery-record')).toContain('its item ran again in a new job');
+    expect(document.querySelector('[data-slot="job-delivery-next"]')?.getAttribute('href')).toBe('#job/j2');
   });
 
   it('a job in progress offers the no-deploy mark and the flip to deploy; a click posts it for the job', async () => {
