@@ -9891,6 +9891,15 @@ repositories* or *Only select repositories*; the hopper then lists those, and th
 repositories (#321). An organization owner installs it for the organization (or approves a member's
 request); the member then sees that installation too.
 
+**Install the app on GitHub** (#2759). The install page is one button away from the first visit: at the top of Sources'
+GitHub section, **Install the app on GitHub** opens it in a new tab, with a short note that the app reaches only the
+repositories it is installed on, on the person's own account or an organization. The status carries `installUrl` in
+every state of the first account — not connected, waiting, expired, failed — since installing the app needs no
+connection; never for a personal access token, a further account, or a hopper with no app. Once the app reaches a
+repository the button stays, small: **Install the app on another account or organization**. The Dashboard leads with
+the same callout while the app reaches no repository (not connected, or connected and installed nowhere), and shows
+nothing once it does. `ui/src/views/install-app.tsx`; `test/ui/install-app.test.ts`.
+
 **An admin's own app instead** (#214): `docs/sign-in.md` "Running your own GitHub App instead of the
 hopper's" — the same permissions, *Any account* or *Only on this account* as the admin wants, and
 `HOPPER_GITHUB_CLIENT_ID` / `HOPPER_GITHUB_APP_SLUG`. The `github-app` job source (an app acting as its
