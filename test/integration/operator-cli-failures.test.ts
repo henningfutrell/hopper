@@ -119,7 +119,7 @@ describe('hand-offs from the CLI (issue #623)', () => {
     const closed = await waitFor(async () => (await failuresOf(a)).handoffs.find((h) => h.id === two.handoff.id && h.status === 'closed'), { what: 'the hand-off closed' });
     expect(closed).toMatchObject({ end: 'run_again', resolution: { action: 'fixed', note: 'Added the token.' } });
     const rerun = (await a.events('types=job.rerun')).find((e) => e.jobId === two.job.id);
-    expect(rerun?.data).toEqual({ by: 'user', ...CLI });
+    expect(rerun?.data).toEqual({ by: 'user', nextJobId: expect.any(String), ...CLI });
 
     const three = await failed(a, 'HOPPER_FAILED the issue is a duplicate');
     const noNote = await hopper(a, ['handoff', 'wont-do', three.handoff.id]);
@@ -149,6 +149,6 @@ describe('failures from the CLI (issue #623)', () => {
     expect(r.code).toBe(0);
     expect(JSON.parse(r.out)).toEqual({ jobId: job.id, giveBack: 'retry' });
     const rerun = await waitFor(async () => (await a.events('types=job.rerun')).find((e) => e.jobId === job.id), { what: 'the run again' });
-    expect(rerun?.data).toEqual({ by: 'user', ...CLI });
+    expect(rerun?.data).toEqual({ by: 'user', nextJobId: expect.any(String), ...CLI });
   });
 });
