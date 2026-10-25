@@ -197,7 +197,7 @@ export const EVENT_SCHEMAS = {
   'update.available': strict({ from: z.string(), to: z.string(), ref: z.string(), changes: z.number().int(), pullRequest: z.number().int().optional() }),
   'update.started': strict({ from: z.string(), to: z.string(), ref: z.string() }),
   'update.applied': strict({ from: z.string(), to: z.string(), ref: z.string() }),
-  'update.failed': strict({ to: z.string(), error: z.string() }),
+  'update.failed': strict({ to: z.string(), error: z.string() }), 'install.seen': strict({ commit: z.string(), branch: z.string(), from: z.string().optional(), mergeCommits: z.array(z.string()) }),
   // The plugin store (issue #75): `commit` is the store's full sha the plugin was installed from.
   'plugin.installed': strict({ id: z.string(), role: z.enum(ROLES), commit: z.string() }),
   'plugin.removed': strict({ id: z.string() }),

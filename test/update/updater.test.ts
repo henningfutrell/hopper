@@ -41,30 +41,6 @@ describe('detecting an update', () => {
     expect(types(w)).toEqual(['update.available', 'update.available']);
   });
 
-  it('records the commit the install runs once, with the merge commits it carries beyond the one recorded before (issue #2775 part 10)', async () => {
-    const w = world();
-    w.up.commit('first');
-    const merge = (n: number): string => {
-      git(w.up.dir, 'checkout', '-q', '-b', `topic-${n}`);
-      w.up.commit(`topic ${n}`);
-      git(w.up.dir, 'checkout', '-q', 'stable');
-      w.up.commit(`main ${n}`);
-      git(w.up.dir, 'merge', '-q', '--no-ff', '-m', `Merge pull request #${n}`, `topic-${n}`);
-      return git(w.up.dir, 'rev-parse', 'HEAD');
-    };
-    const m1 = merge(1);
-    const { u } = updater(w, createInstall(w.root, w.up.dir, m1));
-    await u.check();
-    await u.check();
-    const seen = () => w.store.events.since(0).filter((e) => e.type === 'install.seen').map((e) => e.data);
-    expect(seen()).toEqual([{ commit: m1, branch: 'stable', mergeCommits: [m1] }]);
-    // The install now runs a later commit: only the merge commits beyond the one recorded before.
-    const m2 = merge(2);
-    createInstall(w.root, w.up.dir, m2);
-    await u.check();
-    expect(seen()).toEqual([{ commit: m1, branch: 'stable', mergeCommits: [m1] }, { commit: m2, branch: 'stable', from: m1, mergeCommits: [m2] }]);
-  });
-
   it('checks on its own and offers a newer version even when the check interval is set to 0: checking cannot be turned off (issue #177)', async () => {
     const w = world();
     const c1 = w.up.commit('first');

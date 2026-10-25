@@ -28,6 +28,8 @@ const DEFAULT_CHECK_MS = 60_000;
 const LOAD_TIMEOUT_MS = 60_000;
 /** How many of the installed version's What's new lines the Updates panel shows. */
 const INSTALLED_WHATS_NEW = 5;
+/** How many merge commits one `install.seen` names at most. */
+const SEEN_MERGES = 500;
 
 export interface UpdaterOptions {
   /** The install this process runs from (holds install.json and src/). */
@@ -135,6 +137,8 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     if (!stopped) o.events.append({ type, data });
   };
   const lastAnnounced = (): unknown => o.events.recent(1, ['update.available'])[0]?.data.to;
+  /** The commit `install.seen` last recorded, once it is recorded: no git read at each check. */
+  let seenCommit: string | undefined;
 
   // The install does not change under a running process: read once.
   const installedNews = installedWhatsNew(o.appDir);
@@ -174,6 +178,22 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
     return { ...base, state: 'available', target: { ...target, pullRequest: verdict.pullRequest }, whatsNew, commits: await mirror.count(info.commit, target.commit) };
   }
 
+  /**
+   * The commit the install runs, recorded once (issue #2775 part 10): at the first check that sees it, an image's too, with
+   * the merge commits it carries beyond the one recorded before, so a job's kept delivery track sees the install run its change.
+   */
+  async function seeInstall(info: InstallInfo): Promise<void> {
+    if (seenCommit === info.commit) return;
+    const last = o.events.recent(1, ['install.seen'])[0]?.data.commit;
+    const from = typeof last === 'string' ? last : undefined;
+    if (from !== info.commit && (await mirror.has(info.commit))) {
+      const mergeCommits = await mirror.merges(info.commit, from, SEEN_MERGES);
+      if (!stopped) o.events.append({ type: 'install.seen', data: { commit: info.commit, branch: info.branch, ...(from ? { from } : {}), mergeCommits } });
+    }
+    // With no user yet the event is kept nowhere: look again at the next check.
+    if (o.events.recent(1, ['install.seen'])[0]?.data.commit === info.commit) seenCommit = info.commit;
+  }
+
   async function runCheck(): Promise<UpdateStatus> {
     const read = readInstallInfo(o.appDir);
     if (!read.ok) {
@@ -199,6 +219,7 @@ export function createUpdater(o: UpdaterOptions): RunningUpdater {
       }
       if (settings().autoUpdate) apply();
     }
+    if (installed && checked.state !== 'error') await seeInstall(installed).catch((e: unknown) => o.logger.warn(`hopper: the install's commit was not recorded: ${messageOf(e)}`));
     return status();
   }
 

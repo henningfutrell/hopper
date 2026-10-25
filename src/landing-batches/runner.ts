@@ -18,7 +18,7 @@ import { heldCut } from '../domain/track-interventions.ts';
 import type { DomainEvent, NewEvent } from '../domain/types.ts';
 import { backMergePass, startBackMerge } from './back-merge.ts';
 import { retargetNote } from '../sources/github/pr-notes.ts';
-import { canaryPass } from './canary.ts';
+import { betaPass, canaryPass } from './canary.ts';
 import { openOnce, withKillPoints } from './once.ts';
 import { bisectPass, bisectStart, culpritPass, type RedPass } from './red.ts';
 
@@ -297,6 +297,7 @@ export function createLandingBatches(o: {
       const hours = o.settings().repos[repo]?.canaryHours;
       if (hours === undefined) { canaryFound.delete(repo); continue; }
       const noteCanary = (f: { why?: string; problem?: string }): void => { canaryFound.set(repo, { ...f, checkedAt: o.now().toISOString() }); };
+      await betaPass({ gh, repo, record: o.record, state: () => landingBatchStates(o.events())[repo] });
       try {
         await canaryPass({ gh, repo, hours, held: () => o.held?.(repo) ?? new Set(), record: o.record, state: () => landingBatchStates(o.events())[repo], note: noteCanary, login: o.login, now: o.now });
       } catch (e) {

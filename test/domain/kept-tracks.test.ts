@@ -93,7 +93,7 @@ describe('kept delivery tracks', () => {
     expect(t).toMatchObject({ state: 'closed', closedAt: at('13:00') });
     expect(t.deployment).toEqual({
       jobId: 'j', repo: 'octo/shed', at: at('13:00'), kind: 'deploy', artifact: { pullRequest: PR }, target: 'production', expected: 'delivered',
-      observed: [...t.steps],
+      observed: [...t.steps], hops: [{ hop: 'landed', at: at('10:30') }],
     });
     expect(t.steps.map((s) => [s.step, s.end])).toEqual([
       ['queued', at('08:05')], ['coding', at('09:00')], ['pr_checks', at('09:20')], ['landing', at('09:20')], ['landing_checks', at('10:30')],
