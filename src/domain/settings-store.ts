@@ -7,7 +7,7 @@ import type { IntakeAutoApproval } from './intake-auto-approve.ts';
 import type { IntakeDeclineDefaults } from './intake-decline.ts';
 import type { IntakeMigration } from './intake.ts';
 import type { TaggedRecord } from './tagged.ts';
-import type { GitLabAccountRecord } from './gitlab-account.ts';
+import type { GitLabAccountRecord } from './gitlab-account.ts'; import type { NewRepositoryRecord } from './new-repositories.ts';
 import type { ReadPolicy } from './read-policy.ts'; import type { DeliverySettings } from './delivery-settings.ts';
 import type { SandboxApprovals } from './sandbox-approvals.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
@@ -36,6 +36,9 @@ export interface UserSettingsRepository {
   /** The repositories a connected account's jobs may use (issue #321), by the account's key (issue #1448); empty: none chosen. */
   getJobRepositories(key: ConnectedAccountKey): string[];
   setJobRepositories(key: ConnectedAccountKey, repositories: readonly string[]): void;
+  /** A connected account's new-repository policy, what it has reached and its open asks (issue #2795), by its key; never set: the default policy, never read. */
+  getNewRepositories(key: ConnectedAccountKey): NewRepositoryRecord;
+  setNewRepositories(key: ConnectedAccountKey, record: NewRepositoryRecord): void;
   /** The user's GitLab account (issue #1448 part 2), never its token; absent: none attached. */
   getGitLabAccount(): GitLabAccountRecord | undefined;
   setGitLabAccount(account: GitLabAccountRecord | null): void;

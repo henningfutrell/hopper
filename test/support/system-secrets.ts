@@ -5,6 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { createAtRest } from '../../src/connected-accounts/at-rest.ts';
 import type { ConnectedAccount, StoredAccount, UserStore } from '../../src/domain/ports.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
+import { NO_NEW_REPOSITORIES, type NewRepositoryRecord } from '../../src/domain/new-repositories.ts';
 import type { VaultSecret } from '../../src/domain/vault.ts';
 import { createSealer } from '../../src/secrets/sealer.ts';
 import { createSystemSecrets, type SystemSecrets } from '../../src/vault/system.ts';
@@ -40,6 +41,11 @@ export function accountOf(s: UserStore, key: string = TEST_KEY): ConnectedAccoun
  * A user's store in memory with what a connected account needs: its row, the vault its tokens are kept in, the event
  * log and transactions. `record`: an account kept before the test (its tokens in the vault, under TEST_KEY).
  */
+function memoryNewRepositories() {
+  const kept = new Map<string, NewRepositoryRecord>();
+  return { getNewRepositories: (k: string) => kept.get(k) ?? NO_NEW_REPOSITORIES, setNewRepositories: (k: string, r: NewRepositoryRecord) => { kept.set(k, r); } };
+}
+
 export function memoryAccountStore(record?: ConnectedAccount, extra: Record<string, unknown> = {}) {
   const rows = new Map<string, StoredAccount>();
   const secrets = new Map<string, { secret: VaultSecret; sealed: string | null }>();
@@ -68,6 +74,8 @@ export function memoryAccountStore(record?: ConnectedAccount, extra: Record<stri
     vault, events: { append: (e: NewEvent) => { events.push(e); return e; } },
     tx: <T>(fn: () => T): T => fn(),
     ...extra,
+    // New repositories (issue #2795), kept in memory under any settings a test gives.
+    ...(extra.settings ? { settings: { ...memoryNewRepositories(), ...(extra.settings as object) } } : {}),
   };
   if (record) putAccount(store as unknown as UserStore, record);
   return { store: store as unknown as UserStore, events, secrets };

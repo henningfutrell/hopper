@@ -30,6 +30,8 @@ export interface InstallationReadsOptions {
   now(): number;
   log(line: string): void;
   tickMs?: number;
+  /** Called after each read that worked, with what it read (issue #2795: new repositories). */
+  found?(provider: ConnectedAccountProvider, installations: AppInstallation[]): void;
 }
 
 /** The part of a connected account's status that says where the app is installed. */
@@ -65,6 +67,7 @@ export function createInstallationReads(o: InstallationReadsOptions): Installati
     try {
       const installations = await o.read(provider, answers);
       o.reads.put({ provider, account, at: iso(at), nextAt: iso(at + FRESH_MS), failures: 0, installations, etags: answers.kept() });
+      o.found?.(provider, installations);
     } catch (e) {
       const failures = (before?.failures ?? 0) + 1;
       const error = `${PROVIDER_NAME[provider]} could not say where the app is installed: ${(e as Error).message}`;

@@ -35738,3 +35738,52 @@ promotion that its new job did instead.
 change stays delivered; a flip to deploy after it), `test/ui/job-delivery-view.test.ts` (the link to the new job),
 `test/integration/jobs.test.ts`, `test/integration/failures.test.ts`, `test/integration/operator-cli-failures.test.ts`
 (`nextJobId` on `job.rerun`).
+
+## New repositories (issue #2795, part 1, 2026-10-25)
+
+Owner request: everything in the hopper is a setting with a sensible default, and an escalation to a person by default is
+the default value of a setting, never a behaviour with no setting. The issue names several such flows (intake, a question
+that goes to a person and back into the job, a default setup that wires them all). This part does one of them: the hopper
+sees a repository it did not reach before, and the person chooses whether it is added to the job repositories at once or
+the person is asked.
+
+**As built:**
+- **A new repository** is one that a connected account reaches now (where the hopper's app is installed, or what a
+  personal access token reaches) and that no read before saw. It is never one of the account's job repositories, and never
+  one that another account has for its jobs (issue #1448). The first read of an account only learns what it reaches:
+  nothing it reached then is new, so connecting an account never adds every repository (issue #321's rule stays).
+- **The new-repository policy** is the user's setting per connected account (`newRepositories:<account key>` in the user
+  schema's `settings`, `src/store/new-repository-settings.ts`): `mode` for every owner and `owners`, an owner's own mode,
+  which wins, matched in any case. Each mode is `ask` or `accept`. The default is `{ mode: 'ask', owners: {} }`: a value
+  of the setting, which the person can change.
+- **After each read that worked** (`installations.ts` `found`, on Refresh, on the schedule and on connect), the policy
+  runs on what the read saw (`findNewRepositories`, `src/domain/new-repositories.ts`, pure): `accept` adds the repository
+  to the job repositories and the source syncs at once (`onChange`); `ask` keeps a **new-repository ask** with when the
+  hopper first saw it. An ask is dropped once its repository is chosen, no longer reached, or taken by another account. A
+  dismissed repository stays seen, so it is not asked about again. Each outcome is logged with the repositories.
+- **A change of the policy** applies at once to what the last read saw: an owner switched to `accept` adds its waiting
+  asks to the job repositories without a new read.
+- **The route.** `POST /ui/api/connected-accounts` `{ action: 'new-repositories', provider, key?, policy?, dismiss? }`
+  (admin): `policy` is the whole policy; `dismiss` drops asks. An owner with a `/` is refused (400). Adding an ask to the
+  job repositories is the existing `choose`. The connected account's status carries `newRepositories: { policy, asks }`.
+- **Sources** (`ui/src/views/new-repositories.tsx`), under the repositories: *A new repository the app reaches:* with
+  **ask me** or **add to job repositories**; when the account reaches more than one owner, a choice per owner (**as
+  above**, ask me, add to job repositories); and each ask with **Add to job repositories** and **Dismiss**.
+
+**Decisions:**
+- **Per connected account, not per user.** A repository is a job repository of one account only, and each account reaches
+  its own owners. The record is keyed as the job repositories are (`keyed.ts`).
+- **The first read is a baseline.** Without it, a hopper that updates to this build would ask about every repository it
+  already reaches.
+- **No event yet.** The connected accounts' `choose` records no event either; the log line says what the policy did. An
+  event (so a notifier can tell the person of an ask) is a later part.
+
+**What is left** (later parts of #2795): a catalog of the settings that make up the flows, with their scope (instance,
+user, owner, repository); a "create your default assistant" step that sets up the expected connections and webhooks and
+the default values in one go; one general model for the circular flows (intake → job → question → person → back into the
+job), so that each new flow is an instance of it; the voice agent stage, which the hopper does not have yet; an event and
+a notification for a new-repository ask.
+
+**Verification:** `test/domain/new-repositories.test.ts`, `test/integration/new-repositories.test.ts` (asked by default,
+dismissed and not asked again; an owner's `accept` adds the repository and its issue becomes a job; a bad owner is 400),
+`test/ui/new-repositories-view.test.ts`.

@@ -1,5 +1,5 @@
 // A user's connected account (issue #214): the GitHub account their work comes through. Re-exported from types.ts.
-import type { KeptAnswer } from './repo-checks.ts';
+import type { KeptAnswer } from './repo-checks.ts'; import type { NewRepositoryAsk, NewRepositoryPolicy } from './new-repositories.ts';
 
 /** Where a user connects an account to work from: GitHub. */
 export const CONNECTED_ACCOUNT_PROVIDERS = ['github'] as const;
@@ -102,6 +102,8 @@ export type ConnectedAccountStatus = {
     held?: { account: string; at: string };
     /** The email the account was connected for (issue #1380, the source email match); each renewal checks it again. Absent: not checked. */
     matchEmail?: string;
+    /** The account's new-repository policy and its open new-repository asks (issue #2795). */
+    newRepositories?: { policy: NewRepositoryPolicy; asks: NewRepositoryAsk[] };
   }
   | { state: 'not-connected' }
   /** Its sign-in ended (issue #358): GitHub refused its refresh token (revoked, or the app's authorization removed), or it expired with nothing to renew it. Connect again. `error`: why. */
