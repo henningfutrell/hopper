@@ -157,6 +157,22 @@ describe('companion pull requests (issue #1143 reopened)', () => {
     expect(merges(gh)).toHaveLength(1);
   });
 
+  it('its companion that gets ready after the followed pull request merged and closed the issue is merged too (issue #2752)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    expect((await app.ui('/ui/api/yolo-mode', { repos: { [OTHER]: true } }, { token })).status).toBe(200);
+    const { job, companion } = await readyCompanion(app, gh);
+    gh.setChecks(companion, 'pending');
+    gh.mergePullRequest(String((await app.job(job.id)).sourceState?.source?.pullRequest));
+    gh.closeIssue(REPO, job.source!.number!, undefined, { reason: 'completed' });
+    await waitFor(async () => { await app.sync(); return app.user().store.workItems.get(job.source!.key)?.state === 'done'; }, { what: 'the item is done' });
+    expect(merges(gh)).toEqual([]);
+    gh.setChecks(companion, 'passing');
+    await waitFor(async () => { await app.sync(); return merges(gh).length > 0; }, { what: 'the hopper merges the companion' });
+    expect(merges(gh)).toEqual([[OTHER, Number(companion.split('/').at(-1))]]);
+  });
+
   it('with yolo mode not on for that repository, it is not merged (issue #2752)', async () => {
     const gh = createFakeGitHub();
     const app = await boot(gh);
