@@ -65,4 +65,19 @@ describe('Install the hopper app on GitHub (#2759)', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(button()).toBeNull();
   });
+
+  it('the Dashboard shows no button, and throws nothing, when the answer holds no accounts (issue #2764)', async () => {
+    const thrown: unknown[] = [];
+    const onRejection = (e: unknown) => { thrown.push(e); };
+    process.on('unhandledRejection', onRejection);
+    try {
+      await boot({ '/api/connected-accounts': {} }, '#dashboard');
+      await vi.waitFor(() => expect(document.querySelector('main')?.textContent).toBeTruthy());
+      await new Promise((r) => setTimeout(r, 50));
+      expect(button()).toBeNull();
+      expect(thrown).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+  });
 });
