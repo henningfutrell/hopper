@@ -6,7 +6,8 @@
 // further account that ends marks only itself.
 //
 // A repository is a job repository of one account at most: the account that acts for a job of it, its git and its source
-// (`keyFor`). Any other repository is the first account's.
+// (`keyFor`). Any other repository is the first account's. So a repository the app came to reach (issue #2761) becomes a
+// job repository of an account only when no other account holds it (`takenElsewhere`).
 import type { ConnectedAccounts, ConnectedAccountTokens } from '../domain/ports.ts';
 import { CONNECTED_ACCOUNT_PROVIDERS, CONNECTED_VIA, furtherAccount, providerOfKey, type ConnectedAccountKey, type ConnectedAccountProvider, type ConnectedAccountStatus } from '../domain/types.ts';
 import { PROVIDER_NAME } from './at-rest.ts';
@@ -27,14 +28,18 @@ export type AccountSet = ConnectedAccounts & ConnectedAccountTokens & {
 const number = (key: ConnectedAccountKey): number => (furtherAccount(key) ? Number(key.slice(key.lastIndexOf('-') + 1)) : 1);
 
 export function createAccountSet(o: ConnectedAccountsOptions): AccountSet {
-  const first = createConnectedAccounts(o);
+  const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+  /** Whether an account other than `key` holds `repo` as a job repository; `key` absent: the first account's, by its provider. */
+  const takenElsewhere = (key?: ConnectedAccountKey) => (provider: ConnectedAccountProvider, repo: string): boolean =>
+    keys().some((k) => k !== (key ?? provider) && at(k)[0].jobRepositories(providerOfKey(k)).some((r) => same(r, repo)));
+  const first = createConnectedAccounts({ ...o, takenElsewhere: takenElsewhere() });
   const further = new Map<ConnectedAccountKey, ConnectedAccountsService>();
   const make = (key: ConnectedAccountKey): ConnectedAccountsService => {
     const provider = providerOfKey(key);
     // A further account is never a sign-in: nothing links it to an identity, and nothing hands it a sign-in's grant.
     const { link: _link, ...rest } = o;
     return createConnectedAccounts({
-      ...rest, accountKey: key, store: keyedStore(o.store, provider, key), secrets: keyedSecrets(o.secrets, provider, key),
+      ...rest, accountKey: key, takenElsewhere: takenElsewhere(key), store: keyedStore(o.store, provider, key), secrets: keyedSecrets(o.secrets, provider, key),
       ...(o.onChange ? { onChange: () => o.onChange!(key) } : {}),
       ...(o.onExpired ? { onExpired: (_p, account, reason) => o.onExpired!(key, account, reason) } : {}),
       ...(o.onRenewed ? { onRenewed: (_p, renewed) => o.onRenewed!(key, renewed) } : {}),
@@ -69,7 +74,6 @@ export function createAccountSet(o: ConnectedAccountsOptions): AccountSet {
     follow();
     return further.has(key) ? undefined : `${PROVIDER_NAME[providerOfKey(key)]} account ${key} was removed: Sources → Add another ${PROVIDER_NAME[providerOfKey(key)]} account`;
   };
-  const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
   const keyFor = (repo: string | undefined): ConnectedAccountKey => {
     if (repo !== undefined) for (const key of keys()) if (at(key)[0].jobRepositories(providerOfKey(key)).some((r) => same(r, repo))) return key;
     return 'github';

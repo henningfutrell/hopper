@@ -10110,6 +10110,34 @@ search; chosen: only those repositories' issues become jobs; changed while conne
 disconnect; refusals), `test/store/tenant-migration-10.test.ts`, `test/ui/sources-view.test.ts` (count,
 filter, Choose shown, Save sends the whole list, an unreached chosen repository).
 
+### New repositories the app comes to reach (issue #2761, 2026-10-25)
+
+Owner report: the hopper's app was installed on a new organization after GitHub was connected, and a labelled,
+assigned issue there never became a job until GitHub was connected again. The installations were read again (every
+30 minutes, issue #1250), but the job repositories stayed as chosen, so the source never listed the new owner.
+
+- **What is new.** A read of the installations that finds a repository the read before it, of the same account, did
+  not (`src/connected-accounts/installations.ts`, any case): the app installed on a new owner, or a repository added
+  to an installation, by the owner's choice or by an `all` installation's new repository. Each is a person's act on
+  GitHub, so it counts as the choice issue #321 asks for. The first read of an account finds nothing new: what the app
+  reaches at connect stays the person's to choose. A failed read, or a read of another account, finds nothing new.
+- **Taken.** Each new repository becomes a job repository of that account (`adopt`, `src/connected-accounts/service.ts`),
+  appended to the choice, unless it is chosen already, another of the user's accounts holds it (`takenElsewhere`,
+  `account-set.ts`: a repository is a job repository of one account only), or the account is a personal access
+  token (it reaches every repository its user does). Then the account's job source syncs at once (`onChange`), as
+  after a choose, so the new repositories' labelled issues are listed in that sync. A repository the person cleared
+  stays cleared: only a repository new to the read is taken.
+- **Shown.** The read keeps what it took (`AppInstallationsRead.added`, the newest such read's; an optional field of
+  the kept JSON, so the build before reads it); `GET /api/connected-accounts` answers it as `jobRepositoriesAdded`
+  (`at`, `repositories`), and the Sources panel names them, with when. The log says it too.
+- **When.** At the next read: the schedule's (at most 30 minutes after the read before), or Refresh at once. GitHub's
+  `installation` and `installation_repositories` deliveries are not taken: the GitHub delivery takes only `issues`
+  events (issue #1079), and the schedule is enough at this scale.
+
+**Verification:** `test/connected-accounts/installations.test.ts` (new owner, added repository, nothing on a first,
+failed or other-account read), `test/connected-accounts/new-installation-scope.test.ts` (taken, source synced, shown;
+a cleared repository stays cleared; another account's; a token's), `test/ui/installations-read-view.test.ts`.
+
 ## Default work trees per machine and per repository (issue #324, 2026-10-07)
 
 **Superseded in part by issue #361** ("Per-machine work trees"): the source's `repoPaths` and
