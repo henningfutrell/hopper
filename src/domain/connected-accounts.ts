@@ -47,13 +47,19 @@ export interface AppInstallation {
  * (the account, when), not connected, expired, unreadable, waiting on the device code the user enters at
  * `verificationUri`, or failed. Facts only, never a token.
  */
-export type ConnectedAccountStatus = { provider: ConnectedAccountProvider; key: ConnectedAccountKey; via: typeof CONNECTED_VIA } & (
+export type ConnectedAccountStatus = {
+  provider: ConnectedAccountProvider; key: ConnectedAccountKey; via: typeof CONNECTED_VIA;
+  /**
+   * GitHub: where to install the hopper's GitHub App, on the person's own account or an organization — it reaches only the
+   * repositories it is installed on. In every state (issue #2759): installing it needs no connection. Absent for a personal
+   * access token, a further account, or a hopper with no app.
+   */
+  installUrl?: string;
+} & (
   | {
     state: 'connected'; account: string; connectedAt: string;
     /** The repositories this account's jobs may use, chosen in Sources (issue #321); empty: none, so no job. */
     jobRepositories: string[];
-    /** GitHub: where to install the hopper's GitHub App — it reaches only the repositories it is installed on. Absent for a personal access token. */
-    installUrl?: string;
     /** GitHub: where the app's installations are seen and their repositories chosen. */
     configUrl?: string;
     /**
