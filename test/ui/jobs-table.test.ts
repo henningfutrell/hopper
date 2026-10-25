@@ -6,10 +6,12 @@
 //   Scenario: a browser that kept nothing opens Jobs in List, a table with the stage, issue, title, lane, time in stage and pull request
 //   Scenario: Graph or List is the same toggle as before, kept over a reload
 //   Scenario: a click on a row opens its run graph under it, and a second click folds it
+//   Scenario: a job whose kept delivery track is open shows its delivery step, since when and what it waits on (issue #2775)
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { jobGraph } from '../../src/domain/job-graph.ts';
+import type { KeptTrack } from '../../src/domain/kept-tracks.ts';
 import type { Job, JobStatus } from '../../src/domain/types.ts';
 
 const pointed = (n: number, status: JobStatus, repo = 'acme/site'): Job => ({
@@ -20,6 +22,8 @@ const pointed = (n: number, status: JobStatus, repo = 'acme/site'): Job => ({
 } as Job);
 
 let jobs: Job[] = [];
+let tracks: KeptTrack[] = [];
+const asked: string[] = [];
 
 function fakeDaemon() {
   const of = (...s: JobStatus[]) => jobs.filter((j) => s.includes(j.status));
@@ -29,6 +33,7 @@ function fakeDaemon() {
     '/api/machines': () => ({ machines: [{ id: 'm1', label: 'box', maxLanes: 30, online: true, executors: ['test'], usage: [], lanes: [] }] }),
     '/api/jobs/last-events': () => ({ events: [] }),
     '/api/jobs/graph': () => jobGraph({ jobs, questions: [], items: new Map() }),
+    '/api/delivery-tracks': () => ({ tracks }),
     '/api/decisions': () => ({ decisions: [] }), '/api/events': () => ({ events: [] }),
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }), '/api/accounts': () => ({ accounts: [] }),
@@ -36,6 +41,7 @@ function fakeDaemon() {
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string) => {
+    asked.push(String(input));
     const path = String(input).split('?')[0]!;
     if (path === '/ui/api/session') return json({ authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'viewer', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     return path in routes ? json(routes[path]!()) : new Response('{"error":"not found"}', { status: 404 });
@@ -79,6 +85,8 @@ const pressed = (mode: string) => document.querySelector(`[data-slot="jobs-mode-
 afterEach(() => {
   act(() => root?.unmount());
   root = undefined;
+  tracks = [];
+  asked.length = 0;
   vi.unstubAllGlobals();
 });
 
@@ -91,11 +99,11 @@ describe('the Jobs table (issue #2372)', () => {
     expect(pressed('graph')).toBe('false');
     await vi.waitFor(() => expect(rows()).toHaveLength(2));
     const table = document.querySelector<HTMLTableElement>('[data-slot="jobs-list"] table')!;
-    expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['', 'Stage', 'Issue', 'Title', 'Lane', 'In stage', 'Pull request', 'Last event']);
+    expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual(['', 'Stage', 'Issue', 'Title', 'Lane', 'In stage', 'Pull request', 'Delivery', 'Last event']);
     expect(rows().every((r) => r.tagName === 'TR')).toBe(true);
     expect(document.querySelector('[data-slot="jobs-graph"]')).toBeNull();
     const cells = [...row('job-1').children].map((c) => (c as HTMLElement).dataset.slot);
-    expect(cells).toEqual(['row-expand', 'row-stage', 'row-issue', 'row-title', 'row-lane', 'row-since', 'row-pull-request', 'row-last-event']);
+    expect(cells).toEqual(['row-expand', 'row-stage', 'row-issue', 'row-title', 'row-lane', 'row-since', 'row-pull-request', 'row-delivery', 'row-last-event']);
     expect(row('job-1').querySelector<HTMLAnchorElement>('[data-slot="row-pr"] a')?.href).toBe(pr);
     expect(row('job-2').querySelector('[data-slot="row-lane"]')?.textContent).toBe('box (m1) · lane-2');
     // The filters and the stage counts stay above the table.
@@ -142,5 +150,22 @@ describe('the Jobs table (issue #2372)', () => {
     expect(graph()).toBeNull();
     expect(row('job-again').getAttribute('aria-expanded')).toBe('false');
     expect(row('job-again').querySelector<HTMLAnchorElement>('[data-slot="row-title"] a')?.getAttribute('href')).toBe('#job/job-again');
+  });
+
+  it('shows the delivery step of a job whose kept delivery track is open, since when and what it waits on (issue #2775)', async () => {
+    // job-1 finished: its fix merged on the landing branch, not promoted. job-2 runs: its track is in coding. job-3 has no open track.
+    jobs = [pointed(1, 'finished'), pointed(2, 'running'), pointed(3, 'finished')];
+    const waits = 'a green run of the checks on the landing branch that carries it (a batch run for the hopper)';
+    tracks = [
+      { jobId: 'job-1', marks: {}, steps: [], state: 'open', current: { step: 'landing_checks', since: '2026-10-01T02:00:00.000Z', blocker: 'ci_red', waitingOn: waits } },
+      { jobId: 'job-2', marks: {}, steps: [], state: 'open', current: { step: 'coding', since: '2026-10-01T00:02:00.000Z', blocker: 'queue', waitingOn: 'the job to open its pull request' } },
+    ] as unknown as KeptTrack[];
+    await boot();
+    await vi.waitFor(() => expect(row('job-1')?.querySelector('[data-slot="row-delivery"]')?.textContent).toBe('Landing checks'));
+    expect(asked).toContain('/api/delivery-tracks?state=open');
+    const cell = row('job-1').querySelector<HTMLElement>('[data-slot="row-delivery"]')!;
+    expect(cell.title).toBe(`in Landing checks since 2026-10-01T02:00:00.000Z; waits on ${waits}`);
+    expect(row('job-2').querySelector('[data-slot="row-delivery"]')?.textContent).toBe('Coding');
+    expect(row('job-3').querySelector('[data-slot="row-delivery"]')?.textContent).toBe('');
   });
 });
