@@ -35626,8 +35626,7 @@ new act, the **delivery hold**.
 - **The hold is a track's, not a job's.** A **hold** is a Decision's, on a waiting job; a delivery hold holds a change
   past its job's end, so it is a new word.
 
-**What is left** (later parts): the hold's effect — the yolo merge, the batch runner's pick of a batch and the promotion
-skip a held change; the routes `POST /ui/api/delivery-tracks/hold|release`, the scope `delivery_tracks:steer`, the CLI
+**What is left** (later parts): the routes `POST /ui/api/delivery-tracks/hold|release`, the scope `delivery_tracks:steer`, the CLI
 `hopper deployment hold|release` and the Delivery panel's acts from `allowedActs`, and a held mark on the Jobs list;
 Run again from `landing_checks` on closes the track `none`, outcome `rerouted`, with a link to the new job's track;
 `beta` and the install that runs a change, as observed hops.
@@ -35635,3 +35634,37 @@ Run again from `landing_checks` on closes the track `none`, outcome `rerouted`, 
 **Verification:** `test/domain/track-interventions.test.ts` (each act kept at its step, the hopper's and a job's own acts
 not, the hold until its release, an expedite flag on the issue or the pull request, a fold twice, the acts each step
 allows).
+
+### Part 7: the delivery hold's effect (issue #2775, 2026-10-25)
+
+The step's owner does not act on a held change. Each owner reads the holds from the hold and release events at each ask
+(`heldJobs`, `src/domain/track-interventions.ts`; the store reads in `src/users/delivery-holds.ts`), not from the kept
+track, so a hold counts from its event on and not from the next pass of the tracks.
+
+- **Yolo mode** (GitHub and GitLab): a held job's ready pull request or merge request is not merged. The wait says why on
+  what the follow saw (`mergeError`, `holdWhy`: who owns it, the step, since when and the reason, never the person). The
+  release lets the next sync merge it. A person's Merge now is a person's act and still merges.
+- **The batch runner**: the landing branch is one line, so a batch run cannot leave out one change in the middle. It takes
+  the landing branch up to the first held merge, the first parent of that merge (`heldCut`), and the changes after it wait
+  with it. With the first merge held, no batch run starts. The pass says which pull request is held. The pending merges
+  for the work-item ledger stay the whole landing branch's. A batch run that carries the change already finishes as it is.
+- **The stable move**: when the canary window passed, `stable` does not move to a candidate that carries a held change.
+  The canary says which pull requests are held, and the next pass after the release moves it.
+- The held pull requests of a repository are each held job's pull request, as the job names it, else as its track does.
+- The connected account's GitHub source now passes the done criteria of a job's conditional skills (issue #1924) and the
+  deletes its issue allows to its GitHub source, with the delivery hold. Before, it did not pass them, so yolo mode merged
+  with no done criteria checked.
+
+**Decisions:**
+- **A cut, not a revert.** To leave a held change out of the batch from the middle, the hopper would have to revert it on
+  the landing branch. The cut changes nothing on GitHub, and the release lets everything go on.
+- **Events, not tracks.** The kept-track pass runs every 60 seconds; a merge in that time would not see a new hold.
+
+**What is left** (later parts): the routes `POST /ui/api/delivery-tracks/hold|release`, the scope
+`delivery_tracks:steer`, the CLI `hopper deployment hold|release`, the Delivery panel's acts from `allowedActs` and a held
+mark on the Jobs list; Run again from `landing_checks` on closes the track `none`, outcome `rerouted`; `beta` and the
+install that runs a change, as observed hops.
+
+**Verification:** `test/domain/delivery-holds.test.ts`, `test/users/delivery-holds.test.ts`,
+`test/landing-batches/held.test.ts`, `test/sources/github-yolo-delivery-hold.test.ts`,
+`test/sources/account-merge-holds.test.ts`.

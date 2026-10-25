@@ -64,7 +64,7 @@ describe('the batch runner skips a held change (issue #2775 part 7)', () => {
     const { r, events } = runner(w, BATCHES);
     await r.pass();
     expect(started(events)).toEqual([expect.objectContaining({ tip: 'm12', merges: [12] })]);
-    expect(w.calls).toContain('branch landing-batch/m12 m12');
+    expect(w.calls.filter((c) => c.startsWith('branch '))).toEqual([expect.stringMatching(/m12 m12$/)]);
     expect(r.view().repos[0]).toMatchObject({ why: expect.stringContaining('#14 is held: the batch run takes the landing branch up to it') });
   });
 

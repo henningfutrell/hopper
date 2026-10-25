@@ -37,6 +37,7 @@ export function gitlabAccountPlugin(): PluginDefinition<'job-source', GitLabAcco
         trust: ctx.intakeTrust, ...(intake ? { intake } : {}), knownKeys: ctx.knownKeys, rerunnable: ctx.rerunnable,
         ...(ctx.jobDoneCriteria ? { doneCriteria: (jobId: string) => ctx.jobDoneCriteria!(jobId) } : {}),
         ...(ctx.jobAllowedDeletes ? { allowedDeletes: (jobId: string) => ctx.jobAllowedDeletes!(jobId) } : {}),
+        ...(ctx.jobDeliveryHold ? { deliveryHold: (jobId: string) => ctx.jobDeliveryHold!(jobId) } : {}),
         ...(ctx.githubOutbox ? { outbox: ctx.githubOutbox } : {}),
       });
       return { source, pollMs: o.pollSeconds * 1000 };

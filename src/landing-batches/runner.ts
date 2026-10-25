@@ -14,6 +14,7 @@ import {
   type BatchCheckRun, type DueBatch, type LandingBatchRepo, type LandingBatchRepoView, type LandingBatchSettings, type LandingBatchStuck, type RunningBatch,
 } from '../domain/landing-batches.ts';
 import type { FailedCheck } from '../domain/landing-bisect.ts';
+import { heldCut } from '../domain/track-interventions.ts';
 import type { DomainEvent, NewEvent } from '../domain/types.ts';
 import { backMergePass, startBackMerge } from './back-merge.ts';
 import { retargetNote } from '../sources/github/pr-notes.ts';
@@ -89,6 +90,8 @@ export function createLandingBatches(o: {
   jobPullRequests(): readonly string[];
   /** The issues the job pull requests `merges` close (issue #1175), as closing references from `repo`: named in the batch run's text. */
   closingIssues?(repo: string, merges: readonly number[]): string[];
+  /** The pull requests of `repo` whose change a delivery hold holds (issue #2775 part 7): no batch run and no stable move takes them. Absent: none. */
+  held?(repo: string): ReadonlySet<number>;
   now(): Date;
   log(line: string): void;
   everyMs?: number;
@@ -180,12 +183,17 @@ export function createLandingBatches(o: {
     const fresh = landingBatchStates(o.events())[repo];
     // A batch run recorded due and not started: a pass stopped on its way (issue #1589). The same one starts.
     if (fresh?.due) return start(gh, repo, cfg.tested, fresh.due);
-    const cmp = await gh.compare(repo, cfg.tested, landing);
-    const merges = mergedPullRequests(cmp.commits.map((c) => c.message));
-    const due = batchDue(fresh, { tip: cmp.tip, aheadBy: cmp.aheadBy, merges: merges.length }, cfg, o.now());
+    const all = await gh.compare(repo, cfg.tested, landing);
+    const pending = mergedPullRequests(all.commits.map((c) => c.message));
+    // A held change (issue #2775 part 7): the batch run takes the landing branch up to it.
+    const cut = heldCut(all.commits, o.held?.(repo) ?? new Set());
+    const cmp = cut ? await gh.compare(repo, cfg.tested, cut.tip) : all;
+    const merges = cut ? mergedPullRequests(cmp.commits.map((c) => c.message)) : pending;
+    const facts = batchDue(fresh, { tip: cmp.tip, aheadBy: cmp.aheadBy, merges: merges.length }, cfg, o.now());
+    const due = cut ? { ...facts, why: `${facts.why}; #${cut.pullRequest} is held: the batch run takes the landing branch up to it` } : facts;
     if (!due.due) {
       // The merges that wait for it, for the work-item ledger: once per change.
-      if (cmp.aheadBy > 0 && pendingChanged(fresh, merges)) o.record({ type: 'landing_batch.pending', data: { repo, landing, tested: cfg.tested, tip: cmp.tip, merges } });
+      if (all.aheadBy > 0 && pendingChanged(fresh, pending)) o.record({ type: 'landing_batch.pending', data: { repo, landing, tested: cfg.tested, tip: all.tip, merges: pending } });
       note(repo, { why: due.why });
       return;
     }
@@ -290,7 +298,7 @@ export function createLandingBatches(o: {
       if (hours === undefined) { canaryFound.delete(repo); continue; }
       const noteCanary = (f: { why?: string; problem?: string }): void => { canaryFound.set(repo, { ...f, checkedAt: o.now().toISOString() }); };
       try {
-        await canaryPass({ gh, repo, hours, record: o.record, state: () => landingBatchStates(o.events())[repo], note: noteCanary, login: o.login, now: o.now });
+        await canaryPass({ gh, repo, hours, held: () => o.held?.(repo) ?? new Set(), record: o.record, state: () => landingBatchStates(o.events())[repo], note: noteCanary, login: o.login, now: o.now });
       } catch (e) {
         noteCanary({ problem: (e as Error).message });
         o.log(`hopper: landing batches: the canary of ${repo}: ${(e as Error).message}`);

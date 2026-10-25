@@ -68,6 +68,8 @@ export interface GitLabSourceOptions {
    * request at the done check and before yolo mode's merge. Absent: none.
    */
   doneCriteria?: JobDoneCriteria; allowedDeletes?: JobAllowedDeletes;
+  /** Why a delivery hold holds a job's change (issue #2775 part 7): yolo mode does not merge it. Absent or undefined: none. */
+  deliveryHold?: (jobId: string) => string | undefined;
   /** The user's outbox (issue #1892 part 17): its label changes' rows, under the source's name. Absent: kept in memory. */
   outbox?: GitHubOutboxRepository;
   /** Of these keys, those with a job here, and those of them that may run again: an issue taken as a new job is not judged by the label mirror. */
@@ -285,7 +287,7 @@ export function createGitLabSource(o: GitLabSourceOptions): JobSource {
     notComplete: (job) => o.account.act((a) => notComplete(a, job, done)),
     mergesOnReady: (project) => yolo(project),
     follow: (job, act, at) => o.account.act((a) => followMergeRequest({
-      api: a, yolo: yolo(job.source?.repo ?? ''), now: clock.now().getTime(), hold: (m) => mergeRequestHold(a, job, m, done), labels: labelRows('follow'),
+      api: a, yolo: yolo(job.source?.repo ?? ''), now: clock.now().getTime(), hold: async (m) => o.deliveryHold?.(job.id) ?? mergeRequestHold(a, job, m, done), labels: labelRows('follow'),
     }, job, act, at)),
     flushOutbox: () => outbox.flush(send),
     releaseOutbox: outbox.release,

@@ -94,3 +94,52 @@ export function allowedActs(
   if (EXPEDITE_STEPS.has(step) && delivery?.schedule?.expedite === 'out_of_cadence' && !flagged) acts.push('expedite');
   return acts;
 }
+
+// The hold's effect (part 7): the step's owner — yolo mode, the batch runner, the stable move — reads which changes a hold
+// holds from the hold and release events, not from the kept track, so a hold counts from its event on, not from the next
+// pass of the tracks.
+
+/** The events a hold is read from. */
+export const HOLD_EVENTS = ['delivery_track.held', 'delivery_track.released'] as const;
+
+/** Each job whose change a hold holds: its last hold or release, by seq, is a hold. The events in any order. */
+export function heldJobs(events: readonly DomainEvent[]): Map<string, DeliveryHold> {
+  const last = new Map<string, DomainEvent>();
+  for (const e of events) {
+    if (e.jobId === undefined || !(HOLD_EVENTS as readonly string[]).includes(e.type)) continue;
+    if ((last.get(e.jobId)?.seq ?? -1) < e.seq) last.set(e.jobId, e);
+  }
+  const out = new Map<string, DeliveryHold>();
+  for (const [jobId, e] of last) {
+    const i = interventionOf(e, (e.data as { step: DeliveryStep }).step);
+    const hold = i && holdOf([i]);
+    if (hold) out.set(jobId, hold);
+  }
+  return out;
+}
+
+/** What the step's owner says while a hold holds a change: who owns it, the step, since when and why. Names no person. */
+export const holdWhy = (h: DeliveryHold): string =>
+  `its delivery is held: ${h.owner === 'person' ? 'a person took ownership of it' : 'paused'} at ${h.step} since ${h.at}${h.reason ? ` (${h.reason})` : ''}; a release lets it go on`;
+
+/** The numbers of the pull requests of `repo` among these URLs. */
+export function heldNumbers(urls: readonly string[], repo: string): Set<number> {
+  const out = new Set<number>();
+  for (const url of urls) {
+    const m = /^https:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\/(\d+)/.exec(url);
+    if (m && m[1]!.toLowerCase() === repo.toLowerCase()) out.add(Number(m[2]));
+  }
+  return out;
+}
+
+/**
+ * Where a batch run stops for a held change: the landing branch is one line, so the batch run takes it up to the first held
+ * merge, the parent before it, and the changes after it wait with it. `commits` oldest first, as a compare answers them.
+ */
+export function heldCut(commits: readonly { sha: string; parents: string[]; message: string }[], held: ReadonlySet<number>): { pullRequest: number; tip: string } | undefined {
+  for (const c of commits) {
+    const n = Number(/^Merge pull request #(\d+) /.exec(c.message)?.[1]);
+    if (held.has(n) && c.parents[0] !== undefined) return { pullRequest: n, tip: c.parents[0] };
+  }
+  return undefined;
+}
