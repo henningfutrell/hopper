@@ -81,6 +81,11 @@ describe('a job\'s delivery on its job view', () => {
     expect(text('job-delivery-waits')).toBe('');
   });
 
+  it('a delivered record with the merge commit of its batch run names the commit, short (part 4)', async () => {
+    await boot([{ ...DELIVERED, deployment: { ...DELIVERED.deployment!, artifact: { pullRequest: PR, commit: '0123456789abcdef0123456789abcdef01234567' } } as KeptTrack['deployment'] }]);
+    expect(text('job-delivery-record')).toContain('commit 0123456789ab');
+  });
+
   it('a research job shows no deployment expected, with its source and outcome', async () => {
     await boot([RESEARCH]);
     expect(text('job-delivery-record')).toContain('No deployment expected');
