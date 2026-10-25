@@ -60,11 +60,11 @@ describe('the item reconciler writes the label change of a block through the out
     expect(store.workItems.get(KEY)).toMatchObject({ state: 'blocked', blockedCause: 'stale' });
     const rows = store.githubOutbox.open('github');
     expect(rows.map((r) => ({ act: r.act, tag: r.tag, key: r.key, repo: r.repo, change: r.change }))).toEqual([
-      { act: 'mirror', tag: 'blocked:stale', key: KEY, repo: 'o/r', change: { op: 'remove_labels', labels: ['hopper:pr-ready', 'hopper:partly-done'] } },
+      { act: 'mirror', tag: 'blocked:stale', key: KEY, repo: 'o/r', change: { op: 'remove_labels', labels: ['hopper:pr-ready', 'hopper:partly-done', 'hopper:needs-merge'] } },
       { act: 'mirror', tag: 'blocked:stale', key: KEY, repo: 'o/r', change: { op: 'add_labels', labels: ['hopper:blocked'] } },
     ]);
     expect(coalesce(rows).map((p) => p.calls.map((c) => c.change))).toEqual([[
-      { op: 'remove_labels', labels: ['hopper:pr-ready', 'hopper:partly-done'] },
+      { op: 'remove_labels', labels: ['hopper:pr-ready', 'hopper:partly-done', 'hopper:needs-merge'] },
       { op: 'add_labels', labels: ['hopper:blocked'] },
     ]]);
 

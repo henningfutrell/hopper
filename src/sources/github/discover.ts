@@ -33,7 +33,7 @@ import type { GitHubSourceConfig } from '../config.ts';
 import { HANDOFF_WAIT, type WorkItem } from '../../domain/work-items.ts';
 import { labelsFor, type DoneReport, type DropReport, type LabelFacts } from './item-labels.ts';
 import {
-  ADDRESS_PREFIX, HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_BLOCKED, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED, holderLabel,
+  ADDRESS_PREFIX, HOLDER_PREFIX, LABEL_BACKBURNER, LABEL_BLOCKED, LABEL_CLAIMED, LABEL_DONE, LABEL_FAILED, LABEL_NEEDS_MERGE, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_PR_READY, LABEL_REJECTED, holderLabel,
 } from './labels.ts';
 
 /** A rejection with no assignee (a job taken before assignment intake) leaves its issue to its labels, as then. */
@@ -45,6 +45,8 @@ export const FAILED = 'failed: hopper:failed is on the issue';
 export const DONE_OPEN = 'done, but the issue is still open';
 export const PR_READY = 'done: its pull request waits for review';
 export const PARTLY_DONE = 'partly done: the rest runs once its pull request merges';
+/** Its pull request is in a repository the hopper does not merge in (issue #2752): a person merges it there. */
+export const NEEDS_MERGE = 'done: its pull request needs a person to merge it in its repository; hopper:needs-merge is on the issue';
 export const PR_CLOSED = 'its pull request was closed without a merge: hopper:pr-closed is on the issue';
 export const BLOCKED = 'blocked: no pull request was found for it; hopper:blocked is on the issue';
 /** Blocked for want of a pull request (issue #2693): no label says so, and the hopper looks for one, then runs it again. */
@@ -102,6 +104,8 @@ export interface DiscoverScope {
   item?: (key: string) => WorkItem | undefined;
   /** Whether the open pull request of an item in PR open is a part. */
   part?: (key: string) => boolean;
+  /** Whether an item's pull request is in a repository the hopper does not merge in (issue #2752): `hopper:needs-merge`. */
+  needsMerge?: (key: string) => boolean;
   /** Whether a failed item's failure was reported to its issue as failed (`hopper:failed`). */
   failureReported?: (key: string) => boolean;
   /** Whether a failed item's failure was reported as one the hopper fixes itself: no end label, so no reason from one. */
@@ -136,7 +140,7 @@ export function ledgerReason(item: WorkItem | undefined, facts: LabelFacts): { r
   const want = item === undefined ? undefined : labelsFor(item, facts);
   if (item === undefined || want === undefined) return undefined;
   if (item.runAgainAsked !== undefined) return {};
-  if (item.state === 'pr_open') return { reason: facts.part ? PARTLY_DONE : PR_READY };
+  if (item.state === 'pr_open') return { reason: facts.needsMerge ? NEEDS_MERGE : facts.part ? PARTLY_DONE : PR_READY };
   if (item.state === 'failed') return want.add === LABEL_DONE ? { reason: DONE_OPEN } : facts.failureReported || facts.failureReportWaits ? { reason: FAILED } : {};
   if (item.state === 'needs_you' && item.waitingOn === HANDOFF_WAIT) return { reason: FAILED };
   // Done by its end, its report found no pull request (issue #2693): no label, and it keeps out as done, not taken again.
@@ -155,6 +159,7 @@ export function labelReason(i: Pick<GitHubIssue, 'labels'>, name: string | null,
   if (ledger) return ledger.reason ?? otherReason(i, name);
   if (i.labels.includes(LABEL_DONE)) return DONE_OPEN;
   if (i.labels.includes(LABEL_PR_READY)) return PR_READY;
+  if (i.labels.includes(LABEL_NEEDS_MERGE)) return NEEDS_MERGE;
   if (i.labels.includes(LABEL_PARTLY_DONE)) return PARTLY_DONE;
   if (i.labels.includes(LABEL_PR_CLOSED)) return PR_CLOSED;
   if (i.labels.includes(LABEL_BLOCKED)) return BLOCKED;
@@ -222,7 +227,7 @@ function claimVerdict(i: GitHubIssue, scope: DiscoverScope, otherUser: boolean):
 }
 
 /** The not-taken group of a reason (issue #798); a request card's is set where its origin is judged (source.ts). */
-const GROUP_OF: Record<string, NotTakenGroup> = { [NOT_ASSIGNED]: 'not-assigned', [BACKBURNER]: 'backburner', [PR_READY]: 'pr-waiting', [PARTLY_DONE]: 'partly-done' };
+const GROUP_OF: Record<string, NotTakenGroup> = { [NOT_ASSIGNED]: 'not-assigned', [BACKBURNER]: 'backburner', [PR_READY]: 'pr-waiting', [NEEDS_MERGE]: 'pr-waiting', [PARTLY_DONE]: 'partly-done' };
 export const groupOf = (reason: string): NotTakenGroup => GROUP_OF[reason] ?? 'other';
 
 /** What a person can do about an issue its labels keep out: take it off the backburner, or Won't do on a blocked one (issue #1891). */
@@ -240,7 +245,7 @@ export async function discoverIssues(api: GitHubApi, config: DiscoverConfig, sco
   const reasons = new Map<string, { reason: string; action?: IntakeOutcome['action'] }>();
   const candidates: GitHubIssue[] = [];
   for (const i of issues) {
-    const ledger = scope.edited?.has(i.url) ? {} : ledgerReason(scope.item?.(i.url), { part: scope.part?.(i.url) ?? false, failureReported: scope.failureReported?.(i.url) ?? false, fixingReported: scope.fixingReported?.(i.url) ?? false, failureReportWaits: scope.failureReportWaits?.(i.url) ?? false, partsLeft: scope.partsLeft?.(i.url) ?? false, lastPartMerged: scope.lastPartMerged?.(i.url) ?? false, dropReported: scope.dropReported?.(i.url), doneReported: scope.doneReported?.(i.url) });
+    const ledger = scope.edited?.has(i.url) ? {} : ledgerReason(scope.item?.(i.url), { part: scope.part?.(i.url) ?? false, needsMerge: scope.needsMerge?.(i.url) ?? false, failureReported: scope.failureReported?.(i.url) ?? false, fixingReported: scope.fixingReported?.(i.url) ?? false, failureReportWaits: scope.failureReportWaits?.(i.url) ?? false, partsLeft: scope.partsLeft?.(i.url) ?? false, lastPartMerged: scope.lastPartMerged?.(i.url) ?? false, dropReported: scope.dropReported?.(i.url), doneReported: scope.doneReported?.(i.url) });
     const byLabel = labelReason(i, config.hopperName, ledger);
     if (byLabel) reasons.set(i.url, { reason: byLabel, ...(LABEL_ACTION[byLabel] ? { action: LABEL_ACTION[byLabel] } : {}) });
     else if (!isAssignedTo(i, scope.assignee)) reasons.set(i.url, { reason: NOT_ASSIGNED, action: 'assign' });

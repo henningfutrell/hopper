@@ -57,6 +57,12 @@ export function yoloModeFor(s: YoloModeSettings, repo: string, jobRepos: readonl
 }
 
 /**
+ * Whether the hopper merges nothing in `repo` (issue #2752): one it does not work on (issue #1806) that yolo mode does not merge
+ * in. A pull request there waits on a person's merge there: `needs merge`, `hopper:needs-merge`.
+ */
+export const needsMergeIn = (s: YoloModeSettings, repo: string, jobRepos: readonly string[]): boolean => outside(repo, jobRepos) && !yoloModeFor(s, repo, jobRepos);
+
+/**
  * The change rule the hopper merges a pull request of `repo` by (issue #1076): the user's. On a repository the hopper does
  * not work on that a person did not name on (issue #1806), every kind's gate is `yolo`: nothing is merged with no person.
  */

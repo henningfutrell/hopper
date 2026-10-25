@@ -24,8 +24,8 @@ describe('no pull request found: no hopper:blocked (issue #2693)', () => {
   });
 
   it('the reconciler\'s block for want of a pull request takes PR open\'s labels off and puts none on', () => {
-    expect(blockLabels('pr_open', 'no_pr')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done'], add: [] });
-    expect(blockLabels('pr_open', 'stale')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done'], add: ['hopper:blocked'] });
+    expect(blockLabels('pr_open', 'no_pr')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done', 'hopper:needs-merge'], add: [] });
+    expect(blockLabels('pr_open', 'stale')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done', 'hopper:needs-merge'], add: ['hopper:blocked'] });
   });
 
   it('Intake says the hopper looks for its pull request, then runs it again; a done item found with none keeps out as done', () => {

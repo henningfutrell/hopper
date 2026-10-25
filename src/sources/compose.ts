@@ -51,6 +51,8 @@ export interface GitHubSourceDeps {
   trust: IntakeTrust;
   /** The user's yolo mode for a repository (issue #579); absent: off. */
   yoloMode?: (repo: string) => boolean;
+  /** Whether the hopper merges nothing in a repository (issue #2752); absent: never. */
+  needsMerge?: (repo: string) => boolean;
   /** A repository's landing branch (issue #1143); absent or undefined: no pull request is moved. */
   landingBranch?: (repo: string) => string | undefined;
   /** The change rule of a repository (issue #1076); absent: the built-in rule. */
@@ -114,7 +116,7 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
         source: createGitHubSource({
           name: o.name, kind, whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
-          ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), ...(o.openedPullRequests ? { openedPullRequests: o.openedPullRequests } : {}),
+          ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.needsMerge ? { needsMerge: o.needsMerge } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), ...(o.openedPullRequests ? { openedPullRequests: o.openedPullRequests } : {}),
           ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o), connected: () => accounts.account(provider) !== undefined,
         }),
       };
