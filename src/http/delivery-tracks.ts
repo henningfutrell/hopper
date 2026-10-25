@@ -6,6 +6,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { DeliveryTracksView, DeploymentsView } from '../domain/kept-tracks.ts';
 import { KEPT_TRACKS_EVERY_MS } from '../engine/kept-tracks.ts';
+import { withActs } from '../users/delivery-holds.ts';
 import { parseWith } from './errors.ts';
 import type { Operation } from './openapi-operation.ts';
 import type { TenantParts } from './tenants.ts';
@@ -19,14 +20,15 @@ export const deploymentQuery = z.strictObject({
 });
 
 export const DELIVERY_TRACK_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/delivery-tracks', tag: 'Jobs', summary: 'Each job\'s kept delivery track: every step, where it is and what it waits on', description: `The kept delivery tracks (issue #2775). Every ${KEPT_TRACKS_EVERY_MS / 1000} seconds the kept-track pass folds the new events into each job's track, from its \`job.queued\` on: \`steps\`, every delivery step it started, with its end once it ended; \`current\`, the step it is in, \`since\` when, its \`blocker\` and \`waitingOn\` in plain words — a change merged on the landing branch but not promoted is in \`landing_checks\`, not done —; \`state\` \`open\` until it closes with its one \`deployment\` record (\`closedAt\`). A closed track is final. Filters: \`job\`, \`repo\` (\`owner/name\`), \`state\`, \`limit\` (default 1000); newest first. 400: a bad query.`, query: deliveryTrackQuery, returns: '`DeliveryTracksView` `{ tracks: KeptTrack[] }`', errors: [400] },
+  { method: 'get', path: '/api/delivery-tracks', tag: 'Jobs', summary: 'Each job\'s kept delivery track: every step, where it is and what it waits on', description: `The kept delivery tracks (issue #2775). Every ${KEPT_TRACKS_EVERY_MS / 1000} seconds the kept-track pass folds the new events into each job's track, from its \`job.queued\` on: \`steps\`, every delivery step it started, with its end once it ended; \`current\`, the step it is in, \`since\` when, its \`blocker\` and \`waitingOn\` in plain words — a change merged on the landing branch but not promoted is in \`landing_checks\`, not done —; \`state\` \`open\` until it closes with its one \`deployment\` record (\`closedAt\`). A closed track is final. \`interventions\`: each person's act on its change, and \`hold\`, its delivery hold; \`acts\`: the acts its step allows now (\`hold\`, \`take_ownership\`, \`release\`, \`park\`, \`pick_up\`, \`run_again\`, \`expedite\`). Filters: \`job\`, \`repo\` (\`owner/name\`), \`state\`, \`limit\` (default 1000); newest first. 400: a bad query.`, query: deliveryTrackQuery, returns: '`DeliveryTracksView` `{ tracks: KeptTrack[] }`', errors: [400] },
   { method: 'get', path: '/api/deployments', tag: 'Jobs', summary: 'The deployment records: one per job whose kept track closed', description: 'The deployment records (issue #2775): each job\'s one record, made when its kept delivery track closed. `kind` `deploy`: its change was delivered — `artifact` (its pull request), `target` (`production`), `expected` (`delivered`) and `observed`, each delivery step it went through. `kind` `none`: no deployment expected — `source` (its issue, else its source\'s name) and `outcome` (`status`: the job\'s end, `pull_request_closed`, or `marked` by a person, with `by` and `note`; `report`: `research` or `proposal`). Filters: `job`, `repo`, `target`, `kind`, `limit` (default 1000); newest first. 400: a bad query.', query: deploymentQuery, returns: '`DeploymentsView` `{ deployments: DeploymentRecord[] }`', errors: [400] },
 ];
 
 export function deliveryTrackRoutes(app: FastifyInstance, o: { tenant: (req: FastifyRequest) => TenantParts }): void {
   app.get('/api/delivery-tracks', async (req): Promise<DeliveryTracksView> => {
     const q = parseWith(deliveryTrackQuery, req.query);
-    return { tracks: o.tenant(req).store.keptTracks.list(q) };
+    const { store } = o.tenant(req);
+    return { tracks: withActs(store, store.keptTracks.list(q)) };
   });
   app.get('/api/deployments', async (req): Promise<DeploymentsView> => {
     const q = parseWith(deploymentQuery, req.query);

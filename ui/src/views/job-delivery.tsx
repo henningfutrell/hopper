@@ -4,7 +4,9 @@
 // source and outcome. Then every step it started and ended. Until its deployment completes a person flips its deployment
 // expectation here (POST /ui/api/delivery-tracks/no-deploy|deploy), and each flip is listed; a delivered record is final.
 // Each text edit of its item is listed too: when, at which step, and who edited it (part 3). A delivered record names the
-// merge commit of the batch run that landed it, when the hopper knows it (part 4).
+// merge commit of the batch run that landed it, when the hopper knows it (part 4). The acts its step allows (part 8): Hold
+// and Take ownership put a delivery hold on the change (POST /ui/api/delivery-tracks/hold), Release lets it go on or hands it
+// back (POST /ui/api/delivery-tracks/release); its hold and each person's act on its change are listed.
 import { Truck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -60,6 +62,35 @@ function Flips({ track, onFlipped }: { track: KeptTrack; onFlipped: (t: KeptTrac
   );
 }
 
+/** The hold acts the track's step allows: Hold, Take ownership, Release. The other acts are the job page's own buttons. */
+function HoldActs({ track, onChanged }: { track: KeptTrack; onChanged: (t: KeptTrack) => void }) {
+  const [busy, setBusy] = useState(false);
+  const acts = track.acts ?? [];
+  const act = async (path: 'hold' | 'release', body: Record<string, string>, done: string) => {
+    setBusy(true);
+    try {
+      onChanged(await post<KeptTrack>(`/ui/api/delivery-tracks/${path}`, { job: track.jobId, ...body }));
+      toast.success(done);
+    } catch (e) {
+      if (e instanceof SessionRejected) useHopper.setState({ authed: false, user: null });
+      toast.error(e instanceof RoleRefused ? 'Only an operator holds or releases a job\'s change' : (e as Error).message);
+    }
+    setBusy(false);
+  };
+  if (!acts.some((a) => a === 'hold' || a === 'take_ownership' || a === 'release')) return null;
+  return (
+    <div className="flex gap-2 pt-1">
+      {acts.includes('hold') && <Button data-slot="job-delivery-hold" size="sm" variant="outline" disabled={busy} onClick={() => void act('hold', {}, 'Held: the hopper does not merge or promote it')}>Hold</Button>}
+      {acts.includes('take_ownership') && <Button data-slot="job-delivery-take-ownership" size="sm" variant="outline" disabled={busy} onClick={() => void act('hold', { owner: 'person' }, 'You own this change until you hand it back')}>Take ownership</Button>}
+      {acts.includes('release') && <Button data-slot="job-delivery-release" size="sm" variant="outline" disabled={busy} onClick={() => void act('release', {}, 'Released: the hopper goes on with it')}>{track.hold?.owner === 'person' ? 'Hand back' : 'Release'}</Button>}
+    </div>
+  );
+}
+
+const ACTS: Record<string, string> = {
+  park: 'Parked', pick_up: 'Picked up', run_again: 'Ran again', merge_now: 'Merged now', expedite: 'Expedite', hold: 'Held', release: 'Released',
+};
+
 export function JobDelivery({ job }: { job: Job }) {
   const [track, setTrack] = useState<KeptTrack | null | undefined>(undefined);
   useEffect(() => {
@@ -78,10 +109,21 @@ export function JobDelivery({ job }: { job: Job }) {
               <div data-slot="job-delivery-waits" className="text-xs text-muted-foreground">Waits on {track.current.waitingOn}</div>
             </>
           ) : track.deployment && <Record d={track.deployment} />}
+          {track.hold && (
+            <div data-slot="job-delivery-hold-state" className="text-xs">
+              {track.hold.owner === 'person' ? `${track.hold.by} owns this change` : `Held by ${track.hold.by}`} at {stepLabel(track.hold.step)} since <span className="num">{track.hold.at}</span>{track.hold.reason ? ` — ${track.hold.reason}` : ''}
+            </div>
+          )}
+          <HoldActs track={track} onChanged={setTrack} />
           <Flips track={track} onFlipped={setTrack} />
           {track.expectations?.map((x) => (
             <div key={`${x.at}-${x.expect}`} data-slot="job-delivery-expectation" className="text-xs text-muted-foreground">
               {x.expect === 'deploy' ? 'Expect a deployment' : 'No deploy'}, by {x.by} at <span className="num">{x.at}</span>{x.note ? ` — ${x.note}` : ''}
+            </div>
+          ))}
+          {track.interventions?.map((x) => (
+            <div key={x.seq} data-slot="job-delivery-intervention" className="text-xs text-muted-foreground">
+              {x.act === 'hold' && x.owner === 'person' ? 'Ownership taken' : x.act === 'expedite' ? `Expedite ${x.expedite ? 'on' : 'off'}` : ACTS[x.act] ?? x.act}, by {x.by} at <span className="num">{x.at}</span>, in {stepLabel(x.step)}{x.reason ? ` — ${x.reason}` : ''}
             </div>
           ))}
           {track.textEdits?.map((x) => (
