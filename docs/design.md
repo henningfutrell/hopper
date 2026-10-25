@@ -25884,6 +25884,33 @@ Tests: `test/sources/pull-request-list.test.ts` ("ready in a repository the hopp
 `test/ui/after-done.test.ts` ("a pull request in a repository the hopper does not merge in"),
 `test/ui/pull-requests-view.test.ts` (the card's words).
 
+## A ready companion pull request is merged (issue #2752 part 3, 2026-10-24)
+
+**The problem.** Part 1 made a pull request a job opened in another repository a companion, and rebased it. Nothing merged
+it: a companion that was ready, in a repository whose merge gate lets the hopper merge, stayed open until a person merged it.
+
+**The change.** Each read of a companion (`readCompanions`, GitHub's half `src/sources/github/companions.ts`) that finds it
+open with no merge conflicts asks the same merge as a followed pull request (`mergeWhenReady`, `src/sources/github/follow.ts`):
+its change kind, its own repository's merge gate (yolo mode for that repository, change kinds; on a repository the hopper
+does not work on, only when a person named it on, issue #1806), ready (not a draft, checks passed, or none within the grace
+window), the done criteria of the job that holds it (`mergeHold`), then the merge gate (issue #939). Merged, the read says
+so (`byHopper`), the companion is marked `ended`, and `job.companion_merged` records it on the holder. A merge GitHub refuses
+is logged, and the companion stays open; a read or merge that throws is asked again at the next round.
+
+**Decisions.**
+- **The same gate as a followed pull request.** No new setting: the companion's own repository's yolo mode and change rule
+  decide.
+- **No merge marker** (issue #1588). After a stop between the merge call and the record, the next read sees the companion
+  merged and marks it `ended`, with no `job.companion_merged`. The merge on GitHub is the record that counts.
+- **No housekeeping** on a companion (no move to the landing branch, no close as superseded): that stays with followed and
+  stray pull requests.
+
+**Left for later parts of issue #2752.** The issue label for a pull request that needs a merge in another repository. A
+companion of an item whose work item is done or whose issue is closed is not read (part 1), so it is not merged either.
+
+Tests: `test/integration/companion-pull-requests.test.ts` ("its ready second pull request in another repository is merged
+there …", "with yolo mode not on for that repository, it is not merged").
+
 ## A job pushes to its own repository outside the job repositories (issue #1131, 2026-10-14)
 
 **The problem.** A tend job's `git push --force-with-lease` to its own pull request's branch was refused: "<repo> is not

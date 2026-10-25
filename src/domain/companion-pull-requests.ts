@@ -11,15 +11,20 @@ import type { Job } from './types.ts';
 /** What the last read of a companion pull request saw, kept on the item's newest job (`companions`, by URL). */
 export interface CompanionSeen { conflicting: boolean; base?: string; headRef?: string; ended?: true }
 
-/** A read of a companion pull request: its state, merge conflicts, base and head branch. */
-export interface CompanionRead { url: string; state: 'open' | 'merged' | 'closed'; conflicting: boolean; base?: string; headRef?: string }
+/**
+ * A read of a companion pull request: its state, merge conflicts, base and head branch. `byHopper`: the hopper merged it at
+ * this read (issue #2752 part 3).
+ */
+export interface CompanionRead { url: string; state: 'open' | 'merged' | 'closed'; conflicting: boolean; base?: string; headRef?: string; byHopper?: true }
 
 export interface ReadsCompanions {
   /**
    * Read each of `pulls` (issue #1143 reopened): its state, its merge conflicts with its base, and its branches. One the
-   * source cannot read now is left out, and asked again at the next round. Absent: no companion is read.
+   * source cannot read now is left out, and asked again at the next round. One open and ready is merged, under its own
+   * repository's merge gate (yolo mode, change kinds) and the done criteria of `job`, the job that holds it, as a followed
+   * pull request is (issue #2752 part 3). Absent: no companion is read.
    */
-  readCompanions?(pulls: { repo: string; number: number }[]): Promise<CompanionRead[]>;
+  readCompanions?(pulls: { repo: string; number: number; job: Job }[]): Promise<CompanionRead[]>;
 }
 
 /** A companion pull request a rebase is due for: its URL, base and head branch. */

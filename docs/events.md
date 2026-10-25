@@ -6416,6 +6416,20 @@ Version 1 (`docs/schemas/job.pull_request_base_merged.v1.json`). A PR waiting jo
 }
 ```
 
+## `job.companion_merged`
+
+Version 1 (`docs/schemas/job.companion_merged.v1.json`). A **companion pull request** of the job (a pull request a job of its item opened through the hopper, in any GitHub repository, that the job does not follow) was open, ready and in a repository whose merge gate lets the hopper merge it (yolo mode on for that repository, or its change kind merged with no person), and the job's done criteria were met: the hopper merged it through the merge gate, as a followed pull request (issue #2752 part 3). `pullRequest`: the companion. It ends the companion only: the item and the job's followed pull request are as they were.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/app/pull/7"
+}
+```
+
 ## `job.pull_request_retargeted`
 
 Version 1 (`docs/schemas/job.pull_request_retargeted.v1.json`). A followed job's open pull request had a base branch that is not its repository's landing branch (its landing batch setting, never GitHub's default branch) and is no open pull request's head: the hopper changed its base to the landing branch (issue #1143), with no job, and said so in one comment on it. `from`: the base before; `to`: the landing branch. `stray` (issue #1143 part 4): no job followed it — a job named it, and no job of its item worked on it.

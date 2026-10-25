@@ -305,6 +305,7 @@
         "job.checks_rerun_asked",
         "job.pull_request_tended",
         "job.pull_request_base_merged",
+        "job.companion_merged",
         "job.pull_request_retargeted",
         "job.pull_request_followed",
         "job.pull_request_seen",

@@ -162,7 +162,7 @@ describe('companion pull requests (issue #1143 reopened)', () => {
     const app = await boot(gh);
     const { job, companion } = await readyCompanion(app, gh);
     await app.sync();
-    await waitFor(async () => (await app.job(job.id)).sourceState?.source?.companions?.[companion] !== undefined, { what: 'the companion is read' });
+    await waitFor(async () => ((await app.job(job.id)).sourceState?.source?.companions as Record<string, unknown> | undefined)?.[companion] !== undefined, { what: 'the companion is read' });
     await app.sync();
     expect(merges(gh)).toEqual([]);
     expect(await app.events('types=job.companion_merged')).toEqual([]);
