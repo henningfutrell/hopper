@@ -59,6 +59,20 @@ describe('Grok Bot routine: intake stopped', () => {
     }));
   });
 
+  it('posts connected_account.new_repositories_asked (issue #2795): a new repository waits for a person in Sources', async () => {
+    const r = await receiver();
+    const listeners: ((e: DomainEvent) => void)[] = [];
+    const n = createGrokBotNotifier({ name: 'grok-bot', routine: () => ({ url: r.url, key: 'k' }), logger: { info: () => undefined, warn: () => undefined }, clock: { now: () => new Date() }, baseMs: 10 });
+    n.start({ subscribe: (l) => { listeners.push(l); return () => undefined; }, job: () => undefined, question: () => undefined, waitingOnHuman: () => [], answerUrl: () => '' });
+    for (const l of listeners) {
+      l(event('connected_account.new_repositories_accepted', { provider: 'github', account: 'octo-user', repositories: ['octocat/api'] }));
+      l(event('connected_account.new_repositories_asked', { provider: 'github', account: 'octo-user', repositories: ['octocat/web'] }));
+    }
+    await waitFor(() => r.hits.length === 1, { what: 'one post' });
+    await n.stop();
+    expect(r.hits).toEqual([expect.objectContaining({ source: 'hopper', kind: 'connected_account.new_repositories_asked', provider: 'github', account: 'octo-user', repositories: ['octocat/web'] })]);
+  });
+
   it('posts infra.out_of_band_recorded (issue #871): an out-of-band infrastructure change is never silent', async () => {
     const r = await receiver();
     const listeners: ((e: DomainEvent) => void)[] = [];

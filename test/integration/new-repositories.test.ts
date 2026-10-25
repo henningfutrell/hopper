@@ -4,8 +4,9 @@
 // Feature: a repository the connected account reaches anew
 //   Scenario: by default it waits as a new-repository ask in Sources; Dismiss drops the ask, and it is not asked again
 //   Scenario: with the owner's mode `accept`, it becomes a job repository at once, and its issues become jobs
+//   Scenario: each ask and each add by the policy is an event, so the notifiers tell the person (part 2)
 import { afterEach, describe, expect, it } from 'vitest';
-import type { ConnectedAccountStatus, Job } from '../../src/domain/types.ts';
+import type { ConnectedAccountStatus, DomainEvent, Job } from '../../src/domain/types.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 import { waitFor } from '../support/wait.ts';
@@ -48,20 +49,24 @@ async function setup() {
 }
 
 const jobs = async (app: TestApp) => (await app.api<{ jobs: Job[] }>('GET', '/api/jobs?limit=1000')).body.jobs;
+const newRepositoryEvents = async (app: TestApp) => (await app.api<{ events: DomainEvent[] }>('GET', '/api/events?limit=1000')).body.events
+  .filter((e) => e.type.startsWith('connected_account.new_repositories_')).map((e) => ({ type: e.type, data: e.data }));
 
 describe('new repositories', () => {
   it('asks by default: the ask waits in Sources until a person adds or dismisses it', async () => {
-    const { github, post, read } = await setup();
+    const { app, github, post, read } = await setup();
     expect((await read()).newRepositories).toEqual({ policy: { mode: 'ask', owners: {} }, asks: [] });
 
     github.issues.push({ repo: 'acme/web', number: 2, title: 'New work', body: SLEEP, author: 'ada', labels: ['hopper'] });
     const asked = await read();
     expect(asked.jobRepositories).toEqual(['acme/api']);
     expect(asked.newRepositories?.asks.map((a) => a.repository)).toEqual(['acme/web']);
+    expect(await newRepositoryEvents(app)).toEqual([{ type: 'connected_account.new_repositories_asked', data: { provider: 'github', account: 'ada', repositories: ['acme/web'] } }]);
 
     const dismissed = await post({ action: 'new-repositories', dismiss: ['acme/web'] });
     expect(dismissed.newRepositories?.asks).toEqual([]);
     expect((await read()).newRepositories?.asks).toEqual([]);
+    expect(await newRepositoryEvents(app)).toHaveLength(1);
   });
 
   it('accept for an owner adds its new repository to the job repositories, and its issues become jobs', async () => {
@@ -74,6 +79,10 @@ describe('new repositories', () => {
     const after = await read();
     expect(after.jobRepositories).toEqual(['acme/api', 'acme/web']);
     expect(after.newRepositories?.asks.map((a) => a.repository)).toEqual(['octo/tools']);
+    expect(await newRepositoryEvents(app)).toEqual([
+      { type: 'connected_account.new_repositories_asked', data: { provider: 'github', account: 'ada', repositories: ['octo/tools'] } },
+      { type: 'connected_account.new_repositories_accepted', data: { provider: 'github', account: 'ada', repositories: ['acme/web'] } },
+    ]);
     await waitFor(async () => (await jobs(app)).find((j) => j.source?.repo === 'acme/web'), { what: 'the new repository\'s issue to become a job' });
   });
 
