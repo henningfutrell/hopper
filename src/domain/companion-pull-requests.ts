@@ -1,10 +1,10 @@
 // Companion pull requests (issue #1143 reopened, design.md "Companion pull requests"): an open pull request a job of an
-// item opened through the hopper (`pr.create`), in the item's own repository, that is not the one the item's newest job
-// follows. A job that changes two repositories opens one in each, and the hopper follows only one: before, the other got
+// item opened through the hopper (`pr.create`), in the item's own repository or in any other GitHub repository (issue #2752:
+// a workflow issue's change in an app repository), that is not the one the item's newest job follows. A job that changes two repositories opens one in each, and the hopper follows only one: before, the other got
 // merge conflicts with its base and nothing tended it, as no job followed it, and the census skipped it, as the ledger holds
 // it. Now each round of every follow reads it, and one with merge conflicts is rebased as a followed one is: the base
 // merge first, else a rebase tend job of the item. Pure: the source reads each one.
-import { pullRequestRepo, failedTend, followsWhenEnded, tendStep, type PullRequestSeen } from './pull-requests.ts';
+import { failedTend, followsWhenEnded, tendStep, type PullRequestSeen } from './pull-requests.ts';
 import { handedToFollowOns } from './proposal-paths.ts';
 import type { Job } from './types.ts';
 
@@ -38,10 +38,13 @@ export function holdsCompanions(job: Job, get: (id: string) => Job | undefined):
   return followsWhenEnded(job) && f !== 'tended' && f !== 'reworked' && !handedToFollowOns(job) && !failedTend(job, get);
 }
 
+/** A GitHub pull request's URL: a GitLab merge request is no companion. */
+const GITHUB_PULL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+$/i;
+
 /**
  * The companion pull requests of each item of `jobs` whose newest job holds them (`holdsCompanions`) and that `open` says
- * is not over: of the pull requests its jobs opened through the hopper (`opened`, asked only for those items), the ones of
- * its own repository, but the one that job follows and the ones a read saw end.
+ * is not over: of the GitHub pull requests its jobs opened through the hopper (`opened`, asked only for those items), in
+ * any repository (issue #2752), but the one that job follows and the ones a read saw end.
  */
 export function companionsOf(jobs: readonly Job[], opened: (jobId: string) => readonly string[], get: (id: string) => Job | undefined, open: (key: string) => boolean): { holder: Job; companions: string[] }[] {
   const items = new Map<string, Job[]>();
@@ -52,8 +55,7 @@ export function companionsOf(jobs: readonly Job[], opened: (jobId: string) => re
     if (!holdsCompanions(holder, get) || !open(key)) continue;
     const s = sourceOf(holder);
     const followed = s?.follow === 'open' ? s.pullRequest?.toLowerCase() : undefined;
-    const repo = holder.source!.repo!.toLowerCase();
-    const urls = new Set(js.flatMap((j) => opened(j.id)).filter((u) => pullRequestRepo(u, '').toLowerCase() === repo && u.toLowerCase() !== followed && !s?.companions?.[u]?.ended));
+    const urls = new Set(js.flatMap((j) => opened(j.id)).filter((u) => GITHUB_PULL.test(u) && u.toLowerCase() !== followed && !s?.companions?.[u]?.ended));
     if (urls.size > 0) out.push({ holder, companions: [...urls].sort() });
   }
   return out;

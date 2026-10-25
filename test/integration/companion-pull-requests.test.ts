@@ -11,6 +11,8 @@ import { connectGitHub } from '../support/github-account.ts';
 import { waitFor } from '../support/wait.ts';
 
 const REPO = 'owner/hopper-sandbox';
+/** A repository the hopper does not work on (issue #2752): no job source lists it. */
+const OTHER = 'owner/elsewhere';
 let a: TestApp | undefined;
 let cleanup: (() => void) | undefined;
 
@@ -78,5 +80,41 @@ describe('companion pull requests (issue #1143 reopened)', () => {
     await app.sync();
     await app.sync();
     expect(await jobsFor(app, issue.url)).toHaveLength(2);
+  });
+
+  it('its second pull request in another repository that gets merge conflicts is rebased there too (issue #2752)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    let main: string | undefined;
+    let companion: string | undefined;
+    app.scripted.ships((j) => {
+      if (main !== undefined) {
+        gh.pushToPullRequest(companion!, new Date().toISOString());
+        return;
+      }
+      const createdAt = new Date().toISOString();
+      main = gh.openPullRequest(REPO, j.source!.number!, { createdAt, base: 'main' }).url;
+      companion = gh.openUnlinkedPullRequest(OTHER, { createdAt, headRef: 'issue-1-app-change', base: 'main' }).url;
+      for (const [i, [repo, url]] of [[REPO, main], [OTHER, companion]].entries()) {
+        app.user().store.events.append({ type: 'github_proxy.done', jobId: j.id, data: { requestId: `r${i}`, op: 'pr.create', repo, number: Number(url!.split('/').at(-1)), url } });
+      }
+    });
+    await app.sync();
+    const [job] = await jobsFor(app, issue.url);
+    await app.waitForStatus(job!.id, 'finished');
+    await waitFor(async () => (await app.job(job!.id)).sourceState?.source?.pullRequest === main, { what: 'the job follows its pull request in its own repository' });
+    await app.sync();
+    expect(await jobsFor(app, issue.url)).toHaveLength(1);
+
+    gh.setConflicting(companion!, true);
+    await app.sync();
+    const tender = await waitFor(async () => (await jobsFor(app, issue.url))[1], { what: 'a tend job' });
+    expect(tender.rerunOf).toBe(job!.id);
+    await app.waitForStatus(tender.id, 'finished');
+    expect(String(app.scripted.payloads.at(-1)!.prompt)).toContain(tendBrief(companion!, 'rebase'));
+    expect((await app.events('types=job.pull_request_tended')).map((e) => [e.jobId, e.data])).toEqual([[job!.id, { pullRequest: companion, step: 'rebase', nextJobId: tender.id }]]);
+    // As on a followed pull request in another repository: the tend note goes only on one of the issue's repository.
+    expect(gh.pullRequestComments(companion!)).toEqual([]);
   });
 });

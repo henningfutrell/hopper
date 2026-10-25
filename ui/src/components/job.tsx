@@ -1,5 +1,6 @@
 // How a job names itself everywhere: its goal, the issue it came from, its phase when it is not doing the work
-// (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579) —, its issue's
+// (issue #548), after done where its pull request is — partly done, ready, merged, closed (issue #579), or waiting on a
+// person's merge in a repository the hopper does not merge in (issue #2752) —, its issue's
 // parts done and its lineage, parent and children (issue #729), its artifacts
 // (issue #624), ticking times, and the flags a running job carries: unassigned (issue #387), its credential files not
 // rewritten with its connection's new token (issue #647), held while its machine's link is down (issue #752).
@@ -13,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { ArtifactChips } from './artifacts';
 import { LineageChips } from './lineage';
 import { HighTag, useIsHigh } from './priority';
+import { useYoloMode } from '@/store/polled';
 
 const GITHUB = 'https://github.com/';
 
@@ -32,7 +34,7 @@ export function JobTitle({ job, className, wrap = false }: { job: Job; className
   const ref = issueRef(job);
   const routed = routedByLabel(job);
   const high = useIsHigh(job);
-  const after = afterDone(job);
+  const after = afterDone(job, useYoloMode());
   const parts = partsOf(job);
   return (
     <div className={cn('min-w-0', className)} title={`${goalOf(job)}\njob ${job.id}`}>

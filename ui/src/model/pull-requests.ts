@@ -15,13 +15,18 @@ const WAITS_TEXT: Record<MergeWait, string> = {
   'not checked yet': 'not checked yet', draft: 'draft',
   conflicts: 'conflicts with its base branch', 'checks failing': 'checks failed', 'yolo off': 'waiting for a person to merge',
   'person merges': 'waiting for a person to merge: a person merges this kind of change',
+  'needs merge': 'needs merge: the hopper does not merge in this repository',
   'checks pending': 'waiting for checks', 'checks unknown': 'the hopper cannot read its checks', 'checks not started': 'waiting for checks to start', 'merge refused': 'merge refused',
   'merge held': 'ready, waits for another pull request to merge first', ready: 'ready, merging',
 };
 
-/** Why a card waits; checks the hopper cannot read say why (issue #1244): `checks unknown: <the connection lacks …>`. */
-export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base' | 'checksWhy'>): string =>
+/**
+ * Why a card waits; checks the hopper cannot read say why (issue #1244): `checks unknown: <the connection lacks …>`. One in
+ * a repository the hopper does not merge in names it (issue #2752): `needs merge in <repo>`.
+ */
+export const waitsText = (c: Pick<PullRequestCard, 'waits' | 'base' | 'checksWhy'> & Partial<Pick<PullRequestCard, 'repo'>>): string =>
   !c.waits ? '' : c.waits === 'conflicts' && c.base ? `conflicts with ${c.base}`
+    : c.waits === 'needs merge' && c.repo ? `needs merge in ${c.repo}`
     : c.waits === 'checks unknown' && c.checksWhy ? `checks unknown: ${c.checksWhy}` : WAITS_TEXT[c.waits];
 
 /**
@@ -34,7 +39,8 @@ const DOING_TEXT: Partial<Record<MergeWait, string>> = {
   'checks not started': 'the hopper merges it when its checks pass, or when no check starts within 2 minutes of its last push',
   ready: 'the hopper merges it on its next sync', 'merge refused': 'the hopper tries the merge again on each sync',
   'checks unknown': 'nothing: the hopper may not read its checks, so a person merges it',
-  'yolo off': 'nothing: yolo mode is off, so a person merges it', 'person merges': 'nothing: the change rules say a person merges this kind of change', draft: 'nothing: the hopper does not tend a draft, so a person marks it ready',
+  'yolo off': 'nothing: yolo mode is off, so a person merges it',
+  'needs merge': 'nothing: the hopper merges in a repository that is not a job repository only when a person names it on in Settings → Yolo mode, so a person merges it there', 'person merges': 'nothing: the change rules say a person merges this kind of change', draft: 'nothing: the hopper does not tend a draft, so a person marks it ready',
 };
 
 /**
