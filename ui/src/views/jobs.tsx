@@ -4,7 +4,8 @@
 // also its stage's filter) and the filters by stage and by repository. In flight (issue #1113): only the jobs whose work
 // item is in flight, on at #jobs/in-flight — the header badge's link — and off at #jobs.
 // - List (the default, issue #2372): a table, one row per job (job-row.tsx); a click on a row opens its run graph — the
-//   job tree it is in, as Graph draws it — under the row, and a second click folds it.
+//   job tree it is in, as Graph draws it — under the row, and a second click folds it. A job whose kept delivery track is
+//   open (GET /api/delivery-tracks?state=open, read again with the graph; issue #2775) shows its delivery step.
 // - Graph: a section per job tree, named by its root, laid out from it; nodes are jobs, issues and pull
 //   requests, coloured by stage, a job with its task count; edges are typed. What blocks the root is ringed, and the
 //   edges to it are drawn bold. A settled tree starts folded. Select a node to read its details.
@@ -33,10 +34,10 @@ import {
   STAGES, tasksText, type JobsFilter,
 } from '@/model/jobs-view';
 import { ROWS_PER_PAGE } from '@/model/page-prefs';
-import type { DomainEvent, JobGraph, JobGraphEdge, JobGraphNode, JobStage, JobTree } from '@/model/wire';
+import type { DeliveryTracksView, DomainEvent, JobGraph, JobGraphEdge, JobGraphNode, JobStage, JobTree } from '@/model/wire';
 import { useHopper } from '@/store';
 import { Filter, InFlightToggle, StageCounts } from './jobs-filters';
-import { issueOf, JOB_COLUMNS, JobRow, JobTableHead, PullRequest, StageBadge } from './job-row';
+import { type DeliveryPosition, issueOf, JOB_COLUMNS, JobRow, JobTableHead, PullRequest, StageBadge } from './job-row';
 
 const EMPTY: JobGraph = { nodes: [], edges: [], trees: [], stages: {} };
 const MODES = [
@@ -206,6 +207,7 @@ export function Jobs() {
   const events = useHopper((s) => s.events);
   const machines = useHopper((s) => s.machines);
   const [graph, setGraph] = useState<JobGraph | null>(null);
+  const [delivery, setDelivery] = useState<Map<string, DeliveryPosition>>(new Map());
   const [fetched, setFetched] = useState<DomainEvent[]>([]);
   const [picked, setFilter] = useState<JobsFilter>(NO_FILTER);
   const inFlight = useSection() === IN_FLIGHT_SECTION; // the hash's, so the header badge's link turns it on
@@ -221,7 +223,10 @@ export function Jobs() {
   // The graph, read again (debounced) each time the store's jobs change: the store reads the queue after each event.
   useEffect(() => {
     let live = true;
-    const soon = setTimeout(() => { get<JobGraph>('/api/jobs/graph').then((g) => { if (live) setGraph(g); }, () => {}); }, graph ? 150 : 0);
+    const soon = setTimeout(() => {
+      get<JobGraph>('/api/jobs/graph').then((g) => { if (live) setGraph(g); }, () => {});
+      get<DeliveryTracksView>('/api/delivery-tracks?state=open').then((v) => { if (live) setDelivery(new Map((v.tracks ?? []).map((t) => [t.jobId, t.current]))); }, () => {});
+    }, graph ? 150 : 0);
     return () => { live = false; clearTimeout(soon); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- read again on the store's change only, not on its own answer
   }, [held, locked]);
@@ -258,7 +263,7 @@ export function Jobs() {
             <tbody className="divide-y">{rowPage.shown.map((n) => (
               <Fragment key={n.id}>
                 <JobRow node={n} lane={n.laneId ? laneOf(n.laneId) : 'no lane'} last={last.get(n.jobId!)} since={n.stageSince ? elapsed(n.stageSince, minute * 60_000) : undefined}
-                  expanded={expanded === n.jobId} onToggle={onToggle} />
+                  delivery={delivery.get(n.jobId!)} expanded={expanded === n.jobId} onToggle={onToggle} />
                 {expanded === n.jobId && <RunGraph graph={g} node={n} laneOf={laneOf} now={now} />}
               </Fragment>
             ))}</tbody>
