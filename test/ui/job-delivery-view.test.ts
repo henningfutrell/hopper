@@ -2,7 +2,8 @@
 // A job's kept delivery track on its job view (issue #2775), the panel rendered against a fake of GET /api/delivery-tracks:
 // a job in progress shows the step it is in, since when and what it waits on; a completed job shows its deployment record.
 // A person flips the deployment expectation from it (POST /ui/api/delivery-tracks/deploy|no-deploy) until a deployment
-// completes: a delivered record is final and offers no flip; each flip is listed.
+// completes: a delivered record is final and offers no flip; each flip is listed. Each text edit of its item is listed,
+// with when and at which step (issue #2775 part 3).
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -80,6 +81,11 @@ describe('a job\'s delivery on its job view', () => {
     expect(text('job-delivery-waits')).toBe('');
   });
 
+  it('a delivered record with the merge commit of its batch run names the commit, short (part 4)', async () => {
+    await boot([{ ...DELIVERED, deployment: { ...DELIVERED.deployment!, artifact: { pullRequest: PR, commit: '0123456789abcdef0123456789abcdef01234567' } } as KeptTrack['deployment'] }]);
+    expect(text('job-delivery-record')).toContain('commit 0123456789ab');
+  });
+
   it('a research job shows no deployment expected, with its source and outcome', async () => {
     await boot([RESEARCH]);
     expect(text('job-delivery-record')).toContain('No deployment expected');
@@ -112,6 +118,16 @@ describe('a job\'s delivery on its job view', () => {
     expect(listed).toHaveLength(2);
     expect(listed[0]).toContain('deploy');
     expect(listed[1]).toContain('not now');
+  });
+
+  it('lists each text edit of its item: when, and at which step', async () => {
+    const textEdits: KeptTrack['textEdits'] = [{ seq: 9, at: '2026-10-20T08:30:00.000Z', step: 'coding', event: 'item.edit_seen', key: 'k', fromHash: 'a'.repeat(64), toHash: 'b'.repeat(64), editors: ['ed'] }];
+    await boot([{ ...OPEN, textEdits }]);
+    const listed = [...document.querySelectorAll('[data-slot="job-delivery-text-edit"]')].map((e) => e.textContent ?? '');
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toContain('Coding');
+    expect(listed[0]).toContain('2026-10-20T08:30:00.000Z');
+    expect(listed[0]).toContain('ed');
   });
 
   it('says so when the job has no kept track yet', async () => {

@@ -3,6 +3,8 @@
 // waits on; a completed one its deployment record — delivered, with its pull request, or no deployment expected, with its
 // source and outcome. Then every step it started and ended. Until its deployment completes a person flips its deployment
 // expectation here (POST /ui/api/delivery-tracks/no-deploy|deploy), and each flip is listed; a delivered record is final.
+// Each text edit of its item is listed too: when, at which step, and who edited it (part 3). A delivered record names the
+// merge commit of the batch run that landed it, when the hopper knows it (part 4).
 import { Truck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -23,7 +25,7 @@ function Record({ d }: { d: DeploymentRecord }) {
   if (d.kind === 'deploy') {
     return (
       <div data-slot="job-delivery-record">
-        Delivered to {d.target} at <span className="num">{d.at}</span>: <a href={d.artifact.pullRequest} target="_blank" rel="noreferrer" className="underline underline-offset-4">its pull request</a>. This record is final.
+        Delivered to {d.target} at <span className="num">{d.at}</span>: <a href={d.artifact.pullRequest} target="_blank" rel="noreferrer" className="underline underline-offset-4">its pull request</a>{d.artifact.commit ? <>, commit <span className="num">{d.artifact.commit.slice(0, 12)}</span></> : ''}. This record is final.
       </div>
     );
   }
@@ -80,6 +82,11 @@ export function JobDelivery({ job }: { job: Job }) {
           {track.expectations?.map((x) => (
             <div key={`${x.at}-${x.expect}`} data-slot="job-delivery-expectation" className="text-xs text-muted-foreground">
               {x.expect === 'deploy' ? 'Expect a deployment' : 'No deploy'}, by {x.by} at <span className="num">{x.at}</span>{x.note ? ` — ${x.note}` : ''}
+            </div>
+          ))}
+          {track.textEdits?.map((x) => (
+            <div key={x.seq} data-slot="job-delivery-text-edit" className="text-xs text-muted-foreground">
+              Item text edited at <span className="num">{x.at}</span>, in {stepLabel(x.step)}{x.editors.length > 0 ? `, by ${x.editors.join(', ')}` : ''}
             </div>
           ))}
           {track.steps.map((s) => (

@@ -49,7 +49,7 @@ const ALL: Record<EventType, true> = {
   'artifact.created': true, 'artifact.shared': true, 'artifact.share_revoked': true, 'artifact.removed': true, 'artifact.settings_changed': true, 'artifact.posted': true,
   'tldr.written': true, 'tldr.settings_changed': true,
   'artifact.revised': true, 'artifact.revision_pinned': true, 'artifact.revision_removed': true,
-  'item.snapshot_recorded': true, 'item.changed_since_snapshot': true, 'item.original_kept': true, 'item.new_text_accepted': true,
+  'item.snapshot_recorded': true, 'item.changed_since_snapshot': true, 'item.original_kept': true, 'item.new_text_accepted': true, 'item.edit_seen': true,
   'lanes.recommended': true, 'lanes.tuning_changed': true, 'lanes.applied': true, 'lanes.undone': true, 'lanes.dismissed': true,
   'bug_report.filed': true, 'bug_report.failed': true, 'bug_report.kept': true,
   'repo_checks.job_queued': true, 'repo_checks.dismissed': true, 'job.child_issue_filed': true, 'job.sub_issue_linked': true, 'contribution.changed': true, 'shrink_guard.changed': true, 'credential_check.changed': true,

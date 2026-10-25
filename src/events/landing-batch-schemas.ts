@@ -49,7 +49,7 @@ export const LANDING_BATCH_EVENT_SCHEMAS = {
     repo: z.string(), tip: z.string(), batch: z.number().int().optional(), conflict: z.boolean(), reason: z.string(), pullRequest: z.number().int().optional(), url: z.string().optional(),
   }),
   'landing_batch.back_merge_issue_filed': strict({ repo: z.string(), tip: z.string(), issue: z.number().int(), url: z.string() }),
-  'landing_batch.canary_started': strict({ ...canaryAt, hours: z.number().int().min(1) }),
+  'landing_batch.canary_started': strict({ ...canaryAt, hours: z.number().int().min(1), mergeCommits: z.array(z.string()).optional() }),
   'landing_batch.canary_held': strict({ ...canaryAt, reports: z.array(z.number().int()), reason: z.string() }),
   'landing_batch.canary_issue_filed': strict({ repo: z.string(), tip: z.string(), issue: z.number().int(), url: z.string() }),
   'landing_batch.canary_promoted': strict({ ...canaryAt, why: z.string() }),

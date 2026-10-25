@@ -14,6 +14,9 @@
 //   Scenario: a none record flipped to deploy reopens the track; it locks once that deployment completes
 //   Scenario: a completed deployment locks the record, whatever a person said before; a locked track stays as it was
 //   Scenario: the same events folded again change nothing; folded in two halves give the same track
+//   Scenario: an edit of a job's item is a text edit on its track: when, at which step, and the hashes of the change
+//   Scenario: the hopper's own channels: its batch's merge commit on canary is in the test gate, on stable it is delivered
+//   Scenario: a held canary candidate and a later one that carries it too: stable at the later one's promotion
 import { describe, expect, it } from 'vitest';
 import { expectOf, foldTrackEvents, lockedOf, trackOf, type TrackContext, type TrackMarks } from '../../src/domain/kept-tracks.ts';
 import type { PromotionSetSchedule } from '../../src/domain/promotion-sets.ts';
@@ -184,5 +187,72 @@ describe('kept delivery tracks', () => {
     const marks = new Map<string, TrackMarks>();
     foldTrackEvents(marks, [queued('x', '08:00')], new Set(['x']));
     expect(marks.size).toBe(0);
+  });
+
+  it('an edit of a job\'s item is a text edit on its track: when, at which step, and the hashes; folded twice, kept once', () => {
+    const from = 'a'.repeat(64);
+    const to = 'b'.repeat(64);
+    const events = [
+      queued('j', '08:00'),
+      ev('item.changed_since_snapshot', '08:02', { key: 'k', snapshotHash: from, liveHash: to, editors: ['ed'], newComments: 0 }, 'j'),
+      ev('job.started', '08:05', { attempts: 1 }, 'j'),
+      ev('item.edit_seen', '08:30', { key: 'k', fromHash: to, toHash: 'c'.repeat(64), editors: [] }, 'j'),
+    ];
+    const marks = fold(events);
+    expect(foldTrackEvents(marks, events).size).toBe(0);
+    const t = trackOf('j', marks.get('j')!, ctx({ job: { status: 'running' } }));
+    expect(t.textEdits).toEqual([
+      { seq: events[1]!.seq, at: at('08:02'), step: 'queued', event: 'item.changed_since_snapshot', key: 'k', fromHash: from, toHash: to, editors: ['ed'] },
+      { seq: events[3]!.seq, at: at('08:30'), step: 'coding', event: 'item.edit_seen', key: 'k', fromHash: to, toHash: 'c'.repeat(64), editors: [] },
+    ]);
+    // A text edit changes no step and closes nothing.
+    expect(t).toMatchObject({ state: 'open', current: { step: 'coding' } });
+  });
+
+  describe('the hopper\'s own channels (part 4)', () => {
+    const MERGE = 'm'.repeat(40);
+    const TIP1 = '1'.repeat(40);
+    const TIP2 = '2'.repeat(40);
+    const promoted = () => [
+      ev('landing_batch.started', '09:30', { repo: 'octo/shed', pullRequest: 900, merges: [11, 12] }),
+      ev('landing_batch.promoted', '10:30', { repo: 'octo/shed', pullRequest: 900, merge: MERGE }),
+    ];
+    const canary = (hhmm: string, tip: string, mergeCommits: string[]) =>
+      ev('landing_batch.canary_started', hhmm, { repo: 'octo/shed', canary: 'canary', stable: 'stable', tip, hours: 24, mergeCommits });
+    const stable = (hhmm: string, tip: string) =>
+      ev('landing_batch.canary_promoted', hhmm, { repo: 'octo/shed', canary: 'canary', stable: 'stable', tip, why: 'no bug report named it in 24 hours' });
+
+    it('on dev, its batch merge commit is kept; on canary it is in the test gate; on stable it is delivered', () => {
+      const onDev = fold([...merged('j'), ...promoted()]).get('j')!;
+      expect(onDev.commit).toBe(MERGE);
+      const c = fold([...merged('j'), ...promoted(), canary('12:00', TIP1, ['x'.repeat(40), MERGE])]).get('j')!;
+      // Observed hops win over a schedule.
+      const onCanary = trackOf('j', c, ctx({ now: at('13:00'), delivery: { schedule, gates: {} } }));
+      expect(onCanary).toMatchObject({ state: 'open', current: { step: 'test_gate', since: at('12:00') } });
+      expect(onCanary.current.waitingOn).toMatch(/canary window/);
+      expect(onCanary.steps.map((s) => [s.step, s.start, s.end])).toEqual([
+        ['queued', at('08:00'), at('08:05')], ['coding', at('08:05'), at('09:00')], ['pr_checks', at('09:00'), at('09:20')],
+        ['landing', at('09:20'), at('09:20')], ['landing_checks', at('09:20'), at('10:30')], ['promotion_set', at('10:30'), at('12:00')],
+        ['test_gate', at('12:00'), undefined],
+      ]);
+      const s = fold([stable('20:00', TIP1)], new Map([['j', structuredClone(c)]])).get('j')!;
+      const t = trackOf('j', s, ctx({ now: at('21:00') }), onCanary);
+      expect(t).toMatchObject({ state: 'closed', closedAt: at('20:00') });
+      expect(t.deployment).toMatchObject({ kind: 'deploy', at: at('20:00'), artifact: { pullRequest: PR, commit: MERGE }, target: 'production', expected: 'delivered' });
+      expect(t.steps.slice(-2)).toEqual([{ step: 'test_gate', start: at('12:00'), end: at('20:00') }, { step: 'production', start: at('20:00'), end: at('20:00') }]);
+      expect(lockedOf(t)).toBe(true);
+    });
+
+    it('a canary candidate without its merge commit leaves it in the promotion set; a held one, then a later one that carries it', () => {
+      const other = fold([...merged('j'), ...promoted(), canary('11:00', TIP1, ['x'.repeat(40)])]).get('j')!;
+      expect(trackOf('j', other, ctx()).current.step).toBe('promotion_set');
+      const events = [...merged('j'), ...promoted(), canary('12:00', TIP1, [MERGE]), canary('14:00', TIP2, [MERGE, 'y'.repeat(40)]), stable('18:00', TIP2)];
+      const marks = fold(events);
+      expect(marks.get('j')).toMatchObject({ canary: at('12:00'), canaryTips: [TIP1, TIP2], stable: at('18:00') });
+      expect(foldTrackEvents(marks, events).size).toBe(0);
+      expect(trackOf('j', marks.get('j')!, ctx()).deployment).toMatchObject({ kind: 'deploy', at: at('18:00') });
+      // An older candidate's promotion that never carried it moves nothing.
+      expect(fold([...merged('k'), ...promoted(), stable('18:00', TIP1)]).get('k')!.stable).toBeUndefined();
+    });
   });
 });

@@ -11,6 +11,7 @@
 //     When a person approves its trust
 //     Then its stamp is `approved`, and its next sandbox request is approved by the toggle
 //     And the same edit seen again at a sync lowers nothing
+//     And each edit seen is one `item.edit_seen` (issue #2775): the hashes before and after, never the text
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ID, type Job } from '../../src/domain/types.ts';
 import { EDIT_REASON } from '../../src/domain/trust-stamp.ts';
@@ -41,6 +42,7 @@ async function boot(gh: FakeGitHub) {
 }
 
 const stored = (a: TestApp, id: string): Job => a.user(ADMIN_ID).store.jobs.get(id)!;
+const seen = (a: TestApp) => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === 'item.edit_seen');
 const lowered = (a: TestApp) => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === 'job.trust_lowered');
 
 describe('an edit of a started job\'s item (issue #655, part 7)', () => {
@@ -60,6 +62,8 @@ describe('an edit of a started job\'s item (issue #655, part 7)', () => {
     expect(stored(a, job.id).stamp).toMatchObject({ level: 'untrusted', by: 'edit', reasons: expect.arrayContaining([EDIT_REASON]) });
     expect(lowered(a)).toEqual([expect.objectContaining({ jobId: job.id, data: { from: before, to: 'untrusted', reason: EDIT_REASON, by: 'edit' } })]);
     expect(stored(a, job.id).status).toBe('running');
+    expect(seen(a)).toEqual([expect.objectContaining({ jobId: job.id, data: { key: issue.url, fromHash: expect.stringMatching(/^[0-9a-f]{64}$/), toHash: stored(a, job.id).editSeen!.liveHash, editors: ['someone-else'] } })]);
+    expect(seen(a)[0]!.data.fromHash).not.toBe(seen(a)[0]!.data.toHash);
 
     const token = proxyToken(a.user().store.settings.getLinkKey()!.privateKey, a.user().user.id, job.id);
     const skill = await fetch(`${a.url}/job/skill`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ args: [] }) });
@@ -72,6 +76,7 @@ describe('an edit of a started job\'s item (issue #655, part 7)', () => {
     // The same edit seen again lowers nothing.
     await a.sync();
     expect(lowered(a)).toHaveLength(1);
+    expect(seen(a)).toHaveLength(1);
 
     expect((await a.ui(`/ui/api/jobs/${job.id}/approve-trust`, {}, { token: session })).status).toBe(200);
     expect(stored(a, job.id).stamp).toMatchObject({ level: 'approved', by: 'person' });
