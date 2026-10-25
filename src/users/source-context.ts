@@ -7,7 +7,7 @@ import type { JobSourceContext } from '../plugins/sdk.ts';
 import type { UserStore } from '../domain/store.ts';
 import type { SweepLease } from '../domain/leases.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
-import { DEFAULT_YOLO_MODE, isRerunnable, mergeRuleFor, yoloModeFor, type Parts } from '../domain/types.ts';
+import { DEFAULT_YOLO_MODE, isRerunnable, mergeRuleFor, needsMergeIn, yoloModeFor, type Parts } from '../domain/types.ts';
 import { landingBranch } from '../domain/landing-batches.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 import { requestsWaitingOf } from '../domain/work-items.ts';
@@ -137,6 +137,8 @@ function mergedFollowOf(store: UserStore, key: string): FollowState | undefined 
  */
 export const pullRequestSettings = (store: UserStore) => ({
   yoloMode: (repo: string): boolean => yoloModeFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(store)),
+  // The hopper merges nothing there (issue #2752): its issue gets `hopper:needs-merge`.
+  needsMerge: (repo: string): boolean => needsMergeIn(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(store)),
   // The landing batch setting's, never GitHub's default branch (issues #1142, #1143).
   landingBranch: (repo: string): string | undefined => { const cfg = store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
   changeRule: (repo: string) => mergeRuleFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(store)),

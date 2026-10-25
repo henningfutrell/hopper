@@ -203,6 +203,8 @@ export interface JobSourceContext {
   intakeTrust: IntakeTrust;
   /** Whether a job on this repository (`owner/repo`) may merge its own pull request: the user's yolo mode (issue #579), read at each call. */
   yoloMode(repo: string): boolean;
+  /** Whether the hopper merges nothing in this repository (issue #2752): none of the job repositories, and yolo mode not named on for it. Absent: never. */
+  needsMerge?(repo: string): boolean;
   /** A repository's landing branch (issue #1143): its landing batch setting (issue #1142), read at each call; undefined: no landing batches. */
   landingBranch?(repo: string): string | undefined;
   /** The change rule of this repository (issue #1076): what kind of change a pull request is, and each kind's merge gate. Read at each call. */

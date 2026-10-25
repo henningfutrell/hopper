@@ -18,7 +18,7 @@ import type { Job } from './types.ts';
 import { DIRECT_SOURCE } from './direct-jobs.ts';
 import { followsWhenEnded, jobPullRequestRepo, MAX_TEND_RETRIES, MAX_TENDS, noChecksSettled, readyToMerge, rebasesWhenBaseMoves, TEND_ENDS, tendRetryAt, tendsInRow, type PullRequestSeen, type Tended, type TendStep } from './pull-requests.ts';
 import type { Holds, QueueHead } from './tending-queue.ts';
-import { mergeRuleFor, yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
+import { mergeRuleFor, needsMergeIn, yoloModeFor, type YoloModeSettings } from './yolo-mode.ts';
 import type { LandingCard } from './work-item-landing.ts';
 import { mergesOnReady, type ChangeClass, type ChangeRule } from './change-kinds.ts';
 import type { UntrackedPullRequest } from './untracked-pull-requests.ts';
@@ -151,9 +151,9 @@ export function waitsOnPullRequest(job: Job, newest: (key: string) => Job | unde
   return ((f === 'open' || f === 'closed') && newest(job.source.key)?.id === job.id) || tendJobOf(job, newest) !== undefined;
 }
 
-function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean, rule: ChangeRule, now: number, outside: boolean): MergeWait {
+function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean, rule: ChangeRule, now: number, needsMerge: boolean): MergeWait {
   const kind = seen?.change?.kind;
-  const held: MergeWait | undefined = mergesOnReady(rule, yolo, kind) ? undefined : kind && rule.merge[kind] === 'person' ? 'person merges' : outside && !yolo ? 'needs merge' : 'yolo off';
+  const held: MergeWait | undefined = mergesOnReady(rule, yolo, kind) ? undefined : kind && rule.merge[kind] === 'person' ? 'person merges' : needsMerge ? 'needs merge' : 'yolo off';
   if (!named) return 'no pull request';
   if (!seen) return held ?? 'not checked yet';
   if (seen.draft) return 'draft';
@@ -170,13 +170,13 @@ function waitOf(named: boolean, seen: PullRequestSeen | undefined, yolo: boolean
 /** A tend job's statuses before it is at work (issue #967): its card says why it waits. */
 const NOT_AT_WORK: readonly string[] = ['queued', 'held'];
 
-function cardOf(job: Job, yolo: boolean, rule: ChangeRule, now: number, tendJob: Job | undefined, outside: boolean): PullRequestCard {
+function cardOf(job: Job, yolo: boolean, rule: ChangeRule, now: number, tendJob: Job | undefined, needsMerge: boolean): PullRequestCard {
   const f = followedOf(job);
   const seen = f.seen;
   const state = f.follow === 'open' || tendJob ? 'open' : 'closed';
   const retryAt = tendRetryAt(f.tended, tendJob);
   const tendEnded = tendJob !== undefined && TEND_ENDS.includes(tendJob.status) && retryAt === undefined;
-  const waits = tendJob ? (tendEnded ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, rule, now, outside);
+  const waits = tendJob ? (tendEnded ? 'tend failed' : 'tending') : waitOf(f.pullRequest !== undefined, seen, yolo, rule, now, needsMerge);
   // A tend of a companion pull request (issue #1143 reopened): the card names the pull request the tend job works on.
   const shown = tendJob && f.tended?.companion ? f.tended.pullRequest : f.pullRequest;
   return {
@@ -269,8 +269,7 @@ export function pullRequestList(jobs: Job[], newest: (key: string) => Job | unde
     const here = waiting.filter((j) => jobPullRequestRepo(j)!.toLowerCase() === repo.toLowerCase());
     const tendJobs = here.flatMap((j) => tendJobOf(j, newest) ?? []);
     const rule = mergeRuleFor(yolo, repo, repos);
-    const outside = !repos.some((r) => r.toLowerCase() === repo.toLowerCase());
-    const cards = here.map((j) => cardOf(j, on, rule, now, tendJobOf(j, newest), outside))
+    const cards = here.map((j) => cardOf(j, on, rule, now, tendJobOf(j, newest), needsMergeIn(yolo, repo, repos)))
       .sort((a, b) => (a.openedAt ?? a.since ?? '').localeCompare(b.openedAt ?? b.since ?? '') || a.jobId.localeCompare(b.jobId));
     return { repo, yolo: on, pullRequests: withQueue(cards, here, tendJobs, get) };
   });

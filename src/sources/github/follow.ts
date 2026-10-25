@@ -57,7 +57,7 @@ import { SourceError } from '../../domain/ports.ts';
 import { GitHubApiError, type GitHubApi, type GitHubIssue, type NumberedPullRequest, type OpenPullRequest, type ReferencingPullRequest } from './api.ts';
 import { retargetNote, supersededNote, tendNote } from './pr-notes.ts';
 import { closesByKeyword, fromReleaseBranch, isClosedAsCompleted, isPartOf, namesIssue, openClosingWork, ownOpenPullRequestOf, worksOnAnotherIssue } from './completion.ts';
-import { blockedForPullRequest, followLabels, type FollowEnd } from './item-labels.ts';
+import { blockedForPullRequest, followLabels, needsMergeOf, type FollowEnd } from './item-labels.ts';
 import { allPartsDone, partsOf } from './parts.ts';
 import { mergeGateOf } from './merge-gate.ts';
 import { closedByMerge, closesIssue, mergedByMarker, type OwnMerge } from './own-merge.ts';
@@ -235,24 +235,37 @@ export async function waiting(ctx: PullRequestContext, job: Job, url: string, be
   }
   const pr = await ctx.api.pullRequest(repo, numberOf(url));
   if (!pr) return { seen: before ?? { draft: false, conflicting: false, checks: 'none' } };
-  const pushedAt = pushedAtOf(pr);
-  const seen: PullRequestSeen = {
-    draft: pr.isDraft, conflicting: pr.conflicting, checks: pr.checks ?? 'none', openedAt: pr.createdAt, pushedAt, ...(pr.base ? { base: pr.base } : {}),
-    ...(pr.checksWhy ? { checksWhy: pr.checksWhy } : {}), ...(pr.checksRefused ? { checksRefused: true } : {}),
-    ...(pr.headRef ? { headRef: pr.headRef } : {}), ...(pr.failedChecks?.length ? { failedChecks: pr.failedChecks, ...(pr.headOid ? { failedHead: pr.headOid } : {}) } : {}),
-    ...(pr.commits ? { commits: pr.commits } : before?.commits ? { commits: before.commits } : {}),
-    ...(pr.files ? { files: pr.files } : before?.files ? { files: before.files } : {}),
-  };
+  const seen = seenOf(pr, before);
   // Housekeeping (issue #1143), never on a person's act: off the landing branch, it moves there, and waits for the next
   // read; with no commit its base lacks, nothing is left to land, and it is closed.
   const kept = !act ? await housekeep(ctx, repo, url, pr) : undefined;
   if (kept && 'retargeted' in kept) return { seen: { ...seen, base: kept.retargeted.to }, retargeted: kept.retargeted };
   if (kept) return { ended: 'closed', superseded: kept.superseded };
-  const change = pr.state === 'open' ? await classified(ctx, repo, pr, numberOf(url), pushedAt, before) : undefined;
+  return mergeWhenReady(ctx, job, repo, url, pr, seen, before, mark);
+}
+
+/** What is seen of pull request `pr` as just read; its commits and files as `before` saw them when the read does not say. */
+export function seenOf(pr: OpenPullRequest, before: PullRequestSeen | undefined): PullRequestSeen {
+  return {
+    draft: pr.isDraft, conflicting: pr.conflicting, checks: pr.checks ?? 'none', openedAt: pr.createdAt, pushedAt: pushedAtOf(pr), ...(pr.base ? { base: pr.base } : {}),
+    ...(pr.checksWhy ? { checksWhy: pr.checksWhy } : {}), ...(pr.checksRefused ? { checksRefused: true } : {}),
+    ...(pr.headRef ? { headRef: pr.headRef } : {}), ...(pr.failedChecks?.length ? { failedChecks: pr.failedChecks, ...(pr.headOid ? { failedHead: pr.headOid } : {}) } : {}),
+    ...(pr.commits ? { commits: pr.commits } : before?.commits ? { commits: before.commits } : {}),
+    ...(pr.files ? { files: pr.files } : before?.files ? { files: before.files } : {}),
+  };
+}
+
+/**
+ * Pull request `url` of `repo`, as just read (`pr`, `seen`): its change kind (issue #1076), and, its kind's gate open — yolo
+ * mode on for `repo`, or a kind merged with no person — and it ready, the hopper's merge through the merge gate (issue
+ * #939). Job `job`'s done criteria not met now (`mergeHold`), the merge waits. A followed pull request's, and a companion's
+ * (issue #2752 part 3).
+ */
+export async function mergeWhenReady(ctx: PullRequestContext, job: Job, repo: string, url: string, pr: NumberedPullRequest, seen: PullRequestSeen, before: PullRequestSeen | undefined, mark?: (head: string | undefined) => void): Promise<{ ended: 'merged'; seen: PullRequestSeen } | { seen: PullRequestSeen }> {
+  const change = pr.state === 'open' ? await classified(ctx, repo, pr, numberOf(url), pushedAtOf(pr), before) : undefined;
   if (change) seen.change = change;
-  const now = (ctx.clock?.now() ?? new Date()).getTime();
   // Whatever its job's origin (issue #805): the trust decision was made when the job ran, before its pull request.
-  if (pr.state !== 'open' || !merges(ctx, repo, change?.kind) || !readyToMerge(seen, now)) return { seen };
+  if (pr.state !== 'open' || !merges(ctx, repo, change?.kind) || !readyToMerge(seen, (ctx.clock?.now() ?? new Date()).getTime())) return { seen };
   try {
     // The done criteria of the job's conditional skills, read again now (issue #1924 part 3): not met, the merge waits.
     const hold = await ctx.mergeHold?.(job, repo, url);
@@ -401,7 +414,7 @@ export async function followPullRequest(ctx: FollowContext, job: Job, act?: Pull
       if (found) s = { ...s, pullRequest: found.url, ...(found.part ? { part: true } : {}), ...('mention' in found && found.mention ? { mention: true } : {}) };
       // Blocked for want of a pull request (issue #1891), one found open: its issue waits on it, as a report says. The ledger says it is blocked (issue #1892 part 27).
       const carried = open ? (await ctx.api.getIssue(repo, number)).labels : [];
-      if (open && blockedForPullRequest(ctx.item?.(key), job.id, carried)) await endLabels(ctx, key, repo, { end: 'found_open', part: open.part === true }, carried);
+      if (open && blockedForPullRequest(ctx.item?.(key), job.id, carried)) await endLabels(ctx, key, repo, { end: 'found_open', part: open.part === true, needsMerge: needsMergeOf(ctx, open.url, repo) }, carried);
     }
     const batched = !act && s.pullRequest ? seenFromBatch(ctx, job, s, s.pullRequest) : undefined;
     if (batched) {

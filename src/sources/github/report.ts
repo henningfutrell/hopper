@@ -27,7 +27,7 @@ import { handedToFollowOns, type HandoffResolution, type Job, type ResolutionWri
 import { GitHubApiError } from './api.ts';
 import type { GitHubApi } from './api.ts';
 import { END_LABELS, HOLDER_LABEL_COLOR, HOLDER_LABEL_DESCRIPTION, HOPPER_LABELS, LABEL_DONE, LABEL_FAILED, LABEL_REJECTED, holderLabel } from './labels.ts';
-import { reportLabels, tendTriedAgain, type LabelDrift, type ReportEnd } from './item-labels.ts';
+import { needsMergeOf, reportLabels, tendTriedAgain, type LabelDrift, type ReportEnd } from './item-labels.ts';
 import { claimLabels, isAssignedTo } from './discover.ts';
 import { isPartOf, namesIssue, openClosingWork, ownOpenPullRequestOf, worksOnAnotherIssue, type JobOpenedPullRequests } from './completion.ts';
 import type { GitHubIssue } from './api.ts';
@@ -44,6 +44,8 @@ export interface ReportContext {
   issueClosed?(key: string, reason: string | undefined): void;
   /** The pull requests each job opened through the hopper (issue #2510); absent: none is known. */
   opened?: JobOpenedPullRequests;
+  /** Whether the hopper merges nothing in the repo (issue #2752): its pull request there gets `hopper:needs-merge`. Absent: never. */
+  needsMerge?(repo: string): boolean;
 }
 
 /**
@@ -115,7 +117,7 @@ async function finished(ctx: JobReportContext, job: Job, repo: string, number: n
   if (handedToFollowOns(job)) return state;
   const issue = await ctx.api.getIssue(repo, number);
   if (job.partlyDone) {
-    await settle(ctx, job, repo, { end: 'pr_open', part: true }, issue.labels);
+    await settle(ctx, job, repo, { end: 'pr_open', part: true, needsMerge: needsMergeOf(ctx, job.partlyDone, repo) }, issue.labels);
     return { ...state, pullRequest: job.partlyDone, follow: 'open', part: true };
   }
   if (issue.state === 'closed') {
@@ -128,7 +130,7 @@ async function finished(ctx: JobReportContext, job: Job, repo: string, number: n
   // The ready one that closes it, whoever opened it (issue #637): its own, or an older one a run again went on with; else
   // one that references it, or one named for it on its branch — what made it done —, so the Pull requests list links it.
   const open = await pullRequestOf(ctx, job, repo, number);
-  await settle(ctx, job, repo, open ? { end: 'pr_open', part: open.part } : { end: 'no_pr' }, issue.labels);
+  await settle(ctx, job, repo, open ? { end: 'pr_open', part: open.part, needsMerge: needsMergeOf(ctx, open.url, repo) } : { end: 'no_pr' }, issue.labels);
   return { ...state, ...(open ? { pullRequest: open.url } : {}), ...(open?.part ? { part: true } : {}), follow: 'open' };
 }
 

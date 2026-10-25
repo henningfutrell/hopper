@@ -23,7 +23,7 @@ import type { GitHubListingRepository } from '../../domain/github-listing.ts';
 import { DEFAULT_RATE_LIMITER } from '../../domain/github-rate-limit.ts';
 import { createIntakeListing, memoryListings } from './listing.ts';
 import { listedReads } from './listed-reads.ts';
-import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, TERMINAL_STATUSES, type Account, type ChangeRule } from '../../domain/types.ts';
+import { CONNECTED_VIA, DEFAULT_CHANGE_RULE, mergesOnReady, pullRequestRepo, TERMINAL_STATUSES, type Account, type ChangeRule } from '../../domain/types.ts';
 import type { GitHubApi, GitHubIssue } from './api.ts';
 import type { GitHubSourceConfig } from '../config.ts';
 import { checkJobs } from './check.ts';
@@ -92,6 +92,8 @@ export interface GitHubSourceOptions {
    * And the change rule of a repository (issue #1076): a followed pull request's kind and its merge gate. Absent: the built-in rule.
    */
   yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined; changeRule?: (repo: string) => ChangeRule;
+  /** Whether the hopper merges nothing in the repo (issue #2752): none of the job repositories, and yolo mode not named on for it. Absent: never. */
+  needsMerge?: (repo: string) => boolean;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
   jobArtifacts?: JobArtifacts;
   /** The pull requests a job opened through the hopper (issue #2510): its report and follow link its own. Absent: none. */
@@ -149,7 +151,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     const e = item && issueChangeEvent(item, { state: 'closed', ...(reason ? { reason } : {}) }, 'read');
     if (e?.type === 'work_item.issue_closed') o.intake?.record(e.type, e.data);
   };
-  const reportContext = () => ({ api, ensuredLabels, issueClosed, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.openedPullRequests ? { opened: o.openedPullRequests } : {}) });
+  const reportContext = () => ({ api, ensuredLabels, issueClosed, ...(o.needsMerge ? { needsMerge: o.needsMerge } : {}), ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.openedPullRequests ? { opened: o.openedPullRequests } : {}) });
   const waitsOn: WaitsOnBatch = async (repo, n, since) => { const b = o.landingBranch?.(repo); return b !== undefined && waitsOnBatch(api, repo, b, n, o.clock.now().getTime(), since); };
   const followContext = (): FollowContext => ({ api, ensuredLabels, clock: o.clock, ...(o.openedPullRequests ? { opened: o.openedPullRequests } : {}), batched: batch.take, ...(o.intake ? { holder: o.intake.holder } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}),
     ...(o.doneCriteria ? { mergeHold: (job, repo, url) => doneCriteriaHold(api, job, repo, url, o.doneCriteria, o.allowedDeletes) } : {}), labels: labelRows('follow'), ...(o.intake?.workItem ? { item: o.intake.workItem } : {}) });
@@ -211,6 +213,8 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), ...(o.connected ? { connected: o.connected } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
   const workItem = o.intake?.workItem;
+  // Its pull request in a repository the hopper does not merge in (issue #2752): `hopper:needs-merge` on the issue.
+  const needsMerge = (key: string): boolean => { const url = workItem?.(key)?.pullRequest; return url !== undefined && (o.needsMerge?.(pullRequestRepo(url, '')) ?? false); };
   // Each item given back (Run again, Rework; issue #1892): when its give-back ended, or Infinity while it runs. Until the
   // grace after it the mirror does not judge the item: the new job's `job.queued` is on its way and moves it.
   const givenBack = new Map<string, number>();
@@ -223,7 +227,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   };
   const busy = (key: string) => { const at = givenBack.get(key); if (at === undefined) return false; if (at + RECONCILE_GRACE_MS > o.clock.now().getTime()) return true; givenBack.delete(key); return false; };
   let mirrorStarted = false;
-  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, listedAt: (repo) => listings.listing(repo)?.fetchedAt, part: (key) => o.intake?.partOpen?.(key) ?? false, failureReported: (key) => o.intake?.failureReported?.(key) ?? false, fixingReported: (key) => o.intake?.fixingReported?.(key) ?? false, failureReportWaits: (key) => o.intake?.failureReportWaits?.(key) ?? false, partsLeft: (key) => o.intake?.partsLeft?.(key) ?? false, lastPartMerged: (key) => o.intake?.lastPartMerged?.(key) ?? false, dropReported: (key) => o.intake?.dropReported?.(key), doneReported: (key) => o.intake?.doneReported?.(key), busy, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line), record: (type, data) => o.intake?.record(type, data) }) : undefined;
+  const mirror = workItem ? createLabelMirror({ source: o.name, outbox, item: workItem, listedAt: (repo) => listings.listing(repo)?.fetchedAt, part: (key) => o.intake?.partOpen?.(key) ?? false, needsMerge, failureReported: (key) => o.intake?.failureReported?.(key) ?? false, fixingReported: (key) => o.intake?.fixingReported?.(key) ?? false, failureReportWaits: (key) => o.intake?.failureReportWaits?.(key) ?? false, partsLeft: (key) => o.intake?.partsLeft?.(key) ?? false, lastPartMerged: (key) => o.intake?.lastPartMerged?.(key) ?? false, dropReported: (key) => o.intake?.dropReported?.(key), doneReported: (key) => o.intake?.doneReported?.(key), busy, now: () => o.clock.now().toISOString(), log: (line) => console.warn(line), record: (type, data) => o.intake?.record(type, data) }) : undefined;
   const approvals = createApprovals({ source: o.name, api, trust: o.trust, recentComments: config.recentComments, assignee: () => o.assignee(), outbox, label: config.label, scope: () => (scanned.length ? scanned : config.repos), known: (key) => o.knownKeys?.([key]).has(key) ?? false, ...(workItem ? { item: workItem } : {}) });
 
   return {
@@ -274,7 +278,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       const found = await discoverIssues(api, config, {
         listed, assignee, ...(o.knownKeys ? { knownKeys: o.knownKeys } : {}), ...(o.rejections ? { rejections: o.rejections } : {}),
         ...(intake ? { holder: intake.holder, othersKnown: intake.othersKnown, migrating } : {}),
-        ...(workItem ? { item: workItem, part: (key: string) => intake?.partOpen?.(key) ?? false, failureReported: (key: string) => (intake?.failureReported?.(key) ?? false) && !handoffSettling(workItem(key), o.clock.now().getTime()), fixingReported: (key: string) => intake?.fixingReported?.(key) ?? false, failureReportWaits: (key: string) => intake?.failureReportWaits?.(key) ?? false, partsLeft: (key: string) => intake?.partsLeft?.(key) ?? false, lastPartMerged: (key: string) => intake?.lastPartMerged?.(key) ?? false, dropReported: (key: string) => intake?.dropReported?.(key), doneReported: (key: string) => intake?.doneReported?.(key), ...(edited ? { edited } : {}) } : {}),
+        ...(workItem ? { item: workItem, part: (key: string) => intake?.partOpen?.(key) ?? false, needsMerge, failureReported: (key: string) => (intake?.failureReported?.(key) ?? false) && !handoffSettling(workItem(key), o.clock.now().getTime()), fixingReported: (key: string) => intake?.fixingReported?.(key) ?? false, failureReportWaits: (key: string) => intake?.failureReportWaits?.(key) ?? false, partsLeft: (key: string) => intake?.partsLeft?.(key) ?? false, lastPartMerged: (key: string) => intake?.lastPartMerged?.(key) ?? false, dropReported: (key: string) => intake?.dropReported?.(key), doneReported: (key: string) => intake?.doneReported?.(key), ...(edited ? { edited } : {}) } : {}),
       });
       // The new listing is built apart and kept at the end, in one step (issue #1019): until then the intake is the last
       // sync's, so an Approve sent while this sync reads GitHub finds its request card, never a half-built list. A merge
@@ -369,7 +373,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     follow: (job, act, at) => followPullRequest(followContext(), job, act, at),
     housekeepStrays: (strays) => housekeepStrays(followContext(), strays), censusPullRequests: (facts) => census.read(scanned, facts),
-    unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api), readCompanions: (pulls) => readCompanions(api, pulls),
+    unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api), readCompanions: (pulls) => readCompanions(followContext(), pulls),
     readFollowed: (jobs) => batch.read(jobs), endedPullRequests: (pulls) => endedPullRequests(api, pulls), endedWatched: (refs) => endedWatched(api, refs), waitedChecks: (repo, number) => waitedChecks(api, repo, number), waitedReviews: (repo, number) => waitedReviews(api, repo, number),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo, kind) => mergesOnReady(o.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE, o.yoloMode?.(repo) ?? false, kind),

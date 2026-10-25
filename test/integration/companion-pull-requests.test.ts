@@ -117,4 +117,70 @@ describe('companion pull requests (issue #1143 reopened)', () => {
     // As on a followed pull request in another repository: the tend note goes only on one of the issue's repository.
     expect(gh.pullRequestComments(companion!)).toEqual([]);
   });
+
+  /** A finished job that follows its pull request in its own repository, and holds a ready one in OTHER. */
+  async function readyCompanion(app: TestApp, gh: FakeGitHub): Promise<{ job: Job; companion: string }> {
+    const issue = gh.createIssue({ repo: REPO, body: body({ op: 'echo' }), labels: ['hopper'] });
+    let main: string | undefined;
+    let companion: string | undefined;
+    app.scripted.ships((j) => {
+      const createdAt = new Date().toISOString();
+      main = gh.openPullRequest(REPO, j.source!.number!, { createdAt, base: 'main', checks: 'pending' }).url;
+      companion = gh.openUnlinkedPullRequest(OTHER, { createdAt, headRef: 'issue-1-app-change', base: 'main', checks: 'pending' }).url;
+      for (const [i, [repo, url]] of [[REPO, main], [OTHER, companion]].entries()) {
+        app.user().store.events.append({ type: 'github_proxy.done', jobId: j.id, data: { requestId: `r${i}`, op: 'pr.create', repo, number: Number(url!.split('/').at(-1)), url } });
+      }
+    });
+    await app.sync();
+    const [job] = await jobsFor(app, issue.url);
+    await app.waitForStatus(job!.id, 'finished');
+    await waitFor(async () => (await app.job(job!.id)).sourceState?.source?.pullRequest === main, { what: 'the job follows its pull request in its own repository' });
+    gh.setChecks(companion!, 'passing');
+    return { job: job!, companion: companion! };
+  }
+
+  const merges = (gh: FakeGitHub) => gh.calls.filter((c) => c.method === 'merge').map((c) => c.args);
+
+  it('its ready second pull request in another repository is merged there under that repository\'s yolo mode (issue #2752)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    expect((await app.ui('/ui/api/yolo-mode', { repos: { [OTHER]: true } }, { token })).status).toBe(200);
+    const { job, companion } = await readyCompanion(app, gh);
+    await app.sync();
+    await waitFor(async () => merges(gh).length > 0, { what: 'the hopper merges the companion' });
+    expect(merges(gh)).toEqual([[OTHER, Number(companion.split('/').at(-1))]]);
+    await waitFor(async () => (await app.events('types=job.companion_merged')).length > 0, { what: 'the merge is recorded' });
+    expect((await app.events('types=job.companion_merged')).map((e) => [e.jobId, e.data])).toEqual([[job.id, { pullRequest: companion }]]);
+    expect((await app.job(job.id)).sourceState?.source?.companions).toEqual({ [companion]: { conflicting: false, ended: true } });
+    await app.sync();
+    expect(merges(gh)).toHaveLength(1);
+  });
+
+  it('its companion that gets ready after the followed pull request merged and closed the issue is merged too (issue #2752)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const token = await app.login();
+    expect((await app.ui('/ui/api/yolo-mode', { repos: { [OTHER]: true } }, { token })).status).toBe(200);
+    const { job, companion } = await readyCompanion(app, gh);
+    gh.setChecks(companion, 'pending');
+    gh.mergePullRequest(String((await app.job(job.id)).sourceState?.source?.pullRequest));
+    gh.closeIssue(REPO, job.source!.number!, undefined, { reason: 'completed' });
+    await waitFor(async () => { await app.sync(); return app.user().store.workItems.get(job.source!.key)?.state === 'done'; }, { what: 'the item is done' });
+    expect(merges(gh)).toEqual([]);
+    gh.setChecks(companion, 'passing');
+    await waitFor(async () => { await app.sync(); return merges(gh).length > 0; }, { what: 'the hopper merges the companion' });
+    expect(merges(gh)).toEqual([[OTHER, Number(companion.split('/').at(-1))]]);
+  });
+
+  it('with yolo mode not on for that repository, it is not merged (issue #2752)', async () => {
+    const gh = createFakeGitHub();
+    const app = await boot(gh);
+    const { job, companion } = await readyCompanion(app, gh);
+    await app.sync();
+    await waitFor(async () => ((await app.job(job.id)).sourceState?.source?.companions as Record<string, unknown> | undefined)?.[companion] !== undefined, { what: 'the companion is read' });
+    await app.sync();
+    expect(merges(gh)).toEqual([]);
+    expect(await app.events('types=job.companion_merged')).toEqual([]);
+  });
 });
