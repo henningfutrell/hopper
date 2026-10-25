@@ -9421,6 +9421,22 @@ Version 1 (`docs/schemas/delivery_gate.cleared.v1.json`). A person cleared a del
 }
 ```
 
+## `delivery_track.no_deploy_marked`
+
+Version 1 (`docs/schemas/delivery_track.no_deploy_marked.v1.json`). A person marked a job no-deploy (issue #2775): its kept delivery track, open until then, is closed with a deployment record of kind `none`, outcome `marked`, `by` who and their `note`. A closed track is final. It changes no job, pull request or promotion: the hopper records the act.
+
+| field | type | required |
+|---|---|---|
+| `by` | string | yes |
+| `note` | string | no |
+
+```json
+{
+  "by": "release-owner",
+  "note": "a docs change: nothing is deployed"
+}
+```
+
 ## `push_requirements.summarized`
 
 Version 1 (`docs/schemas/push_requirements.summarized.v1.json`). After a job's push (issue #2555 part 4), the hopper replaced the push requirements summary in the body of the pushed branch's open pull request `number` of `repo` with its evaluation of the commit pushed, `head`: each requirement's status, each check's command, thresholds and measured values, between two hidden lines. Only a pull request the job may edit; the rest of the body stays as it was. A job's own `pr create` holds the summary already.

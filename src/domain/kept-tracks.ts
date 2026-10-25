@@ -210,7 +210,8 @@ export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?
   }
   const none = (at: string, outcome: NoDeployOutcome) => close(at, { ...base, at, kind: 'none', source: sourceOf(marks), outcome });
   if (marks.merged) return track;
-  const status = c.job?.status;
+  // A job the store no longer holds: its events say how it ended.
+  const status = c.job?.status ?? (marks.finished ? 'finished' : undefined);
   const report: Partial<NoDeployOutcome> = c.job?.researchId ? { report: 'research' } : c.job?.proposalId ? { report: 'proposal' } : {};
   if (marks.prClosed) return none(marks.prClosed, { status: 'pull_request_closed', ...report, ...(marks.prClosedWhy ? { note: marks.prClosedWhy } : {}) });
   if (status && ENDED_NO_CHANGE.has(status)) return none(c.now, { status, ...report });
@@ -228,6 +229,10 @@ export function noDeployOf(t: KeptTrack, mark: { by: string; at: string; note?: 
     },
   };
 }
+
+/** GET /api/delivery-tracks's answer, and GET /api/deployments's. */
+export interface DeliveryTracksView { tracks: KeptTrack[] }
+export interface DeploymentsView { deployments: DeploymentRecord[] }
 
 /** The kept tracks and deployment records (tenant migration 101): a closed track, and its deployment record, never change. */
 export interface KeptTrackRepository {
