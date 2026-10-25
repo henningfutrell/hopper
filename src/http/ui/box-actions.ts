@@ -40,6 +40,7 @@ export const BOX_ACTIONS: readonly BoxAction[] = [
   { route: '/ui/api/blast-radius/discover', kind: 'run a command' },
   { route: '/ui/api/plugins', kind: 'run a command' },
   { route: '/ui/api/pull-requests/merge', kind: 'approve or merge work' },
+  { route: '/ui/api/delivery-tracks/release', kind: 'approve or merge work' }, // issue #2775: lets a held merge or promotion go on
   { route: '/ui/api/infra-plans', kind: 'approve or merge work' },
   { route: '/ui/api/infra-plans/settings', kind: 'approve or merge work' },
   // Issue #991: the toggles approve templates and sandbox runs with no person.

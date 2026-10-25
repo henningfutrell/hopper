@@ -35668,3 +35668,42 @@ install that runs a change, as observed hops.
 **Verification:** `test/domain/delivery-holds.test.ts`, `test/users/delivery-holds.test.ts`,
 `test/landing-batches/held.test.ts`, `test/sources/github-yolo-delivery-hold.test.ts`,
 `test/sources/account-merge-holds.test.ts`.
+
+### Part 8: the hold and release routes (issue #2775, 2026-10-25)
+
+A person puts a delivery hold on a job's change, and releases it, from the API, the CLI and the job page.
+
+- **The routes** (`src/http/ui/delivery-hold.ts`): `POST /ui/api/delivery-tracks/hold` with `job`, `owner` (`hopper`, the
+  default: a hold; `person`: take ownership) and an optional `reason` appends `delivery_track.held` at the step the track is
+  in; `POST /ui/api/delivery-tracks/release` with `job` and an optional `reason` appends `delivery_track.released`. Least
+  role `operator`. Each takes only an act `allowedActs` allows for the track's step, with the hold as its events say now
+  (`jobHold`), not as the pass kept it: 404 for a job with no kept track, 409 for an act the step does not allow, with the
+  reason. A refused act appends no event. The route keeps the act on the kept track too (`withIntervention`), so its answer
+  shows it at once; the pass folds the same event again and keeps it once (by its seq).
+- **A release is a box action** (`BOX_ACTIONS`, kind `approve or merge work`): it lets a merge or a promotion go on. A hold
+  is none, as a cancel is none.
+- **The scopes** come from the routes, as every route's does: `delivery-tracks:hold` and `delivery-tracks:release`, in the
+  Jobs section. The delegate approver's preset does not get them.
+- **The acts on the answer**: `GET /api/delivery-tracks`, and the answer of each route that changes a track, carry `acts`,
+  the acts each track's step allows now (`withActs`, from its job and its repository's delivery settings). They are never
+  kept.
+- **The CLI**: `hopper deployment --job <id> --hold [--owner hopper|person] [--reason <text>]` and `hopper deployment --job
+  <id> --release [--reason <text>]`.
+- **The Delivery panel** (`ui/src/views/job-delivery.tsx`): Hold, Take ownership and Release (Hand back, for a change a
+  person owns) from `acts`; the hold, with who, the step, since when and the reason; each intervention, with the act, who,
+  when and the step. Park, Pick up, Run again and expedite stay the job page's own buttons.
+- **The Jobs list**: the Delivery cell says `held` while a delivery hold holds the change, and its title says who owns it.
+
+**Decisions:**
+- **Two routes, two scopes, not one `delivery_tracks:steer`.** A scope is the route's area and its last path part, and
+  a box action is a whole route. A release is a box action and a hold is not, so they are two routes. "Steer" is a research
+  report's word in the glossary.
+- **The hold from its events.** The pass keeps the hold on the track only at its next run; the route reads the hold and
+  release events, as the step's owner does (part 7).
+
+**What is left** (later parts): Run again from `landing_checks` on closes the track `none`, outcome `rerouted`, with a link
+to the new job's track; `beta` and the install that runs a change, as observed hops.
+
+**Verification:** `test/integration/delivery-hold-acts.test.ts` (a hold and a release, each kept once; taking ownership and
+handing it back; each refused act changes nothing), `test/integration/delivery-tracks.test.ts`, `test/cli/deployment.test.ts`,
+`test/ui/job-delivery-view.test.ts`, `test/ui/jobs-table.test.ts`.

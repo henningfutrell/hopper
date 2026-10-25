@@ -95,6 +95,19 @@ export function allowedActs(
   return acts;
 }
 
+/**
+ * The track with a person's hold or release `e` kept on it, at the step it is in (part 8): the act the route just appended,
+ * so its answer and the kept track show it at once. The pass folds the same event again later, and keeps it once (by seq).
+ */
+export function withIntervention(t: KeptTrack, e: DomainEvent): KeptTrack {
+  const i = interventionOf(e, t.current.step);
+  if (!i || t.marks.interventions?.some((x) => x.seq === e.seq)) return t;
+  const interventions = [...t.marks.interventions ?? [], i];
+  const { hold: _was, ...rest } = t;
+  const hold = holdOf(interventions);
+  return { ...rest, marks: { ...t.marks, interventions }, interventions, ...(hold ? { hold } : {}) };
+}
+
 // The hold's effect (part 7): the step's owner — yolo mode, the batch runner, the stable move — reads which changes a hold
 // holds from the hold and release events, not from the kept track, so a hold counts from its event on, not from the next
 // pass of the tracks.

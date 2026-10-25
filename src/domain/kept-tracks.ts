@@ -12,7 +12,7 @@ import { DEFAULT_BLOCKER, type Blocker, type DeliveryStep } from './delivery-ste
 import { pullRequestRef } from './delivery-history.ts';
 import type { StepActual } from './forecast-accuracy.ts';
 import { promotionSetOf } from './promotion-sets.ts';
-import { expediteNames, holdOf, INTERVENTION_EVENTS, interventionOf, type DeliveryHold, type Intervention } from './track-interventions.ts';
+import { expediteNames, holdOf, INTERVENTION_EVENTS, interventionOf, type AllowedAct, type DeliveryHold, type Intervention } from './track-interventions.ts';
 import type { DomainEvent, Job, JobStatus } from './types.ts';
 
 /** The events a kept track is folded from: the delivery track's, and a pull request closed with no merge. */
@@ -103,6 +103,8 @@ export interface KeptTrack {
   interventions?: Intervention[];
   /** Its delivery hold, while one holds it (part 6). */
   hold?: DeliveryHold;
+  /** The acts its step allows (`allowedActs`, part 8): answered by the routes, never kept. */
+  acts?: AllowedAct[];
 }
 
 /** A track whose deployment completed: its record is final, and no flip changes it. */

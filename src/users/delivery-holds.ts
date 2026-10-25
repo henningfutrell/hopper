@@ -1,15 +1,21 @@
 // What a delivery hold holds, read from the user's store (issue #2775 part 7, design.md "Part 6: interventions and the
 // delivery hold"): a job's hold for yolo mode's merge, and the pull requests of a repository for the batch runner and the
 // stable move. Read from the hold and release events at each ask, so a hold counts from its event on.
-import { HOLD_EVENTS, heldJobs, heldNumbers, holdWhy } from '../domain/track-interventions.ts';
+import { DEFAULT_DELIVERY_SETTINGS, deliveryOf } from '../domain/delivery-settings.ts';
+import type { KeptTrack } from '../domain/kept-tracks.ts';
+import { allowedActs, HOLD_EVENTS, heldJobs, heldNumbers, holdWhy, type DeliveryHold } from '../domain/track-interventions.ts';
 import type { UserStore } from '../domain/store.ts';
 
 /** How many of the newest hold and release events are read: far more than the holds a person keeps open at once. */
 const HOLD_READ = 2000;
 
+/** The hold that holds job `jobId`'s change, or undefined. */
+export const jobHold = (store: Pick<UserStore, 'events'>, jobId: string): DeliveryHold | undefined =>
+  heldJobs(store.events.recent(HOLD_READ, [...HOLD_EVENTS], jobId)).get(jobId);
+
 /** Why a hold holds job `jobId`'s change, or undefined. */
 export function jobHoldWhy(store: Pick<UserStore, 'events'>, jobId: string): string | undefined {
-  const hold = heldJobs(store.events.recent(HOLD_READ, [...HOLD_EVENTS], jobId)).get(jobId);
+  const hold = jobHold(store, jobId);
   return hold && holdWhy(hold);
 }
 
@@ -21,4 +27,11 @@ export function heldPullRequests(store: Pick<UserStore, 'events' | 'jobs' | 'kep
     return url === undefined ? [] : [url];
   });
   return heldNumbers(urls, repo);
+}
+
+/** Each track with the acts its step allows (part 8), from its job and its repository's delivery settings as they are now. */
+export function withActs(store: Pick<UserStore, 'jobs' | 'settings'>, tracks: readonly KeptTrack[]): KeptTrack[] {
+  const settings = store.settings.getDeliverySettings() ?? DEFAULT_DELIVERY_SETTINGS;
+  const jobs = store.jobs.getMany(tracks.map((t) => t.jobId));
+  return tracks.map((t) => ({ ...t, acts: allowedActs(t, jobs.get(t.jobId), deliveryOf(settings, t.repo)) }));
 }
