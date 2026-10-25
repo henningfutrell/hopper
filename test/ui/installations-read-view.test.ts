@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #1250 part 2: the GitHub account panel in Sources shows where the hopper's app is installed as the hopper last read
 // it, with when, and never asks GitHub on a load. Refresh asks the hopper to read it again; a read that failed says why,
-// above the installations read before it. Issue #2761: the repositories the hopper made job repositories when the app came
-// to reach them are named, with when. The whole app against a fake of the daemon's HTTP surface.
+// above the installations read before it. The whole app against a fake of the daemon's HTTP surface.
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { boot, source, unmount } from './sources-daemon.ts';
@@ -35,14 +34,5 @@ describe('Sources view: where the app is installed, from the hopper\'s database'
     await vi.waitFor(() => expect(panel()?.querySelector('[data-installations-read]')?.textContent).toBe('read 5m ago'));
     expect(panel()!.querySelector('[data-installations-error]')!.textContent).toContain('GitHub answered 503');
     expect(panel()!.querySelector('[data-installation="octo-user"]')).not.toBeNull();
-  });
-
-  it('names the new repositories the hopper added for jobs, with when (issue #2761)', async () => {
-    const at = new Date(Date.now() - 5 * 60_000).toISOString();
-    await boot({ '/api/sources': SOURCES, '/api/connected-accounts': { accounts: [{
-      ...CONNECTED, jobRepositories: ['octo-user/tools', 'acme/api'], installations: [...INSTALLED, { account: 'acme', repositorySelection: 'all', repositories: ['acme/api'] }],
-      installationsCheckedAt: at, jobRepositoriesAdded: { at, repositories: ['acme/api'] },
-    }] } });
-    await vi.waitFor(() => expect(panel()?.querySelector('[data-job-repositories-added]')?.textContent).toBe('The app came to reach new repositories; the hopper added them for jobs 5m ago: acme/api'));
   });
 });

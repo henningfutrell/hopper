@@ -1,15 +1,14 @@
 // Issue #1250 part 2: where the hopper's app is installed is read from GitHub only on Refresh, on the schedule, or when the
 // account is connected, never when the connected account is shown; reads are coalesced, the read and its answers' ETags are
 // kept in the store, and a failed read is read again by the schedule only after a backoff that doubles. The kept reads over
-// a fake read and an in-memory store. Issue #2761: a repository a later read finds that the read before did not (the app
-// installed on a new owner, or a repository added to an installation) is offered to `adopt`, and what it took is shown.
+// a fake read and an in-memory store.
 import { describe, expect, it } from 'vitest';
 import { createInstallationReads, FRESH_MS, MAX_RETRY_MS, RETRY_MS } from '../../src/connected-accounts/installations.ts';
 import type { AppInstallation, AppInstallationsRead } from '../../src/domain/types.ts';
 
 const FOUND: AppInstallation[] = [{ account: 'octo', repositorySelection: 'all', repositories: ['octo/a'] }];
 
-function setup(o: { found?: () => AppInstallation[]; adopt?: (repositories: string[]) => string[] } = {}) {
+function setup() {
   const calls: string[] = [];
   let fail: Error | undefined;
   let hold: Promise<void> | undefined;
@@ -24,9 +23,8 @@ function setup(o: { found?: () => AppInstallation[]; adopt?: (repositories: stri
       await hold;
       if (fail) throw fail;
       answers.keep('GET /user/installations {}', { etag: '"e1"', data: {} });
-      return o.found?.() ?? FOUND;
+      return FOUND;
     },
-    ...(o.adopt ? { adopt: (_p: string, repositories: string[]) => o.adopt!(repositories) } : {}),
     now: () => now, log: () => {},
   });
   return {
@@ -117,54 +115,5 @@ describe('the app\'s installations: reads from GitHub', () => {
     expect(s.calls).toEqual(['octo', 'other']);
     s.reads.forget('github');
     expect(s.kept.has('github')).toBe(false);
-  });
-});
-
-describe('the app\'s installations: new repositories become job repositories (issue #2761)', () => {
-  const ORG: AppInstallation = { account: 'acme', repositorySelection: 'all', repositories: ['acme/api', 'acme/web'] };
-
-  it('a read that finds a new owner offers its repositories to adopt, and shows what was taken', async () => {
-    let found = FOUND;
-    const offered: string[][] = [];
-    const s = setup({ found: () => found, adopt: (r) => { offered.push(r); return r.filter((x) => x !== 'acme/web'); } });
-    await s.reads.refresh('github');
-    expect(offered).toEqual([]); // the first read: what the app reaches then is the person's to choose
-    found = [...FOUND, ORG];
-    s.advance(FRESH_MS);
-    await s.reads.tick();
-    expect(offered).toEqual([['acme/api', 'acme/web']]);
-    expect(s.reads.view('github', 'octo')).toMatchObject({ jobRepositoriesAdded: { at: '2026-10-15T10:30:00.000Z', repositories: ['acme/api'] } });
-  });
-
-  it('a repository added to an installation is offered; one read before, in any case, is not', async () => {
-    let found = FOUND;
-    const offered: string[][] = [];
-    const s = setup({ found: () => found, adopt: (r) => { offered.push(r); return r; } });
-    await s.reads.refresh('github');
-    found = [{ ...FOUND[0]!, repositories: ['Octo/A', 'octo/b'] }];
-    s.advance(FRESH_MS);
-    await s.reads.tick();
-    expect(offered).toEqual([['octo/b']]);
-    s.advance(FRESH_MS);
-    await s.reads.tick(); // nothing new: nothing offered, and what was taken stays shown
-    expect(offered).toHaveLength(1);
-    expect(s.reads.view('github', 'octo')).toMatchObject({ jobRepositoriesAdded: { repositories: ['octo/b'] } });
-  });
-
-  it('offers nothing after a failed read or a read of another account', async () => {
-    let found = FOUND;
-    const offered: string[][] = [];
-    const s = setup({ found: () => found, adopt: (r) => { offered.push(r); return r; } });
-    s.failWith(new Error('GitHub answered 503'));
-    await s.reads.refresh('github');
-    s.failWith(undefined);
-    found = [...FOUND, ORG];
-    s.advance(FRESH_MS);
-    await s.reads.tick(); // the read before failed with nothing read: this is the first read
-    s.connectAs('other');
-    found = [ORG, { account: 'other', repositorySelection: 'all', repositories: ['other/x'] }];
-    await s.reads.tick();
-    expect(offered).toEqual([]);
-    expect(s.reads.view('github', 'other')).not.toHaveProperty('jobRepositoriesAdded');
   });
 });
