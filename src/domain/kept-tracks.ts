@@ -3,7 +3,8 @@
 // on; it closes only with its one deployment record — `deploy` once the change is delivered, `none` once the job ended
 // with no change to deliver, or a person's no-deploy mark. A person flips its deployment expectation (deploy or none) any
 // number of times, each flip kept, until a deployment completes: a `deploy` record is locked, a `none` one never is
-// (part 2). Each edit of its item's text a sync saw is a text edit on it, at the step it was in (part 3). The fold is incremental: a pass gives it the kept marks and
+// (part 2). Each edit of its item's text a sync saw is a text edit on it, at the step it was in (part 3); each person's act
+// on its change is an intervention on it (part 6, `track-interventions.ts`). The fold is incremental: a pass gives it the kept marks and
 // the events after its cursor, and the same event folded twice changes nothing (each mark is the first one). Pure.
 import { scheduledActuals } from './delivery-forecast.ts';
 import type { DeliveryRepo } from './delivery-settings.ts';
@@ -11,14 +12,16 @@ import { DEFAULT_BLOCKER, type Blocker, type DeliveryStep } from './delivery-ste
 import { pullRequestRef } from './delivery-history.ts';
 import type { StepActual } from './forecast-accuracy.ts';
 import { promotionSetOf } from './promotion-sets.ts';
+import { expediteNames, holdOf, INTERVENTION_EVENTS, interventionOf, type DeliveryHold, type Intervention } from './track-interventions.ts';
 import type { DomainEvent, Job, JobStatus } from './types.ts';
 
 /** The events a kept track is folded from: the delivery track's, and a pull request closed with no merge. */
 export const KEPT_TRACK_EVENTS = [
   'job.queued', 'job.started', 'job.finished', 'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed',
   'github_proxy.done', 'landing_batch.started', 'landing_batch.promoted', 'item.changed_since_snapshot', 'item.edit_seen',
-  'landing_batch.canary_started', 'landing_batch.canary_promoted',
+  'landing_batch.canary_started', 'landing_batch.canary_promoted', ...INTERVENTION_EVENTS,
 ] as const;
+const INTERVENTIONS = new Set<string>(INTERVENTION_EVENTS);
 
 /**
  * An edit of a job's item text a sync saw (issue #2775 part 3): `item.changed_since_snapshot` while the job waits,
@@ -42,6 +45,8 @@ export interface TrackMarks {
   canary?: string; canaryTips?: string[]; stable?: string;
   /** Every text edit, in order. */
   textEdits?: TextEdit[];
+  /** Every intervention, in order (part 6). */
+  interventions?: Intervention[];
 }
 
 /** Why a job's deployment record expects no deployment: its job ended with no change, or a person marked it. */
@@ -94,12 +99,22 @@ export interface KeptTrack {
   expectations?: DeploymentExpectation[];
   /** Every text edit of its item, in order: its marks'. */
   textEdits?: TextEdit[];
+  /** Every intervention on its change, in order: its marks'. */
+  interventions?: Intervention[];
+  /** Its delivery hold, while one holds it (part 6). */
+  hold?: DeliveryHold;
 }
 
 /** A track whose deployment completed: its record is final, and no flip changes it. */
 export const lockedOf = (t: Pick<KeptTrack, 'deployment'>): boolean => t.deployment?.kind === 'deploy';
 
 const first = <K extends keyof TrackMarks>(m: TrackMarks, k: K, v: TrackMarks[K]): void => { m[k] ??= v; };
+
+/** Keeps the intervention `e` is, at the step the track was in before it, once (by its seq). */
+function intervene(m: TrackMarks, e: DomainEvent, step: DeliveryStep): void {
+  const i = interventionOf(e, step);
+  if (i && !m.interventions?.some((x) => x.seq === e.seq)) m.interventions = [...m.interventions ?? [], i];
+}
 
 /**
  * Folds the events into the marks of each job's track. `marks` holds the open tracks' kept marks; a `job.queued` of a job
@@ -144,6 +159,10 @@ export function foldTrackEvents(marks: Map<string, TrackMarks>, events: readonly
       for (const [jobId, m] of marks) if (m.canaryTips?.includes(String(d.tip))) set(jobId, m, () => first(m, 'stable', e.at));
       continue;
     }
+    if (e.type === 'delivery_expedite.changed') {
+      for (const [jobId, m] of marks) if (expediteNames(d, jobId, m)) set(jobId, m, () => intervene(m, e, measuredOf(m).current.step));
+      continue;
+    }
     if (!e.jobId) continue;
     if (e.type === 'job.queued') {
       if (marks.has(e.jobId) || closed.has(e.jobId)) continue;
@@ -160,6 +179,7 @@ export function foldTrackEvents(marks: Map<string, TrackMarks>, events: readonly
     const m = marks.get(e.jobId);
     if (!m) continue;
     set(e.jobId, m, () => {
+      if (INTERVENTIONS.has(e.type)) intervene(m, e, measuredOf(m).current.step);
       if (e.type === 'job.started') first(m, 'started', e.at);
       else if (e.type === 'job.finished') first(m, 'finished', e.at);
       else if (e.type === 'github_proxy.done' && d.op === 'pr.create' && typeof d.url === 'string') first(m, 'pr', d.url);
@@ -244,6 +264,7 @@ export interface TrackContext {
 }
 
 const sourceOf = (m: TrackMarks): string => m.issue ?? m.source ?? 'unknown';
+const hold = (m: TrackMarks): { hold?: DeliveryHold } => { const h = holdOf(m.interventions); return h ? { hold: h } : {}; };
 
 /**
  * The track of `jobId` from its marks at `now`. A track kept closed stays as it was: only a person's flip opens it again
@@ -271,6 +292,7 @@ export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?
     marks, steps, current: { ...current, ...waitingOnOf(current.step, current.since, c.delivery) }, state: 'open',
     ...(kept?.deployment ? { deployment: kept.deployment } : {}), ...(expectations.length > 0 ? { expectations } : {}),
     ...(marks.textEdits ? { textEdits: marks.textEdits } : {}),
+    ...(marks.interventions ? { interventions: marks.interventions } : {}), ...hold(marks),
   };
   const close = (at: string, deployment: DeploymentRecord): KeptTrack => ({ ...track, state: 'closed', closedAt: at, deployment });
   const base = { jobId, ...(marks.repo ? { repo: marks.repo } : {}), ...(expectations.length > 0 ? { expectations } : {}) };

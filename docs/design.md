@@ -35572,3 +35572,66 @@ step, how it meets the stage-ownership hand-off), written down and agreed with a
 the install that runs a change, as observed hops.
 
 **Verification:** `test/ui/jobs-table.test.ts` (an open track's step and its title on the row, none without one).
+
+### Part 6: interventions and the delivery hold (issue #2775, 2026-10-25)
+
+The issue asks that a person can step into a job's change from the step it is in: pause it and resume it, reroute it,
+and take ownership of it and hand it back. It asks that the design is written down and agreed before it is built. A
+person accepted this design (Path 1 of the proposal of part 6): map each act onto an act the hopper has, and add one
+new act, the **delivery hold**.
+
+**The design** (agreed):
+
+| Act | At `queued`, `coding` | At `pr_checks` | From `landing` on | At `test_gate`, `production` |
+|-----|------|------|------|------|
+| Pause | Park (the job at work) | Park (the job at work), else a hold | a hold | a hold: the gate holds the change already, so it records that a person owns it |
+| Resume | Pick up | Pick up, or release | release | release |
+| Reroute back | — | Run again (the job ended) | Run again, before `production` | — at `production` |
+| Skip ahead | expedite, as the promotion set schedule allows | the same | the same, up to the cutoff of its set | — |
+| A different target | refused (409): `production` is the only target; a second target earns this act | | | |
+| Take ownership | — | a hold, `owner` `person` | the same | the same |
+| Hand back | — | release | release | release |
+
+- **The delivery hold** (`delivery_track.held`, `delivery_track.released`): who, the step, the reason and the owner.
+  `owner` `hopper`: a pause; the step's own owner (yolo mode, the batch runner, the schedule) keeps the change but does
+  not act on it while it is held. `owner` `person`: the person owns it; the step's owner does not act on it until they
+  hand it back. The release is the resume and the hand back: the step's owner acts again at its next pass.
+- **Where the work in progress stops.** Park ends the pane and keeps the work tree and the agent session, as now. A hold
+  while a batch run carries the change does not stop that run: the change leaves at the next run, and a run that carries
+  it already finishes as it is (a bisect cannot take a change out partway). A hold at a gate stops nothing.
+- **Who.** Least role `operator` for a hold, Park and Pick up, as for the other job acts. A release that lets a merge or a
+  promotion go on is a **box action**, as a merge is. Reroute is `operator` and a box action: Run again starts a job. A job
+  never steers its own track, and no `/job/*` route is added. An API token needs the new scope `delivery_tracks:steer`;
+  the delegate approver's preset does not get it.
+- **A refused act appends no event**, so the track stays as it was.
+
+**This part** builds the record and the rule of which act a step allows:
+
+- **Interventions** (`Intervention`, `src/domain/track-interventions.ts`): the fold keeps each person's act on the job's
+  change on its track, `interventions`, with who, the act, the step the track was in before it, and when: Park and Pick up
+  (`job.parked`, `job.unparked` with a person, not an auto-park, a move or a job's own park), Run again (`job.rerun` `by`
+  `user`), Merge now (`job.pull_request_merged` with a person), the expedite flag (`delivery_expedite.changed` that names
+  the job, its issue or its pull request), and a hold and its release. Each is kept once (by its seq).
+- **The hold** (`hold`, `holdOf`): the last hold, if no release came after it.
+- **`allowedActs(track, job, delivery)`**: the acts the step allows, from the table: none on a closed track; only release
+  on a held change; only Pick up on a parked job; Park for a job at work; else, from `pr_checks` on, hold and take
+  ownership; Run again once the job ended, before `production`; expedite while the flag can change its promotion set,
+  when the schedule allows it (`out_of_cadence`) and the flag is not on already.
+- **No migration**: `interventions` and `hold` are new optional fields of the track's JSON body and its marks.
+
+**Decisions:**
+- **"Intervention", not "intercession".** One word for a person's act on a change, in code and UI.
+- **The acts that exist, not new ones**, but for the hold: people know them, and each already has its permission, its
+  event and its tests.
+- **The hold is a track's, not a job's.** A **hold** is a Decision's, on a waiting job; a delivery hold holds a change
+  past its job's end, so it is a new word.
+
+**What is left** (later parts): the hold's effect — the yolo merge, the batch runner's pick of a batch and the promotion
+skip a held change; the routes `POST /ui/api/delivery-tracks/hold|release`, the scope `delivery_tracks:steer`, the CLI
+`hopper deployment hold|release` and the Delivery panel's acts from `allowedActs`, and a held mark on the Jobs list;
+Run again from `landing_checks` on closes the track `none`, outcome `rerouted`, with a link to the new job's track;
+`beta` and the install that runs a change, as observed hops.
+
+**Verification:** `test/domain/track-interventions.test.ts` (each act kept at its step, the hopper's and a job's own acts
+not, the hold until its release, an expedite flag on the issue or the pull request, a fold twice, the acts each step
+allows).
