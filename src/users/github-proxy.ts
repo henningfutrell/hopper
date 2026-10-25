@@ -34,6 +34,7 @@ import { createLandingBatchGitHub } from '../landing-batches/github.ts';
 import { createLandingBatches, type LandingBatches } from '../landing-batches/runner.ts';
 import { DEFAULT_LANDING_BATCHES, LANDING_BATCH_EVENT_TYPES, landingBranch } from '../domain/landing-batches.ts';
 import { batchClosingIssues, MERGE_STANDS } from '../domain/work-item-landing.ts';
+import { heldPullRequests } from './delivery-holds.ts';
 import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { LOGIN_SCRIPT, LOGIN_SCRIPT_FILE, LOGIN_SCRIPT_VARIABLE } from '../logins/script.ts';
@@ -309,6 +310,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         }),
         // The ledger's items the batch's pull requests did whole (issues #1175, #1356), whatever their job does now: the
         // batch run's merge closes their issues.
+        held: (repo) => heldPullRequests(o.store, repo),
         closingIssues: (repo, merges) => batchClosingIssues(o.store.workItems.list({ state: [...MERGE_STANDS] }), repo, merges),
         now: () => o.clock.now(),
         log: (l) => o.logger.warn(l),

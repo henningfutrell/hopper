@@ -28,6 +28,7 @@ import { sourceConfig, type GitHubAccountOptions } from './config.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
 import type { GitHubOutboxRepository } from '../domain/github-outbox.ts';
 import { githubLimiter } from '../github-limiter/limiter.ts';
+import type { JobAllowedDeletes, JobDoneCriteria } from './github/done-criteria.ts';
 import type { FollowEvery } from './follow-rounds.ts';
 
 /** A connected account's source lists only its job repositories (issue #321): none chosen, none listed. */
@@ -61,6 +62,8 @@ export interface GitHubSourceDeps {
   jobArtifacts?: JobArtifacts;
   /** The pull requests a job opened through the hopper (issue #2510): its report and follow link its own. */
   openedPullRequests?: JobOpenedPullRequests;
+  /** The done criteria of a job's conditional skills and the deletes its issue allows (issue #1924); a delivery hold (issue #2775 part 7). */
+  doneCriteria?: JobDoneCriteria; allowedDeletes?: JobAllowedDeletes; deliveryHold?: (jobId: string) => string | undefined;
   /** The user's issue graph (issue #437). */
   issueGraph?: IssueGraphRecorder;
   /** The user's mirrors of the job repositories (issue #858): git says whether a pull request has conflicts. Absent: GitHub says. */
@@ -117,6 +120,7 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
           name: o.name, kind, whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
           ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.needsMerge ? { needsMerge: o.needsMerge } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), ...(o.openedPullRequests ? { openedPullRequests: o.openedPullRequests } : {}),
+          ...(o.doneCriteria ? { doneCriteria: o.doneCriteria } : {}), ...(o.allowedDeletes ? { allowedDeletes: o.allowedDeletes } : {}), ...(o.deliveryHold ? { deliveryHold: o.deliveryHold } : {}),
           ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o), connected: () => accounts.account(provider) !== undefined,
         }),
       };
