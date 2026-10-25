@@ -2,7 +2,8 @@
 // every follow, after the census, the companions of each item whose newest job holds them (`companionsOf`) are read by the
 // source (`JobSource.readCompanions`) and kept on that job (`companions` in its source state). The tends ask `due`: the
 // first companion with merge conflicts is rebased as a followed pull request is, through the tending queue — the base
-// merge first, else a rebase tend job of the item (`tended.companion`). `view` is the job as if it followed the companion,
+// merge first, else a rebase tend job of the item (`tended.companion`). One the source merged at its read (issue #2752 part
+// 3) is recorded, `job.companion_merged`. `view` is the job as if it followed the companion,
 // for the base merge, the queue's conflict check and the base tip. Not while the source is paused; a throw is logged and
 // asked again at the next round.
 import { openedPullRequests } from '../domain/direct-jobs.ts';
@@ -31,13 +32,16 @@ export function companionPullRequests(c: Pick<AfterDoneContext, 'store' | 'enque
     const held = companionsOf(listed.map((j) => get(j.id) ?? j), opened, get, open).filter((h) => c.finalReported(h.holder));
     if (held.length === 0) return;
     try {
-      const pulls = held.flatMap((h) => h.companions.map((url) => ({ repo: pullRequestRepo(url, h.holder.source!.repo!), number: Number(/\/pull\/(\d+)/.exec(url)?.[1]) })));
+      const pulls = held.flatMap((h) => h.companions.map((url) => ({ repo: pullRequestRepo(url, h.holder.source!.repo!), number: Number(/\/pull\/(\d+)/.exec(url)?.[1]), job: h.holder })));
       const answers = await source.readCompanions(pulls);
       await Promise.all(held.map((h) => c.enqueue(h.holder.id, async () => {
         const job = get(h.holder.id);
         if (!job) return;
         const after = companionsAfter(job, h.companions, answers);
         if (JSON.stringify(after) !== JSON.stringify(companionsOfJob(job) ?? {})) c.setSource(job.id, { ...(job.sourceState?.source ?? {}), companions: after });
+        for (const a of answers) {
+          if (a.byHopper && h.companions.some((u) => u.toLowerCase() === a.url.toLowerCase())) store.events.append({ type: 'job.companion_merged', jobId: job.id, data: { pullRequest: a.url } });
+        }
       })));
     } catch (e) {
       console.warn(`hopper: ${source.name}: reading the companion pull requests failed, asked again at the next round: ${(e as Error).message}`);
