@@ -25,6 +25,8 @@ export const PASS_LEASES = {
   discovery: 'discovery',
   /** The delivery ledger pass (issue #2554 part 6). */
   deliveryLedger: 'delivery-ledger',
+  /** The kept-track pass (issue #2775). */
+  keptTracks: 'kept-tracks',
   /** The wakes a stop lost (issue #1571). */
   missedWakes: 'missed-wakes',
 } as const;

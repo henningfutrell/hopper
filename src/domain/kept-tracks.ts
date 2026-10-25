@@ -128,7 +128,7 @@ export function foldTrackEvents(marks: Map<string, TrackMarks>, events: readonly
 }
 
 /** The measured steps from the marks, as `deliveryTracks` reads them: each step ends where the next one starts. */
-function measuredOf(m: TrackMarks): { steps: StepActual[]; current: { step: DeliveryStep; since: string } } {
+export function measuredOf(m: TrackMarks): { steps: StepActual[]; current: { step: DeliveryStep; since: string } } {
   const landed = m.merged ? m.landed : undefined;
   const bounds: [DeliveryStep, string | undefined][] = [
     ['queued', m.queued], ['coding', m.started], ['pr_checks', m.finished], ['landing', m.merged], ['landing_checks', m.merged], ['promotion_set', landed],
@@ -177,8 +177,6 @@ export interface TrackContext {
   delivery: DeliveryRepo;
   /** When each gate of the promotion set the change is in was cleared. */
   cleared: Partial<Record<DeliveryStep, string>>;
-  /** A person's no-deploy mark. */
-  noDeploy?: { by: string; at: string; note?: string };
 }
 
 const sourceOf = (m: TrackMarks): string => m.issue ?? m.source ?? 'unknown';
@@ -186,7 +184,7 @@ const sourceOf = (m: TrackMarks): string => m.issue ?? m.source ?? 'unknown';
 /**
  * The track of `jobId` from its marks at `now`. A track kept closed stays as it was: its close is final. It closes with its
  * deployment record: `deploy` once its production step ended; `none` once its job ended with no change (failed, cancelled
- * or rejected before a merge; finished with no pull request; its pull request closed with no merge), or by a person's mark.
+ * or rejected before a merge; finished with no pull request; its pull request closed with no merge). A person's mark is `noDeployOf`.
  */
 export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?: KeptTrack): KeptTrack {
   if (kept?.state === 'closed') return kept;
@@ -211,7 +209,6 @@ export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?
     return close(deliveredAt, { ...base, at: deliveredAt, kind: 'deploy', artifact: { pullRequest: marks.pr }, target: 'production', expected: 'delivered', observed: steps });
   }
   const none = (at: string, outcome: NoDeployOutcome) => close(at, { ...base, at, kind: 'none', source: sourceOf(marks), outcome });
-  if (c.noDeploy) return none(c.noDeploy.at, { status: 'marked', by: c.noDeploy.by, ...(c.noDeploy.note ? { note: c.noDeploy.note } : {}) });
   if (marks.merged) return track;
   const status = c.job?.status;
   const report: Partial<NoDeployOutcome> = c.job?.researchId ? { report: 'research' } : c.job?.proposalId ? { report: 'proposal' } : {};
@@ -219,4 +216,32 @@ export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?
   if (status && ENDED_NO_CHANGE.has(status)) return none(c.now, { status, ...report });
   if (status === 'finished' && !marks.pr) return none(marks.finished ?? c.now, { status, ...report });
   return track;
+}
+
+/** An open track closed by a person's no-deploy mark (`POST /ui/api/delivery-tracks/no-deploy`), at `at`. */
+export function noDeployOf(t: KeptTrack, mark: { by: string; at: string; note?: string }): KeptTrack {
+  return {
+    ...t, state: 'closed', closedAt: mark.at,
+    deployment: {
+      jobId: t.jobId, ...(t.repo ? { repo: t.repo } : {}), at: mark.at, kind: 'none', source: sourceOf(t.marks),
+      outcome: { status: 'marked', by: mark.by, ...(mark.note ? { note: mark.note } : {}) },
+    },
+  };
+}
+
+/** The kept tracks and deployment records (tenant migration 101): a closed track, and its deployment record, never change. */
+export interface KeptTrackRepository {
+  /** The newest event seq the pass folded; none before its first pass. */
+  cursor(): number | undefined;
+  /** Every open track. */
+  open(): KeptTrack[];
+  /** Which of these jobs have a closed track. */
+  closedOf(jobIds: readonly string[]): Set<string>;
+  get(jobId: string): KeptTrack | undefined;
+  /** Keeps each track, and the deployment record of each closed one, and the cursor, in one transaction. A track kept closed is not written over. */
+  save(tracks: readonly KeptTrack[], cursor?: number): void;
+  /** Newest first, by the time of its first step. */
+  list(q?: { job?: string; repo?: string; state?: KeptTrack['state']; limit?: number }): KeptTrack[];
+  /** Newest first. */
+  deployments(q?: { job?: string; repo?: string; target?: string; kind?: DeploymentRecord['kind']; limit?: number }): DeploymentRecord[];
 }
