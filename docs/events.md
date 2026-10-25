@@ -9479,6 +9479,43 @@ Version 1 (`docs/schemas/delivery_track.deploy_expected.v1.json`). A person said
 }
 ```
 
+## `delivery_track.held`
+
+Version 1 (`docs/schemas/delivery_track.held.v1.json`). A person put a delivery hold on a job's change (issue #2775 part 6), `by` who, at its delivery `step`, with their `reason`. `owner` `hopper`: a pause, the step's own owner (yolo mode, the batch runner, the schedule) keeps it but does not act on the change while it is held; `person`: the person took ownership of it, and the step's owner does not act on it until they hand it back. Kept on its kept delivery track as an intervention, and its `hold` until a release. It stops no job and no batch run in progress.
+
+| field | type | required |
+|---|---|---|
+| `by` | string | yes |
+| `step` | `queued` \| `coding` \| `pr_checks` \| `landing` \| `landing_checks` \| `promotion_set` \| `test_gate` \| `production` | yes |
+| `owner` | `hopper` \| `person` | yes |
+| `reason` | string | no |
+
+```json
+{
+  "by": "release-owner",
+  "step": "landing_checks",
+  "owner": "person",
+  "reason": "I ship this one by hand"
+}
+```
+
+## `delivery_track.released`
+
+Version 1 (`docs/schemas/delivery_track.released.v1.json`). A person released the delivery hold of a job's change (issue #2775 part 6): a resume, or a hand back of a change a person owned. `by` who, at its delivery `step`, with their `reason`. Kept on its kept delivery track as an intervention; the step's own owner acts on the change again at its next pass.
+
+| field | type | required |
+|---|---|---|
+| `by` | string | yes |
+| `step` | `queued` \| `coding` \| `pr_checks` \| `landing` \| `landing_checks` \| `promotion_set` \| `test_gate` \| `production` | yes |
+| `reason` | string | no |
+
+```json
+{
+  "by": "release-owner",
+  "step": "landing_checks"
+}
+```
+
 ## `push_requirements.summarized`
 
 Version 1 (`docs/schemas/push_requirements.summarized.v1.json`). After a job's push (issue #2555 part 4), the hopper replaced the push requirements summary in the body of the pushed branch's open pull request `number` of `repo` with its evaluation of the commit pushed, `head`: each requirement's status, each check's command, thresholds and measured values, between two hidden lines. Only a pull request the job may edit; the rest of the body stays as it was. A job's own `pr create` holds the summary already.
