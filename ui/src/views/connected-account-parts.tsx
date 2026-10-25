@@ -24,6 +24,7 @@ export function Repositories({ s, name, byToken, where, canAdmin, send, refresh 
   return <>
     <InstallationsRead s={s} name={name} what={byToken ? 'Repositories the token reaches' : 'Where the app is installed'} refresh={refresh} />
     {s.installations !== undefined && s.installationsError && <div data-installations-error className="text-warn break-words">{s.installationsError}. Shown: the read before it.</div>}
+    {s.jobRepositoriesAdded && <RepositoriesAdded added={s.jobRepositoriesAdded} />}
     {s.installations === undefined
       ? <div data-installations className="space-y-1">
         {s.installationsError
@@ -39,6 +40,12 @@ export function Repositories({ s, name, byToken, where, canAdmin, send, refresh 
           {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app</a></div>}
         </div>}
   </>;
+}
+
+/** The repositories the app came to reach that the hopper made job repositories (issue #2761), and when. */
+function RepositoriesAdded({ added }: { added: NonNullable<Connected['jobRepositoriesAdded']> }) {
+  const now = useServerNow();
+  return <div data-job-repositories-added className="text-muted-foreground break-words">The app came to reach new repositories; the hopper added them for jobs {ago(added.at, now)}: {added.repositories.join(', ')}</div>;
 }
 
 /** When where the app is installed was read from GitHub (issue #1250), and Refresh to read it again. */

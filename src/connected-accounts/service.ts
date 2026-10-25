@@ -22,7 +22,9 @@
 // which key is missing (issue #647).
 //
 // Where the app is installed (issue #1250, installations.ts) is kept in the database and read from GitHub only on Refresh,
-// on its schedule and when an account is connected: the status never reads GitHub.
+// on its schedule and when an account is connected: the status never reads GitHub. A repository a later read finds new — the
+// app installed on a new owner, or a repository added to an installation — becomes a job repository, and the source syncs
+// at once (issue #2761, new-repositories.ts).
 //
 // The source email match (issue #1380, email-match.ts): with it on, an account connected from Sources must have the email its
 // person signed in with verified at GitHub; the account keeps that email (`matchEmail`), and each renewal checks it again.
@@ -46,7 +48,7 @@ import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
 import type { Renewal } from './renewal.ts';
 import { createHeldGrants } from './held.ts'; import { createEmailMatch } from './email-match.ts';
-import { createInstallationReads, type ConditionalAnswers } from './installations.ts';
+import { createInstallationReads, type ConditionalAnswers } from './installations.ts'; import { newRepositories } from './new-repositories.ts';
 import { createRenewer, type Live } from './renewer.ts'; import { createTokenConnect } from './token-connect.ts'; import type { ByProvider } from './keyed.ts';
 
 export { PROVIDER_NAME };
@@ -96,7 +98,8 @@ export interface ConnectedAccountsOptions {
   secrets: SystemSecrets;
   /** How often the renewer looks, default RENEW_EVERY_MS; whether the source email match is on (issue #1380), the instance's setting read at each check, absent: on. */
   /** `accountKey`: the account's key, said in its status (issue #1448): a further account's (account-set.ts); absent: its provider, the first account. */
-  renewEveryMs?: number; sourceEmailMatch?(): boolean; accountKey?: ConnectedAccountKey;
+  /** `takenElsewhere`: whether another of the user's accounts holds `repo` as a job repository (issue #2761): a new repository it holds is not taken. */
+  renewEveryMs?: number; sourceEmailMatch?(): boolean; accountKey?: ConnectedAccountKey; takenElsewhere?(provider: ConnectedAccountProvider, repo: string): boolean;
 }
 
 export type { Renewal };
@@ -210,7 +213,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
    * answer says why (never that it is not installed), with the installations read before it.
    */
   const installations = createInstallationReads({ reads: o.store.appInstallations, account: accountOf, read: async (p, answers) => (live(p).account.grantedBy === 'token' ? o.tokenRepositories : o.installations)(await token(p), answers),
-    now: () => o.clock.now().getTime(), log: (line) => o.logger.warn(line) });
+    adopt: newRepositories({ ...o, settings: o.store.settings, skip: (p) => accountOf(p) === undefined || live(p).account.grantedBy === 'token' }), now: () => o.clock.now().getTime(), log: (line) => o.logger.warn(line) });
   const withInstallations = (s: ConnectedAccountStatus): ConnectedAccountStatus => (s.state === 'connected' ? { ...s, ...installations.view(s.provider, s.account) } : s);
 
   /**
