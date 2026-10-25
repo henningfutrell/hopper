@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 // Issue #1250 part 2: the GitHub account panel in Sources shows where the hopper's app is installed as the hopper last read
 // it, with when, and never asks GitHub on a load. Refresh asks the hopper to read it again; a read that failed says why,
-// above the installations read before it. The whole app against a fake of the daemon's HTTP surface.
+// above the installations read before it. Issue #2774: every repository of every installation is listed, ready to choose,
+// by owner with the owner's picture, unchosen until the person chooses it. The whole app against a fake of the daemon's HTTP surface.
 import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { boot, source, unmount } from './sources-daemon.ts';
@@ -34,5 +35,22 @@ describe('Sources view: where the app is installed, from the hopper\'s database'
     await vi.waitFor(() => expect(panel()?.querySelector('[data-installations-read]')?.textContent).toBe('read 5m ago'));
     expect(panel()!.querySelector('[data-installations-error]')!.textContent).toContain('GitHub answered 503');
     expect(panel()!.querySelector('[data-installation="octo-user"]')).not.toBeNull();
+  });
+
+  it('lists every repository of every installation by owner, with the owner\'s picture, unchosen until the person chooses it (issue #2774)', async () => {
+    const at = new Date(Date.now() - 5 * 60_000).toISOString();
+    await boot({ '/api/sources': SOURCES, '/api/connected-accounts': { accounts: [{
+      ...CONNECTED, jobRepositories: ['octo-user/tools'], installationsCheckedAt: at, installations: [
+        { ...INSTALLED[0], avatarUrl: 'https://avatars.example/octo-user' },
+        { account: 'acme', avatarUrl: 'https://avatars.example/acme', repositorySelection: 'all', repositories: ['acme/api', 'acme/web'] },
+      ],
+    }] } });
+    await vi.waitFor(() => expect(panel()?.querySelector('[data-installation="acme"]')).not.toBeNull());
+    const acme = panel()!.querySelector('[data-installation="acme"]')!;
+    expect(acme.querySelector('img[data-owner-avatar]')?.getAttribute('src')).toBe('https://avatars.example/acme');
+    expect(panel()!.querySelector('[data-installation="octo-user"] img[data-owner-avatar]')?.getAttribute('src')).toBe('https://avatars.example/octo-user');
+    const box = (r: string) => panel()!.querySelector<HTMLInputElement>(`[data-repository="${r}"] input[type="checkbox"]`)!;
+    expect([box('acme/api').checked, box('acme/web').checked, box('octo-user/tools').checked]).toEqual([false, false, true]);
+    expect(panel()!.querySelector('[data-job-repositories-summary]')!.textContent).toBe('1 of 3 repositories chosen for jobs');
   });
 });

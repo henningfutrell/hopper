@@ -254,12 +254,12 @@ export function createFakeGitHub(o: { clientId: string; clientSecret?: string; i
       const checks = listingRoute(base, issues, r.method, path, r.body) ?? repoChecksRoute(forge?.repoChecks, r.method, path, r.body) ?? peopleRoute(forge, base, issues, r.method, path, r.query) ?? orgAppsRoute(forge, base, r.method, path, r.query);
       if (checks) return checks;
       if (r.method === 'GET' && path === '/user') return { status: 200, body: { id: idOf(login), login, name: `${login} name`, avatar_url: `${base}/avatars/${login}` } };
-      if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] }; if (r.method === 'GET' && path === '/user/repos') return tagged(pageOf([...new Set(issues.map((i) => i.repo))].map((full_name) => ({ full_name, owner: { login: full_name.split('/')[0] } })), r.query)); // the repositories a personal access token reaches (issue #1380): every repository the issues are in
+      if (r.method === 'GET' && path === '/user/emails') return { status: 200, body: [{ email: `${login}@example.com`, primary: true, verified: true }] }; if (r.method === 'GET' && path === '/user/repos') return tagged(pageOf([...new Set(issues.map((i) => i.repo))].map((full_name) => ({ full_name, owner: { login: full_name.split('/')[0], avatar_url: `${base}/avatars/${full_name.split('/')[0]}` } })), r.query)); // the repositories a personal access token reaches (issue #1380): every repository the issues are in
       if (r.method === 'GET' && path === '/user/installations') {
         if (forge?.installationsDown) return { status: 503, body: { message: 'Service Unavailable' } };
         const on = forge?.installedOn ?? [login];
         const page = pageOf(on.map((a, i) => ({
-          id: i + 1, account: { login: a }, html_url: `${base}/settings/installations/${i + 1}`,
+          id: i + 1, account: { login: a, avatar_url: `${base}/avatars/${a}` }, html_url: `${base}/settings/installations/${i + 1}`,
           repository_selection: forge?.chosenRepos?.[a] ? 'selected' : 'all',
           // What the installation grants, as GitHub answers it: the shipped app's permissions, unless the test says otherwise.
           permissions: forge?.installationPermissions?.[a] ?? GRANTED,

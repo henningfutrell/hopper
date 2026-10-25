@@ -1,14 +1,15 @@
 // Issue #1250 part 2: where the hopper's app is installed is read from GitHub only on Refresh, on the schedule, or when the
 // account is connected, never when the connected account is shown; reads are coalesced, the read and its answers' ETags are
 // kept in the store, and a failed read is read again by the schedule only after a backoff that doubles. The kept reads over
-// a fake read and an in-memory store.
+// a fake read and an in-memory store. Issue #2774: each read, the schedule's too, lists every installation and repository
+// GitHub answers now, whatever the read before it saw.
 import { describe, expect, it } from 'vitest';
 import { createInstallationReads, FRESH_MS, MAX_RETRY_MS, RETRY_MS } from '../../src/connected-accounts/installations.ts';
 import type { AppInstallation, AppInstallationsRead } from '../../src/domain/types.ts';
 
 const FOUND: AppInstallation[] = [{ account: 'octo', repositorySelection: 'all', repositories: ['octo/a'] }];
 
-function setup() {
+function setup(o: { found?: () => AppInstallation[] } = {}) {
   const calls: string[] = [];
   let fail: Error | undefined;
   let hold: Promise<void> | undefined;
@@ -23,7 +24,7 @@ function setup() {
       await hold;
       if (fail) throw fail;
       answers.keep('GET /user/installations {}', { etag: '"e1"', data: {} });
-      return FOUND;
+      return o.found?.() ?? FOUND;
     },
     now: () => now, log: () => {},
   });
@@ -115,5 +116,15 @@ describe('the app\'s installations: reads from GitHub', () => {
     expect(s.calls).toEqual(['octo', 'other']);
     s.reads.forget('github');
     expect(s.kept.has('github')).toBe(false);
+  });
+
+  it('the schedule\'s read lists a new owner and a repository added to an installation (issue #2774)', async () => {
+    let found = FOUND;
+    const s = setup({ found: () => found });
+    await s.reads.refresh('github');
+    found = [{ ...FOUND[0]!, repositories: ['octo/a', 'octo/b'] }, { account: 'acme', repositorySelection: 'all', repositories: ['acme/api'] }];
+    s.advance(FRESH_MS);
+    await s.reads.tick();
+    expect(s.reads.view('github', 'octo')).toEqual({ installations: found, installationsCheckedAt: '2026-10-15T10:30:00.000Z' });
   });
 });
