@@ -35,12 +35,13 @@ export function InstallAppCallout({ s }: { s: ConnectedAccountStatus | undefined
   );
 }
 
-/** The Dashboard's: the callout while the first GitHub account's app reaches no repository, read once. */
+/** The Dashboard's: the callout while the first GitHub account's app reaches no repository, read once. An answer with no
+ *  accounts shows nothing (issue #2769). */
 export function InstallAppNudge() {
   const [s, setS] = useState<ConnectedAccountStatus>();
   useEffect(() => {
     let live = true;
-    void get<{ accounts: ConnectedAccountStatus[] }>('/api/connected-accounts').then((v) => { if (live) setS(v.accounts.find((a) => a.key === 'github')); }, () => {});
+    void get<{ accounts?: ConnectedAccountStatus[] }>('/api/connected-accounts').then((v) => { if (live) setS(v.accounts?.find((a) => a.key === 'github')); }, () => {});
     return () => { live = false; };
   }, []);
   return s && installNeeded(s) === true ? <InstallAppCallout s={s} /> : null;
