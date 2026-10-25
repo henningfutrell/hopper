@@ -35739,6 +35739,47 @@ change stays delivered; a flip to deploy after it), `test/ui/job-delivery-view.t
 `test/integration/jobs.test.ts`, `test/integration/failures.test.ts`, `test/integration/operator-cli-failures.test.ts`
 (`nextJobId` on `job.rerun`).
 
+### Part 10: beta and the install that runs a change (issue #2775, 2026-10-25)
+
+Part 4 left two hops unobserved: `beta`, which `scripts/promote.sh` moves with no event, and the install that runs a
+change. The issue's example is a fix that was "not on `dev` or running anywhere": a change on `stable` that no install runs
+is not delivered yet.
+
+- **Beta.** Each pass of the canary step (for a repository with a canary window) also compares `canary` with `beta`. A
+  new tip of `beta` ahead of `canary` is one `landing_batch.beta_moved`, with `mergeCommits`, the merge commits it carries
+  beyond `canary`. The landing batch state keeps the last tip (`beta`), so the same tip is recorded once. A missing branch
+  or a failed compare records nothing, and it is no problem of the canary step. A track whose `commit` is among them gets
+  the `beta` hop; while it is in the promotion set with no canary hop, it waits on the promotion of beta to canary.
+- **The install.** Each update check records the commit the install runs once: `install.seen`, with `branch`, `from` (the
+  commit recorded before it) and `mergeCommits`, the merge commits the commit carries beyond `from` (at most 500, newest
+  first; all its own when `from` is unknown). An instance event, so it is in every user's event log. It works for an image
+  too, which `update.applied` never names: the check fetches the update repository for every kind of install. A track
+  whose `commit` is among them gets the `install` hop.
+- **Production ends when an install runs it.** On the hopper's own channels production starts when `stable` moves to the
+  change, and ends when this hopper runs a commit that carries it: at the move, when an install in the canary subset ran
+  it before. Until then the track is open in production, and waits on "an install of the hopper that runs it". The
+  `deploy` record, and its lock, come then.
+- **Hops.** The track and its `deploy` record list each observed hop (`hops`, `Hop`): `landed` on the tested branch (with
+  the merge commit), `beta`, `canary`, `stable` (each with the tip that carried it), and `install` (the commit it runs and
+  its branch). The job page lists them, and a delivered record says whether this hopper runs it.
+- **No migration**: the new marks, `hops` and the events' fields are optional fields of the JSON bodies and new events.
+  A track already closed stays as it was.
+
+**Decisions:**
+- **This hopper is the install observed.** Other installs of the hopper report nothing to it. The record says what this
+  hopper saw.
+- **`install.seen`, not a field on `update.applied`.** An image is never applied by the hopper, so `update.applied` misses
+  the main way the hopper runs. The check sees every kind of install.
+- **Beta from a compare with `canary`, not with `stable`.** It names only what beta has that the candidate lacks. When
+  `beta` and `canary` both move between two passes, the change gets no `beta` hop; the `canary` hop still comes.
+- **Image readiness is not a hop of its own.** `scripts/promote.sh` moves `beta` and `canary` only after the commit's image
+  built, so the `beta` hop also says its image was ready.
+
+**Verification:** `test/domain/kept-tracks.test.ts` (the beta hop and its wait; the install hop; on stable with no install
+open in production; the hops on the record), `test/landing-batches/canary.test.ts` (`landing_batch.beta_moved` once per
+tip; no beta branch), `test/update/install-seen.test.ts` (recorded once, with the merge commits beyond the one before),
+`test/ui/job-delivery-view.test.ts` (the hops and "This hopper runs it").
+
 ## New repositories (issue #2795, part 1, 2026-10-25)
 
 Owner request: everything in the hopper is a setting with a sensible default, and an escalation to a person by default is

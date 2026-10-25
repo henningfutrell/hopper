@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "repo": {
+      "type": "string"
+    },
+    "beta": {
+      "type": "string"
+    },
+    "canary": {
+      "type": "string"
+    },
+    "tip": {
+      "type": "string"
+    },
+    "mergeCommits": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "repo",
+    "beta",
+    "canary",
+    "tip",
+    "mergeCommits"
+  ],
+  "additionalProperties": false
+}

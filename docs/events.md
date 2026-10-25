@@ -695,6 +695,28 @@ Version 1 (`docs/schemas/update.failed.v1.json`). Applying an update failed (fet
 }
 ```
 
+## `install.seen`
+
+Version 1 (`docs/schemas/install.seen.v1.json`). An update check saw the install run `commit`, built from `branch`, for the first time (issue #2775 part 10): at the boot after an update, and for an image too. `from`: the commit seen before it, if one was. `mergeCommits`: the merge commits `commit` carries beyond `from` (at most 500, newest first), so a job's kept delivery track finds its batch run's merge among them and its production step ends.
+
+| field | type | required |
+|---|---|---|
+| `commit` | string | yes |
+| `branch` | string | yes |
+| `from` | string | no |
+| `mergeCommits` | string[] | yes |
+
+```json
+{
+  "commit": "e4f5a6b",
+  "branch": "stable",
+  "from": "a1b2c3d",
+  "mergeCommits": [
+    "e4f5a6b"
+  ]
+}
+```
+
 ## `plugin.installed`
 
 Version 1 (`docs/schemas/plugin.installed.v1.json`). A plugin was installed from the plugin store into the plugin dir (UI Install or Update), at the store's commit `commit`. A plugin new to this process is loaded at once; one installed again runs its new code after a restart.
@@ -9186,6 +9208,30 @@ Version 1 (`docs/schemas/landing_batch.canary_promoted.v1.json`). The canary can
   "stable": "stable",
   "tip": "0123456789abcdef0123456789abcdef01234567",
   "why": "no bug report named it in 24 hours"
+}
+```
+
+## `landing_batch.beta_moved`
+
+Version 1 (`docs/schemas/landing_batch.beta_moved.v1.json`). The `beta` branch moved ahead of `canary` (issue #2775 part 10, by `scripts/promote.sh beta`), seen by the canary step: `tip`, and `mergeCommits`, the merge commits it carries beyond `canary`, so a job's kept delivery track finds its batch run's merge among them. Once per tip.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `beta` | string | yes |
+| `canary` | string | yes |
+| `tip` | string | yes |
+| `mergeCommits` | string[] | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "beta": "beta",
+  "canary": "canary",
+  "tip": "0123456789abcdef0123456789abcdef01234567",
+  "mergeCommits": [
+    "89abcdef0123456789abcdef0123456789abcdef"
+  ]
 }
 ```
 

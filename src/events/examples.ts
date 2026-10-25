@@ -46,7 +46,7 @@ export const EVENT_EXAMPLES: Record<EventType, Record<string, unknown>> = {
   'update.available': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'stable', changes: 3, pullRequest: 775 },
   'update.started': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'stable' },
   'update.applied': { from: 'a1b2c3d', to: 'e4f5a6b', ref: 'stable' },
-  'update.failed': { to: 'e4f5a6b', error: 'the new build does not load: SyntaxError' },
+  'update.failed': { to: 'e4f5a6b', error: 'the new build does not load: SyntaxError' }, 'install.seen': { commit: 'e4f5a6b', branch: 'stable', from: 'a1b2c3d', mergeCommits: ['e4f5a6b'] },
   'plugin.installed': { id: 'echo-executor', role: 'executor', commit: 'e4f5a6b' },
   'plugin.removed': { id: 'echo-executor' },
   'job.accepted': { by: 'pre-sort' },

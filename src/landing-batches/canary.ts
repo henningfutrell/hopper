@@ -6,7 +6,7 @@
 // `src/domain/landing-canary.ts`; each step an event, with the user's own GitHub connection. A pass that stopped after
 // `stable` moved records the promotion at the next; the issue is found before it is filed again (issue #1589).
 import { mergedPullRequests, type LandingBatchState } from '../domain/landing-batches.ts';
-import { CANARY_BRANCH, canaryIssueText, canaryNext, canaryVerdict, STABLE_BRANCH, type Canary } from '../domain/landing-canary.ts';
+import { BETA_BRANCH, CANARY_BRANCH, canaryIssueText, canaryNext, canaryVerdict, STABLE_BRANCH, type Canary } from '../domain/landing-canary.ts';
 import type { NewEvent } from '../domain/types.ts';
 import { JOB_LABEL } from '../repo-checks/service.ts';
 import { fileOnce } from './once.ts';
@@ -67,6 +67,18 @@ export async function canaryPass(p: CanaryPass): Promise<void> {
   p.note({ why: `the canary ${running.tip.slice(0, 12)} is held: ${verdict.reason}` });
   const held = p.state()?.canary;
   if (held) await fileIssue(p, held);
+}
+
+/**
+ * The move of `beta` (issue #2775 part 10): `scripts/promote.sh` writes no event, so each pass compares `canary` with
+ * `beta`, and a new tip ahead of `canary` is one `landing_batch.beta_moved`, with the merge commits it carries. A missing
+ * `beta` or `canary` branch, or a failed compare, records nothing: it is no problem of the canary step.
+ */
+export async function betaPass(p: Pick<CanaryPass, 'gh' | 'repo' | 'record' | 'state'>): Promise<void> {
+  const cmp = await p.gh.compare(p.repo, CANARY_BRANCH, BETA_BRANCH).catch(() => undefined);
+  if (!cmp || cmp.aheadBy <= 0 || p.state()?.beta?.tip === cmp.tip) return;
+  const mergeCommits = cmp.commits.filter((c) => c.parents.length > 1).map((c) => c.sha);
+  p.record({ type: 'landing_batch.beta_moved', data: { repo: p.repo, beta: BETA_BRANCH, canary: CANARY_BRANCH, tip: cmp.tip, mergeCommits } });
 }
 
 /** The issue for a held candidate, once. */

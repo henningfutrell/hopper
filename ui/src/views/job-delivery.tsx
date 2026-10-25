@@ -7,7 +7,8 @@
 // merge commit of the batch run that landed it, when the hopper knows it (part 4). The acts its step allows (part 8): Hold
 // and Take ownership put a delivery hold on the change (POST /ui/api/delivery-tracks/hold), Release lets it go on or hands it
 // back (POST /ui/api/delivery-tracks/release); its hold and each person's act on its change are listed. A record of a job
-// that ran again links the new job, whose own track carries the work on (part 9).
+// that ran again links the new job, whose own track carries the work on (part 9). Each observed hop — landed, beta, canary,
+// stable, and the install of this hopper that runs it — is listed, and a delivered record says whether this hopper runs it (part 10).
 import { Truck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -17,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import { stepLabel } from '@/model/delivery-forecast';
 import { jobHref } from '@/model/job';
-import type { DeliveryTracksView, DeploymentRecord, Job, KeptTrack } from '@/model/wire';
+import type { DeliveryTracksView, DeploymentRecord, Hop, Job, KeptTrack } from '@/model/wire';
 import { useHopper } from '@/store';
 
 const OUTCOMES: Record<string, string> = {
@@ -26,11 +27,19 @@ const OUTCOMES: Record<string, string> = {
   rerouted: 'its item ran again in a new job',
 };
 
+const short = (sha?: string): string => (sha ? sha.slice(0, 12) : '');
+
+function hopLine(h: Hop): string {
+  if (h.hop === 'install') return `This hopper runs it since ${h.at}${h.commit ? `: commit ${short(h.commit)}` : ''}${h.branch ? `, from ${h.branch}` : ''}`;
+  if (h.hop === 'landed') return `Landed on the tested branch at ${h.at}${h.commit ? `, commit ${short(h.commit)}` : ''}`;
+  return `On ${h.hop} at ${h.at}${h.commit ? `, tip ${short(h.commit)}` : ''}`;
+}
+
 function Record({ d }: { d: DeploymentRecord }) {
   if (d.kind === 'deploy') {
     return (
       <div data-slot="job-delivery-record">
-        Delivered to {d.target} at <span className="num">{d.at}</span>: <a href={d.artifact.pullRequest} target="_blank" rel="noreferrer" className="underline underline-offset-4">its pull request</a>{d.artifact.commit ? <>, commit <span className="num">{d.artifact.commit.slice(0, 12)}</span></> : ''}. This record is final.
+        Delivered to {d.target} at <span className="num">{d.at}</span>: <a href={d.artifact.pullRequest} target="_blank" rel="noreferrer" className="underline underline-offset-4">its pull request</a>{d.artifact.commit ? <>, commit <span className="num">{short(d.artifact.commit)}</span></> : ''}.{d.hops?.some((h) => h.hop === 'install') ? ' This hopper runs it.' : ''} This record is final.
       </div>
     );
   }
@@ -133,6 +142,9 @@ export function JobDelivery({ job }: { job: Job }) {
             <div key={x.seq} data-slot="job-delivery-text-edit" className="text-xs text-muted-foreground">
               Item text edited at <span className="num">{x.at}</span>, in {stepLabel(x.step)}{x.editors.length > 0 ? `, by ${x.editors.join(', ')}` : ''}
             </div>
+          ))}
+          {track.hops?.map((h) => (
+            <div key={`${h.hop}-${h.at}`} data-slot="job-delivery-hop" className="text-xs text-muted-foreground">{hopLine(h)}</div>
           ))}
           {track.steps.map((s) => (
             <div key={s.step} data-slot="job-delivery-step" className="text-xs text-muted-foreground">
