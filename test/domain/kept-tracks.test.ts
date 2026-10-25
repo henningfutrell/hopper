@@ -147,7 +147,7 @@ describe('kept delivery tracks', () => {
 
   it('a none record flipped to deploy reopens the track, keeps its record, and locks once that deployment completes', () => {
     // A finished job with no pull request: the hopper closes it with a none record.
-    const r = fold([queued('r', '08:00'), ev('job.finished', '08:30', { result: {} }, 'r')]);
+    const r = fold([queued('r', '08:00'), ev('job.started', '08:05', { attempts: 1 }, 'r'), ev('job.finished', '08:30', { result: {} }, 'r')]);
     const none = trackOf('r', r.get('r')!, ctx());
     expect(none).toMatchObject({ state: 'closed', deployment: { kind: 'none', outcome: { status: 'finished' } } });
     const reopened = expectOf(none, { expect: 'deploy', by: 'owner', at: at('12:00') });
