@@ -1,8 +1,9 @@
 // A job in the Jobs view's list (issues #434, #2353, #2372): one table row — an expand button, its stage, its issue
 // (owner/repo#number), its title and task count, lane, time in stage, pull request and checks (for a partly done job also
-// the pull request it waits on and what runs after its merge), and last event. A click on the row, but on a link, opens
-// its run graph under it (jobs.tsx). Narrow screens drop the issue, the lane, the time, the pull request and the last
-// event; each cell's whole text is in its title. It renders again only when what it shows changes, so the list stays
+// the pull request it waits on and what runs after its merge), its delivery step while its kept delivery track is open
+// (issue #2775: a fix merged but not promoted shows where it stops, not done), and last event. A click on the row, but on
+// a link, opens its run graph under it (jobs.tsx). Narrow screens drop the issue, the lane, the time, the pull request, the
+// delivery step and the last event; each cell's whole text is in its title. It renders again only when what it shows changes, so the list stays
 // quick with hundreds of jobs.
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { memo } from 'react';
@@ -12,8 +13,9 @@ import { StatusBadge, TEXT } from '@/components/status';
 import { cn } from '@/lib/utils';
 import { clock } from '@/model/format';
 import { jobHref } from '@/model/job';
+import { stepLabel } from '@/model/delivery-forecast';
 import { pullRequestText, pullRequestTone, stageInfo, tasksText } from '@/model/jobs-view';
-import type { DomainEvent, JobGraphNode, JobStage } from '@/model/wire';
+import type { DomainEvent, JobGraphNode, JobStage, KeptTrack } from '@/model/wire';
 
 export function StageBadge({ stage, text }: { stage: JobStage; text?: string }) {
   const s = stageInfo(stage);
@@ -45,6 +47,7 @@ const COLS = [
   { slot: 'row-lane', label: 'Lane', width: 'w-0 lg:w-36', shown: 'hidden lg:table-cell', title: 'its lane and machine' },
   { slot: 'row-since', label: 'In stage', width: 'w-0 md:w-16', shown: 'hidden md:table-cell', title: 'how long it is in its stage' },
   { slot: 'row-pull-request', label: 'Pull request', width: 'w-0 md:w-56', shown: 'hidden md:table-cell' },
+  { slot: 'row-delivery', label: 'Delivery', width: 'w-0 xl:w-32', shown: 'hidden xl:table-cell', title: 'the delivery step its change is in, while its delivery track is open' },
   { slot: 'row-last-event', label: 'Last event', width: 'w-0 2xl:w-64', shown: 'hidden 2xl:table-cell' },
 ] as const;
 type Col = (typeof COLS)[number]['slot'];
@@ -65,14 +68,23 @@ export function JobTableHead() {
   );
 }
 
-interface RowProps { node: JobGraphNode; lane: string; last: DomainEvent | undefined; since: string | undefined; expanded: boolean; onToggle: (jobId: string) => void }
+/** Where an open kept delivery track is: its step, since when, what it waits on. */
+export type DeliveryPosition = KeptTrack['current'];
+
+interface RowProps {
+  node: JobGraphNode; lane: string; last: DomainEvent | undefined; since: string | undefined; delivery: DeliveryPosition | undefined;
+  expanded: boolean; onToggle: (jobId: string) => void;
+}
+
+const sameDelivery = (a: DeliveryPosition | undefined, b: DeliveryPosition | undefined): boolean =>
+  a?.step === b?.step && a?.since === b?.since && a?.waitingOn === b?.waitingOn;
 
 const same = (a: RowProps, b: RowProps): boolean =>
   a.node.id === b.node.id && a.node.stage === b.node.stage && a.node.stageText === b.node.stageText && a.node.status === b.node.status && a.node.stageSince === b.node.stageSince
   && a.node.tasks?.done === b.node.tasks?.done && a.node.tasks?.total === b.node.tasks?.total && a.lane === b.lane && a.last?.seq === b.last?.seq
-  && a.since === b.since && a.expanded === b.expanded && a.onToggle === b.onToggle && JSON.stringify(a.node.pullRequest) === JSON.stringify(b.node.pullRequest);
+  && a.since === b.since && sameDelivery(a.delivery, b.delivery) && a.expanded === b.expanded && a.onToggle === b.onToggle && JSON.stringify(a.node.pullRequest) === JSON.stringify(b.node.pullRequest);
 
-export const JobRow = memo(function JobRow({ node, lane, last, since, expanded, onToggle }: RowProps) {
+export const JobRow = memo(function JobRow({ node, lane, last, since, delivery, expanded, onToggle }: RowProps) {
   const issue = issueOf(node);
   const detail = last ? detailOf(last) : '';
   const partly = node.partlyDone;
@@ -103,6 +115,10 @@ export const JobRow = memo(function JobRow({ node, lane, last, since, expanded, 
             waits on the merge of <GhLink url={partly.pullRequest}>{prLabel(partly.pullRequest)}</GhLink>; then {partly.afterMerge}
           </span>
         )}
+      </td>
+      <td data-slot="row-delivery" className={cn(CELL, COL['row-delivery'])}
+        title={delivery ? `in ${stepLabel(delivery.step)} since ${delivery.since}; waits on ${delivery.waitingOn}` : undefined}>
+        {delivery ? stepLabel(delivery.step) : ''}
       </td>
       <td data-slot="row-last-event" className={cn(CELL, COL['row-last-event'])} title={last ? `${last.at} ${last.type}${detail ? ` — ${detail}` : ''}` : undefined}>
         {last ? <>

@@ -35549,3 +35549,26 @@ agreed before it is built.
 **Verification:** `test/domain/kept-tracks.test.ts` (on canary in the test gate, on stable delivered with its commit; a
 held candidate, then a later one), `test/landing-batches/canary.test.ts` (`mergeCommits` on the start),
 `test/ui/job-delivery-view.test.ts` (the commit on the record).
+
+### Part 5: the delivery step on the Jobs list (issue #2775, 2026-10-25)
+
+The issue asks that a job in progress shows its position. The job page does since part 1. The Jobs list did not: a
+finished job whose fix merged but was not promoted read `done` there, which is the issue's example.
+
+- **A Delivery column** on the Jobs view's list (`ui/src/views/job-row.tsx`): for a job whose kept delivery track is open,
+  its delivery step; the cell's title says since when and what it waits on. Empty for a job with no open track. Only a wide
+  screen shows it, as the last event.
+- **Read with the graph** (`ui/src/views/jobs.tsx`): `GET /api/delivery-tracks?state=open`, again each time the view reads
+  the job graph. No new route, no new event and no migration.
+
+**Decisions:**
+- **Open tracks only.** A closed track's record is on the job page; the list's question is "what is still on its way".
+  It also keeps the read small: a closed track is final, and they grow without end.
+- **A column, not the stage badge.** The job stage is the job's own life; the delivery step is its change's. Two
+  meanings in one badge would be a synonym.
+
+**What is left** (later parts): the intercession design (pause, reroute, take ownership: who, which actions at which
+step, how it meets the stage-ownership hand-off), written down and agreed with a person before it is built; `beta` and
+the install that runs a change, as observed hops.
+
+**Verification:** `test/ui/jobs-table.test.ts` (an open track's step and its title on the row, none without one).
