@@ -27,7 +27,8 @@ export function keyedStore(store: AccountStore, provider: ConnectedAccountProvid
       lock: (p) => a.lock(k(p)), unlock: (p) => a.unlock(k(p)), delete: (p) => a.delete(k(p)),
     },
     appInstallations: { get: (p) => i.get(k(p)), put: (read) => i.put(read, key), remove: (p) => i.remove(k(p)) },
-    settings: { ...s, getJobRepositories: (p) => s.getJobRepositories(k(p)), setJobRepositories: (p, repos) => s.setJobRepositories(k(p), repos) },
+    settings: { ...s, getJobRepositories: (p) => s.getJobRepositories(k(p)), setJobRepositories: (p, repos) => s.setJobRepositories(k(p), repos),
+      getNewRepositories: (p) => s.getNewRepositories(k(p)), setNewRepositories: (p, r) => s.setNewRepositories(k(p), r) },
   };
 }
 

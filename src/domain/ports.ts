@@ -7,7 +7,7 @@ import type {
   NotifierAction, NotifierActionOutcome, NotifierActionResult, PluginsEditOutcome, PluginsReport, RouterStatus, RoutingEdit, RoutingEditOutcome, RoutingReport, RoutingRule, LaneId, MachineSnapshot,
   Question, SourceStatus, AfterAnswerTimed, UsageReading, UsageSourceState, ToolSignInStart, WebhookDelivery, InstallInfo, UpdatePullRequest, UpdateSettings, UpdateStatus, VersionHistory, ContinuedBy, JobLiveness, ReviewKind, ConnectedAccountKey, ConnectedAccountProvider, ConnectedAccountStatus, PluginStoreEdit, PluginStoreEditOutcome, PluginStoreReport, HandoffResolution, ResolutionWrite, ActingPerson, WorkState, Allowed, RunLogins, TaskCount, ItemEdit, ItemText, HasThread, AnswersFromThread, OwnPullRequestChecks, FailedCheck, ChecksRerun,
 } from './types.ts';
-import type { UserStore } from './store.ts'; import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts'; export type { NoteDelivery } from './job-notes.ts';
+import type { UserStore } from './store.ts'; import type { NewRepositoryChange } from './new-repositories.ts'; import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts'; export type { NoteDelivery } from './job-notes.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts'; export type { SourceItem, SourceRef } from './source-item.ts';
 import type { ExecutionReport } from './escalation-ports.ts'; import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { ReadsCompanions } from './companion-pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
 export type * from './escalation-ports.ts'; export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
@@ -858,7 +858,11 @@ export interface ConnectedAccounts {
    * Choose the repositories the account's jobs may use (issue #321), the whole list; the source syncs now. A repository is a
    * job repository of one account only (issue #1448): one chosen for another account already is refused.
    */
-  choose(key: ConnectedAccountKey, repositories: readonly string[]): Promise<ConnectedAccountStatus>;
+  /**
+   * `newRepositories`: change the account's new-repository policy, the whole of it, or dismiss its asks (issue #2795); a new
+   * policy applies at once to what the last read reached.
+   */
+  choose(key: ConnectedAccountKey, repositories: readonly string[]): Promise<ConnectedAccountStatus>; newRepositories(key: ConnectedAccountKey, change: NewRepositoryChange): Promise<ConnectedAccountStatus>;
   /**
    * `add`: a further account at `provider` with a personal access token (issue #1448): GitHub must take it, the source email
    * match applies, and its login must not be one connected already. With no first account, the token connects the first.
