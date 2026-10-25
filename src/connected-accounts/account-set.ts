@@ -27,14 +27,16 @@ export type AccountSet = ConnectedAccounts & ConnectedAccountTokens & {
 const number = (key: ConnectedAccountKey): number => (furtherAccount(key) ? Number(key.slice(key.lastIndexOf('-') + 1)) : 1);
 
 export function createAccountSet(o: ConnectedAccountsOptions): AccountSet {
-  const first = createConnectedAccounts(o);
+  /** A repository another account than `key` has for its jobs (issue #2795): never a new repository of `key`. */
+  const takenBy = (key: ConnectedAccountKey) => (repo: string): boolean => keys().some((k) => k !== key && at(k)[0].jobRepositories(providerOfKey(k)).some((r) => same(r, repo)));
+  const first = createConnectedAccounts({ ...o, taken: takenBy('github') });
   const further = new Map<ConnectedAccountKey, ConnectedAccountsService>();
   const make = (key: ConnectedAccountKey): ConnectedAccountsService => {
     const provider = providerOfKey(key);
     // A further account is never a sign-in: nothing links it to an identity, and nothing hands it a sign-in's grant.
     const { link: _link, ...rest } = o;
     return createConnectedAccounts({
-      ...rest, accountKey: key, store: keyedStore(o.store, provider, key), secrets: keyedSecrets(o.secrets, provider, key),
+      ...rest, accountKey: key, taken: takenBy(key), store: keyedStore(o.store, provider, key), secrets: keyedSecrets(o.secrets, provider, key),
       ...(o.onChange ? { onChange: () => o.onChange!(key) } : {}),
       ...(o.onExpired ? { onExpired: (_p, account, reason) => o.onExpired!(key, account, reason) } : {}),
       ...(o.onRenewed ? { onRenewed: (_p, renewed) => o.onRenewed!(key, renewed) } : {}),
@@ -140,6 +142,7 @@ export function createAccountSet(o: ConnectedAccountsOptions): AccountSet {
       if (taken.length > 0) return Promise.reject(new RepositoryTaken(`a repository is a job repository of one account only; chosen for another account already: ${taken.join(', ')}`));
       return s.choose(provider, repositories);
     },
+    newRepositories: (key, change) => { const [s, p] = at(key); return s.newRepositories(p, change); },
     // What a job source asks: a removed account reads as ended, with no repositories, never as an error.
     account: (key) => { if (gone(key)) return undefined; const [s, p] = at(key); return s.account(p); },
     ended: (key) => { const why = gone(key); if (why) return why; const [s, p] = at(key); return s.ended(p); },

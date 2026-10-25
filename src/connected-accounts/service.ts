@@ -45,7 +45,7 @@ import { deviceFlow, deviceFlowFailure, type DeviceFlow, type Grant } from './de
 import type { AccountIdentity } from './identity.ts';
 import { CLIENT_ID_VARIABLE, configUrl, installUrl, type HopperApps } from './hopper-app.ts';
 import type { Renewal } from './renewal.ts';
-import { createHeldGrants } from './held.ts'; import { createEmailMatch } from './email-match.ts';
+import { createHeldGrants } from './held.ts'; import { createEmailMatch } from './email-match.ts'; import { createNewRepositories } from './new-repositories.ts';
 import { createInstallationReads, type ConditionalAnswers } from './installations.ts';
 import { createRenewer, type Live } from './renewer.ts'; import { createTokenConnect } from './token-connect.ts'; import type { ByProvider } from './keyed.ts';
 
@@ -96,7 +96,8 @@ export interface ConnectedAccountsOptions {
   secrets: SystemSecrets;
   /** How often the renewer looks, default RENEW_EVERY_MS; whether the source email match is on (issue #1380), the instance's setting read at each check, absent: on. */
   /** `accountKey`: the account's key, said in its status (issue #1448): a further account's (account-set.ts); absent: its provider, the first account. */
-  renewEveryMs?: number; sourceEmailMatch?(): boolean; accountKey?: ConnectedAccountKey;
+  /** `taken`: a repository another account has for its jobs (issue #2795: never a new repository of this one). */
+  renewEveryMs?: number; sourceEmailMatch?(): boolean; accountKey?: ConnectedAccountKey; taken?(repository: string): boolean;
 }
 
 export type { Renewal };
@@ -210,8 +211,9 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
    * answer says why (never that it is not installed), with the installations read before it.
    */
   const installations = createInstallationReads({ reads: o.store.appInstallations, account: accountOf, read: async (p, answers) => (live(p).account.grantedBy === 'token' ? o.tokenRepositories : o.installations)(await token(p), answers),
-    now: () => o.clock.now().getTime(), log: (line) => o.logger.warn(line) });
-  const withInstallations = (s: ConnectedAccountStatus): ConnectedAccountStatus => (s.state === 'connected' ? { ...s, ...installations.view(s.provider, s.account) } : s);
+    now: () => o.clock.now().getTime(), log: (line) => o.logger.warn(line), found: (p, found) => newRepositories.found(p, found) });
+  // New repositories (issue #2795): after each read, the new-repository policy adds one to the job repositories or asks.
+  const newRepositories = createNewRepositories({ settings: o.store.settings, reached: (p) => { const r = o.store.appInstallations.get(p); return r && r.account === accountOf(p) ? r.installations : undefined; }, ...(o.taken ? { taken: o.taken } : {}), now: () => o.clock.now(), log: (line) => o.logger.info(line), changed: (p) => o.onChange?.(p) }), withInstallations = (s: ConnectedAccountStatus): ConnectedAccountStatus => (s.state === 'connected' ? { ...s, ...installations.view(s.provider, s.account), ...newRepositories.view(s.provider) } : s);
 
   /**
    * Delete the old access token at GitHub (issue #597, issue #514), unless it ended — GitHub holds it no
@@ -393,7 +395,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
       o.onChange?.(provider);
       return withInstallations(status(provider));
     },
-    account: (provider) => accountOf(provider), connectToken,
+    account: (provider) => accountOf(provider), connectToken, newRepositories: (provider, change) => { newRepositories.change(provider, change); return Promise.resolve(withInstallations(status(provider))); },
     expired: (provider) => { const c = current(provider); return c !== undefined && !('unreadable' in c) && c.ended !== undefined; },
     ended: (provider) => { const c = current(provider); return !c ? undefined : 'unreadable' in c ? c.unreadable : c.ended ? expired(provider) : undefined; },
     renew: (provider, refused) => renewer.renew(provider, refused),

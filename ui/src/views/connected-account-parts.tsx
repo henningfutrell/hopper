@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { ago } from '@/model/format';
 import type { AppInstallation, ConnectedAccountStatus } from '@/model/wire';
 import { useServerNow } from '@/store/selectors';
+import { NewRepositories } from './new-repositories';
 
 export type Provider = ConnectedAccountStatus['provider'];
 export type AccountKey = ConnectedAccountStatus['key'];
@@ -38,6 +39,7 @@ export function Repositories({ s, name, byToken, where, canAdmin, send, refresh 
           <div className="text-warn">{byToken ? 'The token reaches no repository.' : 'The app is not installed on any account you can see: it reaches no repository yet.'}</div>
           {s.installUrl && <div><a className="underline" href={s.installUrl} target="_blank" rel="noreferrer">Install the app</a></div>}
         </div>}
+    {s.installations !== undefined && s.installations.length > 0 && <NewRepositories s={s} canAdmin={canAdmin} send={send} />}
   </>;
 }
 
