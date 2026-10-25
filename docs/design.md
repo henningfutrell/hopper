@@ -35406,8 +35406,8 @@ the **kept delivery track**: the delivery track ("Delivery forecasts"), kept in 
   production step ended — the artifact (its pull request), the target (`production`), the expected state (`delivered`), the
   observed state at each hop (each step) —; `none` once its job ended with no change to deliver — failed, cancelled or
   rejected before a merge, finished with no pull request (a research or a proposal job: `report`), or its pull request
-  closed with no merge — with its source and its outcome; or a person's **no-deploy mark**. Every job gets exactly one: the
-  record's row is written once, and a closed track's row is never written over (the store's `WHERE state = 'open'`).
+  closed with no merge — with its source and its outcome; or a person's **no-deploy mark**. Every job gets exactly one
+  record row (part 2: a flip writes over a `none` row; a `deploy` row is never written over).
 - **The kept-track pass** (`src/engine/kept-tracks.ts`): every minute, under its lease `kept-tracks` ("Several hoppers on
   one database"), the events after its cursor are folded into the open tracks' marks, and every open track is judged
   again: its job's status and the scheduled steps move with no event. The tracks it changed, their records and the new
@@ -35440,3 +35440,46 @@ twice), `test/engine/kept-tracks.test.ts` (the real database: a track from the s
 `landing_checks`, a restart that goes on from the cursor, a deploy record and two `none` records, the records queried on
 their own, a closed track final, the first pass's window), `test/integration/delivery-tracks.test.ts` (the HTTP routes,
 the no-deploy mark, 404 and 409), `test/ui/job-delivery-view.test.ts`.
+
+### Part 2: the deployment expectation (issue #2775, 2026-10-25)
+
+Owner requirement: until a deployment has fully completed, what a job is expected to deploy can change — deploy midway,
+then don't — and the object keeps each flip and shows the latest. The moment the deployment completes, the object is
+final, even while the job runs other stages. A no-deploy record is never final: the code is latent and can be deployed
+later, even years later.
+
+- **A deployment expectation** (`DeploymentExpectation`, `src/domain/kept-tracks.ts`): a person's flip, `deploy` or
+  `none`, with who, when and their note. Every flip is kept, in order, on the track (`expectations`) and on its record;
+  the last one holds. With no flip the hopper judges, as in part 1.
+- **`none`** (`POST /ui/api/delivery-tracks/no-deploy`, `delivery_track.no_deploy_marked`): the no-deploy mark. It closes
+  the track with a `none` record, outcome `marked`. 409 when the track is closed already.
+- **`deploy`** (`POST /ui/api/delivery-tracks/deploy`, `delivery_track.deploy_expected`): on an open track it records the
+  flip; on a closed `none` track it opens the track again, its `none` record kept with the flip, its marks folded again
+  from its job's events (the pass folds the events of open tracks only). While a person's last flip is `deploy`, the pass
+  does not close the track as `none` when its job ends with no change: it stays open and says what it waits on. 409 when
+  the last flip is `deploy` already.
+- **Locked: a `deploy` record** (`lockedOf`). The pass makes it once the production step ended, whatever a person said
+  before: if it deployed, it deployed. Both routes answer 409 on it and change nothing, and the store writes over neither
+  its track nor its record (`WHERE … kind <> 'deploy'`). A change after that goes to a new job. A `none` record is never
+  locked: the store writes over it as a person flips it.
+- **No migration.** The lock is the record's kind (`deploy`), so the rows of part 1 read the same; `expectations` is a new
+  optional field in the JSON bodies, absent on the old rows (no flip).
+- **The job page** (`ui/src/views/job-delivery.tsx`): "Mark no-deploy" while the track is open, "Expect a deployment"
+  unless the last flip is `deploy`, neither on a delivered record, which says it is final; then each flip.
+- **The operator CLI** (`src/cli-operator-deployment.ts`): `hopper deployment --job <id> [--expect deploy|none [--note
+  <text>]]` reads the track or flips it; `hopper deployment --list [--repo] [--target] [--kind]` reads the records.
+
+**Decisions:**
+- **Two flips, not three.** The issue names "deploy, don't deploy, cancel". A cancel of an expected deployment is a flip
+  to `none`, and a cancel of a no-deploy mark is a flip to `deploy`; a third word for one of the two would be a synonym.
+- **Two routes, one per flip**, each with its own event: the no-deploy route and its event stay as part 1 made them.
+- **A flip to `deploy` keeps the `none` record**, so the job's deployment section never empties once it has a record.
+
+**What is left** (later parts): the hopper's own stages past `dev` (`beta`, `canary`, `stable`, the image and the
+instance that runs it) as observed hops; the merge commit in the artifact; the in-progress position on the Jobs list;
+spec-change events on the track; the intercession design (pause, reroute, take ownership — who, which actions at which
+step, how it meets the stage-ownership hand-off), written down and agreed before it is built.
+
+**Verification:** `test/domain/kept-tracks.test.ts` (the flips, the reopen and its lock, the lock whatever was said),
+`test/integration/delivery-tracks.test.ts` (both routes, 409 on a locked record, the store's guard),
+`test/ui/job-delivery-view.test.ts` (the buttons, the final record, the flips listed), `test/cli/deployment.test.ts`.
