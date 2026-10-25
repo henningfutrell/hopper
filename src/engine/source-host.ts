@@ -317,7 +317,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         if (!ended) throw new EngineError('not_found', `job ${jobId} not found`);
         // A sync that offered the item between the source giving it back and now made the new job already.
         const job = ingest(originFrom(item, ended), source, brief, by === 'tending') ?? store.jobs.getBySourceKey(item.key)!;
-        store.events.append({ type: 'job.rerun', jobId, data: { by, ...acting } });
+        store.events.append({ type: 'job.rerun', jobId, data: { by, nextJobId: job.id, ...acting } });
         return job;
       });
     },

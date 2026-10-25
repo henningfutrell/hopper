@@ -4,7 +4,8 @@
 // with no change to deliver, or a person's no-deploy mark. A person flips its deployment expectation (deploy or none) any
 // number of times, each flip kept, until a deployment completes: a `deploy` record is locked, a `none` one never is
 // (part 2). Each edit of its item's text a sync saw is a text edit on it, at the step it was in (part 3); each person's act
-// on its change is an intervention on it (part 6, `track-interventions.ts`). The fold is incremental: a pass gives it the kept marks and
+// on its change is an intervention on it (part 6, `track-interventions.ts`). Run again of its job while its change is on its
+// way closes it `none`, outcome `rerouted`, with the new job, whose own track carries the work on (part 9). The fold is incremental: a pass gives it the kept marks and
 // the events after its cursor, and the same event folded twice changes nothing (each mark is the first one). Pure.
 import { scheduledActuals } from './delivery-forecast.ts';
 import type { DeliveryRepo } from './delivery-settings.ts';
@@ -47,11 +48,14 @@ export interface TrackMarks {
   textEdits?: TextEdit[];
   /** Every intervention, in order (part 6). */
   interventions?: Intervention[];
+  /** The first run again of its job (part 9): when, the new job, and the person who asked, if a person did. */
+  rerouted?: { at: string; nextJob?: string; by?: string };
 }
 
 /** Why a job's deployment record expects no deployment: its job ended with no change, or a person marked it. */
 /** `note`: a person's, with their mark; for a pull request the hopper closed, why it closed it (`job.pull_request_closed`'s `superseded`). */
-export interface NoDeployOutcome { status: JobStatus | 'pull_request_closed' | 'marked'; report?: 'research' | 'proposal'; by?: string; note?: string }
+/** `rerouted`: its job ran again, and `nextJob`, the new job, carries the work on. */
+export interface NoDeployOutcome { status: JobStatus | 'pull_request_closed' | 'marked' | 'rerouted'; report?: 'research' | 'proposal'; by?: string; note?: string; nextJob?: string }
 
 /** A person's flip of a track's deployment expectation (issue #2775 part 2): `deploy` or `none`, by whom, when, and why. */
 export interface DeploymentExpectation { expect: 'deploy' | 'none'; by: string; at: string; note?: string }
@@ -184,6 +188,9 @@ export function foldTrackEvents(marks: Map<string, TrackMarks>, events: readonly
       if (INTERVENTIONS.has(e.type)) intervene(m, e, measuredOf(m).current.step);
       if (e.type === 'job.started') first(m, 'started', e.at);
       else if (e.type === 'job.finished') first(m, 'finished', e.at);
+      else if (e.type === 'job.rerun') {
+        first(m, 'rerouted', { at: e.at, ...(typeof d.nextJobId === 'string' ? { nextJob: d.nextJobId } : {}), ...(typeof d.person === 'string' ? { by: d.person } : {}) });
+      }
       else if (e.type === 'github_proxy.done' && d.op === 'pr.create' && typeof d.url === 'string') first(m, 'pr', d.url);
       else if ((e.type === 'item.changed_since_snapshot' || e.type === 'item.edit_seen') && !m.textEdits?.some((x) => x.seq === e.seq)) {
         const snap = e.type === 'item.changed_since_snapshot';
@@ -272,7 +279,8 @@ const hold = (m: TrackMarks): { hold?: DeliveryHold } => { const h = holdOf(m.in
  * The track of `jobId` from its marks at `now`. A track kept closed stays as it was: only a person's flip opens it again
  * (`expectOf`). It closes with its deployment record: `deploy` once its production step ended, whatever a person said;
  * `none` once its job ended with no change (failed, cancelled or rejected before a merge; finished with no pull request;
- * its pull request closed with no merge), unless a person's last flip expects a deployment.
+ * its pull request closed with no merge), or once its job ran again (`rerouted`, at any step but a delivered one), unless a
+ * person's last flip expects a deployment (for a run again: a flip after it).
  */
 export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?: KeptTrack): KeptTrack {
   if (kept?.state === 'closed') return kept;
@@ -302,7 +310,12 @@ export function trackOf(jobId: string, marks: TrackMarks, c: TrackContext, kept?
     return close(deliveredAt, { ...base, at: deliveredAt, kind: 'deploy', artifact: { pullRequest: marks.pr, ...(marks.commit ? { commit: marks.commit } : {}) }, target: 'production', expected: 'delivered', observed: steps });
   }
   const none = (at: string, outcome: NoDeployOutcome) => close(at, { ...base, at, kind: 'none', source: sourceOf(marks), outcome });
-  if (marks.merged || expectations.at(-1)?.expect === 'deploy') return track;
+  // Run again: the new job carries the work on, unless a person expected a deployment of this one after it.
+  const r = marks.rerouted, flip = expectations.at(-1);
+  if (r && !(flip?.expect === 'deploy' && flip.at > r.at)) {
+    return none(r.at, { status: 'rerouted', ...(r.by ? { by: r.by } : {}), ...(r.nextJob ? { nextJob: r.nextJob } : {}) });
+  }
+  if (marks.merged || flip?.expect === 'deploy') return track;
   // A job the store no longer holds: its events say how it ended.
   const status = c.job?.status ?? (marks.finished ? 'finished' : undefined);
   const report: Partial<NoDeployOutcome> = c.job?.researchId ? { report: 'research' } : c.job?.proposalId ? { report: 'proposal' } : {};
