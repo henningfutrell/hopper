@@ -64,6 +64,8 @@ export function intakePayload(e: DomainEvent, job: Job | undefined, infraUrl?: s
   const b = base(e.type, e.at, job, e.jobId);
   if (e.type === 'source.stalled') return { ...b, sourceName: e.data.source, error: e.data.error, since: e.data.since };
   if (e.type === 'connected_account.expired') return { ...b, provider: e.data.provider, account: e.data.account, reason: e.data.reason };
+  // New repositories that wait for a person in Sources (issue #2795).
+  if (e.type === 'connected_account.new_repositories_asked') return { ...b, provider: e.data.provider, account: e.data.account, repositories: e.data.repositories };
   if (e.type === 'source.request_opened') return { ...b, sourceName: e.data.source, issueUrl: e.data.key, author: e.data.author, why: e.data.why };
   // A step schedule's run that failed (issue #2716): which schedule, its exit code and why, as a failed job's error.
   if (e.type === 'step_schedule.run_failed') return { ...b, schedule: e.data.schedule, run: e.data.run, exit: e.data.exit, outcome: e.data.outcome, error: e.data.problem ?? `the script exited ${String(e.data.exit)}` };

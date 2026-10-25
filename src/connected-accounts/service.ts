@@ -88,6 +88,8 @@ export interface ConnectedAccountsOptions {
   onRenewed?(key: ConnectedAccountKey, renewed: { account: string; expiresAt?: string }): void;
   /** Called after a renewal failed (issue #647): its error code, never a token. */
   onRenewalFailed?(key: ConnectedAccountKey, failed: { account: string; code: string }): void;
+  /** Called after a read found new repositories (issue #2795): those asked about for the first time, those the policy added. */
+  onNewRepositories?(key: ConnectedAccountKey, found: { account: string; asked: string[]; accepted: string[] }): void;
   /** Deletes the old access token at GitHub (issue #597, issue #514): the one a new grant replaces. Absent: none is deleted. */
   deleteToken?(provider: ConnectedAccountProvider, accessToken: string): Promise<void>;
   /** Whether the runtime gives a client secret (issue #597): `incorrect_client_credentials` without one ends the connection. */
@@ -210,10 +212,9 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
    * Where the app is installed, as last read (issue #1250): kept in the database, never read here. A read GitHub did not
    * answer says why (never that it is not installed), with the installations read before it.
    */
-  const installations = createInstallationReads({ reads: o.store.appInstallations, account: accountOf, read: async (p, answers) => (live(p).account.grantedBy === 'token' ? o.tokenRepositories : o.installations)(await token(p), answers),
-    now: () => o.clock.now().getTime(), log: (line) => o.logger.warn(line), found: (p, found) => newRepositories.found(p, found) });
+  const installations = createInstallationReads({ reads: o.store.appInstallations, account: accountOf, read: async (p, answers) => (live(p).account.grantedBy === 'token' ? o.tokenRepositories : o.installations)(await token(p), answers), now: () => o.clock.now().getTime(), log: (line) => o.logger.warn(line), found: (p, found) => newRepositories.found(p, found) });
   // New repositories (issue #2795): after each read, the new-repository policy adds one to the job repositories or asks.
-  const newRepositories = createNewRepositories({ settings: o.store.settings, reached: (p) => { const r = o.store.appInstallations.get(p); return r && r.account === accountOf(p) ? r.installations : undefined; }, ...(o.taken ? { taken: o.taken } : {}), now: () => o.clock.now(), log: (line) => o.logger.info(line), changed: (p) => o.onChange?.(p) }), withInstallations = (s: ConnectedAccountStatus): ConnectedAccountStatus => (s.state === 'connected' ? { ...s, ...installations.view(s.provider, s.account), ...newRepositories.view(s.provider) } : s);
+  const newRepositories = createNewRepositories({ settings: o.store.settings, reached: (p) => { const r = o.store.appInstallations.get(p); return r && r.account === accountOf(p) ? r.installations : undefined; }, ...(o.taken ? { taken: o.taken } : {}), now: () => o.clock.now(), log: (line) => o.logger.info(line), changed: (p) => o.onChange?.(p), told: (p, found) => { const account = accountOf(p); if (account) o.onNewRepositories?.(p, { account, ...found }); } }), withInstallations = (s: ConnectedAccountStatus): ConnectedAccountStatus => (s.state === 'connected' ? { ...s, ...installations.view(s.provider, s.account), ...newRepositories.view(s.provider) } : s);
 
   /**
    * Delete the old access token at GitHub (issue #597, issue #514), unless it ended — GitHub holds it no

@@ -35775,15 +35775,35 @@ the person is asked.
   its own owners. The record is keyed as the job repositories are (`keyed.ts`).
 - **The first read is a baseline.** Without it, a hopper that updates to this build would ask about every repository it
   already reaches.
-- **No event yet.** The connected accounts' `choose` records no event either; the log line says what the policy did. An
-  event (so a notifier can tell the person of an ask) is a later part.
+- **The events came in part 2** (below). The connected accounts' `choose` and a dismiss record no event, as before.
 
 **What is left** (later parts of #2795): a catalog of the settings that make up the flows, with their scope (instance,
 user, owner, repository); a "create your default assistant" step that sets up the expected connections and webhooks and
 the default values in one go; one general model for the circular flows (intake → job → question → person → back into the
-job), so that each new flow is an instance of it; the voice agent stage, which the hopper does not have yet; an event and
-a notification for a new-repository ask.
+job), so that each new flow is an instance of it; the voice agent stage, which the hopper does not have yet. Part 2 did the
+event and the notification for a new-repository ask.
 
 **Verification:** `test/domain/new-repositories.test.ts`, `test/integration/new-repositories.test.ts` (asked by default,
 dismissed and not asked again; an owner's `accept` adds the repository and its issue becomes a job; a bad owner is 400),
 `test/ui/new-repositories-view.test.ts`.
+
+### Part 2: the events, and the notification of an ask (2026-10-25)
+
+**As built:**
+- After each read that found something, the policy's outcome is recorded in the user's event log
+  (`src/events/new-repository-schemas.ts`, recorded by `accountEvents`, `src/connected-accounts/runtime-options.ts`):
+  `connected_account.new_repositories_asked` names the repositories asked about for the first time, and
+  `connected_account.new_repositories_accepted` the repositories the policy added to the job repositories (new ones, or asks
+  that waited when a person set their owner's mode to `accept`). Each has `provider`, `account`, `repositories` and, for a
+  further account (issue #1448), `key`. In that order, when one read does both.
+- A read that asks about nothing new and adds nothing records nothing: an ask that still waits is not recorded again.
+- The notifiers send `connected_account.new_repositories_asked` (Grok Bot routine: `provider`, `account`, `repositories`),
+  so a person learns of an ask without opening Sources. An add by the policy is not sent: it is the person's own setting,
+  and it needs no act.
+
+**Decisions:**
+- **Two events, not one with an outcome field.** A notifier or a webhook subscriber picks an event by its type.
+- **No event for a dismiss or a policy change.** They are a person's acts in Sources, as `choose` is, which records none.
+
+**Verification:** `test/integration/new-repositories.test.ts` (the ask is an event once, and not again at the next read;
+an add by the owner's `accept` is an event), `test/plugins/grokbot-intake.test.ts` (the ask is posted; the add is not).

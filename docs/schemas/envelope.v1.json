@@ -108,6 +108,8 @@
         "connected_account.expired",
         "connected_account.renewed",
         "connected_account.renewal_failed",
+        "connected_account.new_repositories_asked",
+        "connected_account.new_repositories_accepted",
         "ui_session.ended",
         "source.claim_released",
         "source.intake_migrated",

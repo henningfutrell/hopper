@@ -26,13 +26,17 @@ export function fromRuntime(apps: HopperApps, env: Record<string, string | undef
 /**
  * What the connected accounts record in the user's event log (issues #358, #647): the end of a connection, each
  * renewal (with the new expiry) and each failed renewal (with its error code). Facts only, never a token. A further account's
- * (issue #1448) names its key too.
+ * (issue #1448) names its key too. A read's new repositories (issue #2795): those asked about, then those the policy added.
  */
-export const accountEvents = (events: Pick<EventLog, 'append'>): Pick<ConnectedAccountsOptions, 'onExpired' | 'onRenewed' | 'onRenewalFailed'> => {
+export const accountEvents = (events: Pick<EventLog, 'append'>): Pick<ConnectedAccountsOptions, 'onExpired' | 'onRenewed' | 'onRenewalFailed' | 'onNewRepositories'> => {
   const of = (key: ConnectedAccountKey) => ({ provider: providerOfKey(key), ...(furtherAccount(key) ? { key } : {}) });
   return {
     onExpired: (key, account, reason) => { events.append({ type: 'connected_account.expired', data: { ...of(key), account, reason } }); },
     onRenewed: (key, { account, expiresAt }) => { events.append({ type: 'connected_account.renewed', data: { ...of(key), account, ...(expiresAt ? { expiresAt } : {}) } }); },
     onRenewalFailed: (key, { account, code }) => { events.append({ type: 'connected_account.renewal_failed', data: { ...of(key), account, code } }); },
+    onNewRepositories: (key, { account, asked, accepted }) => {
+      if (asked.length > 0) events.append({ type: 'connected_account.new_repositories_asked', data: { ...of(key), account, repositories: asked } });
+      if (accepted.length > 0) events.append({ type: 'connected_account.new_repositories_accepted', data: { ...of(key), account, repositories: accepted } });
+    },
   };
 };

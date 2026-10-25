@@ -41,6 +41,7 @@ export function createAccountSet(o: ConnectedAccountsOptions): AccountSet {
       ...(o.onExpired ? { onExpired: (_p, account, reason) => o.onExpired!(key, account, reason) } : {}),
       ...(o.onRenewed ? { onRenewed: (_p, renewed) => o.onRenewed!(key, renewed) } : {}),
       ...(o.onRenewalFailed ? { onRenewalFailed: (_p, failed) => o.onRenewalFailed!(key, failed) } : {}),
+      ...(o.onNewRepositories ? { onNewRepositories: (_p, found) => o.onNewRepositories!(key, found) } : {}),
     });
   };
   let started = false;

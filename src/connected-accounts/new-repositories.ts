@@ -1,7 +1,8 @@
 // New repositories of one connected account (issue #2795, design.md "New repositories"): after each read of what the
 // account reaches (installations.ts), the new-repository policy adds a new repository to the job repositories, and the
 // source syncs, or holds it as a new-repository ask for a person (src/domain/new-repositories.ts). A change of the policy
-// is applied at once to what the last read reached. Kept in the user's settings, by the account's key (keyed.ts).
+// is applied at once to what the last read reached. Kept in the user's settings, by the account's key (keyed.ts). Each ask
+// and each add by the policy is told (`told`), so it is recorded as an event and the notifiers send an ask (part 2).
 import { findNewRepositories, type NewRepositoryAsk, type NewRepositoryChange, type NewRepositoryPolicy } from '../domain/new-repositories.ts';
 import type { UserSettingsRepository } from '../domain/ports.ts';
 import type { AppInstallation, ConnectedAccountProvider } from '../domain/types.ts';
@@ -17,6 +18,8 @@ export interface NewRepositoriesOptions {
   log(line: string): void;
   /** The job repositories changed: the source syncs now. */
   changed(provider: ConnectedAccountProvider): void;
+  /** What one read asked about for the first time, and what the policy added; called only when one is not empty. */
+  told?(provider: ConnectedAccountProvider, found: { asked: string[]; accepted: string[] }): void;
 }
 
 const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
@@ -26,6 +29,7 @@ export function createNewRepositories(o: NewRepositoriesOptions) {
     const chosen = o.settings.getJobRepositories(provider);
     const f = findNewRepositories(o.settings.getNewRepositories(provider), installations.flatMap((i) => i.repositories), chosen, (r) => o.taken?.(r) ?? false, o.now().toISOString());
     o.settings.setNewRepositories(provider, f.record);
+    if (f.asked.length > 0 || f.accepted.length > 0) o.told?.(provider, { asked: f.asked, accepted: f.accepted });
     if (f.asked.length > 0) o.log(`hopper: ${PROVIDER_NAME[provider]} new repositories wait for a person in Sources: ${f.asked.join(', ')}`);
     if (f.accepted.length === 0) return;
     o.settings.setJobRepositories(provider, [...chosen, ...f.accepted]);

@@ -1734,6 +1734,48 @@ Version 1 (`docs/schemas/connected_account.renewal_failed.v1.json`). A renewal o
 }
 ```
 
+## `connected_account.new_repositories_asked`
+
+Version 1 (`docs/schemas/connected_account.new_repositories_asked.v1.json`). A read of what the user's connected account reaches found repositories that no read before saw, and the new-repository policy is `ask` for their owner (issue #2795): each is a new-repository ask in Sources, for a person to add to the job repositories or dismiss. Only the repositories asked about for the first time; the first read of an account asks about none. The notifiers send it.
+
+| field | type | required |
+|---|---|---|
+| `provider` | `github` | yes |
+| `key` | string | no |
+| `account` | string | yes |
+| `repositories` | string[] | yes |
+
+```json
+{
+  "provider": "github",
+  "account": "octocat",
+  "repositories": [
+    "octocat/web"
+  ]
+}
+```
+
+## `connected_account.new_repositories_accepted`
+
+Version 1 (`docs/schemas/connected_account.new_repositories_accepted.v1.json`). The new-repository policy added repositories to the job repositories of the user's connected account (issue #2795): new ones a read found, or asks that waited when a person set their owner's mode to `accept`. The source syncs at once.
+
+| field | type | required |
+|---|---|---|
+| `provider` | `github` | yes |
+| `key` | string | no |
+| `account` | string | yes |
+| `repositories` | string[] | yes |
+
+```json
+{
+  "provider": "github",
+  "account": "octocat",
+  "repositories": [
+    "octocat/api"
+  ]
+}
+```
+
 ## `ui_session.ended`
 
 Version 1 (`docs/schemas/ui_session.ended.v1.json`). A UI session of the user's ended (issue #439), with the realm it signed in with and why (`reason`): `expired-idle` (no request for the idle timeout), `expired-absolute` (its maximum passed), `refresh-refused` (a gateway realm's session whose forwarded token no longer checks out), `provider-unreachable` (that token's issuer stayed out of reach past the grace period), `realm-changed` (the sign-in config changed: its realm gone or off, or no rule grants it a role), `connection-ended` (signed in with GitHub, and the user's GitHub connection ended: `connected_account.expired`; issue #513 — recorded only before issue #1380, since then a connection that ends ends no session) or `logout`. The session lengths are Settings → Sign-in's.

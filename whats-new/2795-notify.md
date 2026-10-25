@@ -1,0 +1,1 @@
+- When a new repository waits for you in Sources, your notifier now tells you about it.

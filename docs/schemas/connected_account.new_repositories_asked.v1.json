@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": [
+        "github"
+      ]
+    },
+    "key": {
+      "type": "string"
+    },
+    "account": {
+      "type": "string"
+    },
+    "repositories": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "provider",
+    "account",
+    "repositories"
+  ],
+  "additionalProperties": false
+}
