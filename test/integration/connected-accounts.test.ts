@@ -90,8 +90,7 @@ describe('a user connects their own GitHub', () => {
   it('connects through the OAuth app, with the client id and no secret, and its issues become jobs', async () => {
     const f = await forges({ github: [{ repo: 'octo-user/tools', number: 7, title: 'Add a flag', body: SLEEP, author: 'octo-user', labels: ['hopper'] }] });
     const app = await start(f);
-    // Not connected, it still says where to install the app (issue #2759): installing it needs no connection.
-    expect(await account(app, 'github')).toEqual({ provider: 'github', key: 'github', state: 'not-connected', via: 'the hopper\'s app', installUrl: `${f.github.url}/apps/hopper-test/installations/new` });
+    expect(await account(app, 'github')).toEqual({ provider: 'github', key: 'github', state: 'not-connected', via: 'the hopper\'s app' });
     // Not connected is said out loud where the sources are.
     await waitFor(async () => (await sourceOf(app, 'github-account'))?.detail.paused === 'GitHub is not connected: Sources → Connect GitHub', { what: 'github-account to say so' });
     // A mutation: a UI session, never a bare request.
@@ -250,7 +249,7 @@ describe('a user connects their own GitHub', () => {
     await waitFor(async () => (await sourceOf(app, 'github-account'))?.state === 'ok', { what: 'the source to sync' });
 
     f.github.issues.push({ repo: 'octo-user/tools', number: 8, title: 'x', body: SLEEP, author: 'octo-user', labels: ['hopper'] });
-    expect((await act(app, token, 'disconnect', 'github')).body).toEqual({ provider: 'github', key: 'github', state: 'not-connected', via: 'the hopper\'s app', installUrl: `${f.github.url}/apps/hopper-test/installations/new` });
+    expect((await act(app, token, 'disconnect', 'github')).body).toEqual({ provider: 'github', key: 'github', state: 'not-connected', via: 'the hopper\'s app' });
     expect(await account(app, 'github')).toMatchObject({ state: 'not-connected' });
     await waitFor(async () => (await sourceOf(app, 'github-account'))?.detail.paused !== undefined, { what: 'the source to pause' });
     expect((await sourceOf(app, 'github-account'))?.detail.paused).toBe('GitHub is not connected: Sources → Connect GitHub');

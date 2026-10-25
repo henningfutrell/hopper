@@ -173,9 +173,7 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
   });
 
   const status = (provider: ConnectedAccountProvider): ConnectedAccountStatus => {
-    // The app's install link in every state (issue #2759); not for a further (token) account or a hopper with no app.
-    const app = o.apps[provider], appInstall = app.clientId && (o.accountKey ?? provider) === provider ? installUrl(app) : undefined;
-    const plain = { provider, key: o.accountKey ?? provider, via: CONNECTED_VIA } as const, base = { ...plain, ...(appInstall ? { installUrl: appInstall } : {}) };
+    const base = { provider, key: o.accountKey ?? provider, via: CONNECTED_VIA } as const;
     const w = waiting.get(provider);
     if (w) return { ...base, state: 'waiting', userCode: w.userCode, verificationUri: w.verificationUri, expiresAt: w.expiresAt };
     const c = current(provider);
@@ -183,13 +181,14 @@ export function createConnectedAccounts(o: ConnectedAccountsOptions): ConnectedA
     if (c?.ended) return { ...base, state: 'expired', account: c.account.account, connectedAt: c.account.connectedAt, error: c.ended };
     const a = c?.account;
     if (a) {
-      const viaApp = a.grantedBy === 'token' ? undefined : app, trouble = renewer.trouble(provider); // a personal access token goes through no app
+      const app = a.grantedBy === 'token' ? undefined : o.apps[provider], install = app && installUrl(app); // a personal access token goes through no app
+      const trouble = renewer.trouble(provider);
       const next = renewer.next(a);
       const lastError = renewer.lastError(provider);
       const h = held.get(provider);
       return {
-        ...(viaApp ? base : plain), state: 'connected', account: a.account, connectedAt: a.connectedAt, jobRepositories: o.store.settings.getJobRepositories(provider),
-        ...(viaApp ? { configUrl: configUrl(viaApp) } : {}),
+        ...base, state: 'connected', account: a.account, connectedAt: a.connectedAt, jobRepositories: o.store.settings.getJobRepositories(provider),
+        ...(app ? { configUrl: configUrl(app) } : {}), ...(install ? { installUrl: install } : {}),
         ...(a.expiresAt ? { expiresAt: a.expiresAt } : {}),
         ...(trouble ? { renewal: trouble } : {}),
         ...(a.expiresAt && !a.refreshToken ? { unrenewable: `${PROVIDER_NAME[provider]} gave this connection no refresh token, so its token cannot be renewed` } : {}),
