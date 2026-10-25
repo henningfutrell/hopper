@@ -9,10 +9,13 @@
 //   Scenario: a change past production closes with a `deploy` record: its pull request, its target and each hop
 //   Scenario: a research job closes with a `none` record that carries its source and outcome
 //   Scenario: a failed job, or a pull request closed with no merge, closes with a `none` record
-//   Scenario: a person's no-deploy mark closes an open track; a closed track stays as it was
+//   Scenario: a person's no-deploy mark closes an open track with a none record, which stays open to a flip
+//   Scenario: the expectation flips any number of times before the deployment completes; each flip is kept, in order
+//   Scenario: a none record flipped to deploy reopens the track; it locks once that deployment completes
+//   Scenario: a completed deployment locks the record, whatever a person said before; a locked track stays as it was
 //   Scenario: the same events folded again change nothing; folded in two halves give the same track
 import { describe, expect, it } from 'vitest';
-import { foldTrackEvents, noDeployOf, trackOf, type TrackContext, type TrackMarks } from '../../src/domain/kept-tracks.ts';
+import { expectOf, foldTrackEvents, lockedOf, trackOf, type TrackContext, type TrackMarks } from '../../src/domain/kept-tracks.ts';
 import type { PromotionSetSchedule } from '../../src/domain/promotion-sets.ts';
 import type { DomainEvent, EventType } from '../../src/domain/types.ts';
 
@@ -118,12 +121,57 @@ describe('kept delivery tracks', () => {
     expect(trackOf('m', fold(merged('m').slice(0, 4)).get('m')!, ctx()).state).toBe('open');
   });
 
-  it('a person\'s no-deploy mark closes an open track; a closed track stays as it was', () => {
+  it('a person\'s no-deploy mark closes an open track with a none record, which stays open to a flip', () => {
     const marks = fold([...merged('j'), ...batch()]).get('j')!;
-    const t = noDeployOf(trackOf('j', marks, ctx()), { by: 'owner', at: at('11:00'), note: 'not deployed anywhere' });
-    expect(t).toMatchObject({ state: 'closed', closedAt: at('11:00') });
-    expect(t.deployment).toMatchObject({ kind: 'none', at: at('11:00'), outcome: { status: 'marked', by: 'owner', note: 'not deployed anywhere' } });
+    const t = expectOf(trackOf('j', marks, ctx()), { expect: 'none', by: 'owner', at: at('11:00'), note: 'not deployed anywhere' });
+    expect(t).toMatchObject({ state: 'closed', closedAt: at('11:00'), expectations: [{ expect: 'none', by: 'owner', at: at('11:00'), note: 'not deployed anywhere' }] });
+    expect(t.deployment).toMatchObject({ kind: 'none', at: at('11:00'), outcome: { status: 'marked', by: 'owner', note: 'not deployed anywhere' }, expectations: t.expectations });
+    expect(lockedOf(t)).toBe(false);
+    // The pass leaves a closed none track as it was: only a person's flip opens it again.
     expect(trackOf('j', marks, ctx({ now: at('23:00'), delivery: { schedule, gates: {} } }), t)).toBe(t);
+  });
+
+  it('the expectation flips any number of times before the deployment completes; each flip is kept, in order', () => {
+    const marks = fold(merged('j')).get('j')!;
+    let t = trackOf('j', marks, ctx());
+    t = expectOf(t, { expect: 'deploy', by: 'a', at: at('10:00') });
+    expect(t).toMatchObject({ state: 'open' });
+    expect(t.deployment).toBeUndefined();
+    t = expectOf(t, { expect: 'none', by: 'b', at: at('10:10') });
+    t = expectOf(t, { expect: 'deploy', by: 'a', at: at('10:20') });
+    t = expectOf(t, { expect: 'none', by: 'a', at: at('10:30'), note: 'cancelled' });
+    expect(t.expectations!.map((x) => x.expect)).toEqual(['deploy', 'none', 'deploy', 'none']);
+    expect(t).toMatchObject({ state: 'closed', closedAt: at('10:30'), deployment: { kind: 'none', at: at('10:30'), outcome: { status: 'marked', by: 'a', note: 'cancelled' } } });
+    expect(t.deployment!.expectations).toHaveLength(4);
+  });
+
+  it('a none record flipped to deploy reopens the track, keeps its record, and locks once that deployment completes', () => {
+    // A finished job with no pull request: the hopper closes it with a none record.
+    const r = fold([queued('r', '08:00'), ev('job.started', '08:05', { attempts: 1 }, 'r'), ev('job.finished', '08:30', { result: {} }, 'r')]);
+    const none = trackOf('r', r.get('r')!, ctx());
+    expect(none).toMatchObject({ state: 'closed', deployment: { kind: 'none', outcome: { status: 'finished' } } });
+    const reopened = expectOf(none, { expect: 'deploy', by: 'owner', at: at('12:00') });
+    expect(reopened).toMatchObject({ state: 'open', deployment: { kind: 'none', expectations: [{ expect: 'deploy' }] } });
+    expect(reopened.closedAt).toBeUndefined();
+    // The pass judges it again: a person expects a deployment, so the hopper does not close it as none.
+    const judged = trackOf('r', r.get('r')!, ctx({ now: at('12:30') }), reopened);
+    expect(judged).toMatchObject({ state: 'open', deployment: { kind: 'none' }, expectations: [{ expect: 'deploy' }] });
+    // Its change is made later and delivered: the record turns to deploy, locked.
+    const later = fold([ev('github_proxy.done', '13:00', { op: 'pr.create', repo: 'octo/shed', url: PR }, 'r'), ev('job.pull_request_merged', '13:10', { pullRequest: PR, part: false }, 'r'),
+      ev('landing_batch.started', '13:20', { repo: 'octo/shed', pullRequest: 901, merges: [12] }), ev('landing_batch.promoted', '13:40', { repo: 'octo/shed', pullRequest: 901 })], r);
+    const done = trackOf('r', later.get('r')!, ctx({ now: '2026-10-21T14:00:00.000Z', delivery: { schedule, gates: {} } }), judged);
+    expect(done).toMatchObject({ state: 'closed', deployment: { kind: 'deploy', target: 'production', expectations: [{ expect: 'deploy' }] } });
+    expect(lockedOf(done)).toBe(true);
+  });
+
+  it('a completed deployment locks the record, whatever a person said before; a locked track stays as it was', () => {
+    const marks = fold([...merged('j'), ...batch()]).get('j')!;
+    const open = expectOf(trackOf('j', marks, ctx({ now: at('11:30'), delivery: { schedule, gates: {} } })), { expect: 'deploy', by: 'a', at: at('11:30') });
+    const t = trackOf('j', marks, ctx({ now: at('13:30'), delivery: { schedule, gates: {} } }), open);
+    expect(t).toMatchObject({ state: 'closed', closedAt: at('13:00'), deployment: { kind: 'deploy' } });
+    expect(lockedOf(t)).toBe(true);
+    expect(() => expectOf(t, { expect: 'none', by: 'a', at: at('14:00') })).toThrow(/locked/);
+    expect(trackOf('j', marks, ctx({ now: at('23:30') }), t)).toBe(t);
   });
 
   it('the same events folded again change nothing; folded in two halves give the same track', () => {

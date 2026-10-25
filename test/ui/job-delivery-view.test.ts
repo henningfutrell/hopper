@@ -1,6 +1,8 @@
 // @vitest-environment happy-dom
 // A job's kept delivery track on its job view (issue #2775), the panel rendered against a fake of GET /api/delivery-tracks:
 // a job in progress shows the step it is in, since when and what it waits on; a completed job shows its deployment record.
+// A person flips the deployment expectation from it (POST /ui/api/delivery-tracks/deploy|no-deploy) until a deployment
+// completes: a delivered record is final and offers no flip; each flip is listed.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -30,11 +32,16 @@ const RESEARCH: KeptTrack = {
 const job = { id: 'j1', status: 'finished' } as Job;
 
 let root: Root | undefined;
+const posts: { path: string; body: unknown }[] = [];
 
 async function boot(tracks: KeptTrack[]) {
   localStorage.setItem('jh_session', 'a'.repeat(64));
   const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'content-type': 'application/json' } });
-  vi.stubGlobal('fetch', vi.fn(async (input: string) => json(String(input) === '/api/delivery-tracks?job=j1' ? { tracks } : {})));
+  posts.length = 0;
+  vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
+    if (init?.method === 'POST') { posts.push({ path: String(input), body: JSON.parse(String(init.body)) }); return json(tracks[0] ?? {}); }
+    return json(String(input) === '/api/delivery-tracks?job=j1' ? { tracks } : {});
+  }));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   vi.resetModules();
@@ -78,6 +85,33 @@ describe('a job\'s delivery on its job view', () => {
     expect(text('job-delivery-record')).toContain('No deployment expected');
     expect(text('job-delivery-record')).toContain('octo/shed#7');
     expect(text('job-delivery-record')).toContain('research');
+  });
+
+  it('a job in progress offers the no-deploy mark and the flip to deploy; a click posts it for the job', async () => {
+    await boot([OPEN]);
+    const button = (slot: string) => document.querySelector<HTMLButtonElement>(`[data-slot="${slot}"]`);
+    expect(button('job-delivery-no-deploy')).not.toBeNull();
+    expect(button('job-delivery-deploy')).not.toBeNull();
+    await act(async () => { button('job-delivery-no-deploy')!.click(); await new Promise((r) => setTimeout(r, 0)); });
+    expect(posts).toEqual([{ path: '/ui/api/delivery-tracks/no-deploy', body: { job: 'j1' } }]);
+  });
+
+  it('a delivered record is final: it offers no flip and says so', async () => {
+    await boot([DELIVERED]);
+    expect(document.querySelector('[data-slot="job-delivery-no-deploy"]')).toBeNull();
+    expect(document.querySelector('[data-slot="job-delivery-deploy"]')).toBeNull();
+    expect(text('job-delivery-record')).toContain('final');
+  });
+
+  it('a none record stays open to a flip to deploy, and lists each flip', async () => {
+    const flips: KeptTrack['expectations'] = [{ expect: 'deploy', by: 'release-owner', at: '2026-10-20T08:10:00.000Z' }, { expect: 'none', by: 'release-owner', at: '2026-10-20T08:20:00.000Z', note: 'not now' }];
+    await boot([{ ...RESEARCH, expectations: flips }]);
+    expect(document.querySelector('[data-slot="job-delivery-deploy"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="job-delivery-no-deploy"]')).toBeNull();
+    const listed = [...document.querySelectorAll('[data-slot="job-delivery-expectation"]')].map((e) => e.textContent ?? '');
+    expect(listed).toHaveLength(2);
+    expect(listed[0]).toContain('deploy');
+    expect(listed[1]).toContain('not now');
   });
 
   it('says so when the job has no kept track yet', async () => {

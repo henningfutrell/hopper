@@ -1,7 +1,7 @@
 // Kept delivery tracks and deployment records (issue #2775, tenant migration 101, design.md "Kept delivery tracks"): one
 // row per job's track, its fields as JSON; one row per job's deployment record, its fields as JSON and the columns a query
-// filters on; the cursor of the pass that keeps them. A closed track is final: its row is never written over, and its
-// deployment record is written once.
+// filters on; the cursor of the pass that keeps them. A track whose deployment completed is locked: neither its row nor its
+// `deploy` record is written over. A `none` record is written over as a person flips it (part 2).
 import type { DeploymentRecord, KeptTrack, KeptTrackRepository } from '../domain/kept-tracks.ts';
 import { parse, type StoreContext } from './context.ts';
 
@@ -31,11 +31,14 @@ export function createKeptTrackRepository(c: StoreContext): KeptTrackRepository 
       c.tx(() => {
         for (const t of tracks) {
           c.db.run(`INSERT INTO delivery_tracks (job_id, repo, state, started_at, body) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (job_id) DO UPDATE SET repo = excluded.repo, state = excluded.state, body = excluded.body WHERE delivery_tracks.state = 'open'`,
+            ON CONFLICT (job_id) DO UPDATE SET repo = excluded.repo, state = excluded.state, body = excluded.body
+            WHERE NOT EXISTS (SELECT 1 FROM deployment_records d WHERE d.job_id = delivery_tracks.job_id AND d.kind = 'deploy')`,
           t.jobId, t.repo ?? null, t.state, t.marks.queued, JSON.stringify(t));
           const d = t.deployment;
-          if (t.state === 'closed' && d) {
-            c.db.run('INSERT INTO deployment_records (job_id, repo, kind, target, at, body) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (job_id) DO NOTHING',
+          if (d) {
+            c.db.run(`INSERT INTO deployment_records (job_id, repo, kind, target, at, body) VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT (job_id) DO UPDATE SET repo = excluded.repo, kind = excluded.kind, target = excluded.target, at = excluded.at, body = excluded.body
+              WHERE deployment_records.kind <> 'deploy'`,
               d.jobId, d.repo ?? null, d.kind, d.kind === 'deploy' ? d.target : null, d.at, JSON.stringify(d));
           }
         }
