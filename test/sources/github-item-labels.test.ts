@@ -244,8 +244,8 @@ describe('labelDrift: what a discover saw against the state (issue #1891)', () =
 
 describe('blockLabels: the label change of a block the item reconciler makes (issue #1891, part 8)', () => {
   it('PR open blocked as stale: its waiting labels come off, hopper:blocked goes on', () => {
-    expect(blockLabels('pr_open', 'stale')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done'], add: ['hopper:blocked'] });
-    expect(blockLabels('pr_open', 'no_pr')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done'], add: [] });
+    expect(blockLabels('pr_open', 'stale')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done', 'hopper:needs-merge'], add: ['hopper:blocked'] });
+    expect(blockLabels('pr_open', 'no_pr')).toEqual({ remove: ['hopper:pr-ready', 'hopper:partly-done', 'hopper:needs-merge'], add: [] });
   });
 
   it('partly done blocked as stale: hopper:partly-done comes off', () => {

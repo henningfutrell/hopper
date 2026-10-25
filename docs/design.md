@@ -25816,8 +25816,9 @@ no failed tend.
 
 **Not done, by decision.**
 
-- A companion of an item whose issue is closed, or whose work item is done or dropped, is not read: a tend is a Run again
-  of the item, and Run again reopens a closed issue (issue #2127).
+- A companion of an item whose issue is closed, or whose work item is done or dropped, is not rebased: a tend is a Run again
+  of the item, and Run again reopens a closed issue (issue #2127). Since issue #2752 part 4, a done or closed item's
+  companions are still read, and merged when ready; a dropped item's are not read.
 - A companion in another repository than the item's: a tend job works in its item's repository. Since issue #2752 it
   is one: "Companion pull requests in another repository" below.
 - "Behind" with no merge conflicts, as for a followed pull request (part 4).
@@ -25910,6 +25911,36 @@ companion of an item whose work item is done or whose issue is closed is not rea
 
 Tests: `test/integration/companion-pull-requests.test.ts` ("its ready second pull request in another repository is merged
 there …", "with yolo mode not on for that repository, it is not merged").
+
+## Needs merge on the issue, and a done item's companions (issue #2752 part 4, 2026-10-24)
+
+**The problem.** Part 2 said `needs merge in <repo>` on the job and its card, but the issue still carried
+`hopper:pr-ready`, which reads as "waits for review" by any person who looks at the issue. And a companion of an item whose
+work item was done or whose issue was closed was read no more (part 1), so a companion that got ready after the followed
+pull request merged and closed the issue was never merged.
+
+**The change.**
+- **`hopper:needs-merge`** (`src/sources/github/labels.ts`), a new end label. While an item's pull request is in a
+  repository the hopper does not merge in (`needsMergeIn`, `src/domain/yolo-mode.ts`: none of the job repositories, and yolo
+  mode not named on for it — the same rule as the card's `needs merge`), its issue carries `hopper:needs-merge` in place of
+  `hopper:pr-ready` or `hopper:partly-done`. The job's report puts it on (`needsMergeOf`, `src/sources/github/report.ts`),
+  as does a follow that finds the pull request open; the **label mirror** keeps it (`labelsFor`, fact `needsMerge`, by the
+  work item's pull request), and swaps it back for `hopper:pr-ready` once a person names the repository on. Like every end
+  label it keeps the issue out (Intake's reason `NEEDS_MERGE`, group `pr-waiting`), and taken off by hand it is a Run again.
+  The source learns the rule from the user's settings (`needsMerge` beside `yoloMode`, `src/users/source-context.ts`).
+- **A done item's companions are read** (`src/sources/companions.ts`): an item that is done, or whose issue is closed, has
+  its companions read still, so a ready one is merged under its repository's gate (part 3). None is rebased then: a tend is a
+  Run again of the item, and Run again reopens a closed issue (issue #2127). A dropped item's companions are read no more.
+
+**Decisions.**
+- **A label, no comment.** The hopper writes only labels to issues ("GitHub text is neutral").
+- **One label for a whole and a part.** `hopper:needs-merge` replaces `hopper:partly-done` too: the merge waits on a person
+  either way, and the next part runs once that pull request merges.
+- **No end to reading a done item's companions** but their own end: each read stops at a companion merged or closed. One
+  that a person leaves open is read at each round, one call each.
+
+Tests: `test/sources/github-label-needs-merge.test.ts`, `test/integration/companion-pull-requests.test.ts` ("its companion
+that gets ready after the followed pull request merged and closed the issue is merged too").
 
 ## A job pushes to its own repository outside the job repositories (issue #1131, 2026-10-14)
 

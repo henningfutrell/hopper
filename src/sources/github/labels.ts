@@ -5,6 +5,8 @@
 // it or its item is blocked (issue #1891; the label mirror, label-mirror.ts); each keeps the issue out until it changes.
 // `hopper:needs-decision` while its job waits on a person's decision — a question, a proposal or a research report (issue
 // #2693) —; the mirror puts it on and takes it off, and a person who takes it off asks for nothing.
+// `hopper:needs-merge` in place of `hopper:pr-ready` or `hopper:partly-done` while its pull request is in a repository the
+// hopper does not merge in (issue #2752): none of the job repositories, and no person named it on in yolo mode.
 // An issue labelled `hopper@<name>` is addressed to the hopper of that name (issue #159). An issue labelled `hopper:win`
 // (or `hopper:windows`) needs Windows: its job goes only to a Windows machine (issues #918, #1350, src/domain/windows-jobs.ts).
 
@@ -18,8 +20,9 @@ export const LABEL_PARTLY_DONE = 'hopper:partly-done';
 export const LABEL_PR_CLOSED = 'hopper:pr-closed';
 export const LABEL_BLOCKED = 'hopper:blocked';
 export const LABEL_NEEDS_DECISION = 'hopper:needs-decision';
+export const LABEL_NEEDS_MERGE = 'hopper:needs-merge';
 /** The labels a job's end leaves, any of which keeps the issue out; Run again takes them all off. */
-export const END_LABELS: readonly string[] = [LABEL_FAILED, LABEL_DONE, LABEL_REJECTED, LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_BLOCKED, LABEL_NEEDS_DECISION];
+export const END_LABELS: readonly string[] = [LABEL_FAILED, LABEL_DONE, LABEL_REJECTED, LABEL_PR_READY, LABEL_PARTLY_DONE, LABEL_PR_CLOSED, LABEL_BLOCKED, LABEL_NEEDS_DECISION, LABEL_NEEDS_MERGE];
 /** `hopper@<name>`: the issue is for the hopper whose source has `hopperName: <name>`. */
 export const ADDRESS_PREFIX = 'hopper@';
 /**
@@ -41,4 +44,5 @@ export const HOPPER_LABELS: readonly { name: string; color: string; description:
   { name: LABEL_PR_CLOSED, color: 'd93f0b', description: 'hopper\'s pull request was closed without a merge; remove to run it again' },
   { name: LABEL_BLOCKED, color: 'd93f0b', description: 'hopper is blocked on this and waits on a person; remove to run it again' },
   { name: LABEL_NEEDS_DECISION, color: '5319e7', description: 'hopper waits on a person\'s decision: a question, a proposal or a research report' },
+  { name: LABEL_NEEDS_MERGE, color: 'fbca04', description: 'hopper\'s pull request waits on a person to merge it in a repository hopper does not merge in' },
 ];
