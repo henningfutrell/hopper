@@ -17,11 +17,14 @@ export interface PlanJob { id: string; status: JobStatus; stage: JobStage; stage
 /** One issue of the tree: `owner/name#n` (lowercase repository), its title, its URL and where it stands. */
 interface PlanIssue { id: string; repo: string; number: number; title: string; url: string; status: PlanStatus }
 
-/** A plan task: an issue under a plan piece, its jobs (and its own sub-issues' jobs), and the issues that block it. */
-export interface PlanTask extends PlanIssue { dependsOn: string[]; jobs: PlanJob[] }
+/**
+ * A plan task: an issue under a plan piece, its jobs (and its own sub-issues' jobs), the issues that block it, and when it
+ * changed last: the newest of its issues' updates and its jobs' stage changes.
+ */
+export interface PlanTask extends PlanIssue { dependsOn: string[]; jobs: PlanJob[]; updatedAt?: string }
 
-/** A plan piece: a sub-issue of the work plan, its plan tasks, and the jobs of its own issue. */
-export interface PlanPiece extends PlanIssue { tasks: PlanTask[]; jobs: PlanJob[] }
+/** A plan piece: a sub-issue of the work plan, its plan tasks, the jobs of its own issue, and its **piece artifact**. */
+export interface PlanPiece extends PlanIssue { tasks: PlanTask[]; jobs: PlanJob[]; artifact?: string }
 
 /** A work plan: its plan pieces, the jobs of its own issue, and how many of its plan tasks are in each status. */
 export interface WorkPlan extends PlanIssue { pieces: PlanPiece[]; jobs: PlanJob[]; counts: Record<PlanStatus, number> }
@@ -54,6 +57,19 @@ function jobStatus(n: JobGraphNode): PlanStatus | undefined {
   return n.stage === 'done' ? 'done' : 'running';
 }
 
+/** The longest piece artifact kept: a line of an issue body, not a page. */
+const ARTIFACT_MAX = 300;
+
+/**
+ * A plan piece's **piece artifact** from its issue's body: the text of its first `Artifact:` line (any case, in bold or as
+ * a list item too), at most 300 characters; empty when it has none. What a person judges the piece by: a screenshot, a
+ * pull request, a report, or a link to one.
+ */
+export function pieceArtifactOf(body: string): string {
+  const m = /^[ \t]*(?:[-*][ \t]+)?\**artifact\**[ \t]*:[ \t]*\**[ \t]*(.*)$/im.exec(body);
+  return (m?.[1] ?? '').trim().slice(0, ARTIFACT_MAX);
+}
+
 /** An issue's URL from its ref. */
 const issueUrl = (ref: string): string => { const [repo, n] = ref.split('#'); return `https://github.com/${repo}/issues/${n}`; };
 
@@ -62,7 +78,7 @@ const refOf = (repo: string, number: number): string => `${repo.toLowerCase()}#$
 
 /** What the issue graph and the lineage links say of the issues: each one known, its sub-issues, and what blocks it. */
 interface Tree {
-  known: Map<string, { repo: string; number: number; url: string; title?: string }>;
+  known: Map<string, { repo: string; number: number; url: string; title?: string; artifact?: string; updatedAt?: string }>;
   children: Map<string, Set<string>>;
   blockers: Map<string, Set<string>>;
 }
@@ -74,7 +90,8 @@ function treeOf(issueGraph: PlannedWorkInput['issueGraph'], links: readonly JobG
   for (const n of issueGraph.nodes) {
     if (n.kind !== 'issue' || typeof n.attrs.repo !== 'string' || typeof n.attrs.number !== 'number') continue;
     const ref = refOf(n.attrs.repo, n.attrs.number);
-    known.set(ref, { repo: n.attrs.repo, number: n.attrs.number, url: n.id, ...(typeof n.attrs.title === 'string' ? { title: n.attrs.title } : {}) });
+    const text = (k: string) => (typeof n.attrs[k] === 'string' && n.attrs[k] !== '' ? { [k]: n.attrs[k] } : {});
+    known.set(ref, { repo: n.attrs.repo, number: n.attrs.number, url: n.id, ...text('title'), ...text('artifact'), ...text('updatedAt') });
     byUrl.set(n.id, ref);
   }
   // Each issue's sub-issues: GitHub's, and the required children jobs filed.
@@ -114,6 +131,7 @@ export function plannedWork(input: PlannedWorkInput): WorkPlan {
   // The job graph's issues and their jobs.
   const nodes = new Map(input.graph.nodes.map((n) => [n.id, n]));
   const jobsOf = new Map<string, PlanJob[]>();
+  const since = new Map<string, string[]>();
   const counted = new Map<string, PlanStatus[]>();
   for (const e of input.graph.edges) {
     const job = e.kind === 'works' ? nodes.get(e.to) : undefined;
@@ -121,6 +139,7 @@ export function plannedWork(input: PlannedWorkInput): WorkPlan {
     jobsOf.set(e.from, [...jobsOf.get(e.from) ?? [], {
       id: job.jobId, status: job.status, stage: job.stage, stageText: job.stageText, ...(job.pullRequest ? { pullRequest: job.pullRequest.url } : {}),
     }]);
+    if (job.stageSince) since.set(e.from, [...since.get(e.from) ?? [], job.stageSince]);
     const s = jobStatus(job);
     if (s) counted.set(e.from, [...counted.get(e.from) ?? [], s]);
   }
@@ -150,18 +169,23 @@ export function plannedWork(input: PlannedWorkInput): WorkPlan {
     for (let i = 0; i < under.length; i++) for (const k of kids(under[i]!)) if (!seen.has(k)) { seen.add(k); under.push(k); }
     const statuses = under.flatMap((r) => counted.get(graphId(r)) ?? []);
     const status = statuses.length ? rollUpStatuses(statuses) : under.every(settled) ? 'done' : 'planned';
-    return { ...issue(ref, status), dependsOn: [...blockers.get(ref) ?? []].sort(order), jobs: under.flatMap((r) => jobsOf.get(graphId(r)) ?? []) };
+    const updatedAt = newest(under.flatMap((r) => [known.get(r)?.updatedAt, ...since.get(graphId(r)) ?? []]));
+    return {
+      ...issue(ref, status), dependsOn: [...blockers.get(ref) ?? []].sort(order), jobs: under.flatMap((r) => jobsOf.get(graphId(r)) ?? []), ...updatedAt ? { updatedAt } : {},
+    };
   };
   const piece = (ref: string): PlanPiece => {
     const below = kids(ref).filter((k) => !seen.has(k));
     for (const k of below) seen.add(k);
+    const artifact = known.get(ref)?.artifact;
+    const its = artifact ? { artifact } : {};
     if (below.length === 0) {
       const only = task(ref);
-      return { ...issue(ref, only.status), tasks: [only], jobs: [] };
+      return { ...issue(ref, only.status), tasks: [only], jobs: [], ...its };
     }
     const tasks = below.map(task);
     const own = ownStatus(ref);
-    return { ...issue(ref, rollUpStatuses([...tasks.map((t) => t.status), ...own ? [own] : []])), tasks, jobs: jobsOf.get(graphId(ref)) ?? [] };
+    return { ...issue(ref, rollUpStatuses([...tasks.map((t) => t.status), ...own ? [own] : []])), tasks, jobs: jobsOf.get(graphId(ref)) ?? [], ...its };
   };
   const below = kids(root);
   for (const k of below) seen.add(k);
@@ -174,6 +198,13 @@ export function plannedWork(input: PlannedWorkInput): WorkPlan {
     ...issue(root, rollUpStatuses([...pieces.map((p) => p.status), ...own ? [own] : []])),
     pieces, jobs: below.length ? jobsOf.get(graphId(root)) ?? [] : [], counts,
   };
+}
+
+/** The newest of some ISO times, or undefined when there are none. */
+function newest(times: readonly (string | undefined)[]): string | undefined {
+  let best: string | undefined;
+  for (const t of times) if (t && !Number.isNaN(Date.parse(t)) && (best === undefined || Date.parse(t) > Date.parse(best))) best = t;
+  return best;
 }
 
 /** Whether the issue graph's newest read of an issue says it closed as completed (or closed with no reason). */
