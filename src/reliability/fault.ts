@@ -6,8 +6,8 @@ import { EXITED_AT_START, matchCause } from '../failures/causes.ts';
 /** The known causes (issue #509) that are a lane's, not a job's. */
 const LANE_CAUSES: ReadonlySet<string> = new Set(['machine-offline', 'link-closed', 'start-race', 'socket-path-too-long', 'disk-full', EXITED_AT_START]);
 
-/** The executors' start and pane failures no known cause names. */
-const LANE_ERRORS = /at startup|never reached claude|never shared dependencies|is not usable on|^herdr:|is already held by lane/i;
+/** The executors' start and pane failures no known cause names; a pane in PowerShell or cmd is the machine's (issue #2802). */
+const LANE_ERRORS = /at startup|never reached claude|never shared dependencies|is not usable on|^herdr:|is already held by lane|needs a POSIX shell/i;
 
 export function isLaneFault(error: string): boolean {
   const cause = matchCause(error, '', []);
