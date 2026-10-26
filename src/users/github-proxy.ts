@@ -327,7 +327,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
             : createSubIssueLinker({ apiUrl: o.accounts.endpoints(key).apiUrl, token: () => o.accounts.token(key), renew: (refused) => o.accounts.renew(key, refused) });
         },
       }),
-      bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l) }),
+      bugReports: createReportSender({ github: reports, reports: o.store.bugReports, now: () => o.clock.now().toISOString(), record: (e) => { o.store.events.append(e); }, log: (l) => o.logger.warn(l), enabled: () => o.store.settings.getPublicBugReports() }),
       repoChecks: createRepoChecks({
         github: () => { const login = o.accounts.account('github'); return login === undefined ? { problem: o.accounts.ended('github') ?? notMine } : { api: createRepoChecksGitHub(mine()), login }; },
         repos: () => o.store.settings.getJobRepositories('github'), reads: o.store.repoChecks,

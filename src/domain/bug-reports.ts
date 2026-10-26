@@ -2,12 +2,13 @@
 // later, so Settings → Your reports can list it with its state on GitHub.
 
 /**
+ * `approval`: a job's report, kept until a person approves it in Your reports (issue #2818); never sent before that.
  * `sending`: kept before GitHub is asked (issue #1591), its id the post key in the text; a stop leaves it so, and the next
  * start makes it `waiting`. `waiting`: kept, not on GitHub yet — the GitHub connection was down or had no access, or its
  * answer was lost; the hopper looks for its post key, then sends it later. `open`, `closed`: the issue on GitHub (for a
  * comment: the issue it was added to), as last read.
  */
-export type BugReportState = 'sending' | 'waiting' | 'open' | 'closed';
+export type BugReportState = 'approval' | 'sending' | 'waiting' | 'open' | 'closed';
 
 export interface BugReport {
   id: string;
@@ -23,9 +24,9 @@ export interface BugReport {
   /** The issue on GitHub; with `kind: comment` and `waiting`, the issue it goes to. */
   number?: number;
   url?: string;
-  /** While `sending` or `waiting`: the body to send, as the person left it, without its post key. Dropped once sent. */
+  /** While `approval`, `sending` or `waiting`: the body to send, scrubbed, without its post key. Dropped once sent. */
   body?: string;
-  /** A job's report: what the scrub of its private work removed before it was kept, by kind (issue #2812). */
+  /** What the scrub removed before it was kept, by kind: a job's private work (issue #2812), any report's identifiers (issue #2818). */
   removed?: string[];
   /** While `waiting`: why it was not sent, from the last try. */
   problem?: string;

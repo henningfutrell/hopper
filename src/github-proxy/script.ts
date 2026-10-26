@@ -7,6 +7,7 @@
 // own, and is sent again with it while no answer comes back (the connection broke): the hopper answers the first one
 // again, so nothing is filed twice.
 
+import { PUBLIC_REPORT_WARNING } from '../bug-reports/context.ts';
 import { STREAM_WAIT_SH } from '../job-stream/script.ts';
 import { HCURL_SH, TRACE_HEADER_SH } from './retry-after.ts';
 
@@ -56,10 +57,10 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
                                                          status, conclusion; EVENT: push, pull_request, ...)
   sh "$HOPPER_GH" run view RUN   --repo OWNER/NAME      (a workflow run and its jobs: id, name, status, conclusion;
                                                          a job's id is its check log JOB)
-  sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force] [--key KEY]
-                                                         (report a bug in the hopper itself, on its public tracker:
-                                                         describe the hopper's behavior only. The hopper removes what
-                                                         names your private work first, and answers what, as removed)
+  sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--key KEY]
+                                                         (report a bug in the hopper itself, on its PUBLIC tracker:
+                                                         a short title, a short generic description. A person
+                                                         approves it before it is posted; see the warning below)
 
 Prints the answer as JSON, with the url and as (the GitHub account that acted). A refusal prints why and exits 1: do not try another way around it.
 Read GitHub only this way: never curl api.github.com, never gh api, never a browser. A read is answered from what the
@@ -110,12 +111,13 @@ says what to do next: clone the fork, read the repository's contributing rules (
 template, the code of conduct, a CLA) and follow them, push your branch to the fork, and open the pull request on this
 job's repository with --head LOGIN:BRANCH. When the repository takes no issues, file your issue on the fork. Only while
 a person turned Contribution on in the hopper's Settings; else it is refused, and says so.
-A bug report goes to the hopper's own issues (henningfutrell/hopper), filed with your user's GitHub connection and
-labelled user-report. Never file one with issue create. The hopper adds this job's context (version, install, state,
-last log lines) and masks tokens, keys, host names and IP addresses. Say what happened in the body; never put text from
-a private repository in it. When open reports look similar, nothing is filed: it prints them and exits 1. Then add yours
-to one with --comment-on N, or file a new one with --force. When GitHub cannot take it now, the hopper keeps it and
-sends it later: it prints kind kept; do not send it again. At most 3 reports per job a day. A report never starts a job.`;
+A bug report goes to the hopper's own issues (henningfutrell/hopper), which are public. WARNING: ${PUBLIC_REPORT_WARNING}
+Never file one with issue create. It is a fixed template: your title (at most 120 characters) and a short, generic
+description of the hopper's behavior (at most 2000), then the operating system and the hopper's version, which the hopper
+adds. The hopper removes your private work, email addresses, links, absolute paths, host names and long ids, and answers
+what, as removed. It is not posted at once: it prints kind approval, and a person reads it in Your reports and approves
+or discards it. Do not send it again. With public bug reports off (the default), it is refused. At most 3 reports per job
+a day. A report never starts a job.`;
 
 /** The script. Arguments become form fields, rebuilt in place (no eval); a body file is read by curl itself, the token from stdin. */
 export const PROXY_SCRIPT = `#!/bin/sh

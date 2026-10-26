@@ -2,6 +2,8 @@
 // it is sent later, and Your reports reads each filed report's state on GitHub. One pass at start and every
 // `REPORT_SEND_MS`; Refresh in Your reports runs one now. A kept report is looked for by its post key before it is sent
 // (issue #1591): GitHub may have made it while its answer was lost. A report a stop left `sending` waits again at start.
+// While the user's public bug reports are off (issue #2818) no kept report is sent; a job's report waiting for a person's
+// approval is never sent by the pass.
 import type { BugReport } from '../domain/bug-reports.ts';
 import type { BugReportRepository } from '../domain/ports.ts';
 import { postKeySince, withPostKey } from '../domain/post-key.ts';
@@ -35,6 +37,8 @@ export function createReportSender(o: {
   now(): string;
   record(event: NewEvent): void;
   log(line: string): void;
+  /** Whether the user's public bug reports are on (issue #2818); off, the kept reports wait. */
+  enabled(): boolean;
   everyMs?: number;
 }): ReportSender {
   /** One kept report sent now, or its problem kept for the next try. */
@@ -56,7 +60,7 @@ export function createReportSender(o: {
   let running: Promise<BugReport[]> | undefined;
   async function pass(): Promise<BugReport[]> {
     const github = o.github();
-    for (const r of o.reports.inState('waiting')) await sendKept(github, r);
+    if (o.enabled()) for (const r of o.reports.inState('waiting')) await sendKept(github, r);
     if (!('problem' in github)) {
       // Closed ones too: an issue can be opened again.
       for (const r of [...o.reports.inState('open'), ...o.reports.inState('closed')]) {
