@@ -36018,7 +36018,7 @@ a notification for a new-repository ask.
 dismissed and not asked again; an owner's `accept` adds the repository and its issue becomes a job; a bad owner is 400),
 `test/ui/new-repositories-view.test.ts`.
 
-## Planned work (issue #2840, part 1, 2026-10-26)
+## Planned work (issue #2840, parts 1–2, 2026-10-26)
 
 Requirement (issue #2840): see all planned work broken down — a plan, its pieces, their tasks —, where each part stands,
 tied to the jobs that do it, and export it. The planned layer is the only new data; job ids and stages are read from the
@@ -36048,12 +36048,37 @@ planned, all done is done, and anything else — a part that runs, or done parts
 `planned-work:read` (the Jobs section of the scope registry). 400: not an issue; 404: the issue graph and the lineage links
 know no such issue. Made on each read, never kept; no GitHub read.
 
-**Left for later parts.** The graph view (work plan at left, then plan pieces, plan tasks, jobs; solid for done, blue for
-running, dashed grey for planned, orange for a person; the roll-up counts bar; a node opens its artifact or job); a plan
-piece's **artifact** (the thing a person judges: a screenshot, a pull request, a report), which needs a read of the issue's
-text the issue graph does not keep; and the exports (one CSV row per plan task with the issue's columns, and the nested
-JSON).
+**The piece artifact** (part 2). What a person judges a plan piece by — a screenshot, a pull request, a report — is a line
+of its issue's body: `Artifact: <text or link>` (any case, in bold or as a list item too; the first such line; at most 300
+characters; `pieceArtifactOf`). The issue graph's read of an issue asks GitHub for the body (`issue-place.ts`), keeps only that
+line's text as the issue node's `artifact` attribute — empty when the body has none, so a line taken away clears it —, and
+never the body. A plan piece's `artifact` is that attribute; absent when empty. Not a hopper **artifact** (a page a job made),
+though its link can be one.
 
-Tests: `test/domain/planned-work.test.ts` (each plan status, the roll-up, the tree's edge cases),
+**The export** (part 2). `GET /api/planned-work/export?issue=…&format=csv|json` answers the same work plan as a file to save
+(`content-disposition: attachment`, `src/domain/planned-work-export.ts`, pure). CSV: one row per plan task, the columns
+`plan_id, plan_title, piece_id, piece_title, piece_status, task_id, task_status, job_ids, job_statuses, artifact, updated_at`;
+`job_ids` and `job_statuses` joined by `|`, a job's status its job stage (the Jobs view's word); `artifact` its plan piece's;
+`updated_at` the newest of its issues' updates (the issue graph's) and its jobs' stage changes (`stageSince`); an empty value
+an empty cell. A text cell a spreadsheet would read as a formula (it starts with `=`, `+`, `-`, `@`, a tab or a carriage return)
+starts with a quote mark, since an issue title is anyone's text. JSON: the work plan nested with snake_case keys — `plan_id`,
+`pieces[].piece_id`, `tasks[].task_id`, `depends_on`, `updated_at`, `jobs[]: { id, status }` —, beside the camelCase of
+`GET /api/planned-work` for the rest of the API. Same scope as the read (`planned-work:read`). Nothing leaves the owner's
+hopper but this answer to their own read: no plan data is sent anywhere.
+
+**The view** (part 2). Jobs → **Planned work** (`#jobs/planned-work/<owner/name#n, encoded>`, `ui/src/views/planned-work.tsx`,
+`ui/src/model/planned-work.ts`): a field names the issue, and the tab draws its work plan left to right — the work plan, its
+plan pieces, their plan tasks, then each plan task's jobs (d3's tidy tree, as the Jobs graph) —, each node by its plan status:
+done a solid fill, running blue, planned dashed grey, blocked (needs a person) orange; each job by its own part in the
+roll-up (`planStatus` on each job of the read). A plan task's depends-on link is a dashed orange bow. Above it, a bar of how
+many plan tasks are in each plan status. A click on a node opens a plan piece's artifact when it is a link, else the node's
+issue on GitHub, or a job's view. CSV and JSON save the export through the session's read (`download`, `ui/src/lib/api.ts`).
+It reads again each time the store's jobs change, as the Jobs tab does. A plan piece's or the work plan's own jobs count in
+their plan status but are not drawn: the graph has one column of jobs, those of the plan tasks.
+
+Tests: `test/domain/planned-work.test.ts` (each plan status, the roll-up, the tree's edge cases, the piece artifact and its
+line, `updatedAt`), `test/domain/planned-work-export.test.ts` (the CSV columns and rows, the formula guard, the nested JSON),
+`test/sources/issue-place.test.ts` and `test/domain/issue-graph.test.ts` (the artifact line read and kept),
 `test/integration/planned-work.test.ts` (real database and HTTP: a tree with a done, a planned, a blocked and a running plan
-task, the job stages the job graph's, 400 and 404).
+task, the job stages the job graph's, 400 and 404, the export in both formats), `test/ui/planned-work-model.test.ts` and
+`test/ui/planned-work-view.test.ts` (the layout, the colours, the counts, the clicks, the CSV saved).
