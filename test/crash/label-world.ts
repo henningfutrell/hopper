@@ -8,6 +8,7 @@
 // lives in the test process, so it holds each effect whatever process made it.
 import { randomUUID } from 'node:crypto';
 import { expect } from 'vitest';
+import type { OutboxRow } from '../../src/domain/github-outbox.ts';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
 import { outboxKillPoint } from '../../src/sources/github/outbox.ts';
@@ -125,6 +126,24 @@ export function mirrorRows(w: Pick<LabelWorld, 'userUrl'>, n: number): { state: 
     return db.all('SELECT state, body FROM github_outbox ORDER BY id')
       .map((r) => ({ state: String(r.state), body: JSON.parse(r.body as string) as { act: string; key: string; change: { op: string } } }))
       .filter((r) => r.body.act === 'mirror' && r.body.key === issueUrl(n)).map((r) => ({ state: r.state, op: r.body.change.op }));
+  } finally { db.close(); }
+}
+
+/**
+ * Every outbox row of issue `n`, of any act, and every request on it to the fake GitHub, numbered in the order they came
+ * (issue #2837): which send of the item went out twice, and after what.
+ */
+export function issueTrail(w: Pick<LabelWorld, 'userUrl' | 'github'>, n: number): string {
+  const db = openDb(w.userUrl);
+  try {
+    const rows = db.all('SELECT id, state, body FROM github_outbox ORDER BY id')
+      .map((r) => ({ ...(JSON.parse(r.body as string) as OutboxRow), id: Number(r.id), state: String(r.state) }))
+      .filter((r) => r.key === issueUrl(n))
+      .map((r) => ({ id: r.id, state: r.state, act: r.act, tag: r.tag, change: r.change, attempts: r.attempts, lastError: r.lastError, createdAt: r.createdAt, sentAt: r.sentAt }));
+    const prefix = `/repos/${REPO}/issues/${n}/`;
+    const calls = w.github.state.requests.map((r, i) => ({ i, method: r.method, path: decodeURIComponent(r.path) }))
+      .filter((r) => r.path.startsWith(prefix) && r.method !== 'GET').map((r) => `${r.i} ${r.method} ${r.path}`);
+    return `outbox rows of #${n}: ${JSON.stringify(rows)}\nwrites to #${n}: ${JSON.stringify(calls)}`;
   } finally { db.close(); }
 }
 
