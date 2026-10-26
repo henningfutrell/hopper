@@ -6455,6 +6455,24 @@ Version 1 (`docs/schemas/job.companion_merged.v1.json`). A **companion pull requ
 }
 ```
 
+## `job.companion_rebase_filed`
+
+Version 1 (`docs/schemas/job.companion_rebase_filed.v1.json`). A **companion pull request** of the job had merge conflicts with its base branch while its work item was done or its issue closed, and the hopper's own merge of the base branch could not resolve them (issue #1143 reopened). A tend would run the item again and reopen its issue, so the hopper filed one **companion rebase issue** on the item's repository instead: with the job sources' label and assigned to the connected account, so Intake takes it as any other work, and its job updates the companion's branch. `pullRequest`: the companion; `issue`, `url`: the issue filed. Once for each head commit of the companion, at most three times. The item and its issue are as they were.
+
+| field | type | required |
+|---|---|---|
+| `pullRequest` | string | yes |
+| `issue` | integer | yes |
+| `url` | string | yes |
+
+```json
+{
+  "pullRequest": "https://github.com/owner/repo/pull/32",
+  "issue": 41,
+  "url": "https://github.com/owner/repo/issues/41"
+}
+```
+
 ## `job.pull_request_retargeted`
 
 Version 1 (`docs/schemas/job.pull_request_retargeted.v1.json`). A followed job's open pull request had a base branch that is not its repository's landing branch (its landing batch setting, never GitHub's default branch) and is no open pull request's head: the hopper changed its base to the landing branch (issue #1143), with no job, and said so in one comment on it. `from`: the base before; `to`: the landing branch. `stray` (issue #1143 part 4): no job followed it — a job named it, and no job of its item worked on it.

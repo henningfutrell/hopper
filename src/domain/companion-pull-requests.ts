@@ -8,8 +8,15 @@ import { failedTend, followsWhenEnded, tendStep, type PullRequestSeen } from './
 import { handedToFollowOns } from './proposal-paths.ts';
 import type { Job } from './types.ts';
 
-/** What the last read of a companion pull request saw, kept on the item's newest job (`companions`, by URL). */
-export interface CompanionSeen { conflicting: boolean; base?: string; headRef?: string; ended?: true }
+/**
+ * What the last read of a companion pull request saw, kept on the item's newest job (`companions`, by URL). `head`: its head
+ * commit. `rebaseFiled`: a done item's companion (issue #1143 reopened): the head commit the last rebase issue was asked
+ * for, and how many were filed.
+ */
+export interface CompanionSeen { conflicting: boolean; base?: string; headRef?: string; head?: string; ended?: true; rebaseFiled?: RebaseFiled }
+
+/** The rebase issues of a done item's companion: the head commit the last one was asked for, how many, the last one's URL. */
+export interface RebaseFiled { head?: string; count: number; issue?: string }
 
 /**
  * A read of a companion pull request: its state, merge conflicts, base and head branch. `byHopper`: the hopper merged it at
@@ -25,6 +32,11 @@ export interface ReadsCompanions {
    * pull request is (issue #2752 part 3); with `merge: false`, never (a waiting job's, issue #1143). Absent: no companion is read.
    */
   readCompanions?(pulls: { repo: string; number: number; job: Job; merge?: false }[]): Promise<CompanionRead[]>;
+  /**
+   * File the rebase issue `text` of a done item's companion (issue #1143 reopened) on the repository of `job`'s item, with the
+   * job sources' label and assigned to the connected account, so Intake takes it. Absent: none is filed.
+   */
+  fileCompanionRebase?(job: Job, text: { title: string; body: string }): Promise<{ number: number; url: string }>;
 }
 
 /** A companion pull request a rebase is due for: its URL, base and head branch. */
@@ -73,8 +85,9 @@ export function companionsAfter(job: Job, companions: readonly string[], read: r
   for (const url of companions) {
     const r = read.find((x) => x.url.toLowerCase() === url.toLowerCase());
     if (!r) continue;
+    const filed = before[url]?.rebaseFiled;
     after[url] = r.state === 'open'
-      ? { conflicting: r.conflicting, ...(r.base ? { base: r.base } : {}), ...(r.headRef ? { headRef: r.headRef } : {}) }
+      ? { conflicting: r.conflicting, ...(r.base ? { base: r.base } : {}), ...(r.headRef ? { headRef: r.headRef } : {}), ...(r.head ? { head: r.head } : {}), ...(filed ? { rebaseFiled: filed } : {}) }
       : { conflicting: false, ended: true };
   }
   return after;
@@ -102,4 +115,37 @@ export function asFollowing(job: Job, url: string): Job {
   if (!c || url === s?.pullRequest) return job;
   const seen = { ...(c.base ? { base: c.base } : {}), ...(c.headRef ? { headRef: c.headRef } : {}) };
   return { ...job, sourceState: { ...job.sourceState, source: { ...job.sourceState?.source, pullRequest: url, seen } } };
+}
+
+/** At most this many rebase issues are filed for one companion of a done item: after that, its failed jobs show it to a person. */
+export const MAX_COMPANION_REBASE_ISSUES = 3;
+
+/**
+ * The companion of `job` a rebase issue is due for, when its item is done or its issue closed (issue #1143 reopened): a tend
+ * would run the item again and reopen the issue. The first one the last read saw open with merge conflicts at a head commit
+ * no rebase issue was asked for, while fewer than `MAX_COMPANION_REBASE_ISSUES` were filed. `count`: how many were.
+ */
+export function companionRebaseDue(job: Job): (CompanionDue & { head?: string; count: number }) | undefined {
+  const s = sourceOf(job);
+  const [url, c] = Object.entries(s?.companions ?? {}).sort(([a], [b]) => a.localeCompare(b)).find(([u, x]) => x.conflicting && !x.ended && u.toLowerCase() !== s?.pullRequest?.toLowerCase()
+    && (x.rebaseFiled === undefined || (x.rebaseFiled.head !== x.head && x.rebaseFiled.count < MAX_COMPANION_REBASE_ISSUES))) ?? [];
+  if (!url || !c) return undefined;
+  return { url, ...(c.base ? { base: c.base } : {}), ...(c.headRef ? { headRef: c.headRef } : {}), ...(c.head ? { head: c.head } : {}), count: c.rebaseFiled?.count ?? 0 };
+}
+
+/** The rebase issue's text (issue #1143 reopened): neutral, fixed but for the pull request, its branches and the item. */
+export function companionRebaseText(item: { repo: string; number: number }, d: CompanionDue): { title: string; body: string } {
+  const m = /github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/i.exec(d.url);
+  const ref = m && m[1]!.toLowerCase() !== item.repo.toLowerCase() ? `${m[1]}#${m[2]}` : `#${m?.[2] ?? ''}`;
+  const base = d.base ? `\`${d.base}\`` : 'its base branch';
+  return {
+    title: `Rebase ${ref} onto ${d.base ?? 'its base branch'}`,
+    body: [
+      `The pull request ${d.url} has merge conflicts with ${base}. A job of ${item.repo}#${item.number} opened it. That work item is done, so the hopper does not run it again.`,
+      '',
+      `Update the branch ${d.headRef ? `\`${d.headRef}\`` : 'of that pull request'}: bring in ${base}, resolve every conflict, and keep the intent of both sides. Push to that branch. Do not open a new pull request.`,
+      '',
+      'The hopper filed this issue because the pull request had merge conflicts that its own merge of the base branch could not resolve.',
+    ].join('\n'),
+  };
 }

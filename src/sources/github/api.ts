@@ -264,6 +264,11 @@ export interface GitHubApi {
    * does with it — a tend job started, moved to the landing branch, closed as superseded. Answers the comment made.
    */
   postComment(repo: string, number: number, body: string): Promise<PostedComment>;
+  /**
+   * File an issue on `repo` (issue #1143 reopened: a done item's companion rebase issue), with its labels and assignees, as
+   * the connected account. Answers its number and URL. Absent: the hopper files none.
+   */
+  fileIssue?(repo: string, issue: { title: string; body: string; labels: string[]; assignees: string[] }): Promise<{ number: number; url: string }>;
   /** The merged pull request that closed the issue last; undefined when a person or a commit closed it. */
   closingPullRequest(repo: string, number: number): Promise<ClosingPullRequest | undefined>;
   /** The open pull requests whose merge will close the issue, drafts included; none is []. */

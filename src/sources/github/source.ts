@@ -36,7 +36,7 @@ import type { FollowContext } from './follow-context.ts';
 import { endedPullRequests, followPullRequest, housekeepStrays, tendStartedOn } from './follow.ts';
 import { crossReferencesOfJob } from './cross-references.ts';
 import { unfollowedPullRequests } from './reconcile.ts';
-import { readCompanions } from './companions.ts';
+import { fileCompanionRebase, readCompanions } from './companions.ts';
 import { pullRequestCensus } from './census.ts';
 import { followedBatch } from './followed-batch.ts';
 import { partsOf, tickedParts } from './parts.ts';
@@ -375,7 +375,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
     },
     follow: (job, act, at) => followPullRequest(followContext(), job, act, at),
     housekeepStrays: (strays) => housekeepStrays(followContext(), strays), censusPullRequests: (facts) => census.read(scanned, facts),
-    unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api), readCompanions: (pulls) => readCompanions(followContext(), pulls),
+    unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api), readCompanions: (pulls) => readCompanions(followContext(), pulls), fileCompanionRebase: (job, text) => fileCompanionRebase(api, job, text, config.label, o.assignee()),
     readFollowed: (jobs) => batch.read(jobs), endedPullRequests: (pulls) => endedPullRequests(api, pulls), endedWatched: (refs) => endedWatched(api, refs), waitedChecks: (repo, number) => waitedChecks(api, repo, number), waitedReviews: (repo, number) => waitedReviews(api, repo, number),
     crossReferences: (job) => crossReferencesOfJob(api, job),
     mergesOnReady: (repo, kind) => mergesOnReady(o.changeRule?.(repo) ?? DEFAULT_CHANGE_RULE, o.yoloMode?.(repo) ?? false, kind),
