@@ -8,7 +8,10 @@
 // GitHub is asked, its id the post key in the text (issue #1591): GitHub may make the report and its answer be lost, and
 // the send later looks for the key first, so a report is never filed twice. A report sent with a resend key (issue #2813) is
 // kept as a row of that key's id, and the same key again — a resend after a lost answer, or a second click — is answered
-// what the first made, and files nothing. Never a token in an event.
+// what the first made, and files nothing. Never a token in an event. A job's report loses its private work first (issue
+// #2812, `private-work.ts`), before its row and post key are made: the repositories it worked in, their numbers,
+// branches, paths and commits, other links, long ids and the environment's names; the row and the job's answer list the
+// kinds removed.
 import { createHash } from 'node:crypto';
 import type { BugReport } from '../domain/bug-reports.ts';
 import type { BugReportRepository } from '../domain/ports.ts';
@@ -16,6 +19,7 @@ import type { Job, NewEvent } from '../domain/types.ts';
 import { maskReportText, REPORT_LABEL, REPORT_REPO, reportBody, reportContext, reportTitle, searchTerms, similarityOf, type ReportSystem } from './context.ts';
 import { ReportGitHubError, type ReportGitHub, type SimilarReport } from './github.ts';
 import { sendReport } from './later.ts';
+import { privateWorkOf, scrubPrivateWork, type HopperOwn, type RemovedKind } from './private-work.ts';
 
 /** A title with at least this share of the terms is offered as similar. */
 export const SIMILAR_AT = 0.5;
@@ -37,6 +41,8 @@ export interface BugReportDraft {
   fromJob?: boolean;
   /** Its resend key (issue #2813): the same key again from the same sender is answered the first report. */
   key?: string;
+  /** What the scrub of a job's private work removed (issue #2812), by kind. */
+  removed?: RemovedKind[];
 }
 
 /** What a running job sends (`hopper-gh report bug`): a title and what happened, and its choice after a similar one. */
@@ -47,6 +53,9 @@ export type BugReportAnswer =
   | { kind: 'similar'; similar: SimilarReport[] }
   /** Not sent: GitHub could not take it now (`problem`); the hopper keeps it and sends it later. */
   | { kind: 'kept'; id: string; problem: string };
+
+/** A job's answer: also what the scrub of its private work removed, by kind, when it removed any (issue #2812). */
+export type JobReportAnswer = BugReportAnswer & { removed?: RemovedKind[] };
 
 /** Why a report was not filed: `status` as the HTTP edge answers it. */
 export class BugReportRefused extends Error {
@@ -68,7 +77,13 @@ export interface BugReportsOptions {
   /** The person's reports: those filed, and those kept to send later. */
   reports: BugReportRepository;
   now(): string;
+  /** A job's events: what its GitHub proxy events name is its private work (issue #2812). */
+  jobEvents?(id: string): { type: string; data: unknown }[];
+  /** What of a report's text is the hopper's own: its paths, and which of the text's commit ids are its (issue #2812). */
+  hopperOwn?(text: string): Promise<HopperOwn>;
 }
+
+const NO_OWN: HopperOwn = { isPath: () => false, commits: new Set() };
 
 /**
  * GitHub could not take the report now, and may later: no answer, the connection refused or ended (401), no access to
@@ -91,8 +106,11 @@ export interface BugReports {
   /** The context of a report, masked: the System line only. */
   context(): string;
   file(draft: BugReportDraft, by: string): Promise<BugReportAnswer>;
-  /** A running job's report on itself: its text masked, the context added; `bug_report.filed` says `fromJob`. */
-  fileForJob(jobId: string, report: JobReport): Promise<BugReportAnswer>;
+  /**
+   * A running job's report on itself: its private work removed, its text masked, the context added; `bug_report.filed`
+   * says `fromJob`.
+   */
+  fileForJob(jobId: string, report: JobReport): Promise<JobReportAnswer>;
 }
 
 export function createBugReports(o: BugReportsOptions): BugReports {
@@ -121,7 +139,7 @@ export function createBugReports(o: BugReportsOptions): BugReports {
   const row = (d: BugReportDraft, by: string, body: string, state: 'sending' | 'waiting', problem?: string): BugReport | { first: BugReport } => {
     const input: Omit<BugReport, 'id'> = {
       createdAt: o.now(), by, ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
-      title: reportTitle(d.title), state, kind: d.commentOn !== undefined ? 'comment' : 'issue',
+      title: reportTitle(d.title), state, ...(d.removed?.length ? { removed: d.removed } : {}), kind: d.commentOn !== undefined ? 'comment' : 'issue',
       ...(d.commentOn !== undefined ? { number: d.commentOn } : {}), body, ...(problem !== undefined ? { problem } : {}), tries: 1, checkedAt: o.now(),
     };
     if (d.key === undefined) return o.reports.add(input);
@@ -176,12 +194,18 @@ export function createBugReports(o: BugReportsOptions): BugReports {
   return {
     context,
     file,
-    fileForJob(jobId, r) {
+    async fileForJob(jobId, r) {
       const host = o.system().hostname;
-      return file({
-        title: maskReportText(r.title, host), happened: maskReportText(r.body, host), expected: '', context: context(), jobId, fromJob: true,
-        ...(r.commentOn !== undefined ? { commentOn: r.commentOn } : {}), ...(r.force ? { force: true } : {}), ...(r.key !== undefined ? { key: r.key } : {}),
+      const work = privateWorkOf(jobOf(jobId), o.jobEvents?.(jobId) ?? [], host);
+      const own = o.hopperOwn ? await o.hopperOwn(`${r.title}\n${r.body}`) : NO_OWN;
+      const title = scrubPrivateWork(r.title, work, own);
+      const body = scrubPrivateWork(r.body, work, own);
+      const removed = [...new Set([...title.removed, ...body.removed])];
+      const answer = await file({
+        title: maskReportText(title.text, host), happened: maskReportText(body.text, host), expected: '', context: context(), jobId, fromJob: true,
+        ...(r.commentOn !== undefined ? { commentOn: r.commentOn } : {}), ...(r.force ? { force: true } : {}), ...(r.key !== undefined ? { key: r.key } : {}), ...(removed.length ? { removed } : {}),
       }, `job ${jobId}`);
+      return removed.length ? { ...answer, removed } : answer;
     },
   };
 }

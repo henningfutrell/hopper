@@ -1,6 +1,6 @@
 // Your reports (issue #694), a top-level view (#reports; issue #897 moved it out of Settings, which keeps configuration only): each bug report the person filed with Report a bug, or one of their jobs
 // filed, newest first, with its state — waiting to send (kept while GitHub could not take it, with why), open or
-// closed on GitHub, with its link. The hopper sends the kept ones and reads the states every 10 minutes; Refresh does
+// closed on GitHub, with its link; for a job's report, what of its private work was removed before it was sent (issue #2812). The hopper sends the kept ones and reads the states every 10 minutes; Refresh does
 // it now.
 import { Bug, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -29,6 +29,7 @@ function Row({ r }: { r: BugReportView }) {
         {new Date(r.createdAt).toLocaleString()}{by ? ` · ${by}` : ''}{r.kind === 'comment' ? ' · added to a similar report' : ''}
       </p>
       {r.state === 'waiting' && r.problem && <p className="text-xs text-muted-foreground">Not sent yet: {r.problem}</p>}
+      {r.removed && r.removed.length > 0 && <p className="text-xs text-muted-foreground">Removed before sending, as private work: {r.removed.join(', ')}</p>}
     </li>
   );
 }

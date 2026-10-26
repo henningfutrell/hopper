@@ -57,7 +57,9 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
   sh "$HOPPER_GH" run view RUN   --repo OWNER/NAME      (a workflow run and its jobs: id, name, status, conclusion;
                                                          a job's id is its check log JOB)
   sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force] [--key KEY]
-                                                         (report a bug in the hopper itself)
+                                                         (report a bug in the hopper itself, on its public tracker:
+                                                         describe the hopper's behavior only. The hopper removes what
+                                                         names your private work first, and answers what, as removed)
 
 Prints the answer as JSON, with the url and as (the GitHub account that acted). A refusal prints why and exits 1: do not try another way around it.
 Read GitHub only this way: never curl api.github.com, never gh api, never a browser. A read is answered from what the

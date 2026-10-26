@@ -3,10 +3,15 @@
 // the report filed on the hopper's own repository through the person's own GitHub connection — or the similar open
 // reports offered first, a comment on one, or a new one anyway. Kept to send later when GitHub cannot take it now. Your
 // reports: each report filed or kept, and a refresh that sends the kept ones and reads the filed ones' states.
+import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { arch, hostname, release } from 'node:os';
+import { resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { BugReportRefused, createBugReports, REPORT_REPO, type BugReports } from '../../bug-reports/index.ts';
+import { BugReportRefused, commitCandidates, createBugReports, REPORT_REPO, type BugReports, type HopperOwn } from '../../bug-reports/index.ts';
 import type { BugReport } from '../../domain/bug-reports.ts';
 import { RESEND_KEY } from '../../domain/post-key.ts';
 import type { Operation } from '../openapi-operation.ts';
@@ -32,10 +37,29 @@ export const bugReportBody = z.strictObject({
 /** Report a bug's part of the API reference (src/http/openapi.ts). */
 export const BUG_REPORT_OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/bug-reports/context', tag: 'Bug reports', summary: 'The context of a bug report', description: 'Issue #694: what the Report a bug form fills in, for the person to read and edit before sending — the System line only (issue #2478): the platform, its release, the architecture and the Node version. Never the hopper\'s version, its install type or a job. Masked: the host name, IP addresses and private host names. `repo` is where a report goes. Changes nothing.', role: 'operator', body: bugReportContextBody, returns: '`{ context, repo }`' },
-  { method: 'get', path: '/api/bug-reports', tag: 'Bug reports', summary: 'Your reports', description: 'Issue #694: each bug report the user filed with Report a bug, or that one of their jobs filed, newest first (at most 200): its `title`, `state` (`sending`: on its way to GitHub now, issue #1591; `waiting`: kept, not on GitHub yet, with the `problem` of the last try; `open` or `closed`: the issue on GitHub as last read, at `checkedAt`), `kind` (`issue`, or `comment` on the open report `number`), `number` and `url` once on GitHub, `by`, `jobId` and `fromJob`. Never its text. Not cached.', returns: '`{ reports: BugReportView[] }`' },
+  { method: 'get', path: '/api/bug-reports', tag: 'Bug reports', summary: 'Your reports', description: 'Issue #694: each bug report the user filed with Report a bug, or that one of their jobs filed, newest first (at most 200): its `title`, `state` (`sending`: on its way to GitHub now, issue #1591; `waiting`: kept, not on GitHub yet, with the `problem` of the last try; `open` or `closed`: the issue on GitHub as last read, at `checkedAt`), `kind` (`issue`, or `comment` on the open report `number`), `number` and `url` once on GitHub, `by`, `jobId` and `fromJob`; for a job\'s report, `removed`: the kinds of its private work removed before it was sent (issue #2812). Never its text. Not cached.', returns: '`{ reports: BugReportView[] }`' },
   { method: 'post', path: '/ui/api/bug-reports/refresh', tag: 'Bug reports', summary: 'Refresh your reports', description: 'Issue #694: sends the kept reports now — with the person\'s own GitHub connection, as when they were filed — and reads the state of each filed report on GitHub; the hopper also does this every 10 minutes. One `bug_report.filed` (`later: true`) per report sent. Answers the reports after, as GET /api/bug-reports.', role: 'operator', body: z.strictObject({}), returns: '`{ reports: BugReportView[] }`' },
   { method: 'post', path: '/ui/api/bug-reports', tag: 'Bug reports', summary: 'File a bug report', description: 'Issue #694: files the report on the hopper\'s own repository through the person\'s own GitHub connection, so it is filed as that person, with the label `user-report` — no `hopper` label and no assignee, so it never starts a job. First the open `user-report` issues with a similar title are searched: when there are some, nothing is filed and they are answered (`kind: similar`). `commentOn` adds the report as a comment on one of them (`kind: commented`); `force` files a new one anyway (`kind: filed`). GitHub tokens and keys are always masked; the rest is as the person sent it. One `bug_report.filed`, or `bug_report.failed` with the reason (502: GitHub refused it). With no GitHub connection, or GitHub out of reach, refusing access to the repository (the app not installed there), rate-limited or failing, the report is kept (`kind: kept`, its `id` and the `problem`; `bug_report.kept`) and the hopper sends it later, as filed now (Your reports, GET /api/bug-reports). `key` (issue #2813): the resend key the form made for this report, 8 to 64 letters, digits, `_` or `-`; the same key sent again is answered what the first made — `filed` or `commented` with its issue, or `kept` while it is on its way or kept — and nothing is filed twice.', role: 'operator', body: bugReportBody, returns: '`{ kind: filed | commented, number, url }`, `{ kind: similar, similar: [{ number, title, url }] }` or `{ kind: kept, id, problem }`', errors: [404, 502] },
 ];
+
+/** The hopper's own source tree: a job's report keeps a path or commit of it (issue #2812). */
+const HOPPER_ROOT = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
+const run = promisify(execFile);
+
+/** What of a report's text is the hopper's own: a path in its tree, a commit its git knows (none without git). */
+async function hopperOwn(text: string): Promise<HopperOwn> {
+  const isCommit = (id: string): Promise<boolean> =>
+    run('git', ['-C', HOPPER_ROOT, 'cat-file', '-e', `${id}^{commit}`], { timeout: 5_000 }).then(() => true, () => false);
+  const ids = commitCandidates(text).slice(0, 50);
+  const known = await Promise.all(ids.map(isCommit));
+  return {
+    isPath: (p) => {
+      const at = resolve(HOPPER_ROOT, p);
+      return at.startsWith(HOPPER_ROOT + sep) && existsSync(at);
+    },
+    commits: new Set(ids.filter((_, i) => known[i])),
+  };
+}
 
 /** One person's reports, over their parts. */
 export function bugReportsOf(t: TenantParts, log: (line: string) => void): BugReports {
@@ -47,6 +71,8 @@ export function bugReportsOf(t: TenantParts, log: (line: string) => void): BugRe
     log,
     reports: t.store.bugReports,
     now: () => new Date().toISOString(),
+    jobEvents: (id) => t.store.events.recent(1000, undefined, id),
+    hopperOwn,
   });
 }
 

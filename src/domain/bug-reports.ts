@@ -25,6 +25,8 @@ export interface BugReport {
   url?: string;
   /** While `sending` or `waiting`: the body to send, as the person left it, without its post key. Dropped once sent. */
   body?: string;
+  /** A job's report: what the scrub of its private work removed before it was kept, by kind (issue #2812). */
+  removed?: string[];
   /** While `waiting`: why it was not sent, from the last try. */
   problem?: string;
   /** Tries to send it so far. */
