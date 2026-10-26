@@ -44,7 +44,10 @@ describe('the label mirror on two hoppers on one database (issue #1892)', () => 
     expect(requests(w, 'DELETE', `/repos/${REPO}/issues/7/labels/hopper:failed`)).toBe(1);
     expect(requests(w, 'POST', `/repos/${REPO}/issues/7/labels`)).toBe(1);
     expect(await editsOf(a, 9), 'one Run again of #9').toEqual([{ from: 'pr_open', label: 'hopper:pr-ready' }]);
-    expect((await jobsOf(b, 9)).filter((j) => j.id !== w.jobs[9]), 'one new job of #9').toHaveLength(1);
+    // Each new job's times and both hosts' output (issue #2831): which hopper made the second one, and after what.
+    const newJobs9 = (await jobsOf(b, 9)).filter((j) => j.id !== w.jobs[9]);
+    const seen9 = newJobs9.map((j) => ({ id: j.id, status: j.status, rerunOf: j.rerunOf, createdAt: j.createdAt, updatedAt: j.updatedAt, finishedAt: j.finishedAt, sync: j.sourceState?.sync }));
+    expect(newJobs9, `one new job of #9: ${JSON.stringify(seen9)}\n${JSON.stringify(itemOf(w, 9))}\n${a.output()}\n${b.output()}`).toHaveLength(1);
     expect(mirrorRows(w, 9), 'no hopper put the label of #9 back').toEqual([]);
 
     // Only the lease holder judged: the other logged no mirror line.
