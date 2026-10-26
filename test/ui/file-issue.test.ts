@@ -135,7 +135,7 @@ describe('File an issue', () => {
     expect(confirm).toContain('Labelsnone');
     expect(confirm).toContain('none: it starts no job');
     await click(button(/Confirm and file/));
-    expect(filedPosts()).toEqual([{ path: '/ui/api/issue-drafts', body: { repo: REPO, title: 'Queue stalls after a restart', body: DRAFT.body, confirmed: true } }]);
+    expect(filedPosts()).toEqual([{ path: '/ui/api/issue-drafts', body: { repo: REPO, title: 'Queue stalls after a restart', body: DRAFT.body, confirmed: true, key: expect.stringMatching(/^ui-[0-9a-f]{32}$/) } }]);
     expect(document.querySelector('[data-slot="file-issue-filed"] a')?.getAttribute('href')).toBe('https://github.com/octo-org/ops/issues/13');
   });
 

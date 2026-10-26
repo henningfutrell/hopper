@@ -44,6 +44,8 @@ export interface BugReportRepository {
   list(limit?: number): BugReport[];
   /** The reports in `state`, oldest first. */
   inState(state: BugReportState): BugReport[];
+  /** Kept as `id` (a resend key's report, issue #2813), unless a report with that id is there: then undefined. */
+  addOnce(id: string, input: Omit<BugReport, 'id'>): BugReport | undefined;
   /** Shallow-merge; `undefined` clears. */
   update(id: string, patch: Partial<Omit<BugReport, 'id'>>): BugReport;
   /** A report GitHub refused for itself goes (issue #1591): it was kept only to be sent. */

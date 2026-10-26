@@ -29,7 +29,7 @@ async function reportForJob(o: { tenants: Tenants }, userId: string, jobId: stri
   if (!parts) return { status: 401, body: { error: 'refused: the job\'s user is not on this hopper' } };
   try {
     const a = await bugReportsOf(parts, (line) => console.warn(line)).fileForJob(jobId, {
-      title: req.title, body: req.body, ...(req.commentOn !== undefined ? { commentOn: req.commentOn } : {}), ...(req.force ? { force: true } : {}),
+      title: req.title, body: req.body, ...(req.commentOn !== undefined ? { commentOn: req.commentOn } : {}), ...(req.force ? { force: true } : {}), ...(req.key !== undefined ? { key: req.key } : {}),
     });
     if (a.kind === 'similar') return { status: 409, body: { error: similarText(a.similar), similar: a.similar } };
     return { status: 200, body: { ok: true, op: REPORT_OP, repo: REPORT_REPO, ...a } };

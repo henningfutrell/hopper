@@ -6,7 +6,10 @@
 // job's. With no GitHub connection, or GitHub out of reach or refusing access, the report is kept (`bug_report.kept`)
 // and sent later (`later.ts`); every report filed or kept is a row, for Your reports. The row is kept `sending` before
 // GitHub is asked, its id the post key in the text (issue #1591): GitHub may make the report and its answer be lost, and
-// the send later looks for the key first, so a report is never filed twice. Never a token in an event.
+// the send later looks for the key first, so a report is never filed twice. A report sent with a resend key (issue #2813) is
+// kept as a row of that key's id, and the same key again — a resend after a lost answer, or a second click — is answered
+// what the first made, and files nothing. Never a token in an event.
+import { createHash } from 'node:crypto';
 import type { BugReport } from '../domain/bug-reports.ts';
 import type { BugReportRepository } from '../domain/ports.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
@@ -32,10 +35,12 @@ export interface BugReportDraft {
   force?: boolean;
   /** A running job files it (`fileForJob`), not a person. */
   fromJob?: boolean;
+  /** Its resend key (issue #2813): the same key again from the same sender is answered the first report. */
+  key?: string;
 }
 
 /** What a running job sends (`hopper-gh report bug`): a title and what happened, and its choice after a similar one. */
-export interface JobReport { title: string; body: string; commentOn?: number; force?: boolean }
+export interface JobReport { title: string; body: string; commentOn?: number; force?: boolean; key?: string }
 
 export type BugReportAnswer =
   | { kind: 'filed' | 'commented'; number: number; url: string }
@@ -74,6 +79,14 @@ export const sendLater = (e: unknown): boolean => {
   return status === undefined || status === 401 || status === 403 || status === 404 || status === 429 || status >= 500;
 };
 
+/** The id of the report a resend key keeps (issue #2813): one per sender and key, so another sender's key is never answered. */
+export const keyedReportId = (by: string, key: string): string => `k${createHash('sha256').update(`${by}\n${key}`).digest('hex').slice(0, 32)}`;
+
+/** The answer to a resend key used again: what its report is now. Still `sending`: on its way, so kept, as the first will say. */
+const answerOf = (r: BugReport): BugReportAnswer => (r.state === 'open' || r.state === 'closed'
+  ? { kind: r.kind === 'comment' ? 'commented' : 'filed', number: r.number!, url: r.url! }
+  : { kind: 'kept', id: r.id, problem: r.problem ?? 'this report is on its way to GitHub now' });
+
 export interface BugReports {
   /** The context of a report, masked: the System line only. */
   context(): string;
@@ -101,12 +114,26 @@ export function createBugReports(o: BugReportsOptions): BugReports {
     }
   }
   const context = (): string => reportContext(o.system());
-  /** The report's row, in `state`, with the body to send. */
-  const row = (d: BugReportDraft, by: string, body: string, state: 'sending' | 'waiting', problem?: string): BugReport => o.reports.add({
-    createdAt: o.now(), by, ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
-    title: reportTitle(d.title), state, kind: d.commentOn !== undefined ? 'comment' : 'issue',
-    ...(d.commentOn !== undefined ? { number: d.commentOn } : {}), body, ...(problem !== undefined ? { problem } : {}), tries: 1, checkedAt: o.now(),
-  });
+  /**
+   * The report's row, in `state`, with the body to send; with a resend key, its own id, or the report that key kept first
+   * (`first`): a second send at once, which files nothing.
+   */
+  const row = (d: BugReportDraft, by: string, body: string, state: 'sending' | 'waiting', problem?: string): BugReport | { first: BugReport } => {
+    const input: Omit<BugReport, 'id'> = {
+      createdAt: o.now(), by, ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
+      title: reportTitle(d.title), state, kind: d.commentOn !== undefined ? 'comment' : 'issue',
+      ...(d.commentOn !== undefined ? { number: d.commentOn } : {}), body, ...(problem !== undefined ? { problem } : {}), tries: 1, checkedAt: o.now(),
+    };
+    if (d.key === undefined) return o.reports.add(input);
+    const id = keyedReportId(by, d.key);
+    // A first that GitHub refused meanwhile is gone: the key files again.
+    for (;;) {
+      const added = o.reports.addOnce(id, input);
+      if (added) return added;
+      const first = o.reports.get(id);
+      if (first) return { first };
+    }
+  };
   /** Kept to send later: `bug_report.kept`, and the answer that says so. */
   function kept(d: BugReportDraft, at: Record<string, unknown>, id: string, problem: string): BugReportAnswer {
     o.record({ type: 'bug_report.kept', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, id, problem } });
@@ -115,14 +142,20 @@ export function createBugReports(o: BugReportsOptions): BugReports {
   async function file(d: BugReportDraft, by: string): Promise<BugReportAnswer> {
     if (d.jobId !== undefined) jobOf(d.jobId);
     const at = { repo: REPORT_REPO, ...(d.jobId ? { jobId: d.jobId } : {}), by, ...(d.fromJob ? { fromJob: true } : {}) };
+    const first = d.key !== undefined ? o.reports.get(keyedReportId(by, d.key)) : undefined;
+    if (first) return answerOf(first);
     const body = reportBody({ happened: d.happened, expected: d.expected, context: d.context, ...(d.fromJob ? { fromJob: true } : {}) });
     const github = o.github();
-    if ('problem' in github) return kept(d, at, row(d, by, body, 'waiting', github.problem).id, github.problem);
+    if ('problem' in github) {
+      const waiting = row(d, by, body, 'waiting', github.problem);
+      return 'first' in waiting ? answerOf(waiting.first) : kept(d, at, waiting.id, github.problem);
+    }
     if (d.commentOn === undefined && !d.force) {
       const found = await similar(github, d.title);
       if (found.length > 0) return { kind: 'similar', similar: found };
     }
     const sending = row(d, by, body, 'sending');
+    if ('first' in sending) return answerOf(sending.first);
     const kind = sending.kind;
     try {
       const done = await sendReport(github, { key: sending.id, kind, title: sending.title, body, ...(d.commentOn !== undefined ? { number: d.commentOn } : {}) });
@@ -147,7 +180,7 @@ export function createBugReports(o: BugReportsOptions): BugReports {
       const host = o.system().hostname;
       return file({
         title: maskReportText(r.title, host), happened: maskReportText(r.body, host), expected: '', context: context(), jobId, fromJob: true,
-        ...(r.commentOn !== undefined ? { commentOn: r.commentOn } : {}), ...(r.force ? { force: true } : {}),
+        ...(r.commentOn !== undefined ? { commentOn: r.commentOn } : {}), ...(r.force ? { force: true } : {}), ...(r.key !== undefined ? { key: r.key } : {}),
       }, `job ${jobId}`);
     },
   };

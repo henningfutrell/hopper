@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { post } from '@/lib/api';
-import { draftProblem, emptyDraft, reportRequest, sentLine, type BugReportAnswer, type BugReportDraft, type SimilarReport } from '@/model/bug-report';
+import { draftProblem, emptyDraft, newResendKey, reportRequest, sentLine, type BugReportAnswer, type BugReportDraft, type SimilarReport } from '@/model/bug-report';
 import { useCanOperate } from '@/store/selectors';
 
 type Step = { at: 'form' } | { at: 'similar'; similar: SimilarReport[] } | { at: 'sent'; answer: Extract<BugReportAnswer, { kind: 'filed' | 'commented' }> }
@@ -26,6 +26,8 @@ export function BugReportDialog({ jobId, onClose }: { jobId?: string; onClose: (
   const [step, setStep] = useState<Step>({ at: 'form' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  // One resend key for this form (issue #2813): a second click or a resend is answered the first report.
+  const [key] = useState(newResendKey);
   useEffect(() => {
     let live = true;
     post<{ context: string }>('/ui/api/bug-reports/context', {})
@@ -37,7 +39,7 @@ export function BugReportDialog({ jobId, onClose }: { jobId?: string; onClose: (
     setBusy(true);
     setError(undefined);
     try {
-      const answer = await post<BugReportAnswer>('/ui/api/bug-reports', reportRequest(draft, { ...(jobId ? { jobId } : {}), ...o }));
+      const answer = await post<BugReportAnswer>('/ui/api/bug-reports', reportRequest(draft, { ...(jobId ? { jobId } : {}), ...o, key }));
       setStep(answer.kind === 'similar' ? { at: 'similar', similar: answer.similar } : answer.kind === 'kept' ? { at: 'kept', problem: answer.problem } : { at: 'sent', answer });
     } catch (e) {
       setError((e as Error).message);

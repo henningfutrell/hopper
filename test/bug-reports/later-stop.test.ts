@@ -17,6 +17,7 @@ function memoryReports(): BugReportRepository {
   const rows = new Map<string, BugReport>();
   return {
     add: (input) => { const r = { ...input, id: `r${rows.size + 1}` }; rows.set(r.id, r); return r; },
+    addOnce: (id, input) => { if (rows.has(id)) return undefined; const r = { ...input, id }; rows.set(id, r); return r; },
     get: (id) => rows.get(id),
     list: () => [...rows.values()].reverse(),
     inState: (state) => [...rows.values()].filter((r) => r.state === state),

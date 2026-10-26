@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Markdown } from '@/components/markdown';
 import { get, post } from '@/lib/api';
+import { newResendKey } from '@/model/bug-report';
 import {
   askBody, askProblem, buttonState, confirmProblem, editProblem, findingLine,
   type FiledIssue, type IssueAsk, type IssueCheck, type IssueDraft, type IssueDraftStatus,
@@ -48,6 +49,8 @@ export function FileIssueDialog({ jobId, status, onClose }: { jobId?: string; st
   const [confirmPublic, setConfirmPublic] = useState(false);
   const [allowPersonal, setAllowPersonal] = useState(false);
   const [filed, setFiled] = useState<FiledIssue>();
+  // One resend key for this dialog (issue #2813): a second click or a resend is answered the first issue.
+  const [key] = useState(newResendKey);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const running = useRef<AbortController | null>(null);
@@ -100,7 +103,7 @@ export function FileIssueDialog({ jobId, status, onClose }: { jobId?: string; st
   };
   const file = () => act(async () => {
     const f = await post<FiledIssue>('/ui/api/issue-drafts', {
-      repo: ask.repo, ...edit, confirmed: true,
+      repo: ask.repo, ...edit, confirmed: true, key,
       ...(confirmPublic ? { confirmPublic: true } : {}), ...(allowPersonal ? { allowPersonalData: true } : {}), ...(jobId ? { jobId } : {}),
     });
     setFiled(f);
