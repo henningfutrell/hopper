@@ -141,6 +141,12 @@ export async function postComment(req: Request, token: string, repo: string, num
   return { id: c?.id ?? 0, url: c?.html_url ?? '' };
 }
 
+/** File an issue (issue #1143 reopened: a done item's companion rebase issue): its number and URL. */
+export async function fileIssue(req: Request, token: string, repo: string, issue: { title: string; body: string; labels: string[]; assignees: string[] }): Promise<{ number: number; url: string }> {
+  const i = (await req('POST /repos/{owner}/{repo}/issues', { ...splitRepo(repo), ...issue, headers: auth(token) })).data as RestIssue;
+  return { number: i.number, url: i.html_url };
+}
+
 export async function reopenIssue(req: Request, token: string, repo: string, number: number): Promise<void> {
   await req('PATCH /repos/{owner}/{repo}/issues/{issue_number}', { ...splitRepo(repo), issue_number: number, state: 'open', headers: auth(token) });
 }

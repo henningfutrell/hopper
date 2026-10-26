@@ -4,8 +4,12 @@
 // 3): under its own repository's yolo mode and change kinds, through the merge gate, its holder's done criteria met. One
 // GitHub does not know, or whose read or merge throws, is logged and left out: asked again at the next round. A merge
 // GitHub refuses is logged, and the companion is kept open. One asked with `merge: false` (a waiting job's) is only read.
+// A done item's companion rebase issue (`fileCompanionRebase`) is filed on the item's repository, with the job sources'
+// label and assigned to the connected account; with no account connected, none is filed.
 import type { CompanionRead } from '../../domain/companion-pull-requests.ts';
+import { SourceError } from '../../domain/ports.ts';
 import type { Job } from '../../domain/types.ts';
+import type { GitHubApi } from './api.ts';
 import type { PullRequestContext } from './follow-context.ts';
 import { mergeWhenReady, seenOf } from './follow.ts';
 
@@ -30,4 +34,10 @@ export async function readCompanions(ctx: PullRequestContext, pulls: { repo: str
     }
   }
   return read;
+}
+
+export async function fileCompanionRebase(api: GitHubApi, job: Job, text: { title: string; body: string }, label: string, assignee: string | undefined): Promise<{ number: number; url: string }> {
+  if (!api.fileIssue || !job.source?.repo) throw new SourceError('this source cannot file an issue', true);
+  if (assignee === undefined) throw new SourceError('no GitHub account is connected', false);
+  return api.fileIssue(job.source.repo, { ...text, labels: [label], assignees: [assignee] });
 }

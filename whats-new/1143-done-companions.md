@@ -1,0 +1,1 @@
+- A finished job's extra pull request that gets merge conflicts is now brought up to date too: the hopper tries to fix it itself, and else files a new job to do it, so the finished job's issue stays closed.

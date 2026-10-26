@@ -25861,9 +25861,11 @@ no failed tend.
 
 **Not done, by decision.**
 
-- A companion of an item whose issue is closed, or whose work item is done or dropped, is not rebased: a tend is a Run again
+- A companion of an item whose issue is closed, or whose work item is done or dropped, is not tended: a tend is a Run again
   of the item, and Run again reopens a closed issue (issue #2127). Since issue #2752 part 4, a done or closed item's
-  companions are still read, and merged when ready; a dropped item's are not read.
+  companions are still read, and merged when ready; a dropped item's are not read. Since 2026-10-26 a done or closed
+  item's companion with merge conflicts gets the base merge, else a **companion rebase issue**: "A done item's companion
+  pull request" below.
 - A companion in another repository than the item's: a tend job works in its item's repository. Since issue #2752 it
   is one: "Companion pull requests in another repository" below.
 - "Behind" with no merge conflicts, as for a followed pull request (part 4).
@@ -25909,6 +25911,43 @@ Tests: `test/domain/waiting-pull-requests.test.ts` (which pull requests a waitin
 what a read keeps, the note), `test/integration/waiting-pull-requests.test.ts` (over the real daemon: a waiting job's pull
 request that gets merge conflicts wakes it, with no comment from anyone, and says so on it; back on its wait at the same
 head, it is not woken again).
+
+## A done item's companion pull request (issue #1143 reopened, 2026-10-26)
+
+**The problem.** The other pull request that reopened issue #1143 is a companion of an item that is done, its issue closed:
+the job's followed pull request merged and closed the issue, and its second pull request, a bookkeeping change in the same
+repository, got merge conflicts after. A tend is a Run again of the item: it reopens the closed issue, the new job takes the
+item over in the work-item ledger, and the check of active jobs cancels a job whose issue closed. So nothing rebased it.
+
+**The change** (`companionRebaseDue`, `companionRebaseText` in `src/domain/companion-pull-requests.ts`; `rebaseDone` in
+`src/sources/companions.ts`; `JobSource.fileCompanionRebase`, `GitHubApi.fileIssue`). In a round of every follow, after the
+companions are read, each holder whose item is done or whose issue is closed (not dropped) is asked for a companion that the
+last read saw open with merge conflicts:
+
+- **Once for each head commit**, at most `MAX_COMPANION_REBASE_ISSUES` (3) times for one companion. What was asked is kept on
+  the holder (`companions[url].rebaseFiled`: the head, the count, the issue). The head is marked before anything is done, so
+  a crash files no issue rather than two; a filing that throws takes the mark back and is asked again at the next round.
+- **The base merge first**, as for a tend (issue #967): the hopper's mirror merges the base branch into the companion and
+  pushes, with no job. Pushed: `job.pull_request_base_merged`, and the companion is free of merge conflicts until the next
+  read.
+- **Else one companion rebase issue**, filed through the user's own connection on the item's repository: the job sources'
+  label, assigned to the connected account, so Intake takes it as any other work (as a landing batch's fix issue). Its text is
+  fixed but for the pull request, its branches and the item: update the companion's branch, keep the intent of both sides, open
+  no new pull request. `job.companion_rebase_filed`. The job of that issue pushes to the companion's branch through the git
+  proxy, so the shrink guard judges it, and its done line is "an existing pull request has no merge conflicts".
+- The item, its issue and its jobs are as they were: no Run again, no reopen.
+
+**Not done, by decision.**
+
+- No tend job of the item for it: see the problem above. A job of a new issue does the rebase in its place.
+- A rebase issue is not closed by the hopper when the companion is rebased or merged: the job of that issue ends it as any job
+  of an existing pull request does.
+- After three issues for one companion the hopper files no more: the failed jobs of those issues show it to a person.
+
+Tests: `test/domain/companion-pull-requests.test.ts` (when a rebase issue is due, what a read keeps, the text),
+`test/integration/companion-rebase-issues.test.ts` (over the real daemon: a done item's companion that gets merge conflicts
+gets one rebase issue, labelled and assigned, and the item's issue stays closed; a base merge that resolves the conflicts
+files none).
 
 ## Companion pull requests in another repository (issue #2752 part 1, 2026-10-24)
 
