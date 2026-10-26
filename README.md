@@ -295,7 +295,8 @@ line carries a one-time join code: it works once, for 10 minutes.
 - **A Windows computer**: the usual way is to run the machine inside WSL, with systemd on and
   `podman.socket` started (`systemctl --user enable --now podman.socket`), and run the line in the WSL
   distro, not in PowerShell. A client on Windows itself (Node.js for Windows, with Git Bash's `sh` on
-  its `PATH`) joins too, for work that needs Windows; it serves no vault socket. The steps:
+  its `PATH`) joins too, for work that needs Windows; it serves no vault socket. It starts its own herdr session, with
+  Git Bash as the shell of its panes. The steps:
   https://henningfutrell.github.io/hopper/install.html#windows-machine
 - **No sandbox box.** A sandbox never joins as a machine: a job's step runs in a sandbox of its own, which the
   hopper makes for that step and destroys after it (`docs/deploy.md` "Sandboxes the hopper starts").
