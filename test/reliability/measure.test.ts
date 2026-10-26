@@ -21,6 +21,8 @@ describe('lane faults', () => {
     'pane lost', 'machine desk is offline', 'client box is not dialled in', 'claude exited at startup',
     'claude blocked at startup: Do you trust the files in this folder?', 'claude did not start in 3 attempts: no prompt',
     'the prompt never reached claude after 3 sends: …', 'herdr: connection refused', 'its link closed',
+    // Issue #2802: a pane in PowerShell is the machine's, not the job's.
+    'the shell of pane w1:p1 on laptop is PowerShell, and the hopper needs a POSIX shell (sh, bash, zsh) there: make one herdr\'s default shell',
   ])('%s is a lane fault', (error) => expect(isLaneFault(error)).toBe(true));
 
   it.each(['tests fail on main', 'not complete: the pull request is not merged', 'too many questions', 'aborted', 'parked', 'interrupted by daemon restart'])(
