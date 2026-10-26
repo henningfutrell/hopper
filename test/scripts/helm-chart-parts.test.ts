@@ -115,3 +115,17 @@ describe('the master key, with every part on', () => {
     });
   }
 });
+
+describe('the volume claim templates, with every part on', () => {
+  it('declare the API server\'s defaults, so a GitOps diff of the atomic list matches the live StatefulSet', () => {
+    const sets = render(...all, 'telemetry.viewer.enabled=true', 'lanes.replicas=1').filter((r) => r.kind === 'StatefulSet');
+    expect(sets.map((s) => s.metadata.name).sort()).toEqual(['hopper-kms', 'hopper-lanes', 'hopper-solr', 'hopper-telemetry']);
+    const withPostgres = render('kms.local.enabled=true').filter((r) => r.kind === 'StatefulSet');
+    for (const s of [...sets, ...withPostgres]) {
+      for (const t of s.spec?.volumeClaimTemplates ?? []) {
+        expect(t, `${s.metadata.name} claim ${t.metadata.name}`).toMatchObject({ apiVersion: 'v1', kind: 'PersistentVolumeClaim', spec: { volumeMode: 'Filesystem' } });
+      }
+    }
+    expect(withPostgres.map((s) => s.metadata.name)).toContain('hopper-postgres');
+  });
+});

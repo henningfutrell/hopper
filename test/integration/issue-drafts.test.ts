@@ -101,7 +101,8 @@ describe('File an issue (issue #471)', () => {
     const issue = github.issues.find((i) => i.repo === REPO)!;
     expect(issue).toMatchObject({ title: 'Sign-in locks out after two tries', author: 'filer', labels: [], assignees: [] });
     expect(issue.body).toContain('Edited by the person.');
-    expect(issue.body.trimEnd().endsWith(FILED_NOTE)).toBe(true);
+    expect(issue.body).toContain(`${FILED_NOTE}\n\n<!-- hopper post `);
+    expect(issue.body).toMatch(/<!-- hopper post [0-9a-f]{24} -->$/);
     const create = github.requests.find((q) => q.method === 'POST' && q.path.endsWith(`/repos/${REPO}/issues`))!;
     expect(create.auth).toContain('test-account-token');
     expect(filed.body).toEqual({ repo: REPO, number: issue.number, url: `${github.url}/${REPO}/issues/${issue.number}` });

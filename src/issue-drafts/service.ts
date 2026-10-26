@@ -5,12 +5,16 @@
 // it broke; `check` is the confirm step, the same constraints on the text as the person edited it; `file` files that
 // text only when the person confirmed it, with their own GitHub connection, on one of their job repositories, with no
 // label and no assignee, so it never queues a job, and runs the constraints again. Drafts are kept nowhere: the UI holds
-// them until it closes. Events never carry the text.
+// them until it closes. Events never carry the text. A filing ends with its post key (issue #2813): the form's resend key, or
+// one made here; the same person's key sent again — a second click, or a resend after a lost answer — is answered the issue
+// the first made, while this hopper runs, and files nothing.
+import { randomBytes } from 'node:crypto';
 import {
   draftContext, filedBody, filingRefusal, type DraftAnswer, type FiledIssue, type IssueCheck, type IssueDraftRequest, type IssueDraftStatus,
 } from '../domain/issue-drafts.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import { maskReportText } from '../bug-reports/context.ts';
+import { withPostKey } from '../domain/post-key.ts';
 import { PromotionGitHubError, type PromotionGitHub } from '../promotions/github.ts';
 import { cleanText } from '../promotions/scan.ts';
 import { checkDraft, type DraftFinding, type DraftScope } from '../run-skills/constraints.ts';
@@ -69,6 +73,8 @@ export interface FileRequest {
   allowPersonalData?: boolean;
   /** The job the person attached as context: the filed event goes on its timeline. */
   jobId?: string;
+  /** Its resend key (issue #2813): the same key again from the same person is answered the first filing. */
+  key?: string;
 }
 
 export interface IssueDrafts {
@@ -79,6 +85,9 @@ export interface IssueDrafts {
   check(r: { repo: string; title: string; body: string; allowPersonalData?: boolean }): Promise<IssueCheck>;
   file(r: FileRequest, by: string): Promise<FiledIssue>;
 }
+
+/** How long a resend key's filing is answered again (issue #2813): longer than any resend or second click. */
+const KEY_KEPT_MS = 60 * 60_000;
 
 const PUBLIC_NOTE = 'is public: anybody can read what is filed. Confirm it to file there';
 
@@ -91,6 +100,8 @@ const onGitHub = async <T>(fn: () => Promise<T>): Promise<T> => {
 };
 
 export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
+  /** The filings by resend key, while this hopper runs: one in flight or filed is answered again; a failed one is forgotten. */
+  const filings = new Map<string, Promise<FiledIssue>>();
   const allowed = (repo: string): string => {
     const name = o.repos().find((r) => r.toLowerCase() === repo.toLowerCase());
     if (!name) throw new IssueDraftRefused(400, `${repo} is not one of your job repositories: pick one of them`);
@@ -176,22 +187,33 @@ export function createIssueDrafts(o: IssueDraftsOptions): IssueDrafts {
       return { repo, visibility, title: r.title, body: filedBody(r.body), labels: [], assignees: [], findings, ...(refusal ? { refusal } : {}) };
     },
 
-    async file(r, by) {
-      if (!r.confirmed) throw new IssueDraftRefused(400, 'confirm the issue first: nothing is filed without your confirmation');
-      const repo = allowed(r.repo);
-      const api = connected(repo);
-      const { visibility } = await facts(repo, api);
-      // The constraints again, on the text as the person edited it, not only on the draft.
-      const refusal = filingRefusal(findingsOf(repo, r.title, r.body), { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) });
-      if (refusal) throw new IssueDraftRefused(422, refusal);
-      if (visibility === 'public' && !r.confirmPublic) throw new IssueDraftRefused(409, `${repo} ${PUBLIC_NOTE}`);
-      // No label and no assignee: a filed issue never queues a job.
-      const made = await onGitHub(() => api.create(repo, { title: r.title.trim(), body: filedBody(r.body), labels: [] }));
-      o.record({
-        type: 'issue_draft.filed', ...(r.jobId && o.job(r.jobId) ? { jobId: r.jobId } : {}),
-        data: { repo, number: made.number, url: made.url, by, provider: o.drafter.provider, skill: skillName },
-      });
-      return { repo, number: made.number, url: made.url };
+    file(r, by) {
+      if (r.key === undefined) return fileOnce(r, by, randomBytes(12).toString('hex'));
+      const at = `${by}\n${r.key}`;
+      const first = filings.get(at);
+      if (first) return first;
+      const filing = fileOnce(r, by, r.key);
+      filings.set(at, filing);
+      filing.then(() => { setTimeout(() => filings.delete(at), KEY_KEPT_MS).unref(); }, () => { filings.delete(at); });
+      return filing;
     },
   };
+
+  async function fileOnce(r: FileRequest, by: string, key: string): Promise<FiledIssue> {
+    if (!r.confirmed) throw new IssueDraftRefused(400, 'confirm the issue first: nothing is filed without your confirmation');
+    const repo = allowed(r.repo);
+    const api = connected(repo);
+    const { visibility } = await facts(repo, api);
+    // The constraints again, on the text as the person edited it, not only on the draft.
+    const refusal = filingRefusal(findingsOf(repo, r.title, r.body), { visibility, ...(r.allowPersonalData ? { allowPersonalData: true } : {}) });
+    if (refusal) throw new IssueDraftRefused(422, refusal);
+    if (visibility === 'public' && !r.confirmPublic) throw new IssueDraftRefused(409, `${repo} ${PUBLIC_NOTE}`);
+    // No label and no assignee: a filed issue never queues a job.
+    const made = await onGitHub(() => api.create(repo, { title: r.title.trim(), body: withPostKey(filedBody(r.body), key), labels: [] }));
+    o.record({
+      type: 'issue_draft.filed', ...(r.jobId && o.job(r.jobId) ? { jobId: r.jobId } : {}),
+      data: { repo, number: made.number, url: made.url, by, provider: o.drafter.provider, skill: skillName },
+    });
+    return { repo, number: made.number, url: made.url };
+  }
 }

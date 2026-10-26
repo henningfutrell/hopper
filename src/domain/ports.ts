@@ -647,8 +647,11 @@ export class SourceError extends Error {
  */
 export interface SourceHost extends AnswersFromThread, WakesOnConflict {
   store: UserStore;
-  /** Create the job for an item (dedupe by key). null when the key already has a job. */
-  ingest(item: SourceItem, source: SourceRef): Job | null;
+  /**
+   * Create the job for an item (dedupe by key). null when the key already has a job, or, with `seen` (the newest job of the
+   * key the caller read, none when undefined), when the key's newest job is another: another hopper made it meanwhile (issue #2820).
+   */
+  ingest(item: SourceItem, source: SourceRef, seen?: { jobId: JobId | undefined }): Job | null;
   /**
    * When the item's text changed since its snapshot and nothing deals with it yet — no change held on `jobId`'s job for
    * that text, no original kept —, the snapshot's time (issue #662): the sync loop asks the source who edited it since.

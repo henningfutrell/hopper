@@ -49,6 +49,9 @@ export interface UserSettingsRepository {
   getHistoryRetentionDays(): number | undefined;
   setHistoryRetentionDays(days: number): void;
   /** The memory alert (issue #868); absent: off, or never set. */
+  /** Whether this user's bug reports may be posted on the hopper's public tracker (issue #2818); off when never set. */
+  getPublicBugReports(): boolean;
+  setPublicBugReports(on: boolean): void;
   getMemoryAlert(): MemoryAlert | undefined;
   setMemoryAlert(alert: MemoryAlert | null): void;
   /** The header badges the user chose (issue #1181); absent: never chosen, one Lanes badge. */

@@ -16,9 +16,11 @@
 // push to may have the hopper fork it into the user's account (`repo.fork`), open its pull request there from the fork
 // (`--head <login>:<branch>`), and file, read and comment on issues on that fork — the **job's fork**, a fork of the
 // job's own repository owned by the user, as GitHub says (the broker reads it): the fork is no job repository.
+import { MAX_REPORT_DESCRIPTION, MAX_REPORT_TITLE } from '../bug-reports/context.ts';
 import { z } from 'zod';
 import { isCommand } from '../domain/comment-command.ts';
 import { LOOK_ONLY } from '../domain/direct-jobs.ts';
+import { RESEND_KEY } from '../domain/post-key.ts';
 
 export const PROXY_OPS = [
   'issue.create', 'issue.comment', 'issue.view', 'issue.comments', 'issue.close', 'pr.create', 'pr.view', 'pr.diff', 'pr.commits', 'pr.checks',
@@ -32,8 +34,8 @@ const text = (max: number) => z.string().min(1).max(max);
 const branch = z.string().regex(/^[A-Za-z0-9._/-]{1,200}$/, 'a branch name: letters, digits, . _ / -');
 /** A pull request's head: a branch, or `<owner>:<branch>` for a branch of a fork (issue #429). */
 const head = z.string().regex(/^(?:[A-Za-z0-9-]{1,39}:)?[A-Za-z0-9._/-]{1,200}$/, 'a branch name, or owner:branch for a fork\'s');
-/** A resend key (issue #1607): hopper-gh makes one for each issue create, comment and pull request create (issue #1959), the same each time it sends it. */
-const key = z.string().regex(/^[A-Za-z0-9_-]{8,64}$/, 'a resend key: 8 to 64 letters, digits, _ or -');
+/** A resend key (issue #1607): hopper-gh makes one for each issue create, comment, pull request create (issue #1959) and bug report (issue #2813), the same each time it sends it. */
+const key = z.string().regex(RESEND_KEY, 'a resend key: 8 to 64 letters, digits, _ or -');
 /** A workflow run's event, as GitHub names it: `push`, `pull_request`, `workflow_dispatch`. */
 const event = z.string().regex(/^[a-z_]{1,40}$/, 'an event: lower-case letters and _, as push or pull_request');
 /** A flag: from a form it comes as the text `true`. */
@@ -74,12 +76,13 @@ export type ProxyRequest = z.infer<typeof proxyRequest>;
 /**
  * A job's bug report on the hopper itself (issue #694, design.md "Report a bug"): not an act of the hopper's connection
  * but of the job's own user's, by Report a bug's own path; so it has no repository of its own to check — it always goes
- * to the hopper's. `commentOn` adds it to a similar open report; `force` files it even with one.
+ * to the hopper's. A short title and a short description (issue #2818), kept for a person to approve. `commentOn` adds it
+ * to an open report once approved. `key`: its resend key
+ * (issue #2813), which hopper-gh makes and sends again when no answer came: the same key files it once.
  */
 export const REPORT_OP = 'report.bug';
 export const reportRequest = z.strictObject({
-  op: z.literal(REPORT_OP), title: text(200), body: text(10_000), commentOn: number.optional(),
-  force: flag.optional(),
+  op: z.literal(REPORT_OP), title: text(MAX_REPORT_TITLE), body: text(MAX_REPORT_DESCRIPTION), commentOn: number.optional(), key: key.optional(),
 });
 export type ReportRequest = z.infer<typeof reportRequest>;
 

@@ -77,4 +77,27 @@ describe('a job of the item made while the pass ran (issue #2570)', () => {
     await sync.syncNow();
     expect(world.jobs.size).toBe(3);
   });
+
+  it('made and reported after the pass read the item, before its job is made: the pass makes no job of the item (issue #2820)', async () => {
+    const world = createWorld();
+    const source = createFakeSource();
+    source.discover = async () => { source.discovers++; return [item(KEY)]; };
+    const ingest = world.host.ingest.bind(world.host);
+    let racing = false;
+    world.host.ingest = (it, ref, seen) => {
+      // The other hopper's job of the same Run again: it waited on the item's lock, failed at once and its end was reported.
+      if (racing) { racing = false; world.jobs.set('other', job('other', '2026-10-01T09:00:00Z', { status: 'failed', finishedAt: '2026-10-01T09:00:00Z' })); }
+      return ingest(it, ref, seen);
+    };
+    const sync = createSourceSync({ sources: [source], host: world.host, clock: world.clock, pollMs: () => 60_000 });
+    stop = () => sync.stop();
+    world.jobs.set('old', job('old', '2026-10-01T08:00:00Z', { status: 'running' }));
+    sync.start();
+    await sync.syncNow();
+    world.jobs.set('old', job('old', '2026-10-01T08:00:00Z'));
+    racing = true;
+    world.clock.advance(1_000);
+    await sync.syncNow();
+    expect([...world.jobs.keys()]).toEqual(['old', 'other']);
+  });
 });

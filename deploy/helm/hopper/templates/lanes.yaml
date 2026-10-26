@@ -137,10 +137,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: home
       spec:
         accessModes: [ReadWriteOnce]
+        volumeMode: Filesystem
         {{- include "hopper.storageClass" .Values.lanes.storageClass | nindent 8 }}
         resources:
           requests:

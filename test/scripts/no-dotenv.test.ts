@@ -135,6 +135,7 @@ describe('the move onto a cluster (scripts/hopper-cluster.sh)', () => {
 });
 
 describe('the Helm chart', () => {
+  // `helm template` runs in the test, under the suite's load (issue #2831): it took more than 15 s on CI.
   it('renders no .env: no mount, argument or value names one, and the master key comes from a Secret', () => {
     const rs = render();
     expect(JSON.stringify(rs)).not.toMatch(/(^|[\s"'/=])\.env\b/);
@@ -144,7 +145,7 @@ describe('the Helm chart', () => {
         for (const e of c.env ?? []) if (/^HOPPER_MASTER_KEY$|(KEY|TOKEN|PASSWORD|SECRET)$/.test(e.name)) expect(e.value, `${r.metadata.name}/${c.name} ${e.name}`).toBeUndefined();
       }
     }
-  });
+  }, 60_000);
 });
 
 describe('the files the hopper runs from', () => {

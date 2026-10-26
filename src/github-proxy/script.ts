@@ -7,6 +7,7 @@
 // own, and is sent again with it while no answer comes back (the connection broke): the hopper answers the first one
 // again, so nothing is filed twice.
 
+import { PUBLIC_REPORT_WARNING } from '../bug-reports/context.ts';
 import { STREAM_WAIT_SH } from '../job-stream/script.ts';
 import { HCURL_SH, TRACE_HEADER_SH } from './retry-after.ts';
 
@@ -56,16 +57,18 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
                                                          status, conclusion; EVENT: push, pull_request, ...)
   sh "$HOPPER_GH" run view RUN   --repo OWNER/NAME      (a workflow run and its jobs: id, name, status, conclusion;
                                                          a job's id is its check log JOB)
-  sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force]
-                                                         (report a bug in the hopper itself)
+  sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--key KEY]
+                                                         (report a bug in the hopper itself, on its PUBLIC tracker:
+                                                         a short title, a short generic description. A person
+                                                         approves it before it is posted; see the warning below)
 
 Prints the answer as JSON, with the url and as (the GitHub account that acted). A refusal prints why and exits 1: do not try another way around it.
 Read GitHub only this way: never curl api.github.com, never gh api, never a browser. A read is answered from what the
 hopper read last when that is at most 30 seconds old, or when the pull request is merged: source cache, else source
 github, and readAt says when it was read. ledger, when the hopper follows the item, says where its work stands.
 An issue filed this way says the hopper filed it. A follow-up gets no labels or assignees: a person triages it.
-When no answer comes back to issue create, issue comment or pr create, hopper-gh sends it again by itself: the hopper
-answers the first one again (replayed true), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
+When no answer comes back to issue create, issue comment, pr create or report bug, hopper-gh sends it again by itself: the
+hopper answers the first one again (replayed true; for report bug, the first report), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
 With --key KEY (8 to 64 letters, digits, _ or -) you choose the key: the same key from this job, also after it resumed on
 another machine, is answered the first answer, and nothing is filed twice. Use it for a sub-task (the work skill).
 It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
@@ -108,12 +111,13 @@ says what to do next: clone the fork, read the repository's contributing rules (
 template, the code of conduct, a CLA) and follow them, push your branch to the fork, and open the pull request on this
 job's repository with --head LOGIN:BRANCH. When the repository takes no issues, file your issue on the fork. Only while
 a person turned Contribution on in the hopper's Settings; else it is refused, and says so.
-A bug report goes to the hopper's own issues (henningfutrell/hopper), filed with your user's GitHub connection and
-labelled user-report. Never file one with issue create. The hopper adds this job's context (version, install, state,
-last log lines) and masks tokens, keys, host names and IP addresses. Say what happened in the body; never put text from
-a private repository in it. When open reports look similar, nothing is filed: it prints them and exits 1. Then add yours
-to one with --comment-on N, or file a new one with --force. When GitHub cannot take it now, the hopper keeps it and
-sends it later: it prints kind kept; do not send it again. At most 3 reports per job a day. A report never starts a job.`;
+A bug report goes to the hopper's own issues (henningfutrell/hopper), which are public. WARNING: ${PUBLIC_REPORT_WARNING}
+Never file one with issue create. It is a fixed template: your title (at most 120 characters) and a short, generic
+description of the hopper's behavior (at most 2000), then the operating system and the hopper's version, which the hopper
+adds. The hopper removes your private work, email addresses, links, absolute paths, host names and long ids, and answers
+what, as removed. It is not posted at once: it prints kind approval, and a person reads it in Your reports and approves
+or discards it. Do not send it again. With public bug reports off (the default), it is refused. At most 3 reports per job
+a day. A report never starts a job.`;
 
 /** The script. Arguments become form fields, rebuilt in place (no eval); a body file is read by curl itself, the token from stdin. */
 export const PROXY_SCRIPT = `#!/bin/sh
@@ -156,7 +160,7 @@ token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; tr
 ${HCURL_SH}
 if [ "$op" != pr.wait ]; then
   case $op in
-    issue.create|issue.comment|pr.create) [ -n "$ownkey" ] || set -- "$@" --data-urlencode "key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')"; tries=${PROXY_RESEND_TRIES} ;;
+    issue.create|issue.comment|pr.create|report.bug) [ -n "$ownkey" ] || set -- "$@" --data-urlencode "key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')"; tries=${PROXY_RESEND_TRIES} ;;
     *) tries=1 ;;
   esac
   # Sent again with the same key only when no answer came (curl's own error, not GitHub's or the hopper's: 22).

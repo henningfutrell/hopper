@@ -1,47 +1,67 @@
-// Report a bug (issue #694, design.md "Report a bug"): one person's reports. `context` is what the form shows, masked,
-// for the person to read and edit — the System line only (issue #2478); `file` searches the open reports for a similar
-// title first and answers those instead of filing, unless the person names one to comment on or files anyway; then it files on
-// the hopper's own repository with the person's own GitHub connection (`bug_report.filed`, `bug_report.failed`).
-// `fileForJob` is a running job's report, by the same path: its text masked whole, the context added, marked as a
-// job's. With no GitHub connection, or GitHub out of reach or refusing access, the report is kept (`bug_report.kept`)
-// and sent later (`later.ts`); every report filed or kept is a row, for Your reports. The row is kept `sending` before
-// GitHub is asked, its id the post key in the text (issue #1591): GitHub may make the report and its answer be lost, and
-// the send later looks for the key first, so a report is never filed twice. Never a token in an event.
+// Report a bug (issue #694, design.md "Report a bug"): one person's reports. `context` is what the form shows, masked:
+// the operating system and the hopper's version only (issue #2818); `preview` is the report as it would be posted;
+// `file` searches the open reports for a similar title first and answers those instead of filing, unless the person names
+// one to comment on or files anyway; then it files on the hopper's own repository with the person's own GitHub connection
+// (`bug_report.filed`, `bug_report.failed`). Nothing is posted while the user's **public bug reports** are off (issue
+// #2818, the default). Every report is a fixed template — a short title, a short description, the OS and the hopper's
+// version — and loses its email addresses, links, absolute paths, host names and long ids first (`identifiers.ts`).
+// `fileForJob` is a running job's report: its private work removed (issue #2812, `private-work.ts`), then the same scrub,
+// kept for a person to approve (`approval`, issue #2818); `approve` sends it by the person's path, `discard` drops it.
+// With no GitHub connection, or GitHub out of reach or refusing access, the report is kept (`bug_report.kept`) and sent
+// later (`later.ts`); every report filed or kept is a row, for Your reports. The row is kept `sending` before GitHub is
+// asked, its id the post key in the text (issue #1591): GitHub may make the report and its answer be lost, and the send
+// later looks for the key first, so a report is never filed twice. A report sent with a resend key (issue #2813) is kept
+// as a row of that key's id, and the same key again — a resend after a lost answer, or a second click — is answered what
+// the first made, and files nothing. Never a token in an event. The row and the job's answer list the kinds removed.
+import { createHash } from 'node:crypto';
 import type { BugReport } from '../domain/bug-reports.ts';
 import type { BugReportRepository } from '../domain/ports.ts';
 import type { Job, NewEvent } from '../domain/types.ts';
 import { maskReportText, REPORT_LABEL, REPORT_REPO, reportBody, reportContext, reportTitle, searchTerms, similarityOf, type ReportSystem } from './context.ts';
 import { ReportGitHubError, type ReportGitHub, type SimilarReport } from './github.ts';
+import { scrubIdentifiers } from './identifiers.ts';
 import { sendReport } from './later.ts';
+import { privateWorkOf, scrubPrivateWork, type HopperOwn, type PrivateWork, type RemovedKind } from './private-work.ts';
 
 /** A title with at least this share of the terms is offered as similar. */
 export const SIMILAR_AT = 0.5;
 /** The most similar reports offered. */
 export const MAX_SIMILAR = 5;
 
+/** Why nothing is posted while the user's public bug reports are off (issue #2818). */
+export const REPORTS_OFF = 'public bug reports are off: an admin turns them on in Your reports';
+/** What a job's report waits for (issue #2818): a person reads it and approves it before it is posted. */
+export const APPROVAL_PROBLEM = 'waits for a person to approve it in Your reports';
+
 export interface BugReportDraft {
   title: string;
-  happened: string;
-  expected: string;
-  /** The context as the person left it. */
-  context: string;
+  /** A short, generic description of the bug (issue #2818). */
+  description: string;
   jobId?: string;
   /** Add the report as a comment on this open report. */
   commentOn?: number;
   /** File it even with a similar open report. */
   force?: boolean;
-  /** A running job files it (`fileForJob`), not a person. */
-  fromJob?: boolean;
+  /** Its resend key (issue #2813): the same key again from the same sender is answered the first report. */
+  key?: string;
 }
 
-/** What a running job sends (`hopper-gh report bug`): a title and what happened, and its choice after a similar one. */
-export interface JobReport { title: string; body: string; commentOn?: number; force?: boolean }
+/** What a running job sends (`hopper-gh report bug`): a title and a description, and the open report to comment on. */
+export interface JobReport { title: string; body: string; commentOn?: number; force?: boolean; key?: string }
 
 export type BugReportAnswer =
   | { kind: 'filed' | 'commented'; number: number; url: string }
   | { kind: 'similar'; similar: SimilarReport[] }
   /** Not sent: GitHub could not take it now (`problem`); the hopper keeps it and sends it later. */
-  | { kind: 'kept'; id: string; problem: string };
+  | { kind: 'kept'; id: string; problem: string }
+  /** A job's report, kept until a person approves it in Your reports (issue #2818). */
+  | { kind: 'approval'; id: string };
+
+/** A job's answer: also what the scrub removed, by kind, when it removed any (issues #2812, #2818). */
+export type JobReportAnswer = BugReportAnswer & { removed?: RemovedKind[] };
+
+/** A report as it would be posted (issue #2818): its title and body, and what the scrub removed, by kind. */
+export interface ReportPreview { title: string; body: string; removed: RemovedKind[] }
 
 /** Why a report was not filed: `status` as the HTTP edge answers it. */
 export class BugReportRefused extends Error {
@@ -63,7 +83,15 @@ export interface BugReportsOptions {
   /** The person's reports: those filed, and those kept to send later. */
   reports: BugReportRepository;
   now(): string;
+  /** Whether the user's public bug reports are on (issue #2818): off, nothing is posted. */
+  enabled(): boolean;
+  /** A job's events: what its GitHub proxy events name is its private work (issue #2812). */
+  jobEvents?(id: string): { type: string; data: unknown }[];
+  /** What of a report's text is the hopper's own: its paths, and which of the text's commit ids are its (issue #2812). */
+  hopperOwn?(text: string): Promise<HopperOwn>;
 }
+
+const NO_OWN: HopperOwn = { isPath: () => false, commits: new Set() };
 
 /**
  * GitHub could not take the report now, and may later: no answer, the connection refused or ended (401), no access to
@@ -74,12 +102,30 @@ export const sendLater = (e: unknown): boolean => {
   return status === undefined || status === 401 || status === 403 || status === 404 || status === 429 || status >= 500;
 };
 
+/** The id of the report a resend key keeps (issue #2813): one per sender and key, so another sender's key is never answered. */
+export const keyedReportId = (by: string, key: string): string => `k${createHash('sha256').update(`${by}\n${key}`).digest('hex').slice(0, 32)}`;
+
+/** The answer to a resend key used again: what its report is now. Still `sending`: on its way, so kept, as the first will say. */
+const answerOf = (r: BugReport): BugReportAnswer => (r.state === 'open' || r.state === 'closed'
+  ? { kind: r.kind === 'comment' ? 'commented' : 'filed', number: r.number!, url: r.url! }
+  : r.state === 'approval' ? { kind: 'approval', id: r.id }
+    : { kind: 'kept', id: r.id, problem: r.problem ?? 'this report is on its way to GitHub now' });
+
 export interface BugReports {
-  /** The context of a report, masked: the System line only. */
+  /** The context of a report, masked: the operating system and the hopper's version only. */
   context(): string;
+  /** The report as `file` would post it: scrubbed and masked, in the template. Changes nothing. */
+  preview(draft: Pick<BugReportDraft, 'title' | 'description'>): Promise<ReportPreview>;
   file(draft: BugReportDraft, by: string): Promise<BugReportAnswer>;
-  /** A running job's report on itself: its text masked, the context added; `bug_report.filed` says `fromJob`. */
-  fileForJob(jobId: string, report: JobReport): Promise<BugReportAnswer>;
+  /**
+   * A running job's report on itself: its private work removed, its text scrubbed and masked, the context added, kept for
+   * a person to approve; `bug_report.filed` says `fromJob` once it is sent.
+   */
+  fileForJob(jobId: string, report: JobReport): Promise<JobReportAnswer>;
+  /** A person approves a job's report: sent by the person's path, a new issue or the comment the job asked for. */
+  approve(id: string): Promise<BugReportAnswer>;
+  /** A person discards a job's report: it is never sent. */
+  discard(id: string): void;
 }
 
 export function createBugReports(o: BugReportsOptions): BugReports {
@@ -101,54 +147,132 @@ export function createBugReports(o: BugReportsOptions): BugReports {
     }
   }
   const context = (): string => reportContext(o.system());
-  /** The report's row, in `state`, with the body to send. */
-  const row = (d: BugReportDraft, by: string, body: string, state: 'sending' | 'waiting', problem?: string): BugReport => o.reports.add({
-    createdAt: o.now(), by, ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
-    title: reportTitle(d.title), state, kind: d.commentOn !== undefined ? 'comment' : 'issue',
-    ...(d.commentOn !== undefined ? { number: d.commentOn } : {}), body, ...(problem !== undefined ? { problem } : {}), tries: 1, checkedAt: o.now(),
-  });
-  /** Kept to send later: `bug_report.kept`, and the answer that says so. */
-  function kept(d: BugReportDraft, at: Record<string, unknown>, id: string, problem: string): BugReportAnswer {
-    o.record({ type: 'bug_report.kept', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, id, problem } });
+  const refuseOff = (): void => {
+    if (!o.enabled()) throw new BugReportRefused(409, REPORTS_OFF);
+  };
+  /** The report as it would be posted: its private work first when `work` names it, then the identifiers, then the mask. */
+  async function preview(d: Pick<BugReportDraft, 'title' | 'description'>, work?: PrivateWork): Promise<ReportPreview> {
+    const host = o.system().hostname;
+    const own = o.hopperOwn ? await o.hopperOwn(`${d.title}\n${d.description}`) : NO_OWN;
+    const removed = new Set<RemovedKind>();
+    const pass = (text: string): string => {
+      const p = work ? scrubPrivateWork(text, work, own) : { text, removed: [] };
+      const i = scrubIdentifiers(p.text, own);
+      for (const k of [...p.removed, ...i.removed]) removed.add(k);
+      return maskReportText(i.text, host);
+    };
+    const title = reportTitle(pass(d.title));
+    const body = reportBody({ description: pass(d.description), context: context(), ...(work ? { fromJob: true } : {}) });
+    return { title, body, removed: [...removed] };
+  }
+  /**
+   * The report's row, in `state`, with the body to send; with a resend key, its own id, or the report that key kept first
+   * (`first`): a second send at once, which files nothing.
+   */
+  const row = (
+    d: { jobId?: string; fromJob?: boolean; commentOn?: number; key?: string }, by: string, r: ReportPreview,
+    state: 'sending' | 'waiting' | 'approval', problem?: string,
+  ): BugReport | { first: BugReport } => {
+    const input: Omit<BugReport, 'id'> = {
+      createdAt: o.now(), by, ...(d.jobId ? { jobId: d.jobId } : {}), ...(d.fromJob ? { fromJob: true } : {}),
+      title: r.title, state, ...(r.removed.length ? { removed: r.removed } : {}), kind: d.commentOn !== undefined ? 'comment' : 'issue',
+      ...(d.commentOn !== undefined ? { number: d.commentOn } : {}), body: r.body, ...(problem !== undefined ? { problem } : {}),
+      tries: state === 'approval' ? 0 : 1, checkedAt: o.now(),
+    };
+    if (d.key === undefined) return o.reports.add(input);
+    const id = keyedReportId(by, d.key);
+    // A first that GitHub refused meanwhile is gone: the key files again.
+    for (;;) {
+      const added = o.reports.addOnce(id, input);
+      if (added) return added;
+      const first = o.reports.get(id);
+      if (first) return { first };
+    }
+  };
+  const atOf = (r: { jobId?: string; by: string; fromJob?: boolean }) =>
+    ({ repo: REPORT_REPO, ...(r.jobId ? { jobId: r.jobId } : {}), by: r.by, ...(r.fromJob ? { fromJob: true } : {}) });
+  /** Kept: `bug_report.kept`, and the answer that says so. */
+  function kept(r: { jobId?: string; by: string; fromJob?: boolean }, id: string, problem: string): BugReportAnswer {
+    o.record({ type: 'bug_report.kept', ...(r.jobId ? { jobId: r.jobId } : {}), data: { ...atOf(r), id, problem } });
     return { kind: 'kept', id, problem };
   }
-  async function file(d: BugReportDraft, by: string): Promise<BugReportAnswer> {
-    if (d.jobId !== undefined) jobOf(d.jobId);
-    const at = { repo: REPORT_REPO, ...(d.jobId ? { jobId: d.jobId } : {}), by, ...(d.fromJob ? { fromJob: true } : {}) };
-    const body = reportBody({ happened: d.happened, expected: d.expected, context: d.context, ...(d.fromJob ? { fromJob: true } : {}) });
-    const github = o.github();
-    if ('problem' in github) return kept(d, at, row(d, by, body, 'waiting', github.problem).id, github.problem);
-    if (d.commentOn === undefined && !d.force) {
-      const found = await similar(github, d.title);
-      if (found.length > 0) return { kind: 'similar', similar: found };
-    }
-    const sending = row(d, by, body, 'sending');
+  /** A row kept `sending`, sent now: filed, kept to send later, or refused for good. */
+  async function deliver(github: ReportGitHub, sending: BugReport): Promise<BugReportAnswer> {
     const kind = sending.kind;
     try {
-      const done = await sendReport(github, { key: sending.id, kind, title: sending.title, body, ...(d.commentOn !== undefined ? { number: d.commentOn } : {}) });
-      o.reports.update(sending.id, { state: 'open', number: done.number, url: done.url, body: undefined });
-      o.record({ type: 'bug_report.filed', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, kind, number: done.number, url: done.url } });
+      const done = await sendReport(github, { key: sending.id, kind, title: sending.title, body: sending.body ?? '', ...(sending.number !== undefined ? { number: sending.number } : {}) });
+      o.reports.update(sending.id, { state: 'open', number: done.number, url: done.url, body: undefined, problem: undefined });
+      o.record({ type: 'bug_report.filed', ...(sending.jobId ? { jobId: sending.jobId } : {}), data: { ...atOf(sending), kind, number: done.number, url: done.url } });
       return { kind: kind === 'comment' ? 'commented' : 'filed', ...done };
     } catch (e) {
       const error = (e as Error).message;
       if (sendLater(e)) {
         o.reports.update(sending.id, { state: 'waiting', problem: error });
-        return kept(d, at, sending.id, error);
+        return kept(sending, sending.id, error);
       }
       o.reports.remove(sending.id);
-      o.record({ type: 'bug_report.failed', ...(d.jobId ? { jobId: d.jobId } : {}), data: { ...at, error } });
+      o.record({ type: 'bug_report.failed', ...(sending.jobId ? { jobId: sending.jobId } : {}), data: { ...atOf(sending), error } });
       throw new BugReportRefused(502, error);
     }
   }
+  async function file(d: BugReportDraft, by: string): Promise<BugReportAnswer> {
+    refuseOff();
+    if (d.jobId !== undefined) jobOf(d.jobId);
+    const first = d.key !== undefined ? o.reports.get(keyedReportId(by, d.key)) : undefined;
+    if (first) return answerOf(first);
+    const report = await preview(d);
+    const github = o.github();
+    if ('problem' in github) {
+      const waiting = row(d, by, report, 'waiting', github.problem);
+      return 'first' in waiting ? answerOf(waiting.first) : kept({ ...d, by }, waiting.id, github.problem);
+    }
+    if (d.commentOn === undefined && !d.force) {
+      const found = await similar(github, report.title);
+      if (found.length > 0) return { kind: 'similar', similar: found };
+    }
+    const sending = row(d, by, report, 'sending');
+    if ('first' in sending) return answerOf(sending.first);
+    return deliver(github, sending);
+  }
+  /** A job's report that waits for a person: else 404, or 409 when it waits no more. */
+  const awaiting = (id: string): BugReport => {
+    const r = o.reports.get(id);
+    if (!r) throw new BugReportRefused(404, `bug report ${id} not found`);
+    if (r.state !== 'approval') throw new BugReportRefused(409, 'this report does not wait for approval');
+    return r;
+  };
   return {
     context,
+    preview: (d) => preview(d),
     file,
-    fileForJob(jobId, r) {
-      const host = o.system().hostname;
-      return file({
-        title: maskReportText(r.title, host), happened: maskReportText(r.body, host), expected: '', context: context(), jobId, fromJob: true,
-        ...(r.commentOn !== undefined ? { commentOn: r.commentOn } : {}), ...(r.force ? { force: true } : {}),
-      }, `job ${jobId}`);
+    async fileForJob(jobId, r) {
+      refuseOff();
+      const by = `job ${jobId}`;
+      const first = r.key !== undefined ? o.reports.get(keyedReportId(by, r.key)) : undefined;
+      if (first) return answerOf(first);
+      const work = privateWorkOf(jobOf(jobId), o.jobEvents?.(jobId) ?? [], o.system().hostname);
+      const report = await preview({ title: r.title, description: r.body }, work);
+      const d = { jobId, fromJob: true, ...(r.commentOn !== undefined ? { commentOn: r.commentOn } : {}), ...(r.key !== undefined ? { key: r.key } : {}) };
+      const held = row(d, by, report, 'approval', APPROVAL_PROBLEM);
+      if ('first' in held) return answerOf(held.first);
+      kept({ ...d, by }, held.id, APPROVAL_PROBLEM);
+      const answer: BugReportAnswer = { kind: 'approval', id: held.id };
+      return report.removed.length ? { ...answer, removed: report.removed } : answer;
+    },
+    async approve(id) {
+      refuseOff();
+      const r = awaiting(id);
+      const tried = { tries: r.tries + 1, checkedAt: o.now() };
+      const github = o.github();
+      if ('problem' in github) {
+        o.reports.update(id, { ...tried, state: 'waiting', problem: github.problem });
+        return kept(r, id, github.problem);
+      }
+      return deliver(github, o.reports.update(id, { ...tried, state: 'sending', problem: undefined }));
+    },
+    discard(id) {
+      awaiting(id);
+      o.reports.remove(id);
     },
   };
 }

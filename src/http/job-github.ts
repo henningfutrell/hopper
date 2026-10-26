@@ -12,16 +12,11 @@
 // A wait on a pull request's checks (`pr wait`, issue #1072 part 2) answers 202 while the checks of a pull request the
 // hopper follows run: the watch it opens is on the job's stream (job-stream.ts), ended when the hopper sees them end.
 import type { FastifyInstance } from 'fastify';
-import { BugReportRefused, REPORT_REPO } from '../bug-reports/index.ts';
+import { BugReportRefused, PUBLIC_REPORT_WARNING, REPORT_REPO } from '../bug-reports/index.ts';
 import type { Clock } from '../domain/ports.ts';
 import { createGitHubProxy, createPrWaits, createProxyLimiter, PROXY_PATH, REPORT_OP, type GitHubProxy, type PrWaits, type ProxyAnswer, type ReportRequest } from '../github-proxy/index.ts';
 import type { Tenants } from './tenants.ts';
 import { bugReportsOf } from './ui/bug-reports.ts';
-
-/** How a job reads similar open reports: what it can do next, in its own words. */
-const similarText = (similar: { number: number; title: string; url: string }[]): string =>
-  `similar open reports, so nothing was filed: ${similar.map((s) => `#${s.number} ${s.title} (${s.url})`).join('; ')}. `
-  + `Add yours to one with --comment-on ${similar[0]!.number}, or file a new one with --force`;
 
 /** A job's bug report, by the path a person's takes (src/bug-reports/), as the proxy answers it. */
 async function reportForJob(o: { tenants: Tenants }, userId: string, jobId: string, req: ReportRequest): Promise<ProxyAnswer> {
@@ -29,12 +24,11 @@ async function reportForJob(o: { tenants: Tenants }, userId: string, jobId: stri
   if (!parts) return { status: 401, body: { error: 'refused: the job\'s user is not on this hopper' } };
   try {
     const a = await bugReportsOf(parts, (line) => console.warn(line)).fileForJob(jobId, {
-      title: req.title, body: req.body, ...(req.commentOn !== undefined ? { commentOn: req.commentOn } : {}), ...(req.force ? { force: true } : {}),
+      title: req.title, body: req.body, ...(req.commentOn !== undefined ? { commentOn: req.commentOn } : {}), ...(req.key !== undefined ? { key: req.key } : {}),
     });
-    if (a.kind === 'similar') return { status: 409, body: { error: similarText(a.similar), similar: a.similar } };
-    return { status: 200, body: { ok: true, op: REPORT_OP, repo: REPORT_REPO, ...a } };
+    return { status: 200, body: { ok: true, op: REPORT_OP, repo: REPORT_REPO, ...a, warning: PUBLIC_REPORT_WARNING } };
   } catch (e) {
-    return { status: e instanceof BugReportRefused ? e.status : 500, body: { error: (e as Error).message } };
+    return { status: e instanceof BugReportRefused ? e.status : 500, body: { error: (e as Error).message, warning: PUBLIC_REPORT_WARNING } };
   }
 }
 

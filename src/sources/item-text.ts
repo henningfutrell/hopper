@@ -33,5 +33,5 @@ export async function offer(host: SourceHost, source: JobSource, offered: Source
     host.refresh(live.id, item, sourceRef(source));
     return false;
   }
-  return host.ingest(item, sourceRef(source)) !== null;
+  return host.ingest(item, sourceRef(source), { jobId: existing?.id }) !== null;
 }

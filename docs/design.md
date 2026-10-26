@@ -62,7 +62,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/connected-accounts/` | signing in with GitHub and working through it (issue #214, "Sign in with GitHub, and work through that connection"): the hopper's app (`hopper-app.ts`), the device flow (`device-flow.ts`, @octokit/oauth-methods), the web flow (`web-flow.ts`, openid-client; issue #258), who a token belongs to (`identity.ts`), a user's connected account (`service.ts`), the source email match (`email-match.ts`, issue #1380), where the app is installed as last read (`installations.ts`, issue #1250), its renewal (`renewal.ts`, `renewer.ts`), its tokens at rest (`at-rest.ts`; issue #441, "Keeping the connection"), the revocation of a grant it replaces or drops (`revocation.ts`; issue #514, "One grant per connection"), a user's every connected account, the first and each further one, and the account of a repository (`account-set.ts`, issue #1448, "More than one GitHub account") and a further account's own view of the store and the vault (`keyed.ts`) | engine, http, store, plugins, decider |
 | `src/gitlab/` | a user's GitLab account (issue #1448 parts 2, 3, "A GitLab source", "Jobs through GitLab"): GitLab's REST API v4 with a personal access token — who it is and its confirmed emails, the projects it reaches, a project's open issues with a label, its default branch, an issue's label events and system notes, the hopper's labels, one issue and the merge requests that close it with an open one's pipeline, one merge request and the hopper's merge of it, and for a job's done criteria a pipeline's jobs, a job's log, a merge request's notes and changed files and a commit's time (`api.ts`, fetch) —, the account: connect with the source email match, the picked projects, its end, its removal, who of its GitLab is a trusted actor, as Access decides (`account.ts`), a GitLab issue's origin (`origin.ts`, pure), its request card, Approve and Decline (`intake.ts`, issue #1642 part 3), the `gitlab-account` job source over it (`source.ts`), a GitLab job's done judged by its merge request and its signals (`completion.ts`, issue #1642), its merge request followed and merged in yolo mode (`follow.ts`, issue #1642 part 2), a GitLab job's done criteria on its merge request (`done-criteria.ts`, issue #1924 part 4), its label changes as rows of the user's outbox and their send (`outbox.ts`, issue #1892 part 17), and git through the hopper for a GitLab job (`git-broker.ts`; its route is `src/http/job-git.ts`) | engine, http, store, plugins, decider |
 | `src/github-proxy/` | GitHub through the hopper (issue #563, "GitHub through the hopper"): a job's proxy token (`token.ts`, derived from the user's link key), the request it takes and who may ask what (`policy.ts`, pure), the rate limits (`limits.ts`), the GitHub calls (`api.ts`, `@octokit/request`), the repo-query cache (`repo-query.ts`, issue #1074: a job's reads answered from what the hopper read last), a pull request's **pr status** from the hopper's records (`pr-status.ts`, pure, issue #1072), a **pr wait**'s watches on the job stream (`pr-waits.ts`, issue #1072 part 2), `hopper-gh` (`script.ts`), `hcurl`, the job scripts' Retry-After wait (`retry-after.ts`, issue #752), the broker (`broker.ts`), the hopper's URL a job is given (`reach.ts`, pure, issue #695), a write's first answer by its resend key and the kept sub-issue links tried again (`sub-issue-links.ts`, issue #1607), a write a crash left found by its post key and the proxy's kill points (`resend.ts`, issue #1959 part 2, "The GitHub proxy under crashes"), each push of the git broker kept as a `git-push` saga (`push-saga.ts`, issue #1806, "A push kept as a saga"); a user's side of it is `src/users/github-proxy.ts`, its route `src/http/job-github.ts`; `hopper-requirements`, the client a job runs to check its push requirements (`requirements-script.ts`, issue #2555, "Push requirements"), its route `src/http/job-requirements.ts`, the gate at the push and the summary on the pull request `src/users/push-requirements.ts`, the rules `src/domain/push-requirements.ts`, the summary's text `src/domain/push-requirements-summary.ts`, the metrics `src/domain/push-requirement-metrics.ts` and the CI miss the follow records `src/sources/ci-missed.ts` | engine, http, store, plugins, decider |
-| `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms (`context.ts`, pure), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
+| `src/bug-reports/` | Report a bug (issue #694, "Report a bug"): the report context and its mask, the report's body, the duplicate search's terms and the public warning (`context.ts`, pure), the scrub of a job's private work (`private-work.ts`, pure, issue #2812), the identifier scrub of every report (`identifiers.ts`, pure, issue #2818), the GitHub calls with the person's own connection (`github.ts`, `@octokit/request`), one person's reports — the context, the duplicate check, filing or a comment, keeping one to send later, the events (`service.ts`); the kept reports sent later and the filed ones' states read (`later.ts`); a user's GitHub for it and its send pass are `src/users/github-proxy.ts`, its rows `src/store/bug-reports.ts` (tenant migration 37), its routes `src/http/ui/bug-reports.ts` | engine, http, store, plugins, decider |
 | `src/github-limiter/` | the shared rate limiter (issue #436, "The shared rate limiter"): the `@octokit/request` hook every `makeRequest` carries — pacing per credential and resource from GitHub's rate-limit headers, the hold after a 403 or 429, the conditional requests' cache (`limiter.ts`, one per process: `githubLimiter`); the poll schedule GitHub watches poll through — batches spread across the interval (`poll-schedule.ts`); the instance's settings, saved and applied at once (`settings.ts`); its routes `src/http/ui/github-rate-limiter.ts` | engine, http, store, plugins, decider, sources |
 | `src/git-mirror/` | the hopper's mirror (issue #858 part 2, "Git efficiency"): one bare, blobless git repository per job repository per user in the user's work dir, fetched at most once per repository per sync pass with the source's own credential in git's environment, and a pull request's merge conflicts from `git merge-tree --write-tree` (`mirrors.ts`), and whether two pull requests conflict with each other (issue #939), and the base merge — the base branch merged into a pull request and pushed (issue #967); the lines of a job's push, its pack indexed in a quarantine beside the mirror, for the shrink guard (`push-lines.ts`, issue #1096); and the lines a pull request changes in the files asked for (`diff-lines.ts`, issue #1076); whether a job's pushed commit holds a requirements file, in the same quarantine (`push-requirements-at.ts`, issue #2555) | engine, http, store, plugins, decider, sources |
 | `src/github-watch/` | GitHub watches (issue #427, "GitHub watches"): what a watch reads of its item with the person's own GitHub connection, through `makeRequest` (`github.ts`), and one user's watches — one per pointed job that has not ended, on the poll schedule, the change event, the interval applied at once (`service.ts`); the snapshot, the change and the settings are `src/domain/github-watch.ts`, the rows `src/store/github-watches.ts` (tenant migration 43), the routes `src/http/ui/github-watches.ts` | engine, http, store, plugins, decider |
@@ -8294,6 +8294,9 @@ made it from the same Run again while this pass read GitHub, and the listing kno
 the time this pass reaches the item, so "reported after the listing" alone does not catch it; the pass's start does.
 The job's transaction stamps its creation before it commits, so a pass can start between the stamp and the commit and not
 see the job (issue #2617). Its end report is written after the commit, so a job changed after the pass started counts too.
+And a job made after the pass read the item's job, while it waited on the item's lock, is not one it read (issue #2820): the
+sync gives ingest the job it read, and ingest, under the lock, makes no job when the item's newest job is another, also one
+whose end is reported already.
 A loop whose items each wait on real I/O already (a shell, git, a GitHub call: the sweep, the tends, the failure sweep's
 runs) needs no yield. The engine's Decision is one step and never yields. The rule needs no second connection pool; an
 asynchronous pool for the HTTP reads is a separate path of the same issue. It is checked in review: a new loop over a list
@@ -15918,9 +15921,9 @@ registered on this route only) or JSON. The broker (`src/github-proxy/broker.ts`
 
 A job's bug report (`report.bug`, issue #694) takes steps 1, 2 (`reportRequest`) and 5 (3 per job and 10 per machine
 **in any day**), skips 3 and 4 — it is not an act of the hopper's connection — and is then Report a bug's own path with
-the job's own user's connection ("Report a bug"): **200** `{ ok, op, repo, requestId, kind, number, url }` (or `kind: kept`,
-`id`, `problem`: kept and sent later), **409** with
-the similar open reports, or the refusal's status.
+the job's own user's connection ("Report a bug"): **200** `{ ok, op, repo, requestId, kind: approval, id, removed?, warning }`
+— kept until a person approves it (issue #2818) —, or the refusal's status with `warning` (**409** while public bug
+reports are off).
 
 **An issue filed through it** is the job's text, under the publishing rule, plus the hopper's note at its end:
 "Filed through hopper for job `<job id>` (request `<request id>`). It is not a job: it waits for a person to triage it."
@@ -17954,43 +17957,104 @@ person who may triage the repository: a report by anyone else arrives with no la
 Filing needs the hopper's app installed on the repository with issues write (the app reaches only the repositories it is
 installed on); without that, GitHub refuses it, and the person reads why.
 
-**The report context** (`reportContext`, `src/bug-reports/context.ts`, pure). What the form fills in: the System line
-only (issue #2478) — the platform, its release, the architecture and the Node version. Never the hopper's version or
-revision, its install type, a job, its failure or its log: a report is a public issue, and none of them belongs there.
-The generator makes no other line, so nothing else can reach GitHub; the person adds what they want to say in their own
-sections. Masked before the person sees it (`maskReportText`): the host name by value, GitHub tokens, keys (as the log
-mask, issue #685), and `maskAddresses` (`src/secrets/mask.ts`): IPv4, IPv6 (full or with `::`, so a time is none), host
-names under a private suffix (`.local`, `.lan`, `.home`, `.internal`, `.corp`, `.ts.net`) and the user name in a home
-directory. The person reads and edits it; what they leave in is sent.
+**The report context** (`reportContext`, `src/bug-reports/context.ts`, pure). What every report carries about the
+hopper: the operating system (platform, release, architecture) and the hopper's version (its `package.json`), and
+nothing else (issue #2818; issue #2478 had the Node version in place of the hopper's). Never the revision, the install
+type, a job, its failure or its log: a report is a public issue, and none of them belongs there. The generator makes no
+other line, so nothing else can reach GitHub. Masked (`maskReportText`): the host name by value, GitHub tokens, keys (as
+the log mask, issue #685), and `maskAddresses` (`src/secrets/mask.ts`): IPv4, IPv6 (full or with `::`, so a time is
+none), host names under a private suffix (`.local`, `.lan`, `.home`, `.internal`, `.corp`, `.ts.net`) and the user name in
+a home directory. The person reads it; they cannot edit it.
 
-**Filing** (`createBugReports`, `src/bug-reports/service.ts`). `POST /ui/api/bug-reports { title, happened, expected?,
-context?, jobId?, commentOn?, force? }`, operator. First the **duplicate search**: the title's words (three letters or
+**Public reports** (issue #2818). Reports go to a public tracker, under the person's own GitHub account, and a few
+masks were not enough: private project details and personal data could reach a public issue. So:
+- **The public warning** (`PUBLIC_REPORT_WARNING`): "This report will be posted publicly on GitHub. Do not include names,
+  emails, customer or company details, repository or host names, links, ids or file paths." Shown wherever Report a bug is
+  offered or run: the form, Your reports, `hopper-gh help` and every answer to `hopper-gh report bug`, the operator CLI's
+  usage, and `POST /ui/api/bug-reports/context` and `/preview`.
+- **A fixed template** (`reportBody`): a short title (at most 120 characters, `MAX_REPORT_TITLE`), then `### Description`
+  with a short, generic description (at most 2000, `MAX_REPORT_DESCRIPTION`), then `### System` with the report context,
+  then the hopper's note. No other field: the form asks for nothing else, and the API refuses any other field.
+- **The identifier scrub** (`scrubIdentifiers`, `src/bug-reports/identifiers.ts`, pure), on every report, a person's and a
+  job's, title and description: email addresses, links off the hopper's repository, absolute paths (`/…`, `~/…`, `C:\…`;
+  the hopper's routes stay), host names (dotted names under a common top-level domain; `github.com` stays, and a code or
+  file name is none), and long ids (uuids, numbers of eight digits or more, hex of sixteen or more, letters and digits of
+  twenty or more; the hopper's own commits stay). Each becomes a placeholder (`[an email address]`, `[a host name]`, …);
+  the kinds removed are kept on the row (`removed`) and shown.
+- **The person reads what is posted.** `POST /ui/api/bug-reports/preview { title, description }` (operator) answers the
+  title and body as they would be posted, and the kinds removed; the form shows it (Review) before Send. The scrub is
+  pure, so the post is the preview.
+- **A job's report waits for a person's approval.** It is no longer sent at once: it is kept as `approval`, with its text,
+  and the job is answered `kind: approval`. Your reports shows the text, and Approve
+  (`POST /ui/api/bug-reports/approve { id }`, operator) sends it by the person's path — a new issue, or the comment on the
+  open report the job named — or keeps it to send later; Discard (`POST /ui/api/bug-reports/discard { id }`) drops it.
+  The send pass never sends a report in `approval`.
+- **Public bug reports, off by default** (`getPublicBugReports`, the user's setting `publicBugReports`). Until an admin
+  turns them on (`POST /ui/api/bug-reports/settings { on }`, admin; the switch in Your reports; `hopper report public
+  on|off`), a person's report, a job's report and Approve are refused (409, `REPORTS_OFF`), and the send pass sends no
+  kept report. `GET /api/bug-reports` says `publicReports`.
+
+**Decisions (issue #2818):**
+- **The setting is the user's, an admin's to change** — as the memory alert: reports go through that user's own GitHub
+  connection, so whether they may be posted is that user's. No event records the change, as for the memory alert.
+- **The scrub rewrites; it does not reject.** The person sees what was removed before Send, and a job's report waits for
+  a person anyway; a rejection would only make them retype.
+- **Host names by a list of top-level domains**, not every dotted name: code names (`job.queued`) and file names
+  (`package.json`) are common in a report about the hopper, and must stay.
+- **Approve sends as the job asked**: no duplicate search runs then, and `--force` is gone from `hopper-gh report bug`.
+- **Discard records no event**: the report was never posted, and the job's own answer said it waits.
+
+**Filing** (`createBugReports`, `src/bug-reports/service.ts`). `POST /ui/api/bug-reports { title, description, jobId?,
+commentOn?, force?, key? }`, operator; 409 while public bug reports are off. First the **duplicate search**: the title's words (three letters or
 more, common words out, at most six, `searchTerms`) against the open `user-report` issues' titles (`GET /search/issues`,
 `in:title`, the words joined by OR); a title with half of them or more is similar (`similarityOf`), at most five, best
 first. When there are some, nothing is filed and they are answered (`kind: similar`); the person adds the report to one
 (`commentOn`: a comment with the title in bold and the same sections, `kind: commented`) or files a new one anyway
-(`force`). A failed search files as if there were none. The body is the person's sections with text — What happened,
-What I expected, Context — and the note "Filed with Report a bug in a hopper."; GitHub tokens and keys are always
-masked in the title and body. Each outcome is one event on the person's log, never with the text:
+(`force`). A failed search files as if there were none. The body is the fixed template ("Public reports" above) and the
+note "Filed with Report a bug in a hopper."; the title and description are scrubbed and masked first. Each outcome is one event on the person's log, never with the text:
 `bug_report.filed { repo, kind: issue | comment, number, url, jobId?, by }`, or `bug_report.failed { repo, error, jobId?,
 by }` — 503 with no GitHub connection, 502 when GitHub refuses. `POST /ui/api/bug-reports/context {}` answers
-`{ context, repo }` and changes nothing. A report's `jobId` stays on the hopper: its row and its events name the job
+`{ context, repo, warning, on }` and changes nothing. A report's `jobId` stays on the hopper: its row and its events name the job
 (issue #1147 reads it), the text sent to GitHub does not.
 
 **Jobs report too** (`fileForJob`). A running job files a hopper bug with `sh "$HOPPER_GH" report bug --title T (--body
-TEXT | --body-file F) [--comment-on N] [--force]` — a subcommand of `hopper-gh` ("GitHub through the hopper"), not a
+TEXT | --body-file F) [--comment-on N]` — a subcommand of `hopper-gh` ("GitHub through the hopper"), not a
 second script: one script, one token, one place a job looks for anything GitHub. The proxy checks the job's token and
-the limits (3 per job, 10 per machine, in any day), then files it by the person's path, with the **job's own user's**
-connection, so the job never signs in to GitHub. No person reads a job's text before it is sent, so its title and body
-pass through the whole report mask (`maskReportText`), not only the token mask; its context is the hopper's System line;
-the body ends "Filed by a job with Report a bug in a hopper." (no job id, issue #2478); `bug_report.filed` and `.failed` carry
-`fromJob: true` and `by: job <id>`. Similar open reports are answered **409** with the list and what to do next
-(`--comment-on N`, or `--force`): nothing is filed until the job chooses. The label is still `user-report`, so a job's
-report never starts a job either.
+the limits (3 per job, 10 per machine, in any day), then keeps it for a person's approval ("Public reports" above);
+approved, it is sent by the person's path, with the **job's own user's** connection, so the job never signs in to GitHub.
+Its title and body lose its private work, then the identifiers, then pass the whole report mask (`maskReportText`); its
+context is the hopper's; the body ends "Filed by a job with Report a bug in a hopper." (no job id, issue #2478);
+`bug_report.kept` (`problem`: it waits for approval), `bug_report.filed` and `.failed` carry `fromJob: true` and `by: job
+<id>`. The label is still `user-report`, so a job's report never starts a job either.
 
-**UI.** The user menu (issue #666) has *Report a bug* for an operator or admin (`ui/src/app/bug-report.tsx`): a form
-with a title, what happened, what you expected, and the context, editable, under a line that says what was masked and
-to remove anything private. Send is off until there is a title and what happened. Similar open reports are listed with
+**A job's report keeps nothing of its private work** (issue #2812, `scrubPrivateWork`, `src/bug-reports/private-work.ts`,
+pure). The tracker is public, and a job works in repositories that may be private: three job reports in four days named a
+private repository, its issue and pull request numbers, run ids, branches, paths, commits and deployment names, and each
+was cleaned by hand. So before a job's report is masked and kept — before its row and post key are made, so a kept or
+keyed report holds the scrubbed text —, its title and body lose: every link not on the hopper's own repository; the
+repositories the job worked in (its item's, and each one its GitHub proxy events name, a fork too), as `owner/name`,
+`owner/name#N` or the name alone, and any `owner/name#N` but the hopper's; their issue and pull request numbers as `#N`;
+the branches it pushed; its work tree and every path that is not in the hopper's own source tree or one of its routes;
+every commit id the hopper's own git does not know; uuids and numbers of eight digits or more (run, account ids); cloud
+resource names (`arn:aws…`); and the host name and the job's machines. Each becomes a plain placeholder (`[a repository]`,
+`[a link]`, …). What was removed is listed by kind, never by value: in the job's answer (`removed`) and on the report's row,
+which Your reports shows ("Removed before sending, as private work: …").
+
+**Decisions (issue #2812):**
+- **Every repository but the hopper's is private work.** No visibility is read: a job's report on the hopper never needs
+  another repository's name, and a read costs a call and can fail open.
+- **Rewrite, not hold.** A job's report is cleaned and sent; nothing waits on a person. The kinds removed say what changed.
+  Superseded by issue #2818: a job's report is cleaned, then waits for a person's approval.
+- **What the hopper's own repository holds stays**: its paths (checked in its source tree), its commits (checked with
+  its git; with no git, every commit id goes), its routes and its issue numbers, so a report about the hopper still
+  points at the hopper.
+- **A person's report is not scrubbed.** The person reads and edits it before sending. Superseded by issue #2818: every
+  report gets the identifier scrub, and the person reads the result before sending.
+
+**UI.** The user menu (issue #666) has *Report a bug* for an operator or admin (`ui/src/app/bug-report.tsx`): the public
+warning first, then a form with a title and a description, and the context, read-only. Review is off until there is a
+title and a description, and while public bug reports are off (the form says so, and links Your reports); it shows the
+report as it will be posted, with what was removed, and Send posts it. Similar open reports are listed with
 *Add to #N* each and *File a new report*; after filing, the line names the issue and links it. Every hand-off card,
 failure row and question card has *Report a bug* too (`ReportBugButton`), for an operator or admin: the same form and
 context; the report's row names that job, the text does not. A problem card has none: it is many jobs, and each of its failures has its own row.
@@ -18006,15 +18070,16 @@ kept`; its help says not to send it again). The duplicate search ran before it w
 is sent as it was, a new issue or a comment on the report the person chose.
 
 **Your reports** (`src/bug-reports/later.ts`, `ui/src/views/bug-reports.tsx`). Every report filed or kept is a row:
-title, state (`waiting`, `open`, `closed`), kind (`issue`, or `comment` on the open report `number`), number and URL
+title, state (`approval`, `sending`, `waiting`, `open`, `closed`), kind (`issue`, or `comment` on the open report `number`), number and URL
 once on GitHub, who filed it (`by`, `jobId`, `fromJob`), the tries and the last check. The body is dropped once sent: the
 issue on GitHub is the record. The send pass (`createReportSender`, one per user, started and stopped with the user's
 runtime through `UserGitHubProxy.bugReports`) runs at start and every 10 minutes (`REPORT_SEND_MS`): it sends each
 kept report, oldest first, with the person's own connection — `bug_report.filed` with `later: true` and the report's
 `id` — or keeps the reason for the next try; then it reads the state of each filed report on GitHub (`GET
 /repos/{owner}/{repo}/issues/{n}`, closed ones too: an issue can be opened again). One pass at a time, so a report is
-never sent twice. `GET /api/bug-reports` (never the text) and `POST /ui/api/bug-reports/refresh` (operator: one pass
-now) serve Settings → Your reports, which lists them newest first with a Refresh button.
+never sent twice. `GET /api/bug-reports` (never the text, but a job's report in `approval`'s, issue #2818) and `POST
+/ui/api/bug-reports/refresh` (operator: one pass now) serve Your reports, which lists them newest first with a Refresh
+button, the public warning, the public bug reports switch, and Approve and Discard on a job's report that waits.
 
 **From the CLI** (`src/cli-operator-report.ts`, issue #623): `hopper report context` prints the context,
 masked, to read first; `hopper report bug --title <t> (--happened <text> | --happened-file <f>) [--expected <text>]
@@ -18023,8 +18088,9 @@ masked, to read first; `hopper report bug --title <t> (--happened <text> | --hap
 the UI's own call under a session minted for it; the answer is JSON.
 
 Tests: `test/integration/bug-reports-jobs.test.ts` (a job's report through the real `hopper-gh`: filed with its user's
-connection, masked, marked; similar first, `--comment-on`, `--force`; the daily limit),
+connection, masked, marked; its private work removed, and the kinds listed; similar first, `--comment-on`, `--force`; the daily limit),
 `test/bug-reports/context.test.ts` (the context, what it never carries, the masks, the body, the search terms),
+`test/bug-reports/private-work.test.ts` (the scrub of a job's private work: what goes, what of the hopper's stays),
 `test/integration/bug-reports.test.ts` (the real daemon over the fake GitHub: the context the System line only, also on a job's report, filing as the person
 with the label and no assignee, a similar report offered, a comment, filing anyway, kept with no connection, a refused
 draft), `test/integration/bug-reports-later.test.ts` (kept with no connection and sent once connected; kept while GitHub
@@ -31223,12 +31289,47 @@ made twice.
 - **A look-up reads one page (100).** An issue or comment made within the hour before the row was kept is on it.
 
 **Residual risk, stated.** A create still in flight after its timeout that GitHub finishes only after the look-up found
-nothing posts a second one. File an issue (`src/issue-drafts/`) keeps no row before its create yet.
+nothing posts a second one. File an issue (`src/issue-drafts/`) keeps no row before its create (see "Filed once on a resend
+key", issue #2813).
 
 **Verification:** `test/integration/bug-reports-post-key.test.ts` (an issue made with its answer lost, sent later: one
 issue, the report links it; a report a stop left `sending`: linked at the next start; a comment the same),
 `test/integration/direct-job-promotions-post-key.test.ts` (an issue made with its answer lost, promoted again: one issue,
 with the new text; a stop before the row: linked at the next start, one `direct_job.promoted`; a comment the same).
+
+## Filed once on a resend key (issue #2813, 2026-10-26)
+
+Follow-up of "Posted once". **The problem.** Two bug reports were each filed twice, 1 to 13 seconds apart. The post key
+covers a lost answer inside one send, but each new send made a new row and so a new key: a second click, a resend after the
+HTTP answer was lost, or a job that ran `hopper-gh report bug` again. The duplicate search does not catch it: GitHub's search
+index lags behind a create. `hopper-gh` sent `report bug` once, with no resend key. File an issue stamped no post key at all.
+
+Note: the two pairs the issue names carry neither Report a bug's note, File an issue's note nor a job's note, so no hopper
+path is shown to have made them. The change closes the gaps the hopper has.
+
+**The change: a resend key on every filing path** (`RESEND_KEY` in `src/domain/post-key.ts`).
+- **Report a bug.** `POST /ui/api/bug-reports` and a job's `report.bug` take `key`. The report's row is kept as the id
+  `keyedReportId(by, key)` (`src/bug-reports/service.ts`), inserted only when no row has it (`BugReportRepository.addOnce`,
+  `ON CONFLICT (id) DO NOTHING`), so two sends at once keep one row. The same key again is answered from that row: `filed` or
+  `commented` with its issue, else `kept` (on its way, or kept to send later). The row's id is still the post key. A report
+  GitHub refused for itself goes, as before, so its key files again.
+- **`hopper-gh report bug`** makes a resend key as for an issue create, and sends it again when no answer came
+  (`PROXY_RESEND_TRIES`).
+- **The Report a bug form and File an issue** make one resend key for each form (`newResendKey`, `ui/src/model/bug-report.ts`).
+- **File an issue** (`src/issue-drafts/service.ts`) ends the body with its post key (the resend key, else one made for it).
+  The same person's key again is answered the filing in flight or filed, for an hour, while the hopper runs; a failed
+  filing is forgotten.
+
+**Decisions:**
+- **The id is a hash of the sender and the key.** A job chooses its key: another sender's same key is never answered.
+- **File an issue keeps no row.** A key is answered from memory: a stop between the create and its answer can still file
+  a second one. The person sees the error, and the issue is on GitHub with its post key.
+- **No schema change.** The report's id carries the key; the `bug_reports` table is as it was.
+
+**Verification:** `test/integration/bug-reports-post-key.test.ts` (a report sent again with its key: one issue, the same
+answer; two at once: one issue, one row; a key that is not 8 to 64 letters, digits, `_` or `-`: 400),
+`test/integration/bug-reports-jobs.test.ts` (a job's report sent again with its key: one issue),
+`test/issue-drafts/service.test.ts` (File an issue sent twice at once and again: one create, its post key last).
 
 ## Telemetry summary (issue #1486, part 2, 2026-10-16)
 

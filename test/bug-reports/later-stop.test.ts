@@ -17,6 +17,7 @@ function memoryReports(): BugReportRepository {
   const rows = new Map<string, BugReport>();
   return {
     add: (input) => { const r = { ...input, id: `r${rows.size + 1}` }; rows.set(r.id, r); return r; },
+    addOnce: (id, input) => { if (rows.has(id)) return undefined; const r = { ...input, id }; rows.set(id, r); return r; },
     get: (id) => rows.get(id),
     list: () => [...rows.values()].reverse(),
     inState: (state) => [...rows.values()].filter((r) => r.state === state),
@@ -38,7 +39,7 @@ describe('the send pass of Report a bug stops', () => {
       state: async () => ({ state: 'open' as const }),
       find: async () => undefined,
     };
-    const sender = createReportSender({ github: () => github, reports, now: () => '2026-10-11T00:00:01.000Z', record() {}, log() {} });
+    const sender = createReportSender({ github: () => github, reports, now: () => '2026-10-11T00:00:01.000Z', record() {}, log() {}, enabled: () => true });
     sender.start();
     let stopped = false;
     const stop = sender.stop().then(() => { stopped = true; });
