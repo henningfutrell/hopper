@@ -87,10 +87,11 @@ export function createWorld(): World {
     // No snapshot is kept here (issue #662): nothing changed since one.
     changedSince: () => undefined,
     answerFromThread: () => false, wakeOnComment: () => false, wakeOnConflict: () => false,
-    ingest(it, source) {
+    ingest(it, source, seen) {
       calls.ingest.push(it);
       const known = store.jobs.getBySourceKey(it.key);
       if (known && !isRerunnable(known)) return null;
+      if (seen && known?.id !== seen.jobId) return null;
       const id = `job-${jobs.size + 1}`;
       const job = {
         id, spec: { executor: it.executor, payload: {} }, priority: it.priority, approved: false, attempts: 0,
