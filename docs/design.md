@@ -1791,7 +1791,7 @@ remains. The only mutations are the owner's actions in the local UI, behind a UI
 
 | dir | owns | must not import |
 |-----|------|-----------------|
-| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985), the GitHub outbox of a source (`github/outbox.ts`, issue #1238: the rows an intake action, a hand-off resolution, Merge now, Close PR and each give-back keep, sent in batches, coalesced), the label mirror (`github/label-mirror.ts`, issue #1891: each listed issue's end labels against its work item's state, `github/item-labels.ts`, pure) and when the sync loop sends it (`outbox-flush.ts`) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822; `github/app/graphql-pulls.ts` and `github/followed-batch.ts`, issue #985: the in-motion cycle's), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its follow rounds (`follow-rounds.ts`, issue #985: the in-motion cycle, and a sync at once after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again; `strays.ts`, issue #1143 part 4: the housekeeping of pull requests no job follows), its closed-as-complete rule (`closed-as-complete.ts`, issue #1067: a failed job whose item the work-item ledger holds closed as complete is finished; the source's read is ledger input), the failed checks' logs a `fix_checks` tend quotes (`github/check-logs.ts`, issue #993: read once per run, through the port); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
+| `src/sources/` | `JobSource` adapters (`github`), the GitHub API port + `gh` CLI adapter + in-memory fake, its pass reads (`github/pass-reads.ts`, issue #822: one read per sync pass), intake from the listing cache (`github/listing.ts`) and its listed reads (`github/listed-reads.ts`, issue #985), the GitHub outbox of a source (`github/outbox.ts`, issue #1238: the rows an intake action, a hand-off resolution, Merge now, Close PR and each give-back keep, sent in batches, coalesced), the label mirror (`github/label-mirror.ts`, issue #1891: each listed issue's end labels against its work item's state, `github/item-labels.ts`, pure) and when the sync loop sends it (`outbox-flush.ts`) and batched GraphQL reads (`github/app/graphql-batch.ts`, issue #822; `github/app/graphql-pulls.ts` and `github/followed-batch.ts`, issue #985: the in-motion cycle's), the sync loop, its slots (`sync-slots.ts`, the sources followed live, issue #356), its signals (`sync-signals.ts`), its follow rounds (`follow-rounds.ts`, issue #985: the in-motion cycle, and a sync at once after a merge), its Run again half (`rerun.ts`, issues #362, #354), what it gives the host for an item's snapshot (`item-text.ts`, issue #662: the source's renderer, who edited the item) and its after-done half (`after-done.ts`, issue #579: a finished job's pull request followed, a job failed for want of a merge judged again; `strays.ts`, issue #1143 part 4: the housekeeping of pull requests no job follows; `waiting-pull-requests.ts`, issue #1143 reopened: a waiting job woken when a pull request of its item gets merge conflicts), its closed-as-complete rule (`closed-as-complete.ts`, issue #1067: a failed job whose item the work-item ledger holds closed as complete is finished; the source's read is ledger input), the failed checks' logs a `fix_checks` tend quotes (`github/check-logs.ts`, issue #993: read once per run, through the port); since slice 4 the GitHub sources' option schemas (`config.ts`, was the `sources.yaml` loader) and their factories (`compose.ts`), reached through the job-source plugins | engine internals (uses the narrow `SourceHost` it is given), http, plugins |
 | `src/events/` | versioned payload schemas (zod) per event type, the envelope, JSON Schema export | everything but `domain/` and `zod` |
 | `src/http/ui/` | UI session: login codes, session cookie, CSRF, origin/host guard, the UI-only mutation routes | engine internals beyond the engine's public commands |
 
@@ -25873,6 +25873,42 @@ Tests: `test/domain/companion-pull-requests.test.ts` (which job holds which comp
 is due, the holder as if it followed one), `test/integration/companion-pull-requests.test.ts` (over the real daemon: a
 finished job's second pull request that gets merge conflicts is rebased by a tend job, with no comment from anyone, and
 says so on it), `test/sources/pull-request-list.test.ts` (the card names the companion while it is tended).
+
+## Pull requests of a waiting job (issue #1143 reopened, 2026-10-26)
+
+**The problem.** After companion pull requests reached the running hopper, one of the two pull requests that reopened the
+issue still sat with merge conflicts. Its item's newest job did not end: it was on its own wait on something outside (a
+person's window), and such a wait can last days. Companions and follows start only once a job ended, and a tend is a Run
+again of the item, which has a job at work. So nothing read the pull request, and nothing rebased it.
+
+**The change** (`src/domain/waiting-pull-requests.ts`, pure; `src/sources/waiting-pull-requests.ts`, the sync loop's half).
+In a round of every follow, after the companions, the GitHub pull requests the jobs of an item opened through the hopper
+(`github_proxy.done` of op `pr.create`, as for companions) are read while the item's newest job is on its own wait
+(`waiting_on`), but not a wait on its own command, whose command runs in its pane. The read is the companions' read
+(`JobSource.readCompanions`) with `merge: false`: a waiting job's pull request is only read, never merged.
+
+- **The wake.** The first one open with merge conflicts ends the job's wait (`SourceHost.wakeOnConflict`):
+  `job.wait_ended { by: hopper, note, conflicting: <its URL> }`. The job is told which pull request, its base branch, to
+  rebase it and push with `--force-with-lease`, and to end its turn with `HOPPER_WAITING` again while what it waited on has
+  not happened (`conflictWakeNote`). The tend note goes on the pull request (`JobSource.tendStarted`, `rebase`): the pull
+  request says what the hopper does with it, and the job's timeline names it.
+- **Once for each head.** What each read saw is kept on the job (`waitingPulls` in its source state, by URL): `ended`, read no
+  more, or the head commit that woke it (`woke`). The same head wakes it no more: a job that could not resolve the
+  conflicts says why in its message and waits again, and is not woken in a loop. A push, or a new head from anywhere, wakes it
+  again when the pull request still has merge conflicts. A read with no head wakes it once.
+- Not while the source is paused. A read that throws is logged and asked again at the next round.
+
+**Not done, by decision.**
+
+- A companion of an item that is done, or whose issue is closed, is still not rebased ("Companion pull requests" above): a
+  tend reopens the issue. That pull request stays as it is for a person, and the census does not list it, as the ledger holds
+  it.
+- "Behind" with no merge conflicts, as for a followed pull request (part 4).
+
+Tests: `test/domain/waiting-pull-requests.test.ts` (which pull requests a waiting job holds, the wake once for each head,
+what a read keeps, the note), `test/integration/waiting-pull-requests.test.ts` (over the real daemon: a waiting job's pull
+request that gets merge conflicts wakes it, with no comment from anyone, and says so on it; back on its wait at the same
+head, it is not woken again).
 
 ## Companion pull requests in another repository (issue #2752 part 1, 2026-10-24)
 

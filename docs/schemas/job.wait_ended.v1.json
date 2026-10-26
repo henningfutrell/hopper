@@ -17,6 +17,9 @@
     },
     "comment": {
       "type": "string"
+    },
+    "conflicting": {
+      "type": "string"
     }
   },
   "required": [

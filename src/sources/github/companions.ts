@@ -3,20 +3,20 @@
 // its base and head branch. One open and ready is merged as a followed pull request is (`mergeWhenReady`, issue #2752 part
 // 3): under its own repository's yolo mode and change kinds, through the merge gate, its holder's done criteria met. One
 // GitHub does not know, or whose read or merge throws, is logged and left out: asked again at the next round. A merge
-// GitHub refuses is logged, and the companion is kept open.
+// GitHub refuses is logged, and the companion is kept open. One asked with `merge: false` (a waiting job's) is only read.
 import type { CompanionRead } from '../../domain/companion-pull-requests.ts';
 import type { Job } from '../../domain/types.ts';
 import type { PullRequestContext } from './follow-context.ts';
 import { mergeWhenReady, seenOf } from './follow.ts';
 
-export async function readCompanions(ctx: PullRequestContext, pulls: { repo: string; number: number; job: Job }[]): Promise<CompanionRead[]> {
+export async function readCompanions(ctx: PullRequestContext, pulls: { repo: string; number: number; job: Job; merge?: false }[]): Promise<CompanionRead[]> {
   const read: CompanionRead[] = [];
-  for (const { repo, number, job } of pulls) {
+  for (const { repo, number, job, merge } of pulls) {
     try {
       const pr = await ctx.api.pullRequest(repo, number);
       if (!pr) continue;
-      const branches = { ...(pr.base ? { base: pr.base } : {}), ...(pr.headRef ? { headRef: pr.headRef } : {}) };
-      if (pr.state === 'open' && !pr.conflicting) {
+      const branches = { ...(pr.base ? { base: pr.base } : {}), ...(pr.headRef ? { headRef: pr.headRef } : {}), ...(pr.headOid ? { head: pr.headOid } : {}) };
+      if (pr.state === 'open' && !pr.conflicting && merge !== false) {
         const m = await mergeWhenReady(ctx, job, repo, pr.url, pr, seenOf(pr, undefined), undefined);
         if ('ended' in m) {
           read.push({ url: pr.url, state: 'merged', conflicting: false, ...branches, byHopper: true });

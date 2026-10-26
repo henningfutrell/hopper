@@ -1,0 +1,1 @@
+- When a job waits on something else and one of its pull requests gets merge conflicts, the hopper now wakes the job to update the pull request, and says so on it. The job then waits again.

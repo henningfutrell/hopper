@@ -45,9 +45,10 @@ export function waitEndedNote(wait: Pick<JobWait, 'for' | 'strandedAt'> | undefi
 /**
  * In the tx: a person, or the hopper, ends the job's wait. It is queued again with the note pending, pinned to its machine (a pending
  * answer pins it, as for an answered question) — a released one with its checkpoint kept to any machine (issue #2326) —, and its claim types the note into its pane. `job.wait_ended`; `ended.check`: the key
- * of the wait check's condition that ended it (issue #1694); `ended.comment`: the link of the comment that woke it (issue #2159).
+ * of the wait check's condition that ended it (issue #1694); `ended.comment`: the link of the comment that woke it (issue #2159);
+ * `ended.conflicting`: the pull request whose merge conflicts woke it (issue #1143).
  */
-export function recordEndWait(c: Pick<EngineContext, 'store' | 'clock'>, id: string, note?: string, by: WaitEnder = 'person', told?: (wait: JobWait | undefined) => string, ended: { check?: string; comment?: string } = {}): Job {
+export function recordEndWait(c: Pick<EngineContext, 'store' | 'clock'>, id: string, note?: string, by: WaitEnder = 'person', told?: (wait: JobWait | undefined) => string, ended: { check?: string; comment?: string; conflicting?: string } = {}): Job {
   const { store } = c;
   const job = store.jobs.get(id);
   if (!job) throw new EngineError('not_found', `job ${id} not found`);
@@ -59,7 +60,7 @@ export function recordEndWait(c: Pick<EngineContext, 'store' | 'clock'>, id: str
     status: 'queued', pendingAnswer, wait: undefined, holdReason: undefined, waitReason: undefined,
     ...(moved ? { ...moved, resumeOn: undefined, waitReleased: undefined } : {}),
   });
-  store.events.append({ type: 'job.wait_ended', jobId: id, data: { by, ...(note ? { note } : {}), ...(ended.check ? { check: ended.check } : {}), ...(ended.comment ? { comment: ended.comment } : {}) } });
+  store.events.append({ type: 'job.wait_ended', jobId: id, data: { by, ...(note ? { note } : {}), ...(ended.check ? { check: ended.check } : {}), ...(ended.comment ? { comment: ended.comment } : {}), ...(ended.conflicting ? { conflicting: ended.conflicting } : {}) } });
   return next;
 }
 
@@ -141,4 +142,14 @@ export function recordCommentWake(c: Pick<EngineContext, 'store' | 'clock'>, id:
   const job = c.store.jobs.get(id);
   if (job?.status !== 'waiting_on' || job.wait?.since !== since) return undefined;
   return recordEndWait(c, id, `${comment.author} commented`, 'hopper', () => told, { comment: comment.url });
+}
+
+/**
+ * In the tx (issue #1143 reopened): a pull request a job of the item opened has merge conflicts, and the job is still on the
+ * wait that began at `since`: the hopper ends it, the job told `told`. Undefined: it is no longer on that wait.
+ */
+export function recordConflictWake(c: Pick<EngineContext, 'store' | 'clock'>, id: string, since: string, pullRequest: string, told: string): Job | undefined {
+  const job = c.store.jobs.get(id);
+  if (job?.status !== 'waiting_on' || job.wait?.since !== since) return undefined;
+  return recordEndWait(c, id, `${pullRequest} has merge conflicts`, 'hopper', () => told, { conflicting: pullRequest });
 }
