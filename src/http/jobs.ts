@@ -1,14 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { FastifyRequest } from 'fastify';
-import { failureSettingsOf } from '../domain/failures.ts';
 import { jobBrake } from '../domain/intake-strictness.ts';
 import { jobBom } from '../domain/job-bom.ts';
 import { jobIdStarting } from '../domain/job-id-start.ts';
-import { jobGraph, type JobGraphLink } from '../domain/job-graph.ts';
-import type { WorkItem } from '../domain/work-items.ts';
-import { awaitsBatch } from '../domain/work-item-landing.ts';
-import { awaitingBatchKeys } from '../sources/intake-live.ts';
+import { readJobGraph } from './job-graph-read.ts';
 import { TERMINAL_STATUSES, withPhase, type Job, type JobStatus } from '../domain/types.ts';
 import { HttpError, parseWith } from './errors.ts';
 import type { Operation } from './openapi-operation.ts';
@@ -44,10 +40,6 @@ export const JOB_GRAPH_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/jobs/:id/stamp', tag: 'Jobs', summary: 'A job\'s trust stamp', description: 'What the job\'s trust stamp says and does (issue #655, design.md "Trust stamps"), by its id or its short id. `stamp`: the stamp as kept — `level`, `reasons`, `by`, `at`, `was` (a quarantined job\'s level before), `check` (Jev\'s trust check) — never its MAC; null: none. `verifies`: `yes`, `no` (the job or its stamp changed outside the hopper), `missing`, or `unknown` (the hopper has no stamp key). `level`: the level as verified, else null. `brake`: the intake strictness on the job — `strictness`, the level it `needs` to start, and where it was set (`at`). `startHold`: why the stamp holds the job\'s start, else null. `gate2`: `auto` (its sandbox requests may be approved with no person) or `person`. `doorsOpen`: whether its proxy token opens the hopper\'s doors. `checkDue`: whether Jev\'s trust check is due. `originActs` (part 14): who wrote, labelled and assigned its item — `role`, `login`, `id`, `app`, `trusted` — as read when its origin was judged; null: none kept. `visibility` (part 19): its repository\'s visibility — `public`, `private`, `internal` —; `linkedPulls`: the pull requests its item\'s text names — `url`, `author`, `fork`, `trusted`, `unread` —; each as read when its origin was judged, null: none kept. Read only.', returns: '`StampView` `{ jobId, stamp, verifies, level, brake, startHold, gate2, doorsOpen, checkDue, originActs, visibility, linkedPulls }`', errors: [404, 409] },
 ];
 
-/** The job graph's bounds: followed jobs read, steps back along a job's origins, lineage links read. */
-const GRAPH_FOLLOWED = 500;
-const GRAPH_STEPS = 5;
-const GRAPH_LINKS = 5000;
 /** A parts list's bounds: the job's events read, and the jobs read for the ones that ran it again. */
 const BOM_EVENTS = 2000;
 const BOM_JOBS = 1000;
@@ -73,59 +65,7 @@ export function jobRoutes(app: FastifyInstance, o: { tenant: (req: FastifyReques
   // The job graph (issue #900): the jobs /api/queue holds, the partly done and PR-open jobs whose pull requests wait, the
   // jobs with an open question or hand-off, the newest job of each of their issues, and the jobs these ran again, forked from or carried out — with their issues,
   // pull requests, open questions and hand-offs, and typed edges.
-  app.get('/api/jobs/graph', async (req) => {
-    const { store, engine } = o.tenant(req);
-    const q = engine.getQueue();
-    const jobs = new Map<string, Job>();
-    for (const j of [...q.waiting, ...q.running, ...q.waitingAnswer, ...q.operatorLed, ...q.parked, ...q.waitingOn, ...q.ended, ...q.locked]) jobs.set(j.id, j);
-    for (const j of store.jobs.list({ followed: true, limit: GRAPH_FOLLOWED })) {
-      if ((j.sourceState?.source as { follow?: unknown } | undefined)?.follow === 'open') jobs.set(j.id, j);
-    }
-    const questions = store.questions.list({ status: ['open'], order: 'oldest-first' })
-      .map((q) => ({ id: q.id, jobId: q.jobId, text: q.text, since: q.createdAt }));
-    const handoffs = store.handoffs.list({ status: 'open' })
-      .map((h) => ({ id: h.id, jobId: h.jobId, text: h.tldr?.text ?? h.summary, since: h.openedAt }));
-    for (const { jobId } of [...questions, ...handoffs]) {
-      const j = jobs.has(jobId) ? undefined : store.jobs.get(jobId);
-      if (j) jobs.set(j.id, j);
-    }
-    // The newest job of each issue here (issue #1036): the issue reads its stage from it, and it supersedes a failure before
-    // it, though it ended before the queue's window.
-    for (const j of [...jobs.values()]) {
-      const newest = j.source?.key ? store.jobs.getBySourceKey(j.source.key) : undefined;
-      if (newest && !jobs.has(newest.id)) jobs.set(newest.id, newest);
-    }
-    // The jobs these come from, a few steps back: the run before, the job forked from, the proposal carried out.
-    for (let step = 0, next = [...jobs.values()]; step < GRAPH_STEPS && next.length > 0; step++) {
-      const found: Job[] = [];
-      for (const j of next) {
-        for (const id of [j.rerunOf, j.forkOf?.jobId, j.followOn?.jobId]) {
-          if (!id || jobs.has(id)) continue;
-          const back = store.jobs.get(id);
-          if (back) { jobs.set(id, back); found.push(back); }
-        }
-      }
-      next = found;
-    }
-    const links = store.events.recent(GRAPH_LINKS, ['job.child_issue_filed']).map((e) => e.data as unknown as JobGraphLink)
-      .filter((l) => typeof l.parent?.repo === 'string' && typeof l.parent.number === 'number' && typeof l.child?.repo === 'string' && typeof l.child.number === 'number');
-    const maxAttempts = failureSettingsOf(store.settings.getFailureSettings()).maxAttempts;
-    // Where each of their items stands (issue #1067): the work-item ledger's, the one answer every view reads.
-    const items = new Map<string, WorkItem>();
-    for (const j of jobs.values()) {
-      const item = j.source?.key && !items.has(j.source.key) ? store.workItems.get(j.source.key) : undefined;
-      if (item) items.set(item.key, item);
-    }
-    // The issues that wait on their batch (issue #1337): what the last sync read from GitHub, and what the ledger holds.
-    const awaitingBatch = awaitingBatchKeys(o.tenant(req).registry.statuses());
-    const landing = store.settings.getLandingBatches()?.repos ?? {};
-    const now = Date.now();
-    for (const item of items.values()) if (awaitsBatch(item, (repo) => landing[repo] !== undefined, now)) awaitingBatch.add(item.key);
-    // An issue here no job works reads its item too (issue #1895), once each: its jobs may be gone from the graph.
-    const more = new Map<string, WorkItem | undefined>();
-    const lookup = { get: (key: string) => items.get(key) ?? (more.has(key) ? more.get(key) : more.set(key, store.workItems.get(key)).get(key)) };
-    return jobGraph({ jobs: [...jobs.values()], links, issueGraph: { nodes: store.issueGraph.nodes(), edges: store.issueGraph.edges() }, questions, handoffs, maxAttempts, items: lookup, awaitingBatch });
-  });
+  app.get('/api/jobs/graph', async (req) => readJobGraph(o.tenant(req)).graph);
 
   // A job's parts list (issue #935): its events (an approval of its infra plan among them), questions, hand-off and
   // artifacts, the jobs that ran it again or forked from it, and its job runs (part 2: its cost and usage) — read from a

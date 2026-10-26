@@ -12,7 +12,7 @@ export const PLAN_STATUSES = ['planned', 'running', 'done', 'blocked'] as const;
 export type PlanStatus = typeof PLAN_STATUSES[number];
 
 /** A job of a plan task's issue, as the job graph has it: read, never copied. */
-export interface PlanJob { id: string; status: JobStatus; stage: JobStage; stageText: string; url?: string; pullRequest?: string }
+export interface PlanJob { id: string; status: JobStatus; stage: JobStage; stageText: string; pullRequest?: string }
 
 /** One issue of the tree: `owner/name#n` (lowercase repository), its title, its URL and where it stands. */
 interface PlanIssue { id: string; repo: string; number: number; title: string; url: string; status: PlanStatus }
@@ -54,36 +54,63 @@ function jobStatus(n: JobGraphNode): PlanStatus | undefined {
   return n.stage === 'done' ? 'done' : 'running';
 }
 
+/** An issue's URL from its ref. */
+const issueUrl = (ref: string): string => { const [repo, n] = ref.split('#'); return `https://github.com/${repo}/issues/${n}`; };
+
 /** The plan ref of an issue: `owner/name#n`, the repository lowercase, as the job graph's issue nodes name it. */
 const refOf = (repo: string, number: number): string => `${repo.toLowerCase()}#${number}`;
 
-/** The work plan whose root issue is `input.root`. Deterministic: sub-issues in the order of their repository and number. */
-export function plannedWork(input: PlannedWorkInput): WorkPlan {
+/** What the issue graph and the lineage links say of the issues: each one known, its sub-issues, and what blocks it. */
+interface Tree {
+  known: Map<string, { repo: string; number: number; url: string; title?: string }>;
+  children: Map<string, Set<string>>;
+  blockers: Map<string, Set<string>>;
+}
+
+function treeOf(issueGraph: PlannedWorkInput['issueGraph'], links: readonly JobGraphLink[]): Tree {
   // The issues the issue graph knows, by ref: their repository, number, title and URL.
-  const known = new Map<string, { repo: string; number: number; url: string; title?: string }>();
+  const known: Tree['known'] = new Map();
   const byUrl = new Map<string, string>();
-  for (const n of input.issueGraph.nodes) {
+  for (const n of issueGraph.nodes) {
     if (n.kind !== 'issue' || typeof n.attrs.repo !== 'string' || typeof n.attrs.number !== 'number') continue;
     const ref = refOf(n.attrs.repo, n.attrs.number);
     known.set(ref, { repo: n.attrs.repo, number: n.attrs.number, url: n.id, ...(typeof n.attrs.title === 'string' ? { title: n.attrs.title } : {}) });
     byUrl.set(n.id, ref);
   }
   // Each issue's sub-issues: GitHub's, and the required children jobs filed.
-  const children = new Map<string, Set<string>>();
-  const blockers = new Map<string, Set<string>>();
+  const children: Tree['children'] = new Map(), blockers: Tree['blockers'] = new Map();
   const add = (m: Map<string, Set<string>>, from: string, to: string) => { if (from !== to) m.set(from, (m.get(from) ?? new Set()).add(to)); };
-  for (const e of input.issueGraph.edges) {
+  for (const e of issueGraph.edges) {
     const from = byUrl.get(e.from), to = byUrl.get(e.to);
     if (!from || !to) continue;
     if (e.kind === 'sub_issue_of') add(children, to, from);
     else if (e.kind === 'blocked_by') add(blockers, from, to);
   }
-  for (const l of input.links) {
+  for (const l of links) {
     if (!l.required) continue;
     const child = refOf(l.child.repo, l.child.number);
     if (!known.has(child)) known.set(child, { repo: l.child.repo, number: l.child.number, url: l.child.url ?? `https://github.com/${l.child.repo}/issues/${l.child.number}` });
     add(children, refOf(l.parent.repo, l.parent.number), child);
   }
+  return { known, children, blockers };
+}
+
+/**
+ * The URL of every issue of the work plan whose root issue is `root`, the root first: what the route reads the jobs of.
+ * Undefined when the issue graph and the lineage links know no such issue.
+ */
+export function planIssueUrls(root: PlannedWorkInput['root'], issueGraph: PlannedWorkInput['issueGraph'], links: readonly JobGraphLink[]): string[] | undefined {
+  const { known, children } = treeOf(issueGraph, links);
+  const start = refOf(root.repo, root.number);
+  if (!known.has(start) && !children.has(start)) return undefined;
+  const all = [start];
+  for (let i = 0; i < all.length; i++) for (const k of children.get(all[i]!) ?? []) if (!all.includes(k)) all.push(k);
+  return all.map((r) => known.get(r)?.url ?? issueUrl(r === start ? `${root.repo}#${root.number}` : r));
+}
+
+/** The work plan whose root issue is `input.root`. Deterministic: sub-issues in the order of their repository and number. */
+export function plannedWork(input: PlannedWorkInput): WorkPlan {
+  const { known, children, blockers } = treeOf(input.issueGraph, input.links);
   // The job graph's issues and their jobs.
   const nodes = new Map(input.graph.nodes.map((n) => [n.id, n]));
   const jobsOf = new Map<string, PlanJob[]>();
@@ -92,7 +119,7 @@ export function plannedWork(input: PlannedWorkInput): WorkPlan {
     const job = e.kind === 'works' ? nodes.get(e.to) : undefined;
     if (!job?.jobId || !job.status) continue;
     jobsOf.set(e.from, [...jobsOf.get(e.from) ?? [], {
-      id: job.jobId, status: job.status, stage: job.stage, stageText: job.stageText, ...(job.url ? { url: job.url } : {}), ...(job.pullRequest ? { pullRequest: job.pullRequest.url } : {}),
+      id: job.jobId, status: job.status, stage: job.stage, stageText: job.stageText, ...(job.pullRequest ? { pullRequest: job.pullRequest.url } : {}),
     }]);
     const s = jobStatus(job);
     if (s) counted.set(e.from, [...counted.get(e.from) ?? [], s]);
@@ -108,8 +135,7 @@ export function plannedWork(input: PlannedWorkInput): WorkPlan {
   const issue = (ref: string, status: PlanStatus): PlanIssue => {
     const k = known.get(ref);
     const [repo = '', n = '0'] = ref.split('#');
-    const number = k?.number ?? Number(n);
-    return { id: ref, repo: k?.repo ?? repo, number, title: k?.title ?? nodes.get(graphId(ref))?.label ?? ref, url: k?.url ?? `https://github.com/${repo}/issues/${number}`, status };
+    return { id: ref, repo: k?.repo ?? repo, number: k?.number ?? Number(n), title: k?.title ?? nodes.get(graphId(ref))?.label ?? ref, url: k?.url ?? issueUrl(ref), status };
   };
   // Where an issue's own jobs put it; undefined: no job of it counts.
   const ownStatus = (ref: string): PlanStatus | undefined => { const s = counted.get(graphId(ref)); return s?.length ? rollUpStatuses(s) : undefined; };
