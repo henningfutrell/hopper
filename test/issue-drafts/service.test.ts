@@ -10,8 +10,10 @@
 //   Scenario: a cancel mid-draft, a timeout and a provider's error file nothing
 //   Scenario: filing needs the confirmation; an edit that brings in a secret or an @ mention is refused at filing
 //   Scenario: a public repository needs its own confirmation; a filed issue has no label and no assignee
+//   Scenario: an issue sent again with its key, or twice at once, is filed once; its text ends with its post key (issue #2813)
 import { describe, expect, it } from 'vitest';
 import { FILED_NOTE } from '../../src/domain/issue-drafts.ts';
+import { postKeyLine } from '../../src/domain/post-key.ts';
 import type { NewEvent } from '../../src/domain/types.ts';
 import { createIssueDrafts, IssueDraftRefused, type IssueDrafter, type IssueGitHub } from '../../src/issue-drafts/index.ts';
 import type { DraftScope } from '../../src/run-skills/constraints.ts';
@@ -30,7 +32,11 @@ function setUp(o: { drafter?: Partial<IssueDrafter>; visibility?: 'public' | 'pr
   const created: { repo: string; title: string; body: string; labels: string[] }[] = [];
   const api: IssueGitHub = {
     repo: async () => ({ visibility: o.visibility ?? 'private', hasIssues: true, defaultBranch: 'main' }),
-    create: async (repo, issue) => { created.push({ repo, ...issue }); return { number: 7, url: `https://github.com/${repo}/issues/7` }; },
+    create: async (repo, issue) => {
+      created.push({ repo, ...issue });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return { number: 7, url: `https://github.com/${repo}/issues/7` };
+    },
   };
   const drafter: IssueDrafter = {
     provider: 'claude',
@@ -159,7 +165,8 @@ describe('File an issue (issue #471)', () => {
     expect(check.body.endsWith(FILED_NOTE)).toBe(true);
 
     expect(await drafts.file({ ...issue, confirmed: true }, 'ada')).toEqual({ repo: REPO, number: 7, url: `https://github.com/${REPO}/issues/7` });
-    expect(created).toEqual([{ repo: REPO, title: 'Queue stalls', body: check.body, labels: [] }]);
+    expect(created).toEqual([{ repo: REPO, title: 'Queue stalls', body: expect.stringMatching(/<!-- hopper post [^\n]+ -->$/), labels: [] }]);
+    expect(created[0]!.body.startsWith(check.body)).toBe(true);
     expect(events).toEqual([{ type: 'issue_draft.filed', data: { repo: REPO, number: 7, url: `https://github.com/${REPO}/issues/7`, by: 'ada', provider: 'claude', skill: SKILL_NAME } }]);
   });
 
@@ -182,5 +189,20 @@ describe('File an issue (issue #471)', () => {
     expect(created).toEqual([]);
     await drafts.file({ ...issue, confirmPublic: true }, 'ada');
     expect(created).toHaveLength(1);
+  });
+
+  it('files an issue sent again with its key, or twice at once, once; its text ends with its post key (issue #2813)', async () => {
+    const { drafts, created, events } = setUp();
+    const issue = { repo: REPO, title: 'Queue stalls', body: 'It stalls.', confirmed: true, key: 'file-issue-0001' };
+    const [a, b] = await Promise.all([drafts.file(issue, 'ada'), drafts.file(issue, 'ada')]);
+    const again = await drafts.file(issue, 'ada');
+    expect(a).toEqual({ repo: REPO, number: 7, url: `https://github.com/${REPO}/issues/7` });
+    expect(b).toEqual(a);
+    expect(again).toEqual(a);
+    expect(created).toHaveLength(1);
+    expect(created[0]!.body.endsWith(postKeyLine('file-issue-0001'))).toBe(true);
+    expect(events.filter((e) => e.type === 'issue_draft.filed')).toHaveLength(1);
+    await drafts.file({ ...issue, key: 'file-issue-0002' }, 'ada');
+    expect(created).toHaveLength(2);
   });
 });

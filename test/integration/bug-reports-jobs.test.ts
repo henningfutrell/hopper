@@ -12,6 +12,8 @@
 //     And the job is answered the issue's link, and bug_report.filed marks it as the job's
 //   Scenario: a similar open report is offered to the job first
 //     Then nothing is filed; the job reads the similar reports, and adds its report to one or files a new one
+//   Scenario: a report sent again with its key, as hopper-gh sends it when no answer came, is filed once (issue #2813)
+//     Then the job is answered the first issue, and one issue exists
 //   Scenario: a job files at most three reports a day
 //     Then the fourth is refused with the reason, and nothing reaches GitHub
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -107,6 +109,18 @@ describe('A job reports a hopper bug (issue #694)', () => {
 
     const forced = await hopperGh(t.root, env, [...args, '--force']);
     expect(json(forced)).toMatchObject({ ok: true, kind: 'filed', number: 6 });
+  });
+
+  it('files a report sent again with its key once, and answers the first issue (issue #2813)', async () => {
+    const t = await start();
+    const { env } = await running(t);
+    const args = ['report', 'bug', '--title', 'The pull request view answers 500', '--body', 'It answered 500.', '--key', 'job-report-0001'];
+    const first = await hopperGh(t.root, env, args);
+    expect(json(first)).toMatchObject({ ok: true, kind: 'filed', number: 1 });
+    const again = await hopperGh(t.root, env, args);
+    expect(json(again)).toMatchObject({ ok: true, kind: 'filed', number: 1 });
+    expect(reports(t)).toHaveLength(1);
+    expect(eventsOf(t.app, 'bug_report.filed')).toHaveLength(1);
   });
 
   it('refuses a fourth report from one job in a day, saying why; nothing reaches GitHub', async () => {
