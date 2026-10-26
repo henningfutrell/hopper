@@ -144,7 +144,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
   const { store } = c;
 
   /** The new job for an item, or null when its key's newest job is not re-runnable. A key's earlier job is its `rerunOf`. */
-  function ingest(offered: SourceItem, source: SourceRef, brief?: string, tend = false): Job | null {
+  function ingest(offered: SourceItem, source: SourceRef, brief?: string, tend = false, seen?: { jobId: string | undefined }): Job | null {
     // The item's snapshot (issue #662): a later job of the item runs the snapshot's text, held when the live text differs.
     const gate = gateItem(store, offered, source, nowIso(c));
     const item = brief ? { ...gate.item, prompt: `${gate.item.prompt}\n\n${brief}` } : gate.item;
@@ -161,6 +161,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       store.jobs.lockItem?.(item.key);
       const known = store.jobs.getBySourceKey(item.key);
       if (known && !isRerunnable(known)) return null;
+      // A job made after the caller read the item (issue #2820): its end may be reported already, but it is the Run again's.
+      if (seen && known?.id !== seen.jobId) return null;
       const job = store.jobs.create(spec, priority, ref);
       store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } }); appendStamped(store, job);
       // A job that cannot run ran nothing: its item's snapshot waits for a job that can.
@@ -186,8 +188,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
   return {
     store,
 
-    ingest(item, source) {
-      return ingest(item, source);
+    ingest(item, source, seen) {
+      return ingest(item, source, undefined, false, seen);
     },
 
     changedSince(item, jobId) {
