@@ -1,12 +1,14 @@
 // An issue's place for the issue graph (issue #437), over GraphQL, read by the connected account's adapter:
 // its repository's owner, the Projects (v2) it is an item of, the pull requests whose merge closes it (any state), the
 // issues and pull requests that mention it (its cross-references), its parent, its sub-issues and the issues that block it
-// (issue #900), and why each closed issue closed (issue #1036). One query per issue; a GitHub with no issue dependencies (an older GitHub Enterprise) is asked again without them.
+// (issue #900), why each closed issue closed (issue #1036), and the plan piece's artifact its body names (issue #2840).
+// One query per issue; a GitHub with no issue dependencies (an older GitHub Enterprise) is asked again without them.
 // A token that cannot read a part (a Project GitHub refuses to the hopper's app) leaves that part out: GitHub answers the
 // rest with an error beside it.
 
 import { GitHubApiError } from './api.ts';
 import type { IssuePlace, ItemRef } from '../../domain/issue-graph.ts';
+import { pieceArtifactOf } from '../../domain/planned-work.ts';
 
 const ITEM = 'url number state repository { nameWithOwner }';
 /** An issue item, with why it closed (issue #1036): a pull request has no `stateReason`. */
@@ -18,7 +20,7 @@ const placeQuery = (blockedBy: string) => `query($owner: String!, $name: String!
   repository(owner: $owner, name: $name) {
     owner { __typename login }
     issue(number: $number) {
-      url number title state stateReason updatedAt
+      url number title body state stateReason updatedAt
       parent { ${ISSUE_ITEM} }
       subIssues(first: 50) { nodes { ${ISSUE_ITEM} } }
       ${blockedBy}
@@ -46,7 +48,7 @@ interface PlaceData {
   repository?: {
     owner?: { __typename?: string; login?: string };
     issue?: {
-      url?: string; number?: number; title?: string; state?: string; stateReason?: string | null; updatedAt?: string;
+      url?: string; number?: number; title?: string; body?: string; state?: string; stateReason?: string | null; updatedAt?: string;
       parent?: Item | null;
       subIssues?: Nodes<Item>;
       blockedBy?: Nodes<Item>;
@@ -76,7 +78,8 @@ export function issuePlaceFrom(body: unknown, what: string): IssuePlace {
   const type = repo.owner.__typename;
   const parent = ref('issue', issue.parent)[0];
   return {
-    issue: { repo: name, number: issue.number, url: issue.url, title: issue.title ?? '', state: (issue.state ?? '').toLowerCase(), ...(issue.stateReason ? { stateReason: issue.stateReason.toLowerCase() } : {}), updatedAt: issue.updatedAt ?? '' },
+    issue: { repo: name, number: issue.number, url: issue.url, title: issue.title ?? '', state: (issue.state ?? '').toLowerCase(), ...(issue.stateReason ? { stateReason: issue.stateReason.toLowerCase() } : {}), updatedAt: issue.updatedAt ?? '',
+      ...(typeof issue.body === 'string' ? { artifact: pieceArtifactOf(issue.body) } : {}) },
     owner: { login: repo.owner.login, ...(type === 'Organization' || type === 'User' ? { type } : {}) },
     projects: nodes(issue.projectItems).flatMap(({ project: p }) => (p?.url && p.number !== undefined && p.owner?.login
       ? [{ owner: p.owner.login, number: p.number, url: p.url, ...(p.title ? { title: p.title } : {}) }] : [])),

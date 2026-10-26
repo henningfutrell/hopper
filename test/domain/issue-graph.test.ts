@@ -33,6 +33,12 @@ describe('placeGraph', () => {
     expect(nodes.find((n) => n.id === 'owner:other')!.attrs).toEqual({ login: 'other' });
   });
 
+  it('keeps the issue\'s plan piece artifact (issue #2840) when the read says it, an empty one too, so a line taken away clears it', () => {
+    const at = (artifact: string) => placeGraph({ ...place, issue: { ...place.issue, artifact } }).nodes.find((n) => n.id === ISSUE)!.attrs;
+    expect(at('the report')).toMatchObject({ artifact: 'the report' });
+    expect(at('')).toMatchObject({ artifact: '' });
+  });
+
   it('links each to the issue by what ties them', () => {
     const { edges } = placeGraph(place);
     expect(edges.map((e) => `${e.from} ${e.kind} ${e.to}`).sort()).toEqual([

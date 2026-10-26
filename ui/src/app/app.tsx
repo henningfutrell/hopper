@@ -38,6 +38,7 @@ import { Questions } from '@/views/questions';
 import { Resources } from '@/views/resources';
 import { Search } from '@/views/search';
 import { Queue } from '@/views/queue';
+import { PlannedWork } from '@/views/planned-work';
 import { Settings } from '@/views/settings';
 import { Sources } from '@/views/sources';
 import { Usage } from '@/views/usage';
@@ -58,7 +59,7 @@ const tabs = (page: MergedPage, views: Partial<Record<Tab, () => React.ReactNode
 const VIEW: Record<View, () => React.ReactNode> = {
   'needs-you': NeedsYou, dashboard: Dashboard, search: Search, intake: Intake, tagged: Tagged, questions: Questions, proposals: Proposals, research: Research, 'pull-requests': PullRequests, artifacts: Artifacts, reports: BugReports, sources: Sources, infra: Infra, topology: Topology, skills: Skills, plugins: Plugins, vault: Vault, 'users-access': UsersAccess, settings: Settings, job: JobView, failures: Failures, parked: Parked,
   approvals: tabs('approvals', { 'access-requests': AccessRequests, 'pending-approvals': PendingApprovals }),
-  jobs: tabs('jobs', { jobs: Jobs, queue: Queue }),
+  jobs: tabs('jobs', { jobs: Jobs, queue: Queue, 'planned-work': PlannedWork }),
   ask: AskHopper,
   activity: tabs('activity', { events: Events, decisions: Decisions }),
   machines: tabs('machines', { machines: Machines, accounts: Accounts, logins: Logins }),
