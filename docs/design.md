@@ -8294,6 +8294,9 @@ made it from the same Run again while this pass read GitHub, and the listing kno
 the time this pass reaches the item, so "reported after the listing" alone does not catch it; the pass's start does.
 The job's transaction stamps its creation before it commits, so a pass can start between the stamp and the commit and not
 see the job (issue #2617). Its end report is written after the commit, so a job changed after the pass started counts too.
+And a job made after the pass read the item's job, while it waited on the item's lock, is not one it read (issue #2820): the
+sync gives ingest the job it read, and ingest, under the lock, makes no job when the item's newest job is another, also one
+whose end is reported already.
 A loop whose items each wait on real I/O already (a shell, git, a GitHub call: the sweep, the tends, the failure sweep's
 runs) needs no yield. The engine's Decision is one step and never yields. The rule needs no second connection pool; an
 asynchronous pool for the HTTP reads is a separate path of the same issue. It is checked in review: a new loop over a list

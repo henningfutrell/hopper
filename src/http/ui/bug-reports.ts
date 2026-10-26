@@ -42,12 +42,17 @@ export const BUG_REPORT_OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/bug-reports', tag: 'Bug reports', summary: 'File a bug report', description: 'Issue #694: files the report on the hopper\'s own repository through the person\'s own GitHub connection, so it is filed as that person, with the label `user-report` — no `hopper` label and no assignee, so it never starts a job. First the open `user-report` issues with a similar title are searched: when there are some, nothing is filed and they are answered (`kind: similar`). `commentOn` adds the report as a comment on one of them (`kind: commented`); `force` files a new one anyway (`kind: filed`). GitHub tokens and keys are always masked; the rest is as the person sent it. One `bug_report.filed`, or `bug_report.failed` with the reason (502: GitHub refused it). With no GitHub connection, or GitHub out of reach, refusing access to the repository (the app not installed there), rate-limited or failing, the report is kept (`kind: kept`, its `id` and the `problem`; `bug_report.kept`) and the hopper sends it later, as filed now (Your reports, GET /api/bug-reports). `key` (issue #2813): the resend key the form made for this report, 8 to 64 letters, digits, `_` or `-`; the same key sent again is answered what the first made — `filed` or `commented` with its issue, or `kept` while it is on its way or kept — and nothing is filed twice.', role: 'operator', body: bugReportBody, returns: '`{ kind: filed | commented, number, url }`, `{ kind: similar, similar: [{ number, title, url }] }` or `{ kind: kept, id, problem }`', errors: [404, 502] },
 ];
 
-/** The hopper's own source tree: a job's report keeps a path or commit of it (issue #2812). */
-const HOPPER_ROOT = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
+/**
+ * The hopper's own source tree: a job's report keeps a path or commit of it (issue #2812). Read at the first report, not at
+ * import: a module that imports the routes in a browser test environment has no file URL (issue #2820).
+ */
+let hopperRoot: string | undefined;
+const rootOfHopper = (): string => (hopperRoot ??= resolve(fileURLToPath(new URL('../../../', import.meta.url))));
 const run = promisify(execFile);
 
 /** What of a report's text is the hopper's own: a path in its tree, a commit its git knows (none without git). */
 async function hopperOwn(text: string): Promise<HopperOwn> {
+  const HOPPER_ROOT = rootOfHopper();
   const isCommit = (id: string): Promise<boolean> =>
     run('git', ['-C', HOPPER_ROOT, 'cat-file', '-e', `${id}^{commit}`], { timeout: 5_000 }).then(() => true, () => false);
   const ids = commitCandidates(text).slice(0, 50);

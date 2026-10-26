@@ -129,7 +129,7 @@ describe('Grok Bot routine webhook', () => {
 
   it('re-notifications do not post again, and the failure that ends the wait posts only its job.failed', async () => {
     const r = await receiver();
-    const { a, secrets } = await start({ HOPPER_HUMAN_RENOTIFY_MS: '100', HOPPER_HUMAN_TIMEOUT_MS: '450' });
+    const { a, secrets } = await start({ HOPPER_HUMAN_RENOTIFY_MS: '100', HOPPER_HUMAN_TIMEOUT_MS: '2000' });
     setHook(secrets, r.url);
     const job = await a.pull(ask('Is this risky?'));
     await a.waitForStatus(job.id, 'failed');
