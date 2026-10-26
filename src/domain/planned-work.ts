@@ -11,8 +11,11 @@ import type { JobStatus } from './types.ts';
 export const PLAN_STATUSES = ['planned', 'running', 'done', 'blocked'] as const;
 export type PlanStatus = typeof PLAN_STATUSES[number];
 
-/** A job of a plan task's issue, as the job graph has it: read, never copied. */
-export interface PlanJob { id: string; status: JobStatus; stage: JobStage; stageText: string; pullRequest?: string }
+/**
+ * A job of a plan task's issue, as the job graph has it: read, never copied. `planStatus`: its part in the roll-up; absent
+ * when it counts for nothing (superseded or cancelled).
+ */
+export interface PlanJob { id: string; status: JobStatus; stage: JobStage; stageText: string; pullRequest?: string; planStatus?: PlanStatus }
 
 /** One issue of the tree: `owner/name#n` (lowercase repository), its title, its URL and where it stands. */
 interface PlanIssue { id: string; repo: string; number: number; title: string; url: string; status: PlanStatus }
@@ -136,11 +139,11 @@ export function plannedWork(input: PlannedWorkInput): WorkPlan {
   for (const e of input.graph.edges) {
     const job = e.kind === 'works' ? nodes.get(e.to) : undefined;
     if (!job?.jobId || !job.status) continue;
+    const s = jobStatus(job);
     jobsOf.set(e.from, [...jobsOf.get(e.from) ?? [], {
-      id: job.jobId, status: job.status, stage: job.stage, stageText: job.stageText, ...(job.pullRequest ? { pullRequest: job.pullRequest.url } : {}),
+      id: job.jobId, status: job.status, stage: job.stage, stageText: job.stageText, ...(job.pullRequest ? { pullRequest: job.pullRequest.url } : {}), ...s ? { planStatus: s } : {},
     }]);
     if (job.stageSince) since.set(e.from, [...since.get(e.from) ?? [], job.stageSince]);
-    const s = jobStatus(job);
     if (s) counted.set(e.from, [...counted.get(e.from) ?? [], s]);
   }
   const graphId = (ref: string): string => { const k = known.get(ref); return k ? issueNodeId(k.repo, k.number) : `issue:${ref}`; };

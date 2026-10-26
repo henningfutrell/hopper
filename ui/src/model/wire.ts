@@ -27,7 +27,7 @@ import type {
   ItemComment, ItemEdit, TextChange,
   MasterKeyRotated, MasterKeyView,
   ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, IntakeAutoApproval, DeclineChoice, IntakeDeclineDefaults, IntakeStrictness, Strictness, SandboxStrictness, SandboxStrictnessLevel,
-  BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
+  BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree, PlanJob, PlanPiece, PlanStatus, PlanTask, WorkPlan,
 } from '../../../src/domain/types.ts';
 import type { GitLabAccountStatus } from '../../../src/domain/gitlab-account.ts';
 import type { PodmanHost, PodmanHostStatus, PodmanHostsStatusView, PodmanHostsView } from '../../../src/domain/podman-hosts.ts';
@@ -57,7 +57,7 @@ export type {
   AccessDecisionRecord, AccessModelView, AccessState, AccessStatus, AccessView, Approval, MinTrust, Operation, OperationProfile, RelationshipTuple, RevokedApproval, Asset, AssetKind, Requester, RequesterRow,
   MasterKeyRotated, MasterKeyView,
   ActorCandidate, ActorCandidates, CandidateFrom, GitHubAccount, IntakeActorsView, IntakeAutoApproval, DeclineChoice, IntakeDeclineDefaults, IntakeStrictness, Strictness, SandboxStrictness, SandboxStrictnessLevel,
-  BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree,
+  BomGroup, BomPart, BomStatus, JobBom, JobGraph, JobGraphEdge, JobGraphEdgeKind, JobGraphNode, JobGraphNodeKind, JobGraphPullRequest, JobGraphTend, JobStage, JobTree, PlanJob, PlanPiece, PlanStatus, PlanTask, WorkPlan,
   Artifact, ArtifactKind, ArtifactRevision, ArtifactRevisionView, ArtifactSettings, ArtifactShare, ArtifactView, ArtifactsView, HostLinkView,
   Tldr, TldrSettings,
   ItemComment, ItemEdit, TextChange,

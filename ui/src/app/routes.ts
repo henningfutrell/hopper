@@ -28,7 +28,7 @@ void everyViewGrouped;
 /** The merged pages and their tabs, the first the default. A tab's id is the view it was before the merge. */
 export const PAGE_TABS = {
   approvals: [{ id: 'access-requests', label: 'Access requests' }, { id: 'pending-approvals', label: 'Pending approvals' }],
-  jobs: [{ id: 'jobs', label: 'Jobs' }, { id: 'queue', label: 'Queue order' }],
+  jobs: [{ id: 'jobs', label: 'Jobs' }, { id: 'queue', label: 'Queue order' }, { id: 'planned-work', label: 'Planned work' }],
   ask: [{ id: 'direct-jobs', label: 'Run a job' }, { id: 'direct-queries', label: 'Ask a question' }],
   activity: [{ id: 'events', label: 'Events' }, { id: 'decisions', label: 'Decisions' }],
   machines: [{ id: 'machines', label: 'Machines' }, { id: 'accounts', label: 'Accounts' }, { id: 'logins', label: 'Logins' }],
