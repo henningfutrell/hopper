@@ -10,7 +10,7 @@ let root: Root | undefined;
 let calls: { method: string; path: string }[] = [];
 
 const REPORTS = [
-  { id: 'r2', createdAt: '2026-10-10T12:00:00.000Z', by: 'job j7', jobId: 'j7', fromJob: true, title: 'Queue stalls', state: 'waiting', kind: 'issue', problem: 'GitHub answered 403 to a new issue', tries: 2 },
+  { id: 'r2', createdAt: '2026-10-10T12:00:00.000Z', by: 'job j7', jobId: 'j7', fromJob: true, title: 'Queue stalls', state: 'waiting', kind: 'issue', problem: 'GitHub answered 403 to a new issue', removed: ['repository', 'commit id'], tries: 2 },
   { id: 'r1', createdAt: '2026-10-09T12:00:00.000Z', by: 'octocat', title: 'Board hangs', state: 'closed', kind: 'issue', number: 12, url: 'https://github.com/henningfutrell/hopper/issues/12', tries: 1 },
 ];
 
@@ -50,6 +50,8 @@ describe('Your reports', () => {
     expect(rows()[0]).toContain('Waiting to send');
     expect(rows()[0]).toContain('GitHub answered 403 to a new issue');
     expect(rows()[0]).toContain('Filed by job j7');
+    expect(rows()[0]).toContain('Removed before sending, as private work: repository, commit id');
+    expect(rows()[1]).not.toContain('Removed before sending');
     expect(rows()[1]).toContain('#12 Board hangs');
     expect(rows()[1]).toContain('Closed');
     const link = document.querySelectorAll('[data-slot="bug-report-row"]')[1]!.querySelector('a');

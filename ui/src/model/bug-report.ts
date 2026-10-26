@@ -57,6 +57,8 @@ export interface BugReportView {
   number?: number;
   url?: string;
   problem?: string;
+  /** A job's report: what of its private work was removed before it was sent, by kind (issue #2812). */
+  removed?: string[];
   tries: number;
   checkedAt?: string;
 }
