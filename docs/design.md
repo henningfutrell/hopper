@@ -36017,3 +36017,43 @@ a notification for a new-repository ask.
 **Verification:** `test/domain/new-repositories.test.ts`, `test/integration/new-repositories.test.ts` (asked by default,
 dismissed and not asked again; an owner's `accept` adds the repository and its issue becomes a job; a bad owner is 400),
 `test/ui/new-repositories-view.test.ts`.
+
+## Planned work (issue #2840, part 1, 2026-10-26)
+
+Requirement (issue #2840): see all planned work broken down — a plan, its pieces, their tasks —, where each part stands,
+tied to the jobs that do it, and export it. The planned layer is the only new data; job ids and stages are read from the
+jobs, never copied. Glossary: **planned work**, **work plan**, **plan piece**, **plan task**, **plan status**.
+
+**Where the tree comes from.** GitHub's sub-issues, as the issue graph already keeps them (`sub_issue_of`, "The issue graph"),
+and the required children jobs filed (`job.child_issue_filed` with `required`). Jobs are already issues, so a plan task's
+jobs are the jobs of its issue, and nothing is kept in a second store: the planned layer is the issues themselves. The
+**work plan** is the issue asked for; its sub-issues are its **plan pieces**; theirs are **plan tasks**. A plan piece with
+no sub-issues is its own one plan task; an issue with no sub-issues is a work plan of one plan piece, itself. A sub-issue
+deeper than a plan task belongs to that plan task: its jobs count there. A cycle ends at the first issue seen again. Sub-issues
+are in the order of their repository and number (GitHub's own order is not kept). `dependsOn`: the issues that block a plan
+task, GitHub's issue dependencies (`blocked_by`). An issue a GitHub source did not read yet (not listed: no hopper label)
+is not in the tree; its sub-issues known from their own reads are.
+
+**Where each stands** (`src/domain/planned-work.ts`, pure). The jobs are the job graph's (`readJobGraph`,
+`src/http/job-graph-read.ts`, split from the job graph's route so both read the same jobs), with the newest job of each
+issue of the plan added, though it ended before the queue's window. Each job counts by its job stage: `failed`, or waiting
+on a person (`waitsOnYou`, or `operator_led`), is `blocked`; `done` is `done`; `superseded` and `cancelled` count for
+nothing; any other stage (queued, running, waiting, PR open, partly done) is `running`. A plan task's **plan status**: a
+blocked job blocks it; else a running one runs it; all done is done; with no job that counts, `done` when its issue closed as
+completed (the issue graph's read) or the job graph has its issue done, else `planned`. A plan piece and the work plan roll up
+the same way from what is under them and their own issue's jobs: a blocked part blocks it, only planned parts leave it
+planned, all done is done, and anything else — a part that runs, or done parts beside planned ones — runs it.
+
+**The route.** `GET /api/planned-work?issue=<owner/name#n | the issue's URL>`, the user's own: a read, so an API token needs
+`planned-work:read` (the Jobs section of the scope registry). 400: not an issue; 404: the issue graph and the lineage links
+know no such issue. Made on each read, never kept; no GitHub read.
+
+**Left for later parts.** The graph view (work plan at left, then plan pieces, plan tasks, jobs; solid for done, blue for
+running, dashed grey for planned, orange for a person; the roll-up counts bar; a node opens its artifact or job); a plan
+piece's **artifact** (the thing a person judges: a screenshot, a pull request, a report), which needs a read of the issue's
+text the issue graph does not keep; and the exports (one CSV row per plan task with the issue's columns, and the nested
+JSON).
+
+Tests: `test/domain/planned-work.test.ts` (each plan status, the roll-up, the tree's edge cases),
+`test/integration/planned-work.test.ts` (real database and HTTP: a tree with a done, a planned, a blocked and a running plan
+task, the job stages the job graph's, 400 and 404).

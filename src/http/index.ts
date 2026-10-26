@@ -41,7 +41,7 @@ import { pluginStoreRoutes } from './plugin-store.ts';
 import { jobRulesRoutes } from './job-rules.ts';
 import { questionGatesRoutes } from './question-gates.ts';
 import { failureRoutes } from './failures.ts';
-import { workItemRoutes } from './work-items.ts';
+import { workItemRoutes } from './work-items.ts'; import { plannedWorkRoutes } from './planned-work.ts';
 import { minorDecisionRoutes } from './minor-decisions.ts';
 import { loginRoutes } from './logins.ts';
 import { reviewRoutes } from './reviews.ts';
@@ -224,7 +224,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   sectionRoutes(app, tenant);
   loginRoutes(app, { ...tenant, sessions, clock: o.clock });
   failureRoutes(app, tenant);
-  workItemRoutes(app, tenant);
+  workItemRoutes(app, tenant); plannedWorkRoutes(app, tenant);
   minorDecisionRoutes(app, tenant);
   questionGatesRoutes(app, { ...tenant, clock: o.clock });
   jobRulesRoutes(app, tenant);
