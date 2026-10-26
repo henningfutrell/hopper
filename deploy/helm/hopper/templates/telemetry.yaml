@@ -63,10 +63,13 @@ spec:
             - name: data
               mountPath: /data
   volumeClaimTemplates:
-    - metadata:
+    - apiVersion: v1
+      kind: PersistentVolumeClaim
+      metadata:
         name: data
       spec:
         accessModes: [ReadWriteOnce]
+        volumeMode: Filesystem
         {{- include "hopper.storageClass" .Values.telemetry.viewer.storageClass | nindent 8 }}
         resources:
           requests:

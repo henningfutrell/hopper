@@ -40,7 +40,10 @@ export interface Resource {
   spec?: {
     replicas?: number; strategy?: { type: string }; podManagementPolicy?: string;
     persistentVolumeClaimRetentionPolicy?: { whenScaled?: string; whenDeleted?: string };
-    volumeClaimTemplates?: { metadata: { name: string }; spec: { resources: { requests: { storage: string } } } }[];
+    volumeClaimTemplates?: {
+      apiVersion?: string; kind?: string; metadata: { name: string };
+      spec: { volumeMode?: string; resources: { requests: { storage: string } } };
+    }[];
     selector?: Record<string, string> | { matchLabels?: Record<string, string> };
     policyTypes?: string[];
     template?: { spec: PodSpec; metadata?: { labels?: Record<string, string> } };
