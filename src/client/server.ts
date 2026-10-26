@@ -57,6 +57,7 @@ import type { WindowsLink } from './windows-link.ts';
 import { runTurn, turnOf } from './turn.ts';
 import { workTreeCall } from './work-tree.ts';
 import { createKeyOf, createOnce, type Creates } from './once.ts';
+import { SERVER_NOT_RUNNING, type OwnHerdr } from './herdr-session.ts';
 import { REQUEST_HEADER, RESPONSE_HEADER, checkToken, createNonceCache, signResponse, verifyRequest } from './signature.ts';
 
 const MAX_BODY = 1024 * 1024;
@@ -74,6 +75,8 @@ export interface ClientOptions {
   /** This machine's herdr binary (absolute) and the session the hopper's jobs run in (never `default`). */
   herdrBin: string;
   session: string;
+  /** A Windows client's own herdr session (herdr-session.ts, issue #2802): its calls run with its environment. */
+  ownHerdr?: OwnHerdr;
   /** This machine's claude binary, for a usage read (`POST /claude`) and a level's run (`POST /level`); default `claude` on its PATH. */
   claudeBin?: string;
   /** Dials the hopper once: resolves the link's socket (dial.ts), or rejects. */
@@ -105,9 +108,17 @@ export interface ClientOptions {
 
 export interface Client { stop(): Promise<void> }
 
-function herdr(o: ClientOptions, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
+/** A herdr call; on Windows, a call no server answered starts the client's own one, and runs again (issue #2802). */
+async function herdr(o: ClientOptions, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
+  const r = await herdrOnce(o, args, timeoutMs);
+  if (!o.ownHerdr || r.code === 0 || !SERVER_NOT_RUNNING.test(`${r.stdout}${r.stderr}`)) return r;
+  await o.ownHerdr.start();
+  return herdrOnce(o, args, timeoutMs);
+}
+
+function herdrOnce(o: ClientOptions, args: string[], timeoutMs: number): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    execFile(o.herdrBin, ['--session', o.session, ...args], { timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
+    execFile(o.herdrBin, ['--session', o.session, ...args], { ...(o.ownHerdr ? { env: o.ownHerdr.env, windowsHide: true } : {}), timeout: timeoutMs, killSignal: 'SIGKILL', maxBuffer: 16 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
       if (!err) return resolve({ code: 0, stdout, stderr });
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
       if (e.killed) return resolve({ code: 124, stdout, stderr: `herdr timed out after ${timeoutMs} ms` });

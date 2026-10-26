@@ -358,6 +358,8 @@ sudo loginctl enable-linger "$USER"</pre><button type="button" data-copy="system
 Ubuntu, not in PowerShell. For a computer, Ubuntu needs Node.js 24, herdr and a signed-in <code>claude</code> first,
 as for any Linux computer. The WSL distro then shows in Machines as one machine.</p></li>
 </ol>
+<p class="note">A client on Windows itself starts its own herdr session, and its panes open in Git Bash: install Git
+for Windows first. If a herdr session of the same name already runs, stop it, and the client starts it again.</p>
 <p class="note">A client on Windows itself serves no vault socket, so give it no box jobs. Not supported, and not
 planned: Podman machine, Docker Desktop or Hyper-V virtual machines.</p>
 
