@@ -1326,7 +1326,7 @@ Version 1 (`docs/schemas/job.waiting.v1.json`). The job waits on something it na
 
 ## `job.wait_ended`
 
-Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483), or the hopper did (`by: hopper`, issue #998) when an answer the job asked it for is ready (a skill request: a sandbox, a template, a credential): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, or the hopper's answer, if any. `check` (issue #1694): the hopper's wait check ended it — its condition, as a key (`items_ended:…`, `job_ended:<id>`, `question_settled:<id>`, `command_exited`) —; a later wait of the job on the same items is not woken for them again. `comment` (issue #2159): the link of the comment that woke it — a trusted account (the user's connected account or a maintainer of the repository) commented on the job's issue or its own pull request while it waited; the job is told the comment as untrusted text.
+Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wait (issue #483), or the hopper did (`by: hopper`, issue #998) when an answer the job asked it for is ready (a skill request: a sandbox, a template, a credential): the job is queued again, pinned to its machine, and its claim tells it in its pane that the thing it waits for has happened, with the person's `note`, or the hopper's answer, if any. `check` (issue #1694): the hopper's wait check ended it — its condition, as a key (`items_ended:…`, `job_ended:<id>`, `question_settled:<id>`, `command_exited`) —; a later wait of the job on the same items is not woken for them again. `comment` (issue #2159): the link of the comment that woke it — a trusted account (the user's connected account or a maintainer of the repository) commented on the job's issue or its own pull request while it waited; the job is told the comment as untrusted text. `conflicting` (issue #1143): the pull request whose merge conflicts woke it — one a job of the item opened through the hopper, read in a round of every follow while the item's newest job waits; the job is told to rebase it and wait again, once for each head of the pull request.
 
 | field | type | required |
 |---|---|---|
@@ -1334,6 +1334,7 @@ Version 1 (`docs/schemas/job.wait_ended.v1.json`). A person ended a job's own wa
 | `note` | string | no |
 | `check` | string | no |
 | `comment` | string | no |
+| `conflicting` | string | no |
 
 ```json
 {

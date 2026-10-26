@@ -70,7 +70,7 @@ import { createTendAgain } from './tend-again.ts'; import { createPullRequestAct
 import { dueRepoOf, heldTooLong, queueHeads, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
-import { pullRequestCensus } from './census.ts'; import { recordCiMiss } from './ci-missed.ts'; import { companionPullRequests } from './companions.ts';
+import { pullRequestCensus } from './census.ts'; import { recordCiMiss } from './ci-missed.ts'; import { companionPullRequests } from './companions.ts'; import { waitingJobPullRequests } from './waiting-pull-requests.ts';
 import {
   failedTend, following, followsWhenEnded, inMotion, jobPullRequestRepo, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestSeen, type Tended, type TendChecks,
@@ -79,7 +79,7 @@ import { pullRequestWaitOf } from '../domain/work-items.ts'; import { heldClosed
 
 export interface AfterDoneContext {
   store: Pick<UserStore, 'jobs' | 'events' | 'handoffs' | 'workItems'>;
-  host: Pick<SourceHost, 'finishComplete'>;
+  host: Pick<SourceHost, 'finishComplete' | 'wakeOnConflict'>;
   /** Run fn on the job's report chain, so it never overlaps the job's own reports. */
   enqueue(jobId: string, fn: () => Promise<void>): Promise<void>;
   /** The job's source while the sync loop runs it, else undefined. */
@@ -109,7 +109,7 @@ export type FollowRound = 'all' | 'in_motion' | 'none';
 
 export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
-  const strays = strayHousekeeping(c), census = pullRequestCensus(c), companions = companionPullRequests(c);
+  const strays = strayHousekeeping(c), census = pullRequestCensus(c), companions = companionPullRequests(c), waiting = waitingJobPullRequests(c);
 
   /**
    * The newest of `listed`, from one read of the jobs table (issue #1154): a sync of a source with about 740 ended jobs
@@ -453,7 +453,7 @@ export function createAfterDone(c: AfterDoneContext) {
     /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. `asked`: a census now. */
     async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all', asked = false): Promise<void> {
       const all = round === 'all';
-      if (all) await reconcile(source, listed).then(() => strays(source, listed)).then(() => census(source, listed, asked)).then(() => companions.read(source, listed));
+      if (all) await reconcile(source, listed).then(() => strays(source, listed)).then(() => census(source, listed, asked)).then(() => companions.read(source, listed)).then(() => waiting(source, listed));
       const stored = store.jobs.list(), jobs = fresh(listed, stored), newest = newestOfItems(stored);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));
