@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Issue #2374: one canonical home per workflow. Views that showed the same data merged into one nav entry with tabs, each
 // tab a filter of that one workflow: Approvals (Access requests, Pending approvals),
-// Jobs (Jobs, Queue order), Ask hopper (Run a job, Ask a question), Activity (Events, Decisions), Machines (Machines,
+// Jobs (Jobs, Queue order, Planned work: issue #2840), Ask hopper (Run a job, Ask a question), Activity (Events, Decisions), Machines (Machines,
 // Accounts, Logins), Usage (Usage, Resources). Every old hash opens its new home; an entry's badge sums its tabs'. Search
 // keeps its route, which the command palette opens (issue #2661); Your reports and Version history are in the user menu.
 // Issue #2713: Parked is an entry of its own, no longer a tab of Failures, and the Failures badge never counts a parked job.
@@ -93,7 +93,7 @@ describe('the nav groups after the merge', () => {
     const { PAGE_TABS } = (await import(nav)) as { PAGE_TABS: Record<string, readonly { id: string; label: string }[]> };
     expect(Object.fromEntries(Object.entries(PAGE_TABS).map(([home, tabs]) => [home, tabs.map((t) => t.id)]))).toEqual({
       approvals: ['access-requests', 'pending-approvals'],
-      jobs: ['jobs', 'queue'],
+      jobs: ['jobs', 'queue', 'planned-work'],
       ask: ['direct-jobs', 'direct-queries'],
       activity: ['events', 'decisions'],
       machines: ['machines', 'accounts', 'logins'],

@@ -86,7 +86,7 @@ describe('planned work (issue #2840)', () => {
     const item = { key: url(4), state: 'done', stateSince: '2026-10-02T00:00:00Z', eventState: 'done', eventAt: '2026-10-02T00:00:00Z', jobId: 'b' } as WorkItem;
     const p = plannedWork({ root: { repo: 'acme/app', number: 1 }, issueGraph: tree(), links: [], graph: jobGraph({ jobs, issueGraph: tree(), items: new Map([[url(4), item]]) }) });
     expect(p.pieces[0]!.tasks[0]!.status).toBe('done');
-    expect(p.pieces[0]!.tasks[0]!.jobs.map((j) => [j.id, j.stage])).toEqual([['a', 'superseded'], ['b', 'done']]);
+    expect(p.pieces[0]!.tasks[0]!.jobs.map((j) => [j.id, j.stage, j.planStatus])).toEqual([['a', 'superseded', undefined], ['b', 'done', 'done']]);
   });
 
   it('all tasks done is a done piece; all pieces done is a done plan', () => {
