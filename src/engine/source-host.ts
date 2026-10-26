@@ -12,7 +12,7 @@ import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { awaitsOrigin } from '../domain/trust-stamp.ts';
 import { appendStamped } from './quarantine.ts';
 import { EngineError } from './errors.ts';
-import { recordCommentWake } from './wait.ts';
+import { recordCommentWake, recordConflictWake } from './wait.ts';
 import { changedSince, gateItem, holdForChange, recordSnapshot, refreshEdit, refreshText } from './item-snapshots.ts';
 import { carryNotes } from './notes.ts';
 
@@ -271,6 +271,12 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
     // A trusted account's comment on its issue or pull request (issue #2159): the job's own wait ends, and it is told the comment.
     wakeOnComment(jobId, since, comment, told) {
       const woken = store.tx(() => recordCommentWake(c, jobId, since, comment, told)) !== undefined;
+      if (woken) c.trigger('job.wait_ended');
+      return woken;
+    },
+    // A pull request a job of the item opened has merge conflicts while the job waits (issue #1143): its wait ends, told to rebase it.
+    wakeOnConflict(jobId, since, pullRequest, told) {
+      const woken = store.tx(() => recordConflictWake(c, jobId, since, pullRequest, told)) !== undefined;
       if (woken) c.trigger('job.wait_ended');
       return woken;
     },

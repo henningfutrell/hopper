@@ -9,7 +9,7 @@ import type {
 } from './types.ts';
 import type { UserStore } from './store.ts'; import type { NewRepositoryChange } from './new-repositories.ts'; import type { NoteDelivery } from './job-notes.ts'; import type { ExecutorTerminal } from './terminal.ts'; export type { NoteDelivery } from './job-notes.ts';
 import type { RunsPasses, SourceItem, SourceRef } from './source-item.ts'; export type { SourceItem, SourceRef } from './source-item.ts';
-import type { ExecutionReport } from './escalation-ports.ts'; import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { ReadsCompanions } from './companion-pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
+import type { ExecutionReport } from './escalation-ports.ts'; import type { FollowsPullRequests, PullRequestAct } from './pull-requests.ts'; import type { ReadsCompanions } from './companion-pull-requests.ts'; import type { WakesOnConflict } from './waiting-pull-requests.ts'; import type { OutboxActs, OutboxGiveBack, OutboxGiveBackMore } from './github-outbox.ts';
 export type * from './escalation-ports.ts'; export type { AccessRepository, AuthorizationServer, RelationshipTuple, StoredAccessModel, StoredTuple } from './access.ts';
 export { authorizationServerRefusal, isRefusal } from './access.ts'; export type { CredentialMinter } from './minting.ts'; export type { TopologyReader } from './topology-discovery.ts';
 
@@ -645,7 +645,7 @@ export class SourceError extends Error {
  * What the sync loop may do to the hopper. Engine-owned: every method is one store.tx with
  * compare-and-set on the job's current status.
  */
-export interface SourceHost extends AnswersFromThread {
+export interface SourceHost extends AnswersFromThread, WakesOnConflict {
   store: UserStore;
   /** Create the job for an item (dedupe by key). null when the key already has a job. */
   ingest(item: SourceItem, source: SourceRef): Job | null;

@@ -147,7 +147,7 @@ export const EVENT_SCHEMAS = {
   'job.link_lost': strict({ machine: z.string(), since: z.string(), failsAt: z.string() }),
   // A job's own wait (issue #483).
   'job.waiting': strict({ for: z.string(), until: z.string().optional(), on: waitOn.optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
-  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional(), check: z.string().optional(), comment: z.string().optional() }), 'job.wait_overdue': strict({ deadline: z.string(), result: z.string() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }), 'job.waited_pull_request_ended': strict({ pullRequest: z.string(), state: z.enum(['merged', 'closed']) }), 'job.waited_items_ended': strict({ items: z.array(strict({ url: z.string(), state: z.string() })).min(1) }),
+  'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional(), check: z.string().optional(), comment: z.string().optional(), conflicting: z.string().optional() }), 'job.wait_overdue': strict({ deadline: z.string(), result: z.string() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }), 'job.waited_pull_request_ended': strict({ pullRequest: z.string(), state: z.enum(['merged', 'closed']) }), 'job.waited_items_ended': strict({ items: z.array(strict({ url: z.string(), state: z.string() })).min(1) }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
   'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
   'lane.opened': strict({}),
