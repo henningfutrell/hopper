@@ -98,7 +98,8 @@ describe('the TypeSafe API key, set in the UI', () => {
     // Jev is asked at the next decision, with the key, through TypeSafe: no restart.
     const job = await a.pull({ op: 'ask', message: QUESTION });
     await a.waitForStatus(job.id, 'finished');
-    const [pick] = await picked(a, job.id);
+    // Jev's trust check (intake-trust, shadow) may be picked first under load: read the risk call's pick by its point.
+    const pick = (await picked(a, job.id)).find((e) => e.data.point === 'question-risk');
     // The risk call on the level's answer (issue #679): the fake TypeSafe picks the first option, no risk.
     expect(pick!.data).toMatchObject({ by: 'jev', point: 'question-risk', pick: 'none', confidence: 0.9 });
     // Kept in the vault's system scope: sealed, and not one of the vault's own secrets.
