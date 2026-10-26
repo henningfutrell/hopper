@@ -70,7 +70,7 @@ describe('Report a bug', () => {
     await type(field('What happened'), 'It stopped.');
     await type(field('Context'), '- System: linux');
     await click(button(/Send report/));
-    expect(posts.at(-1)).toEqual({ path: '/ui/api/bug-reports', body: { title: 'Board hangs', happened: 'It stopped.', expected: '', context: '- System: linux', jobId: 'job-1' } });
+    expect(posts.at(-1)).toEqual({ path: '/ui/api/bug-reports', body: { title: 'Board hangs', happened: 'It stopped.', expected: '', context: '- System: linux', jobId: 'job-1', key: expect.stringMatching(/^ui-[0-9a-f]{32}$/) } });
     const sent = document.querySelector('[data-slot="bug-report-sent"]')!;
     expect(sent.textContent).toContain('Report filed as issue #12.');
     expect(sent.querySelector('a')?.getAttribute('href')).toBe('https://github.com/henningfutrell/hopper/issues/12');

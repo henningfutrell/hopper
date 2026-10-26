@@ -11,8 +11,20 @@ export type BugReportAnswer =
   | { kind: 'similar'; similar: SimilarReport[] }
   | { kind: 'kept'; id: string; problem: string };
 
-/** What POST /ui/api/bug-reports takes: the draft, the job it is about, and the choice after a similar one was offered. */
-export interface BugReportRequest extends BugReportDraft { jobId?: string; commentOn?: number; force?: boolean }
+/**
+ * What POST /ui/api/bug-reports takes: the draft, the job it is about, the choice after a similar one was offered, and the
+ * form's resend key (issue #2813).
+ */
+export interface BugReportRequest extends BugReportDraft { jobId?: string; commentOn?: number; force?: boolean; key?: string }
+
+/**
+ * A new resend key for one form (issue #2813): sent with each send of it, so a second click or a resend files nothing more.
+ * `crypto.getRandomValues`, not `randomUUID`: a LAN page over plain HTTP has no secure context.
+ */
+export function newResendKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  return `ui-${[...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
 
 export const emptyDraft = (context = ''): BugReportDraft => ({ title: '', happened: '', expected: '', context });
 
@@ -24,8 +36,8 @@ export function draftProblem(d: BugReportDraft): string | undefined {
 }
 
 /** The request a send makes. */
-export function reportRequest(d: BugReportDraft, o: { jobId?: string; commentOn?: number; force?: boolean } = {}): BugReportRequest {
-  return { ...d, ...(o.jobId ? { jobId: o.jobId } : {}), ...(o.commentOn !== undefined ? { commentOn: o.commentOn } : {}), ...(o.force ? { force: true } : {}) };
+export function reportRequest(d: BugReportDraft, o: { jobId?: string; commentOn?: number; force?: boolean; key?: string } = {}): BugReportRequest {
+  return { ...d, ...(o.jobId ? { jobId: o.jobId } : {}), ...(o.commentOn !== undefined ? { commentOn: o.commentOn } : {}), ...(o.force ? { force: true } : {}), ...(o.key ? { key: o.key } : {}) };
 }
 
 /** The line that says what was done, with the issue's number. */

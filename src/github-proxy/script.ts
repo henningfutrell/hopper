@@ -56,7 +56,7 @@ this machine needs no GitHub login. Never run gh auth login or start a device lo
                                                          status, conclusion; EVENT: push, pull_request, ...)
   sh "$HOPPER_GH" run view RUN   --repo OWNER/NAME      (a workflow run and its jobs: id, name, status, conclusion;
                                                          a job's id is its check log JOB)
-  sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force]
+  sh "$HOPPER_GH" report bug --title TITLE (--body TEXT | --body-file FILE) [--comment-on N] [--force] [--key KEY]
                                                          (report a bug in the hopper itself)
 
 Prints the answer as JSON, with the url and as (the GitHub account that acted). A refusal prints why and exits 1: do not try another way around it.
@@ -64,8 +64,8 @@ Read GitHub only this way: never curl api.github.com, never gh api, never a brow
 hopper read last when that is at most 30 seconds old, or when the pull request is merged: source cache, else source
 github, and readAt says when it was read. ledger, when the hopper follows the item, says where its work stands.
 An issue filed this way says the hopper filed it. A follow-up gets no labels or assignees: a person triages it.
-When no answer comes back to issue create, issue comment or pr create, hopper-gh sends it again by itself: the hopper
-answers the first one again (replayed true), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
+When no answer comes back to issue create, issue comment, pr create or report bug, hopper-gh sends it again by itself: the
+hopper answers the first one again (replayed true; for report bug, the first report), so nothing is filed twice. Do not run the command again for that; a new command is a new one.
 With --key KEY (8 to 64 letters, digits, _ or -) you choose the key: the same key from this job, also after it resumed on
 another machine, is answered the first answer, and nothing is filed twice. Use it for a sub-task (the work skill).
 It is a child of this job's issue: its text names that issue as its parent, as a follow-up. With --required it is a
@@ -156,7 +156,7 @@ token() { printf 'authorization: Bearer %s\\n' "$(cat "$HOPPER_TOKEN_FILE")"; tr
 ${HCURL_SH}
 if [ "$op" != pr.wait ]; then
   case $op in
-    issue.create|issue.comment|pr.create) [ -n "$ownkey" ] || set -- "$@" --data-urlencode "key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')"; tries=${PROXY_RESEND_TRIES} ;;
+    issue.create|issue.comment|pr.create|report.bug) [ -n "$ownkey" ] || set -- "$@" --data-urlencode "key=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \\n')"; tries=${PROXY_RESEND_TRIES} ;;
     *) tries=1 ;;
   esac
   # Sent again with the same key only when no answer came (curl's own error, not GitHub's or the hopper's: 22).

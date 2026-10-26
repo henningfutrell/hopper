@@ -26,6 +26,11 @@ export function createBugReportRepository(c: StoreContext): BugReportRepository 
       c.db.run('INSERT INTO bug_reports (id, state, created_at, body) VALUES (?, ?, ?, ?)', r.id, r.state, r.createdAt, JSON.stringify(r));
       return r;
     },
+    addOnce(id, input) {
+      const r: BugReport = { id, ...input };
+      const added = c.db.run('INSERT INTO bug_reports (id, state, created_at, body) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING', r.id, r.state, r.createdAt, JSON.stringify(r)).changes > 0;
+      return added ? r : undefined;
+    },
     get,
     list: (limit = 200) => many('SELECT body FROM bug_reports ORDER BY created_at DESC, seq DESC LIMIT ?', limit),
     inState: (state) => many('SELECT body FROM bug_reports WHERE state = ? ORDER BY created_at, seq', state),

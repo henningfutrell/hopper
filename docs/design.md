@@ -31223,12 +31223,47 @@ made twice.
 - **A look-up reads one page (100).** An issue or comment made within the hour before the row was kept is on it.
 
 **Residual risk, stated.** A create still in flight after its timeout that GitHub finishes only after the look-up found
-nothing posts a second one. File an issue (`src/issue-drafts/`) keeps no row before its create yet.
+nothing posts a second one. File an issue (`src/issue-drafts/`) keeps no row before its create (see "Filed once on a resend
+key", issue #2813).
 
 **Verification:** `test/integration/bug-reports-post-key.test.ts` (an issue made with its answer lost, sent later: one
 issue, the report links it; a report a stop left `sending`: linked at the next start; a comment the same),
 `test/integration/direct-job-promotions-post-key.test.ts` (an issue made with its answer lost, promoted again: one issue,
 with the new text; a stop before the row: linked at the next start, one `direct_job.promoted`; a comment the same).
+
+## Filed once on a resend key (issue #2813, 2026-10-26)
+
+Follow-up of "Posted once". **The problem.** Two bug reports were each filed twice, 1 to 13 seconds apart. The post key
+covers a lost answer inside one send, but each new send made a new row and so a new key: a second click, a resend after the
+HTTP answer was lost, or a job that ran `hopper-gh report bug` again. The duplicate search does not catch it: GitHub's search
+index lags behind a create. `hopper-gh` sent `report bug` once, with no resend key. File an issue stamped no post key at all.
+
+Note: the two pairs the issue names carry neither Report a bug's note, File an issue's note nor a job's note, so no hopper
+path is shown to have made them. The change closes the gaps the hopper has.
+
+**The change: a resend key on every filing path** (`RESEND_KEY` in `src/domain/post-key.ts`).
+- **Report a bug.** `POST /ui/api/bug-reports` and a job's `report.bug` take `key`. The report's row is kept as the id
+  `keyedReportId(by, key)` (`src/bug-reports/service.ts`), inserted only when no row has it (`BugReportRepository.addOnce`,
+  `ON CONFLICT (id) DO NOTHING`), so two sends at once keep one row. The same key again is answered from that row: `filed` or
+  `commented` with its issue, else `kept` (on its way, or kept to send later). The row's id is still the post key. A report
+  GitHub refused for itself goes, as before, so its key files again.
+- **`hopper-gh report bug`** makes a resend key as for an issue create, and sends it again when no answer came
+  (`PROXY_RESEND_TRIES`).
+- **The Report a bug form and File an issue** make one resend key for each form (`newResendKey`, `ui/src/model/bug-report.ts`).
+- **File an issue** (`src/issue-drafts/service.ts`) ends the body with its post key (the resend key, else one made for it).
+  The same person's key again is answered the filing in flight or filed, for an hour, while the hopper runs; a failed
+  filing is forgotten.
+
+**Decisions:**
+- **The id is a hash of the sender and the key.** A job chooses its key: another sender's same key is never answered.
+- **File an issue keeps no row.** A key is answered from memory: a stop between the create and its answer can still file
+  a second one. The person sees the error, and the issue is on GitHub with its post key.
+- **No schema change.** The report's id carries the key; the `bug_reports` table is as it was.
+
+**Verification:** `test/integration/bug-reports-post-key.test.ts` (a report sent again with its key: one issue, the same
+answer; two at once: one issue, one row; a key that is not 8 to 64 letters, digits, `_` or `-`: 400),
+`test/integration/bug-reports-jobs.test.ts` (a job's report sent again with its key: one issue),
+`test/issue-drafts/service.test.ts` (File an issue sent twice at once and again: one create, its post key last).
 
 ## Telemetry summary (issue #1486, part 2, 2026-10-16)
 

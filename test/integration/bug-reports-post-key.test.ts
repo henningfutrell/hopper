@@ -18,6 +18,12 @@
 //     Given GitHub adds the comment, but the hopper reads 502
 //     When the hopper sends the kept report
 //     Then one comment exists, and the report links the issue
+//   Scenario: a report sent again with its key (issue #2813)
+//     Given a report was filed with a key
+//     When the same report is sent again with the same key
+//     Then it is answered the first issue, and nothing more is filed
+//   Scenario: a report sent twice at once with one key (issue #2813)
+//     Then one issue exists, and one report
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ID } from '../../src/domain/types.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
@@ -99,5 +105,37 @@ describe('Report a bug files a report once (issue #1591)', () => {
     const after = await refresh(app, token);
     expect(after).toEqual([expect.objectContaining({ kind: 'comment', state: 'open', number: 5 })]);
     expect(github.issues.find((i) => i.number === 5)!.comments).toHaveLength(1);
+  });
+
+  it('answers a report sent again with its key the first issue, and files nothing more (issue #2813)', async () => {
+    const { app, github, token } = await start();
+    const keyed = { ...REPORT, key: 'report-key-0001' };
+    const first = await app.ui<{ kind: string; number: number }>('/ui/api/bug-reports', keyed, { token });
+    expect(first.body).toMatchObject({ kind: 'filed', number: 1 });
+    const again = await app.ui<{ kind: string; number: number }>('/ui/api/bug-reports', keyed, { token });
+    expect(again.body).toEqual(first.body);
+    expect(github.issues.filter((i) => i.repo === REPO)).toHaveLength(1);
+    expect(await reportsOf(app, token)).toHaveLength(1);
+    expect(github.issues.find((i) => i.repo === REPO)!.body).toMatch(/<!-- hopper post [^\n]+ -->$/);
+
+    const other = await app.ui<{ kind: string; number: number }>('/ui/api/bug-reports', { ...REPORT, force: true, key: 'report-key-0002' }, { token });
+    expect(other.body).toMatchObject({ kind: 'filed', number: 2 });
+  });
+
+  it('files a report sent twice at once with one key once (issue #2813)', async () => {
+    const { app, github, token } = await start();
+    const keyed = { ...REPORT, key: 'report-key-0003' };
+    const answers = await Promise.all([1, 2].map(() => app.ui<{ kind: string }>('/ui/api/bug-reports', keyed, { token })));
+    expect(answers.map((a) => a.status)).toEqual([200, 200]);
+    expect(answers.map((a) => a.body.kind)).toContain('filed');
+    expect(github.issues.filter((i) => i.repo === REPO)).toHaveLength(1);
+    expect(await reportsOf(app, token)).toHaveLength(1);
+  });
+
+  it('refuses a key that is not 8 to 64 letters, digits, _ or - (issue #2813)', async () => {
+    const { app, github, token } = await start();
+    const r = await app.ui('/ui/api/bug-reports', { ...REPORT, key: 'short' }, { token });
+    expect(r.status).toBe(400);
+    expect(github.issues.filter((i) => i.repo === REPO)).toHaveLength(0);
   });
 });

@@ -2,6 +2,14 @@
 // for a new issue or comment, and the text it posts ends with the row's key as a hidden line. Before a create, the hopper
 // looks for that key on GitHub: a stop, or a timeout after GitHub made it, links what GitHub made, never a second. Pure.
 
+/**
+ * A resend key's form (issues #1607, #2813): the caller's own key for one filing, the same each time it sends it again —
+ * `hopper-gh` makes one for each issue create, comment, pull request create and bug report, and sends it again when no
+ * answer came; the Report a bug form and File an issue make one for each form. The same key again is answered what the
+ * first send made, and nothing is filed twice.
+ */
+export const RESEND_KEY = /^[A-Za-z0-9_-]{8,64}$/;
+
 /** The hidden line: GitHub shows no HTML comment. */
 export const postKeyLine = (key: string): string => `<!-- hopper post ${key} -->`;
 
