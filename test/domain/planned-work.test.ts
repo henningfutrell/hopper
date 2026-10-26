@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { jobGraph, type JobGraphLink } from '../../src/domain/job-graph.ts';
 import { placeGraph, type IssueGraph, type ItemRef } from '../../src/domain/issue-graph.ts';
-import { plannedWork, rollUpStatuses, type PlanStatus } from '../../src/domain/planned-work.ts';
+import { pieceArtifactOf, plannedWork, rollUpStatuses, type PlanStatus } from '../../src/domain/planned-work.ts';
 import type { Job, JobStatus } from '../../src/domain/types.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
 
@@ -20,8 +20,11 @@ const job = (id: string, status: JobStatus, issue: number, over: Partial<Job> = 
 } as Job);
 
 /** One read of an issue: its title, its sub-issues and the issues that block it. */
-const read = (n: number, subIssues: number[] = [], over: { blockedBy?: number[]; state?: string; stateReason?: string; parent?: number } = {}): IssueGraph => placeGraph({
-  issue: { repo: 'acme/app', number: n, url: url(n), title: `title ${n}`, state: over.state ?? 'OPEN', ...(over.stateReason ? { stateReason: over.stateReason } : {}), updatedAt: '2026-10-02T00:00:00Z' },
+const read = (n: number, subIssues: number[] = [], over: { blockedBy?: number[]; state?: string; stateReason?: string; parent?: number; artifact?: string; updatedAt?: string } = {}): IssueGraph => placeGraph({
+  issue: {
+    repo: 'acme/app', number: n, url: url(n), title: `title ${n}`, state: over.state ?? 'OPEN', ...(over.stateReason ? { stateReason: over.stateReason } : {}),
+    updatedAt: over.updatedAt ?? '2026-10-02T00:00:00Z', ...(over.artifact !== undefined ? { artifact: over.artifact } : {}),
+  },
   owner: { login: 'acme' }, projects: [], closedBy: [], references: [], subIssues: subIssues.map(ref),
   ...(over.parent ? { parent: ref(over.parent) } : {}), ...(over.blockedBy ? { blockedBy: over.blockedBy.map(ref) } : {}),
 });
@@ -128,4 +131,30 @@ describe('planned work (issue #2840)', () => {
     expect(p.pieces).toHaveLength(1);
     expect(p.pieces[0]!.tasks[0]!.jobs.map((j) => j.id)).toEqual(['a']);
   });
+
+  it('a piece\'s artifact is the Artifact line of its issue, as the issue graph keeps it; a line taken away leaves none', () => {
+    const p = planOf(1, merged(tree(), read(2, [4, 5], { artifact: 'a screenshot of the result' }), read(3, [6], { artifact: 'https://github.com/acme/app/pull/9' })), []);
+    expect(p.pieces.map((x) => x.artifact)).toEqual(['a screenshot of the result', 'https://github.com/acme/app/pull/9']);
+    const after = planOf(1, merged(tree(), read(2, [4, 5], { artifact: 'old' }), read(2, [4, 5], { artifact: '' })), []);
+    expect(after.pieces[0]!.artifact).toBeUndefined();
+  });
+
+  it('a task\'s updatedAt is the newest of its issue\'s update and its jobs\' stage changes', () => {
+    const p = planOf(1, merged(tree(), read(5, [], { updatedAt: '2026-10-05T00:00:00Z' })), [job('a', 'running', 4, { startedAt: '2026-10-09T00:00:00Z' })]);
+    const [four, five] = p.pieces[0]!.tasks;
+    expect(five!.updatedAt).toBe('2026-10-05T00:00:00Z');
+    expect(Date.parse(four!.updatedAt!)).toBe(Date.parse('2026-10-09T00:00:00Z'));
+  });
+});
+
+describe('a piece\'s artifact line (issue #2840)', () => {
+  it.each<[string, string]>([
+    ['Some text\n\nArtifact: a screenshot of the result\nMore', 'a screenshot of the result'],
+    ['**Artifact:** https://github.com/acme/app/pull/9', 'https://github.com/acme/app/pull/9'],
+    ['- artifact: the report  ', 'the report'],
+    ['No line here', ''],
+    ['Artifact:', ''],
+  ])('%j gives %j', (body, artifact) => { expect(pieceArtifactOf(body)).toBe(artifact); });
+
+  it('keeps at most 300 characters', () => { expect(pieceArtifactOf(`Artifact: ${'x'.repeat(400)}`)).toHaveLength(300); });
 });

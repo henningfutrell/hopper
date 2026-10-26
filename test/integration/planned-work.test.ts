@@ -26,9 +26,9 @@ const url = (n: number) => `https://github.com/acme/app/issues/${n}`;
 const ref = (n: number): ItemRef => ({ kind: 'issue', repo: 'acme/app', number: n, url: url(n) });
 
 /** Keep a read of issue `n` in the issue graph, as a GitHub source does: its title, sub-issues and blockers. */
-function read(a: TestApp, n: number, subIssues: number[] = [], blockedBy: number[] = []): void {
+function read(a: TestApp, n: number, subIssues: number[] = [], blockedBy: number[] = [], artifact?: string): void {
   a.user().store.issueGraph.record(url(n), placeGraph({
-    issue: { repo: 'acme/app', number: n, url: url(n), title: `title ${n}`, state: 'OPEN', updatedAt: '2026-10-02T00:00:00Z' },
+    issue: { repo: 'acme/app', number: n, url: url(n), title: `title ${n}`, state: 'OPEN', updatedAt: '2026-10-02T00:00:00Z', ...(artifact !== undefined ? { artifact } : {}) },
     owner: { login: 'acme' }, projects: [], closedBy: [], references: [], subIssues: subIssues.map(ref), blockedBy: blockedBy.map(ref),
   }), new Date().toISOString());
 }
@@ -74,6 +74,26 @@ describe('GET /api/planned-work (issue #2840)', () => {
     }
     // The issue's URL names it too.
     expect((await a.api<WorkPlan>('GET', `/api/planned-work?issue=${encodeURIComponent(url(1))}`)).body.counts).toEqual(p.counts);
+  });
+
+  it('exports the work plan as CSV, one row per plan task, and as the nested JSON (issue #2840)', async () => {
+    const a = await start();
+    read(a, 1, [2]); read(a, 2, [4, 5], [], 'a screenshot of the result'); read(a, 4); read(a, 5);
+    const q = `issue=${encodeURIComponent('acme/app#1')}`;
+    const plan = (await a.api<WorkPlan>('GET', `/api/planned-work?${q}`)).body;
+    expect(plan.pieces[0]!.artifact).toBe('a screenshot of the result');
+    const csv = await fetch(`${a.url}/api/planned-work/export?${q}&format=csv`);
+    expect(csv.status).toBe(200);
+    expect(csv.headers.get('content-type')).toMatch(/^text\/csv/);
+    expect(csv.headers.get('content-disposition')).toBe('attachment; filename="planned-work-acme-app-1.csv"');
+    const lines = (await csv.text()).trimEnd().split('\n');
+    expect(lines[0]).toBe('plan_id,plan_title,piece_id,piece_title,piece_status,task_id,task_status,job_ids,job_statuses,artifact,updated_at');
+    expect(lines.slice(1).map((l) => l.split(',').slice(0, 7).join(','))).toEqual([
+      'acme/app#1,title 1,acme/app#2,title 2,planned,acme/app#4,planned', 'acme/app#1,title 1,acme/app#2,title 2,planned,acme/app#5,planned',
+    ]);
+    const json = await a.api<{ plan_id: string; pieces: { artifact: string; tasks: { task_id: string }[] }[] }>('GET', `/api/planned-work/export?${q}&format=json`);
+    expect(json.body).toMatchObject({ plan_id: 'acme/app#1', pieces: [{ artifact: 'a screenshot of the result', tasks: [{ task_id: 'acme/app#4' }, { task_id: 'acme/app#5' }] }] });
+    expect((await a.api('GET', `/api/planned-work/export?${q}&format=xml`)).status).toBe(400);
   });
 
   it('refuses what is not an issue (400) and an issue it does not know (404)', async () => {
