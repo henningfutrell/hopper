@@ -54,6 +54,25 @@ export async function get<T>(path: string, { signal, timeoutMs = READ_TIMEOUT_MS
   }
 }
 
+/**
+ * A read saved as a file (issue #2840: an export): the answer, with the session header as every read, handed to the
+ * browser to save under the name its `content-disposition` gives, else `fallback`.
+ */
+export async function download(path: string, fallback: string): Promise<void> {
+  refuseOtherHopper();
+  const token = readToken();
+  const res = await fetch(path, token ? { headers: { 'x-hopper-session': token } } : {});
+  checkInstance(res.headers.get(INSTANCE_HEADER));
+  if (!res.ok) throw new Error((await res.json().catch(() => ({})) as { error?: string }).error || `${res.status} ${path}`);
+  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallback;
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 /** A mutation; `signal` cancels it (the request closes, and the daemon ends what it ran for it), failing with fetch's AbortError. */
 export async function post<T = unknown>(path: string, body: unknown = {}, { signal }: { signal?: AbortSignal } = {}): Promise<T> {
   refuseOtherHopper();

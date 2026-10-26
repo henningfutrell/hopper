@@ -2,6 +2,7 @@
 // whose items name it, the pull requests that close it or mention it, its parent and its sub-issues, and why each closed.
 import type { IssuePlace, ItemRef } from '../../domain/issue-graph.ts';
 import type { GitHubIssue, GitHubProjectItem } from './api.ts';
+import { pieceArtifactOf } from '../../domain/planned-work.ts';
 
 /** What of the fake's state a place is read from: issues and sub-issues by `owner/repo#N`, pulls by the issue they name. */
 export interface FakePlaceState {
@@ -21,7 +22,8 @@ export function fakeIssuePlace(s: FakePlaceState, i: GitHubIssue): IssuePlace {
   const parentKey = [...s.subIssues].find(([, children]) => children.includes(key))?.[0];
   const parent = parentKey === undefined ? undefined : s.issues.get(parentKey);
   return {
-    issue: { repo: i.repo, number: i.number, url: i.url, title: i.title, state: i.state, ...(i.stateReason ? { stateReason: i.stateReason } : {}), updatedAt: i.updatedAt },
+    issue: { repo: i.repo, number: i.number, url: i.url, title: i.title, state: i.state, ...(i.stateReason ? { stateReason: i.stateReason } : {}), updatedAt: i.updatedAt,
+      ...(pieceArtifactOf(i.body) ? { artifact: pieceArtifactOf(i.body) } : {}) },
     owner: { login: i.repo.slice(0, i.repo.indexOf('/')) },
     projects: [...s.projects].flatMap(([id, items]) => {
       if (items instanceof Error || !items.some((x) => x.url === i.url)) return [];

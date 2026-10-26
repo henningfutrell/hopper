@@ -121,6 +121,19 @@ Select a row to see its **run graph** under it: the job tree of the job, as the 
 
 The view keeps your choice of **List** or **Graph** in this browser.
 
+### Planned work
+
+The **Planned work** tab shows work before it runs, broken down, and where each part stands. Type an issue (`owner/name#number`, or its URL) and select **Open**. The issue is the **work plan**. Its sub-issues are its **plan pieces**, and their sub-issues are its **plan tasks**. The jobs of each plan task are at the right.
+
+- A node's color shows its **plan status**: a solid fill is done, blue is running, dashed grey is planned, and orange needs a person (a job failed, or waits on you).
+- The bar above the graph shows how many plan tasks are in each status.
+- A dashed orange line goes from a plan task to a plan task that blocks it (GitHub's "blocked by").
+- Select a node to open it: a plan piece opens its artifact when it is a link, else its issue; a job opens its job page.
+- To give a plan piece an artifact, write a line `Artifact: <text or link>` in its issue: a screenshot, a pull request or a report that a person can judge it by. The tab shows it after the next sync of that issue.
+- **CSV** saves one row per plan task; **JSON** saves the plan nested. Nothing is sent anywhere else.
+
+The tab shows only the issues that the hopper read (the issues its sources list, and their sub-issues).
+
 ## How to use it
 
 - To see what blocks a big piece of work, open its tree in the graph and follow the red lines from the root.
@@ -141,7 +154,7 @@ The view updates live. A job that changes stage moves with no reload.
 
 ## For agents: the API
 
-`GET /api/jobs/graph` gives the same data as the view: `nodes` (each with its `label`, its `stageText` in plain words, and `waitsOnYou`), typed `edges`, `trees` (each with its `root`, its `summary` line, and the nodes not settled yet, `blocking`) and `stages` (how many jobs are in each stage). `GET /api/jobs/<id>/notes` gives a job's notes, and `POST /ui/api/jobs/<id>/notes` with `{ "text": "..." }` sends one (the scope `jobs:notes`, and a box token). `GET /api/jobs/<id>/bom` gives a job's page: its `header`, `summary`, `parts` (each with its `group`, `status`, and its page `href` or GitHub `url`) and `events`, newest first. An API token needs the scope `jobs:read`. See [The operator CLI and the API](cli-and-api.md) and [API tokens and grants](api-tokens.md).
+`GET /api/jobs/graph` gives the same data as the view: `nodes` (each with its `label`, its `stageText` in plain words, and `waitsOnYou`), typed `edges`, `trees` (each with its `root`, its `summary` line, and the nodes not settled yet, `blocking`) and `stages` (how many jobs are in each stage). `GET /api/planned-work?issue=owner/name%23N` gives a work plan, and `GET /api/planned-work/export?issue=…&format=csv` or `format=json` saves it (the scope `planned-work:read`). `GET /api/jobs/<id>/notes` gives a job's notes, and `POST /ui/api/jobs/<id>/notes` with `{ "text": "..." }` sends one (the scope `jobs:notes`, and a box token). `GET /api/jobs/<id>/bom` gives a job's page: its `header`, `summary`, `parts` (each with its `group`, `status`, and its page `href` or GitHub `url`) and `events`, newest first. An API token needs the scope `jobs:read`. See [The operator CLI and the API](cli-and-api.md) and [API tokens and grants](api-tokens.md).
 
 ## Limits and troubleshooting
 

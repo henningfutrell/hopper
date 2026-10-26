@@ -68,6 +68,15 @@ describe('issuePlaceFrom', () => {
     expect(place.subIssues).toEqual([{ kind: 'issue', repo: 'me/r', number: 2, url: 'https://github.com/me/r/issues/2', state: 'closed', stateReason: 'not_planned' }]);
   });
 
+  it('reads a plan piece\'s artifact from the Artifact line of the body (issue #2840): none is empty, no body leaves it out', () => {
+    const answer = (body?: string) => issuePlaceFrom({ data: { repository: { owner: { __typename: 'User', login: 'me' }, issue: {
+      url: 'https://github.com/me/r/issues/1', number: 1, title: 't', state: 'OPEN', updatedAt: 'u', ...(body !== undefined ? { body } : {}),
+    } } } }, 'place');
+    expect(answer('Goal.\n\nArtifact: a screenshot of the board').issue.artifact).toBe('a screenshot of the board');
+    expect(answer('Goal.').issue.artifact).toBe('');
+    expect(answer().issue.artifact).toBeUndefined();
+  });
+
   it('no issue is an error that names the read', () => {
     expect(() => issuePlaceFrom({ data: { repository: { owner: { login: 'me' }, issue: null } }, errors: [{ type: 'NOT_FOUND', message: 'Could not resolve to an Issue.' }] }, 'place of me/r#4'))
       .toThrow(new GitHubApiError('place of me/r#4: Could not resolve to an Issue.', true));
