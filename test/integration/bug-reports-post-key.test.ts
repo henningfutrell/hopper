@@ -39,7 +39,7 @@ afterEach(async () => {
 });
 
 const REPO = 'henningfutrell/hopper';
-const REPORT = { title: 'The board hangs when a job fails', happened: 'The board stopped.', expected: 'The board shows the failure.', context: '- System: linux 6.18.2 (x64), Node v24.3.0' };
+const REPORT = { title: 'The board hangs when a job fails', description: 'The board stopped.' };
 
 interface ReportRow { id: string; state: string; kind: string; number?: number; url?: string }
 
@@ -53,6 +53,7 @@ async function start() {
   const boot = async () => {
     const app = await startTestApp({ dbPath: db.dbPath, env });
     apps.push(app);
+    app.user().store.settings.setPublicBugReports(true);
     return { app, token: await app.login() };
   };
   const first = await boot();

@@ -1,14 +1,14 @@
-// Report a bug (issue #694): the context a report carries, masked before the person sees it — the System line only
-// (issue #2478) —, the mask of a job's report text, and the terms a duplicate search looks for.
+// Report a bug (issue #694): the context a report carries, masked — the operating system and the hopper's version only
+// (issue #2818) —, the report's fixed template, the mask of a report's text, and the terms a duplicate search looks for.
 import { describe, expect, it } from 'vitest';
 import { maskAddresses } from '../../src/secrets/mask.ts';
 import { maskReportText, reportBody, reportContext, searchTerms, similarityOf } from '../../src/bug-reports/index.ts';
 
-const SYSTEM = { platform: 'linux', release: '6.18.2', arch: 'x64', node: 'v24.3.0', hostname: 'archbox' };
+const SYSTEM = { platform: 'linux', release: '6.18.2', arch: 'x64', version: '0.42.1', hostname: 'archbox' };
 
 describe('the report context', () => {
-  it('is the System line and nothing else: no version, install type, job or failure (issue #2478)', () => {
-    expect(reportContext(SYSTEM)).toBe('- System: linux 6.18.2 (x64), Node v24.3.0');
+  it('is the operating system and the hopper\'s version and nothing else: no Node version, install type, job or failure (issue #2818)', () => {
+    expect(reportContext(SYSTEM)).toBe('- OS: linux 6.18.2 (x64)\n- Hopper version: 0.42.1');
   });
 
   it('masks the host name, should the system name it', () => {
@@ -44,22 +44,15 @@ describe('the address mask', () => {
 });
 
 describe('the report body', () => {
-  it('has the person\'s sections and the hopper\'s note, tokens masked', () => {
+  it('is the fixed template: the description, the System section, the hopper\'s note; tokens masked (issue #2818)', () => {
     const token = `ghp_${'Z9y8'.repeat(9)}`;
-    const body = reportBody({ happened: `It crashed. ${token}`, expected: 'It runs.', context: '- System: linux' });
-    expect(body).toContain('### What happened\n\nIt crashed.');
-    expect(body).toContain('### What I expected\n\nIt runs.');
-    expect(body).toContain('### Context\n\n- System: linux');
-    expect(body).toContain('Filed with Report a bug in a hopper.');
-    expect(body).not.toContain(token);
-  });
-
-  it('leaves out an empty section', () => {
-    expect(reportBody({ happened: 'It crashed.', expected: ' ', context: '' })).not.toContain('What I expected');
+    expect(reportBody({ description: ` It crashed. ${token} `, context: '' })).not.toContain(token);
+    const body = reportBody({ description: ' It crashed. ', context: reportContext(SYSTEM) });
+    expect(body).toBe('### Description\n\nIt crashed.\n\n### System\n\n- OS: linux 6.18.2 (x64)\n- Hopper version: 0.42.1\n\n---\nFiled with Report a bug in a hopper.');
   });
 
   it('marks a job\'s report as the job\'s, with no job id', () => {
-    const body = reportBody({ happened: 'x', expected: '', context: '', fromJob: true });
+    const body = reportBody({ description: 'x', context: '', fromJob: true });
     expect(body).toContain('Filed by a job with Report a bug in a hopper.');
   });
 });
