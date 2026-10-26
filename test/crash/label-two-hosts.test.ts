@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { Job } from '../../src/domain/types.ts';
 import { waitFor } from '../support/wait.ts';
 import { stopHosts, type CrashHost } from './harness.ts';
-import { endHeld, events, issueUrl, itemOf, labelWorld, mirrorRows, REPO, requests, SCENARIO_MS, type LabelWorld } from './label-world.ts';
+import { endHeld, events, issueTrail, issueUrl, itemOf, labelWorld, mirrorRows, REPO, requests, SCENARIO_MS, type LabelWorld } from './label-world.ts';
 
 const worlds: LabelWorld[] = [];
 afterEach(async () => {
@@ -41,8 +41,10 @@ describe('the label mirror on two hoppers on one database (issue #1892)', () => 
     expect(w.labels(7)).toContain('hopper:pr-ready');
     expect(w.labels(7)).not.toContain('hopper:failed');
     expect(mirrorRows(w, 7).map((r) => r.op), 'the correction of #7 queued once').toEqual(['remove_labels', 'add_labels']);
-    expect(requests(w, 'DELETE', `/repos/${REPO}/issues/7/labels/hopper:failed`)).toBe(1);
-    expect(requests(w, 'POST', `/repos/${REPO}/issues/7/labels`)).toBe(1);
+    // Every row and write of #7 and both hosts' output (issue #2837): which send of the correction went out twice.
+    const trail7 = (): string => `${issueTrail(w, 7)}\n${a.output()}\n${b.output()}`;
+    expect(requests(w, 'DELETE', `/repos/${REPO}/issues/7/labels/hopper:failed`), trail7()).toBe(1);
+    expect(requests(w, 'POST', `/repos/${REPO}/issues/7/labels`), trail7()).toBe(1);
     expect(await editsOf(a, 9), 'one Run again of #9').toEqual([{ from: 'pr_open', label: 'hopper:pr-ready' }]);
     // Each new job's times and both hosts' output (issue #2831): which hopper made the second one, and after what.
     const newJobs9 = (await jobsOf(b, 9)).filter((j) => j.id !== w.jobs[9]);
