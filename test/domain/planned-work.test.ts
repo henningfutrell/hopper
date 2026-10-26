@@ -6,6 +6,7 @@ import { jobGraph, type JobGraphLink } from '../../src/domain/job-graph.ts';
 import { placeGraph, type IssueGraph, type ItemRef } from '../../src/domain/issue-graph.ts';
 import { plannedWork, rollUpStatuses, type PlanStatus } from '../../src/domain/planned-work.ts';
 import type { Job, JobStatus } from '../../src/domain/types.ts';
+import type { WorkItem } from '../../src/domain/work-items.ts';
 
 const url = (n: number) => `https://github.com/acme/app/issues/${n}`;
 const ref = (n: number): ItemRef => ({ kind: 'issue', repo: 'acme/app', number: n, url: url(n) });
@@ -77,8 +78,10 @@ describe('planned work (issue #2840)', () => {
     expect(asks.pieces[1]!.tasks[0]!.status).toBe('blocked');
   });
 
-  it('a failure a later job of its issue took the place of blocks nothing', () => {
-    const p = planOf(1, tree(), [job('a', 'failed', 4), job('b', 'finished', 4, { rerunOf: 'a' })]);
+  it('a failure a later job of its issue took the place of blocks nothing: the work-item ledger says so', () => {
+    const jobs = [job('a', 'failed', 4), job('b', 'finished', 4, { rerunOf: 'a' })];
+    const item = { key: url(4), state: 'done', stateSince: '2026-10-02T00:00:00Z', eventState: 'done', eventAt: '2026-10-02T00:00:00Z', jobId: 'b' } as WorkItem;
+    const p = plannedWork({ root: { repo: 'acme/app', number: 1 }, issueGraph: tree(), links: [], graph: jobGraph({ jobs, issueGraph: tree(), items: new Map([[url(4), item]]) }) });
     expect(p.pieces[0]!.tasks[0]!.status).toBe('done');
     expect(p.pieces[0]!.tasks[0]!.jobs.map((j) => [j.id, j.stage])).toEqual([['a', 'superseded'], ['b', 'done']]);
   });
