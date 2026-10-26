@@ -30,33 +30,35 @@ export interface HopperOwn {
 }
 
 /** Each kind of thing the scrub removes, as the report's row and the job's answer name it. */
-export type RemovedKind = 'link' | 'repository' | 'issue or pull request number' | 'branch name' | 'file path' | 'commit id' | 'long id' | 'environment name';
+export type RemovedKind = 'link' | 'repository' | 'issue or pull request number' | 'branch name' | 'file path' | 'commit id' | 'long id' | 'environment name'
+  | 'email address' | 'host name';
 
 export interface Scrubbed { text: string; removed: RemovedKind[] }
 
-const HOPPER_URL = new RegExp(`^https?://github\\.com/${REPORT_REPO.replace('/', '\\/')}(?:[/#?]|$)`, 'i');
+export const HOPPER_URL = new RegExp(`^https?://github\\.com/${REPORT_REPO.replace('/', '\\/')}(?:[/#?]|$)`, 'i');
 const URL_RE = /\bhttps?:\/\/[^\s<>()"'`\]]+/gi;
 const ARN = /\barn:aws[\w-]*:[^\s`'"<>()]+/g;
-const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+export const UUID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
 const REPO_REF = /(?<![\w./-])([A-Za-z0-9][\w.-]*\/[\w.-]+)#(\d+)\b/g;
 /** A token with a slash: a path, or `owner/name`. A `:line` or `:line:column` after it goes with it. */
 const SLASHED = /(?<![\w./~@-])(?:(?:~|\.{1,2})?\/[\w.@-]+(?:\/[\w.@-]+)*|[\w.@-]+(?:\/[\w.@-]+)+)\/?(?::\d+(?::\d+)?)?/g;
 /** The hopper's own routes: what a report about the hopper names. */
-const HOPPER_ROUTE = /^\/(?:api|ui|job|client|github|tunnel|artifact-content|artifact-link)(?:\/|$)/;
+export const HOPPER_ROUTE = /^\/(?:api|ui|job|client|github|tunnel|artifact-content|artifact-link)(?:\/|$)/;
 /** Punctuation that ends a sentence, not a link or a path. */
 const TRAILING = /[.,;:!?]+$/;
 /** `fn` of the match without its trailing punctuation, the punctuation put back. */
-const keepTrailing = (fn: (m: string) => string) => (m: string): string => {
+export const keepTrailing = (fn: (m: string) => string) => (m: string): string => {
   const end = TRAILING.exec(m)?.[0] ?? '';
   return fn(m.slice(0, m.length - end.length)) + end;
 };
 /** Seven to forty hex digits: a commit id, when it holds a digit and a letter. */
 const HEX = /\b[0-9a-f]{7,40}\b/gi;
-const LONG_NUMBER = /\b\d{8,}\b/g;
+export const LONG_NUMBER = /\b\d{8,}\b/g;
 
-const MASK: Record<RemovedKind, string> = {
+export const MASK: Record<RemovedKind, string> = {
   link: '[a link]', repository: '[a repository]', 'issue or pull request number': '[a number]', 'branch name': '[a branch]',
   'file path': '[a file path]', 'commit id': '[a commit id]', 'long id': '[an id]', 'environment name': '[a name]',
+  'email address': '[an email address]', 'host name': '[a host name]',
 };
 
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');

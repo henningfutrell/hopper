@@ -3,21 +3,19 @@
 // loopback (test/support/fake-forges.ts).
 //
 // Feature: Report a bug
-//   Scenario: the form's context is redacted before the person sees it
-//     Given a failed job whose error names an IP address and a token
-//     When the person asks for the context of a report on that job
-//     Then it names the job and its state, and carries neither the address nor the token
-//   Scenario: a report is filed as the person, labelled user-report
+//   Scenario: the form's context is the OS and the hopper's version, masked, with the public warning (issue #2818)
+//   Scenario: nothing is posted until an admin turns public bug reports on (issue #2818)
+//     Given a hopper whose admin never turned public bug reports on
 //     When the person sends a report
-//     Then an issue is filed on henningfutrell/hopper with the person's own GitHub token
+//     Then it is refused, and nothing reaches GitHub; an operator cannot turn them on, an admin can
+//   Scenario: a report is filed as the person, labelled user-report, in the fixed template (issue #2818)
+//     When the person previews, then sends a report
+//     Then an issue is filed on henningfutrell/hopper with the person's own GitHub token, as the preview showed it
 //     And it has the label user-report, no hopper label and no assignee, so it never starts a job
-//     And the answer has its link, and bug_report.filed is in the log
+//     And its email addresses, links, absolute paths, host names and long ids are removed
 //   Scenario: a similar open report is offered first
-//     Given an open user-report issue with a similar title
-//     When the person sends a report
-//     Then nothing is filed, and the similar report is answered
-//     And the person can add a comment to it, or file a new one anyway
 //   Scenario: with no GitHub connection the report is kept, with the reason (sent later: bug-reports-later.test.ts)
+//   Scenario: a report with no title, no description, or one too long is refused
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DomainEvent } from '../../src/domain/types.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
@@ -34,7 +32,7 @@ afterEach(async () => {
 
 const REPO = 'henningfutrell/hopper';
 
-async function start(o: { connected?: boolean } = {}) {
+async function start(o: { connected?: boolean; publicReports?: boolean } = {}) {
   const github = await createFakeGitHub({ clientId: 'gh-client-id' });
   cleanups.push(() => github.close());
   github.tokens.set('test-account-token', 'reporter');
@@ -46,54 +44,70 @@ async function start(o: { connected?: boolean } = {}) {
   });
   apps.push(app);
   if (o.connected !== false) connectGitHub(app, ['octo/tools'], { login: 'reporter' });
+  if (o.publicReports !== false) app.user(ADMIN_ID).store.settings.setPublicBugReports(true);
   const token = await app.login();
   return { app, github, token };
 }
 
 const eventsOf = (a: TestApp, type: string): DomainEvent[] => a.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === type);
 
-const REPORT = { title: 'The board hangs when a job fails', happened: 'The board stopped.', expected: 'The board shows the failure.', context: '- System: linux 6.18.2 (x64), Node v24.3.0' };
+const REPORT = { title: 'The board hangs when a job fails', description: 'The board stopped.' };
+const WARNING = 'This report will be posted publicly on GitHub. Do not include names, emails, customer or company details, repository or host names, links, ids or file paths.';
 
 describe('Report a bug', () => {
-  it('answers the context of a report: the System line only, never the version, install type or a job (issue #2478)', async () => {
+  it('answers the context of a report: the OS and the hopper\'s version only, with the public warning (issue #2818)', async () => {
     const { app, token } = await start();
-    const r = await app.ui<{ context: string; repo: string }>('/ui/api/bug-reports/context', {}, { token });
+    const r = await app.ui<{ context: string; repo: string; warning: string; on: boolean }>('/ui/api/bug-reports/context', {}, { token });
     expect(r.status).toBe(200);
-    expect(r.body.repo).toBe(REPO);
-    expect(r.body.context).toMatch(/^- System: \S+ \S+ \(\S+\), Node v\d+\.\d+\.\d+$/);
-    const job = await app.pull({ op: 'fail', ms: 0, message: 'push failed' });
-    await app.waitForStatus(job.id, 'failed');
-    expect((await app.ui('/ui/api/bug-reports/context', { jobId: job.id }, { token })).status).toBe(400);
+    expect(r.body).toMatchObject({ repo: REPO, warning: WARNING, on: true });
+    expect(r.body.context).toMatch(/^- OS: \S+ \S+ \(\S+\)\n- Hopper version: \d+\.\d+\.\d+\S*$/);
+    expect((await app.ui('/ui/api/bug-reports/context', { jobId: 'x' }, { token })).status).toBe(400);
   });
 
-  it('files a report on a failed job whose context is the System line only (issue #2478)', async () => {
+  it('posts nothing until an admin turns public bug reports on, and an operator cannot (issue #2818)', async () => {
+    const { app, github, token } = await start({ publicReports: false });
+    expect((await app.ui<{ on: boolean }>('/ui/api/bug-reports/context', {}, { token })).body.on).toBe(false);
+    const off = await app.ui<{ error: string }>('/ui/api/bug-reports', REPORT, { token });
+    expect(off.status).toBe(409);
+    expect(off.body.error).toContain('public bug reports are off');
+    expect(github.requests.filter((q) => q.path.includes(REPO))).toHaveLength(0);
+    expect(app.user(ADMIN_ID).store.bugReports.list()).toEqual([]);
+
+    const opToken = await operatorSession(app);
+    expect((await app.ui('/ui/api/bug-reports/settings', { on: true }, { token: opToken })).status).toBe(403);
+
+    expect((await app.ui('/ui/api/bug-reports/settings', { on: true }, { token })).body).toEqual({ publicReports: true });
+    expect((await app.ui<{ kind: string }>('/ui/api/bug-reports', REPORT, { token })).body.kind).toBe('filed');
+  });
+
+  it('files the report as the person, as its preview showed it: the fixed template, scrubbed, labelled user-report, never as a job (issue #2818)', async () => {
     const { app, github, token } = await start();
     const job = await app.pull({ op: 'fail', ms: 0, message: 'push failed' });
     await app.waitForStatus(job.id, 'failed');
-    const { context } = (await app.ui<{ context: string }>('/ui/api/bug-reports/context', {}, { token })).body;
-    const r = await app.ui<{ kind: string }>('/ui/api/bug-reports', { ...REPORT, context, jobId: job.id, force: true }, { token });
-    expect(r.body.kind).toBe('filed');
-    const body = github.issues.find((i) => i.repo === REPO)!.body;
-    const section = body.split('### Context\n\n')[1]!.split('\n\n---\n')[0]!;
-    expect(section).toBe(context);
-    expect(section.split('\n')).toEqual([expect.stringMatching(/^- System: /)]);
-    expect(body).not.toContain(job.id);
-  });
+    const draft = {
+      title: 'The board hangs on db01.acme.com',
+      description: 'It stopped. Mail jane@acme.com, see https://grafana.acme.example/d/1, /srv/acme/app.log, run 18234567890 and https://github.com/henningfutrell/hopper/issues/1.',
+    };
+    const preview = await app.ui<{ title: string; body: string; removed: string[]; warning: string }>('/ui/api/bug-reports/preview', draft, { token });
+    expect(preview.status).toBe(200);
+    expect(preview.body).toMatchObject({ title: 'The board hangs on [a host name]', warning: WARNING });
+    expect(preview.body.removed.sort()).toEqual(['email address', 'file path', 'host name', 'link', 'long id']);
+    expect(preview.body.body).toMatch(/^### Description\n\nIt stopped\. Mail \[an email address\], see \[a link\], \[a file path\], run \[an id\] and https:\/\/github\.com\/henningfutrell\/hopper\/issues\/1\.\n\n### System\n\n- OS: [^\n]+\n- Hopper version: \S+\n\n---\nFiled with Report a bug in a hopper\.$/);
+    expect(github.requests.filter((q) => q.path.includes(REPO))).toHaveLength(0);
 
-  it('files the report as the person, labelled user-report, never as a job', async () => {
-    const { app, github, token } = await start();
-    const r = await app.ui<{ kind: string; number: number; url: string }>('/ui/api/bug-reports', REPORT, { token });
+    const r = await app.ui<{ kind: string; number: number; url: string }>('/ui/api/bug-reports', { ...draft, jobId: job.id }, { token });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ kind: 'filed', number: 1, url: `${github.url}/${REPO}/issues/1` });
     const issue = github.issues.find((i) => i.repo === REPO)!;
-    expect(issue).toMatchObject({ title: REPORT.title, author: 'reporter', labels: ['user-report'], assignees: [] });
-    expect(issue.body).toContain('### What happened\n\nThe board stopped.');
-    expect(issue.body).toContain('### Context\n\n- System: linux 6.18.2 (x64), Node v24.3.0');
+    expect(issue).toMatchObject({ title: preview.body.title, author: 'reporter', labels: ['user-report'], assignees: [] });
+    expect(issue.body.startsWith(preview.body.body)).toBe(true);
+    expect(issue.body).not.toContain(job.id);
     const create = github.requests.find((q) => q.method === 'POST' && q.path.endsWith(`/repos/${REPO}/issues`))!;
     expect(create.auth).toContain('test-account-token');
     expect(eventsOf(app, 'bug_report.filed').map((e) => e.data)).toEqual([
-      { repo: REPO, kind: 'issue', number: 1, url: `${github.url}/${REPO}/issues/1`, by: expect.any(String) },
+      { repo: REPO, kind: 'issue', number: 1, url: `${github.url}/${REPO}/issues/1`, jobId: job.id, by: expect.any(String) },
     ]);
+    expect(app.user(ADMIN_ID).store.bugReports.list()[0]).toMatchObject({ jobId: job.id, removed: expect.arrayContaining(['email address', 'host name']) });
   });
 
   it('offers a similar open report first; the person comments on it, or files a new one anyway', async () => {
@@ -124,9 +138,24 @@ describe('Report a bug', () => {
     expect(eventsOf(app, 'bug_report.failed')).toHaveLength(0);
   });
 
-  it('refuses a report with no title or no text', async () => {
+  it('refuses a report with no title, no description, or one too long, and free-form fields (issue #2818)', async () => {
     const { app, token } = await start();
     expect((await app.ui('/ui/api/bug-reports', { ...REPORT, title: ' ' }, { token })).status).toBe(400);
-    expect((await app.ui('/ui/api/bug-reports', { ...REPORT, happened: '' }, { token })).status).toBe(400);
+    expect((await app.ui('/ui/api/bug-reports', { ...REPORT, description: '' }, { token })).status).toBe(400);
+    expect((await app.ui('/ui/api/bug-reports', { ...REPORT, title: 'x'.repeat(121) }, { token })).status).toBe(400);
+    expect((await app.ui('/ui/api/bug-reports', { ...REPORT, description: 'x'.repeat(2001) }, { token })).status).toBe(400);
+    expect((await app.ui('/ui/api/bug-reports', { ...REPORT, context: '- System: anything' }, { token })).status).toBe(400);
   });
 });
+
+/** A session of the admin user with the operator role, minted as the operator CLI mints one. */
+async function operatorSession(a: TestApp): Promise<string> {
+  const { createUiSessions } = await import('../../src/http/ui/sessions.ts');
+  const { loadSignInConfig } = await import('../../src/auth/index.ts');
+  const instance = a.app.instance;
+  const sessions = createUiSessions({
+    repo: instance.uiSessions, clock: { now: () => new Date() },
+    signIn: { config: () => loadSignInConfig(instance.signInConfig.read()), checkGateway: async () => ({ ok: false as const, status: 403 as const, error: 'none' }) },
+  });
+  return sessions.create({ role: 'operator', identity: { realm: 'cli', subject: 'operator', name: 'operator', groups: [] }, userId: 'admin', lastsMs: 60_000 }).token;
+}

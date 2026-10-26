@@ -16,6 +16,10 @@
 //     Given a filed report
 //     When its issue is closed on GitHub and the person refreshes Your reports
 //     Then Your reports lists it as closed, with when and why it was closed (issue #1147)
+//   Scenario: while public bug reports are off, a kept report is not sent (issue #2818)
+//     Given a kept report, and an admin turns public bug reports off
+//     When the hopper sends the kept reports
+//     Then it stays kept; once they are on again, it is filed
 //   Scenario: GitHub refusing the report itself is not kept
 //     Given GitHub answers 422 to the new issue
 //     Then the report fails with the reason, and nothing waits
@@ -34,7 +38,7 @@ afterEach(async () => {
 });
 
 const REPO = 'henningfutrell/hopper';
-const REPORT = { title: 'The board hangs when a job fails', happened: 'The board stopped.', expected: 'The board shows the failure.', context: '- System: linux 6.18.2 (x64), Node v24.3.0' };
+const REPORT = { title: 'The board hangs when a job fails', description: 'The board stopped.' };
 
 interface ReportRow { id: string; title: string; state: string; kind: string; number?: number; url?: string; problem?: string; body?: string; tries: number; closedAt?: string; closedAs?: string }
 
@@ -50,6 +54,7 @@ async function start(o: { connected?: boolean } = {}) {
   });
   apps.push(app);
   if (o.connected !== false) connectGitHub(app, ['octo/tools'], { login: 'reporter' });
+  app.user(ADMIN_ID).store.settings.setPublicBugReports(true);
   const token = await app.login();
   const yourReports = async (): Promise<ReportRow[]> => {
     const r = await app.api<{ reports: ReportRow[] }>('GET', '/api/bug-reports', undefined, { 'x-hopper-session': token });
@@ -88,13 +93,25 @@ describe('Report a bug, later', () => {
     expect(after[0]).not.toHaveProperty('problem');
     const issue = github.issues.find((i) => i.repo === REPO)!;
     expect(issue).toMatchObject({ title: REPORT.title, author: 'reporter', labels: ['user-report'], assignees: [] });
-    expect(issue.body).toContain('### What happened\n\nThe board stopped.');
+    expect(issue.body).toContain('### Description\n\nThe board stopped.');
     expect(eventsOf(app, 'bug_report.filed').map((e) => e.data)).toEqual([
       { repo: REPO, kind: 'issue', number: 1, url: `${github.url}/${REPO}/issues/1`, by: expect.any(String), id: r.body.id, later: true },
     ]);
     // Sent once: a later pass files nothing again.
     await refresh();
     expect(github.issues.filter((i) => i.repo === REPO)).toHaveLength(1);
+  });
+
+  it('sends no kept report while public bug reports are off (issue #2818)', async () => {
+    const { app, github, token, refresh } = await start({ connected: false });
+    const r = await app.ui<{ kind: string; id: string }>('/ui/api/bug-reports', REPORT, { token });
+    expect(r.body.kind).toBe('kept');
+    connectGitHub(app, ['octo/tools'], { login: 'reporter' });
+    expect((await app.ui('/ui/api/bug-reports/settings', { on: false }, { token })).status).toBe(200);
+    expect(await refresh()).toEqual([expect.objectContaining({ id: r.body.id, state: 'waiting', tries: 1 })]);
+    expect(github.issues.filter((i) => i.repo === REPO)).toHaveLength(0);
+    expect((await app.ui('/ui/api/bug-reports/settings', { on: true }, { token })).status).toBe(200);
+    expect(await refresh()).toEqual([expect.objectContaining({ id: r.body.id, state: 'open', number: 1 })]);
   });
 
   it('keeps a report and a comment while GitHub refuses access to the repository, and sends both later', async () => {

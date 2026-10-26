@@ -39,7 +39,7 @@ describe('the send pass of Report a bug stops', () => {
       state: async () => ({ state: 'open' as const }),
       find: async () => undefined,
     };
-    const sender = createReportSender({ github: () => github, reports, now: () => '2026-10-11T00:00:01.000Z', record() {}, log() {} });
+    const sender = createReportSender({ github: () => github, reports, now: () => '2026-10-11T00:00:01.000Z', record() {}, log() {}, enabled: () => true });
     sender.start();
     let stopped = false;
     const stop = sender.stop().then(() => { stopped = true; });
