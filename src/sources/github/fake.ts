@@ -261,6 +261,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
       for (const login of issue.assignees) happened(key(repo, number), { event: 'assigned', assignee: login }, assignedBy ?? byAuthor, issue.updatedAt);
       return copy(issue);
     },
+    async fileIssue(repo, { title, body, labels: ls, assignees }) { enter('fileIssue', [repo, title]); const i = fake.createIssue({ repo, title, body, labels: ls, assignees, labelledBy: self, assignedBy: self }); return { number: i.number, url: i.url }; },
     addComment(repo, n, author, body, association, viaApp) {
       // On a pull request too (issue #1924: a plan comment), which has no issue of its own here.
       const pull = pullOf(repo, n); const i = pull ? { url: pull.url, updatedAt: '' } as GitHubIssue : find(repo, n);

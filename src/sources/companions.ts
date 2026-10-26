@@ -6,10 +6,13 @@
 // 3) is recorded, `job.companion_merged`. `view` is the job as if it followed the companion,
 // for the base merge, the queue's conflict check and the base tip. Not while the source is paused; a throw is logged and
 // asked again at the next round. An item that is done, or whose issue is closed, has its companions read still (issue #2752):
-// a ready one is merged (its followed pull request may merge first and close the issue), but none is rebased, as a tend is a
-// Run again of the item. A dropped item's are read no more.
+// a ready one is merged (its followed pull request may merge first and close the issue), but none is tended, as a tend is a
+// Run again of the item and reopens its issue. One with merge conflicts gets the base merge in the hopper's mirror, else one
+// rebase issue (`rebaseDone`, `job.companion_rebase_filed`), once for each head commit and at most
+// `MAX_COMPANION_REBASE_ISSUES` times: Intake takes that issue as any other work, and its job updates the companion's
+// branch. The head is marked before the filing, so a crash files none rather than two. A dropped item's are read no more.
 import { openedPullRequests } from '../domain/direct-jobs.ts';
-import { asFollowing, companionDue, companionsAfter, companionsOf, type CompanionSeen } from '../domain/companion-pull-requests.ts';
+import { asFollowing, companionDue, companionRebaseDue, companionRebaseText, companionsAfter, companionsOf, holdsCompanions, type CompanionSeen } from '../domain/companion-pull-requests.ts';
 import type { JobSource } from '../domain/ports.ts';
 import { pullRequestRepo, type Job } from '../domain/types.ts';
 import type { AfterDoneContext } from './after-done.ts';
@@ -46,8 +49,42 @@ export function companionPullRequests(c: Pick<AfterDoneContext, 'store' | 'enque
           if (a.byHopper && h.companions.some((u) => u.toLowerCase() === a.url.toLowerCase())) store.events.append({ type: 'job.companion_merged', jobId: job.id, data: { pullRequest: a.url } });
         }
       })));
+      for (const h of held) await c.enqueue(h.holder.id, () => rebaseDone(source, h.holder.id));
     } catch (e) {
       console.warn(`hopper: ${source.name}: reading the companion pull requests failed, asked again at the next round: ${(e as Error).message}`);
+    }
+  }
+
+  /** Keep `seen` as companion `url` of the job. */
+  const keep = (jobId: string, url: string, seen: CompanionSeen) => {
+    const job = get(jobId);
+    if (job) c.setSource(jobId, { ...(job.sourceState?.source ?? {}), companions: { ...companionsOfJob(job), [url]: seen } });
+  };
+
+  /** A done or closed item's companion with merge conflicts: the base merge, else a rebase issue (see above). */
+  async function rebaseDone(source: JobSource, jobId: string): Promise<void> {
+    const job = get(jobId);
+    if (!job?.source?.repo || job.source.number === undefined || open(job.source.key) || !readable(job.source.key) || !holdsCompanions(job, get)) return;
+    const d = companionRebaseDue(job);
+    if (!d) return;
+    const was = companionsOfJob(job)![d.url]!;
+    keep(jobId, d.url, { ...was, rebaseFiled: { ...was.rebaseFiled, ...(d.head ? { head: d.head } : {}), count: d.count } });
+    const merged = await source.baseMerge?.(asFollowing(job, d.url)).catch((e: unknown) => void console.warn(`hopper: ${source.name}: the base merge of ${d.url} failed, a rebase issue is filed: ${(e as Error).message}`));
+    if (merged?.outcome === 'pushed') {
+      keep(jobId, d.url, { ...companionsOfJob(get(jobId))![d.url]!, conflicting: false });
+      store.events.append({ type: 'job.pull_request_base_merged', jobId, data: { pullRequest: d.url, commit: merged.commit, resolved: merged.resolved } });
+      return;
+    }
+    if (!source.fileCompanionRebase) return;
+    try {
+      const filed = await source.fileCompanionRebase(job, companionRebaseText({ repo: job.source.repo, number: job.source.number }, d));
+      keep(jobId, d.url, { ...companionsOfJob(get(jobId))![d.url]!, rebaseFiled: { ...(d.head ? { head: d.head } : {}), count: d.count + 1, issue: filed.url } });
+      store.events.append({ type: 'job.companion_rebase_filed', jobId, data: { pullRequest: d.url, issue: filed.number, url: filed.url } });
+    } catch (e) {
+      // Not filed: asked again at the next round.
+      const { rebaseFiled: _marked, ...now } = companionsOfJob(get(jobId))![d.url]!;
+      keep(jobId, d.url, was.rebaseFiled ? { ...now, rebaseFiled: was.rebaseFiled } : now);
+      console.warn(`hopper: ${source.name}: the rebase issue of ${d.url} was not filed, asked again at the next round: ${(e as Error).message}`);
     }
   }
 

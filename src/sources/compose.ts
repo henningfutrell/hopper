@@ -207,6 +207,10 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
       const s = current();
       return s?.readCompanions ? s.readCompanions(pulls) : Promise.reject(new SourceError(why(), false));
     },
+    fileCompanionRebase(job, text) {
+      const s = current();
+      return s?.fileCompanionRebase ? s.fileCompanionRebase(job, text) : Promise.reject(new SourceError(why(), false));
+    },
     endedPullRequests(pulls) {
       const s = current();
       return s?.endedPullRequests ? s.endedPullRequests(pulls) : Promise.reject(new SourceError(why(), false));

@@ -2,7 +2,7 @@
 // item's own repository, that the item's newest job does not follow. Which ones the newest job holds, what a read keeps,
 // and when a rebase is due for one.
 import { describe, expect, it } from 'vitest';
-import { asFollowing, companionDue, companionsAfter, companionsOf } from '../../src/domain/companion-pull-requests.ts';
+import { asFollowing, companionDue, companionRebaseDue, companionRebaseText, companionsAfter, companionsOf, MAX_COMPANION_REBASE_ISSUES } from '../../src/domain/companion-pull-requests.ts';
 import type { Job } from '../../src/domain/types.ts';
 import { jobForIssue, REPO } from '../sources/fixtures/github-support.ts';
 
@@ -69,5 +69,33 @@ describe('companion pull requests (issue #1143 reopened)', () => {
     const j = job('job-1', 0, 'finished', { pullRequest: FOLLOWED, follow: 'open', companions: { [OWN]: { conflicting: true, base: 'main', headRef: 'issue-1-x' } } });
     expect(asFollowing(j, OWN).sourceState?.source).toMatchObject({ pullRequest: OWN, seen: { base: 'main', headRef: 'issue-1-x' } });
     expect(asFollowing(j, FOLLOWED)).toBe(j);
+  });
+});
+
+describe('a rebase issue for a done item\'s companion (issue #1143 reopened)', () => {
+  it('a read keeps the head commit, and the rebase issue filed for it', () => {
+    const j = job('job-1', 0, 'finished', { companions: { [OWN]: { conflicting: true, head: 'a1', rebaseFiled: { head: 'a1', count: 1 } } } });
+    expect(companionsAfter(j, [OWN], [{ url: OWN, state: 'open', conflicting: true, base: 'main', headRef: 'issue-1-x', head: 'b2' }]))
+      .toEqual({ [OWN]: { conflicting: true, base: 'main', headRef: 'issue-1-x', head: 'b2', rebaseFiled: { head: 'a1', count: 1 } } });
+  });
+
+  it('is due once for each head commit of a companion with merge conflicts, at most a few times', () => {
+    const at = (c: Record<string, unknown>) => job('job-1', 0, 'finished', { pullRequest: FOLLOWED, follow: 'open', companions: { [OWN]: { conflicting: true, base: 'main', headRef: 'issue-1-x', head: 'a1', ...c } } });
+    expect(companionRebaseDue(at({}))).toEqual({ url: OWN, base: 'main', headRef: 'issue-1-x', head: 'a1', count: 0 });
+    expect(companionRebaseDue(at({ rebaseFiled: { head: 'a1', count: 1 } }))).toBeUndefined();
+    expect(companionRebaseDue(at({ rebaseFiled: { head: 'z9', count: 1 } }))).toEqual({ url: OWN, base: 'main', headRef: 'issue-1-x', head: 'a1', count: 1 });
+    expect(companionRebaseDue(at({ rebaseFiled: { head: 'z9', count: MAX_COMPANION_REBASE_ISSUES } }))).toBeUndefined();
+    expect(companionRebaseDue(at({ conflicting: false }))).toBeUndefined();
+    expect(companionRebaseDue(at({ ended: true }))).toBeUndefined();
+  });
+
+  it('its text names the pull request, its branch and base, and the item, and asks for no new pull request', () => {
+    const t = companionRebaseText({ repo: REPO, number: 17 }, { url: FOLLOWED, base: 'main', headRef: 'issue-17-notes' });
+    expect(t.title).toBe('Rebase elsewhere/app#24 onto main');
+    expect(t.body).toContain(FOLLOWED);
+    expect(t.body).toContain('`issue-17-notes`');
+    expect(t.body).toContain(`${REPO}#17`);
+    expect(t.body).toContain('Do not open a new pull request.');
+    expect(companionRebaseText({ repo: REPO, number: 17 }, { url: OWN }).title).toBe('Rebase #7 onto its base branch');
   });
 });
