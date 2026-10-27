@@ -36295,7 +36295,7 @@ A signal with no facts is left out, never counted as 0.
 | `outcome` | finished 1, finished partly done 0.75, failed 0 | 3 |
 | `checks` | pull request merged with its checks passed 1; merged after tending fixed failing checks 0.5; failing checks and not merged 0; else none | 2 |
 | `pull_request` | merged 1; merged, then reverted inside the revert window 0; closed with no merge 0; open or none: none | 3 |
-| `rework` | 1 / (1 + reworks + runs again + retries): a person's rework (`job.rework_requested`), its item run again after it (`job.rerun`), its claims after the first | 2 |
+| `rework` | 1 / (1 + reworks + runs again + retries + reopens + fix issues): a person's rework (`job.rework_requested`), its item run again after it (`job.rerun`), its claims after the first, its issue reopened and a fix issue for its pull request inside the revert window (part 4) | 2 |
 | `cost` | 1 / (1 + cost / $5): the token ledger's estimated cost, when every model in it has a price | 1 |
 | `time` | 1 / (1 + wall time / 120 min): from its start to its end; its time in the queue is in the line's why, not in the value | 1 |
 
@@ -36336,7 +36336,7 @@ disagreements, the best first —, the total, and the newest 200 jobs with both 
 Jobs section's `jobs` scopes.
 
 **Left for later parts.** The grades on the job view, the user grade form there and the rollups view in the UI; grades of
-sagas; follow-up fix issues and reopened issues as rework; the model in grade-aware routing (below).
+sagas; follow-up fix issues and reopened issues as rework (done in part 4, below); the model in grade-aware routing (below).
 
 ## Grade settings and grade-aware routing (issue #2845, part 2, 2026-10-26)
 
@@ -36398,6 +36398,25 @@ settings**.
   ranges as the daemon; a bad field shows why and saves nothing.
 
 `JobGradeView` and `GradesView` moved to `src/domain/grades.ts`, so the UI takes their types from the domain.
+
+## Reopened issues and fix issues as rework (issue #2845, part 4, 2026-10-26)
+
+Two more facts lower a job's `rework` signal, each inside the **revert window**:
+
+- **A reopen of its item's issue** (`work_item.issue_reopened`, a GitHub delivery or the fallback read): after the job's
+  end, and before its item's next job was made. A Run again or a tend queues the item's next job first, which clears the
+  ledger's issue state, so its own reopen of the issue records no `work_item.issue_reopened`: only a reopen with no new
+  job counts, which is a person's or another tool's. It counts for the item's newest job (`getBySourceKey`), within the
+  window from that job's end.
+- **A fix issue for its merged pull request** (`landing_batch.fix_filed`): the landing batch found the job's pull request
+  the culprit of a red batch (`landing_batch.culprit` names it by repository and commit), and filed a fix issue for it,
+  within the window from the merge. A revert of the same pull request still sets `pull_request` to 0 as well: a revert
+  undoes the work, and a fix issue is the work it needs again.
+
+`rework` is 1 / (1 + reworks + runs again + retries + reopens + fix issues). Its why names a reopen (`1 reopened`) and a
+fix issue (`1 fix issue`) only when there is one, so a grade kept before has the same why. `GradeFacts` gets `reopens` and
+`fixIssues`, each absent when 0, so the kept rows need no migration. The grade pass makes due the item's newest job at a
+reopen, and the culprit pull request's job at a fix issue, as at a revert. No new setting: the revert window is the window.
 
 ## A job's egress allowlist (issue #2849, part 1, 2026-10-26)
 
