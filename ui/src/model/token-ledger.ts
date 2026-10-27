@@ -1,6 +1,6 @@
 // The token ledger's words (issue #2302): token counts and an estimated cost as a person reads them, and the ledger by
 // day as the Dashboard's tokens over time stacks it (part 2); the token budget in Settings and Needs you (part 3); the waste
-// signals and tokens per merged pull request (part 4). Pure.
+// signals and tokens per merged pull request (part 4); a job's model route and its budget (issue #2848). Pure.
 import { goalOf } from './job.ts';
 import type { Job, PerMergedPullRequest, TokenBudgetSettings, TokenRollupRow, TokenTotals, TokenWasteKind } from './wire.ts';
 
@@ -18,6 +18,22 @@ export const usd = (t: Pick<TokenTotals, 'costUsd' | 'costKnown'>): string => `$
 export const tokenLine = (t: TokenTotals): string =>
   `${t.turns} turns · ${tokenCount(t.input)} in · ${tokenCount(t.output)} out · ${tokenCount(t.cacheRead)} cache read · ${tokenCount(t.cacheWrite)} cache write`
   + (t.failedTests ? ` · ${t.failedTests} failed test run${t.failedTests === 1 ? '' : 's'}` : '');
+
+type ModelRoute = NonNullable<Job['spec']['modelRoute']>;
+const CHOICE_NAMES: Record<ModelRoute['choice'], string> = { cheap: 'Cheap model', strong: 'Strong model' };
+
+/** A job's model route as its job view says it (issue #2848): the choice and model, why, and its budget against its spend. */
+export function modelRouteLines(r: ModelRoute, spent: TokenTotals | undefined): { route: string; why: string; budget: string } {
+  const escalated = r.escalated ? ` · escalated from the ${r.escalated.from} model` : '';
+  const caps = [
+    r.budget.jobCostUsd > 0 ? `$${(spent?.costUsd ?? 0).toFixed(2)} of $${r.budget.jobCostUsd.toFixed(2)}` : undefined,
+    r.budget.jobTokens > 0 ? `${tokenCount(spent ? tokensOf(spent) : 0)} of ${tokenCount(r.budget.jobTokens)} tokens` : undefined,
+  ].filter((c) => c !== undefined);
+  return {
+    route: `${CHOICE_NAMES[r.choice]}: ${r.model || 'the agent\'s default'}${escalated}`, why: r.why,
+    budget: caps.length > 0 ? `Budget: ${caps.join(' · ')} spent` : 'Budget: the token budget\'s job caps',
+  };
+}
 
 /** Each waste signal's name. */
 export const WASTE_NAMES: Record<TokenWasteKind, string> = { no_progress: 'No progress', failing_tests: 'Failing tests', resume_loop: 'Resume loop', cache_churn: 'Cache churn' };
