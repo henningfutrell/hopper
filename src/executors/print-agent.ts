@@ -164,7 +164,11 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     const credentials = await ctx.credentials?.(scratch);
     const limits = scopeLimitsOf(ctx.machine);
     const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id, ...jobToolEnv(p.env, limits, jobTmpOf(ctx.job.id)) }).map(([k, v]) => shellQuote(`${k}=${v}`));
-    const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
+    // What is left of the job's cost budget (issue #2848 part 3), the CLI's own cap, since a turn has no park.
+    const left = dialect.capReached ? ctx.budgetLeftUsd?.() : undefined;
+    if (left !== undefined && left <= 0) return { kind: 'paused', why: 'none of the job\'s cost budget is left' };
+    const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text,
+      ...(left !== undefined ? { maxBudgetUsd: Math.ceil(left * 10_000) / 10_000 } : {}) }).map(shellQuote);
     const textFile = `${scratch}/turn-text`;
     const writeText = dialect.textOnStdin ? `printf %s ${shellQuote(text)} >${shellQuote(textFile)} && ` : '';
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
@@ -189,6 +193,12 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
       // What the turn spent (issue #2302, part 6), whatever it answered.
       const spent = dialect.usage?.(r.stdout, { first, last: new Date().toISOString() });
       if (spent) ctx.tokenUse?.(spent.session, spent.use);
+      // Stopped at its cap: paused, its session kept to go on when a person picks it up.
+      const stopped = left !== undefined && spent ? dialect.capReached?.(r.stdout) : undefined;
+      if (stopped !== undefined) {
+        ctx.saveState({ ...stateOf(ctx, cwd), chatId: spent!.session } satisfies PrintAgentState);
+        return { kind: 'paused', why: `${label} stopped at the job's cost budget: ${stopped}` };
+      }
       const seen = `${r.stdout}\n${r.stderr}`;
       const hidden = (text: string): string => hideCodes(text, seen, login.codes());
       const answer = dialect.read(r.stdout);

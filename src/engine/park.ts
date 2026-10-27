@@ -43,7 +43,7 @@ export function parkRefusal(c: Pick<EngineContext, 'executors'>, job: Job): stri
 }
 
 /** A parked job with no agent session to resume (issue #530): its re-queue starts a fresh one, and only once the person confirms it. */
-export const startsFresh = (job: Job): boolean => job.parked !== undefined && job.agentSession === undefined;
+export const startsFresh = (job: Job): boolean => job.parked !== undefined && job.agentSession === undefined && job.parked.keptChat !== true;
 
 /**
  * What a parked job starting a fresh agent session is told after its task (issue #530): it has none of the earlier
@@ -80,6 +80,18 @@ export function recordPark(c: EngineContext, job: Job, from: 'running' | 'waitin
   store.events.append({ type: 'job.parked', jobId: job.id, ...(laneId ? { laneId } : {}), data: { from, ...(machineId ? { machineId } : {}), ...(why ? { auto: true, why } : {}), ...by, ...(move ? { move: move.kind } : {}) } });
   releaseLane(c, lane, at);
   return parked;
+}
+
+/**
+ * A run its agent stopped at the job's budget (issue #2848 part 3: a print-mode CLI's own cap): marked as the budget pause
+ * marks a job, and parked with why, its chat kept for the pick up to resume. Nothing to end: the turn ended.
+ */
+export function recordBudgetPause(c: EngineContext, job: Job, laneId: LaneId | undefined, said: string): Job {
+  const { store } = c;
+  const why = `Paused: ${said}`;
+  store.jobs.update(job.id, { budgetPaused: { at: nowIso(c), ...jobSpend(store, job.id), why } });
+  const parked = recordPark(c, job, 'running', laneId, why);
+  return store.jobs.update(job.id, { parked: { ...parked.parked!, keptChat: true } });
 }
 
 /**

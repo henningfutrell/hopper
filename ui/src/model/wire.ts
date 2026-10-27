@@ -151,6 +151,7 @@ export type { JobTokenView, TokenRollupRow, TokenTotals } from '../../../src/dom
 export type { TokenBudgetSettings } from '../../../src/domain/token-budget.ts'; export type { JobBudget, ModelBudget, ModelRoutingSettings } from '../../../src/domain/model-routing.ts';
 export type { BugReportRecommendation, RecommendationState, ReviewDefect } from '../../../src/domain/review-defects.ts';
 export type { GradeGroup, GradeLine, GradeSettings, GradeSignal, GradesView, JobGradeView, UserGrade } from '../../../src/domain/grades.ts';
+export type { ItemGradesView, ItemGradeView } from '../../../src/domain/item-grades.ts';
 export type { CompletionReview, CompletionReviewSettings, Restart, RestartKind, ReviewOutcome, ReviewStage, StageTime, Suggestion, SuggestionArea } from '../../../src/domain/completion-review.ts';
 export type { PerMergedPullRequest, TokenWaste, TokenWasteKind, TokenWasteLine } from '../../../src/domain/token-waste.ts';
 export type { Promotion, PromotionArtifact, PromotionDraft, PromotionRequest, PromotionTarget, PromotionView, ScanFinding } from '../../../src/domain/promotions.ts';

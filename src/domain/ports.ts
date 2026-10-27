@@ -77,8 +77,10 @@ export interface ExecutionContext {
   /**
    * A turn's token use the agent's own answer gave (issue #2302, part 6: a print-mode Claude turn, which keeps no agent
    * session the checkpoint reads), by its session: kept in the token ledger, added to that session's. Absent → not kept.
+   * `budgetLeftUsd` (issue #2848 part 3): what is left of the job's cost budget in US dollars, a print-mode turn's own cap
+   * (it has no park); 0: none is left; undefined: no cost cap.
    */
-  tokenUse?(session: string, use: import('./token-usage.ts').SessionTokenUse): void;
+  tokenUse?(session: string, use: import('./token-usage.ts').SessionTokenUse): void; budgetLeftUsd?(): number | undefined;
 }
 
 /**
@@ -120,9 +122,10 @@ export type ExecutionOutcome =
   | { kind: 'report'; review: ReviewKind; report: ExecutionReport }
   /**
    * The job waits on something it named (issue #483): no question. Its executor state must let `answeredInPane` see it go
-   * on by itself, and `resume` tell it that a person ended the wait.
+   * on by itself, and `resume` tell it that a person ended the wait. `paused` (issue #2848 part 3): its agent stopped at the
+   * job's budget, `why` as it said; the job is parked, and its executor state must let `resume` go on in the same session.
    */
-  | { kind: 'wait'; wait: import('./wait-on.ts').WaitAsked };
+  | { kind: 'wait'; wait: import('./wait-on.ts').WaitAsked } | { kind: 'paused'; why: string };
 
 /**
  * What `Executor.answeredInPane` saw: the typed answer (if readable) and the state to reattach with.

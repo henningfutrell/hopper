@@ -1,6 +1,7 @@
 // Model routing (issue #2848, part 2), in Settings, an admin's: on and off, the executors it routes, the model and budget of
 // each model choice, escalation, and the model rules and the repositories' budgets as JSON. Saved to the daemon (POST
 // /ui/api/model-routing), which checks it and says why it refuses; read at each intake, so it applies to the next job.
+// Part 3: tuning from grades.
 import { Split } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,7 +15,7 @@ import { modelRoutingDraftOf, modelRoutingPatch, modelRoutingSummary, type Model
 import type { ModelRoutingSettings } from '@/model/wire';
 import { useHopper } from '@/store';
 
-type TextField = Exclude<keyof ModelRoutingDraft, 'on' | 'escalate' | 'rules' | 'repos'>;
+type TextField = Exclude<keyof ModelRoutingDraft, 'on' | 'escalate' | 'tuneOn' | 'rules' | 'repos'>;
 
 function Form({ view, onSaved }: { view: ModelRoutingSettings; onSaved: (v: ModelRoutingSettings) => void }) {
   const [draft, setDraft] = useState<ModelRoutingDraft>(() => modelRoutingDraftOf(view));
@@ -39,7 +40,7 @@ function Form({ view, onSaved }: { view: ModelRoutingSettings; onSaved: (v: Mode
       <span className="text-xs text-muted-foreground">{unit}</span>
     </label>
   );
-  const toggle = (key: 'on' | 'escalate', label: string) => (
+  const toggle = (key: 'on' | 'escalate' | 'tuneOn', label: string) => (
     <label className="flex items-center gap-2">
       <Switch checked={draft[key]} disabled={busy} aria-label={label} onCheckedChange={(v) => setDraft({ ...draft, [key]: v })} />
       <span>{label}</span>
@@ -67,7 +68,10 @@ function Form({ view, onSaved }: { view: ModelRoutingSettings; onSaved: (v: Mode
       {field('strongModel', 'Strong model', 'model alias or id')}
       {field('strongTokens', 'Strong model: tokens per job', 'tokens')}
       {field('strongCost', 'Strong model: cost per job', 'US dollars')}
-      {toggle('escalate', 'Escalate: a cheap job that fails, or that a person picks up after its budget paused it, goes on on the strong model')}
+      {toggle('escalate', 'Escalate: a cheap job that fails, or that a person picks up after its budget or a stall paused it, goes on on the strong model')}
+      {toggle('tuneOn', 'Tune from grades: grade history can change the model a rule picks')}
+      {field('tuneMinSamples', 'Tune: graded jobs of each model', 'at least')}
+      {field('tuneMargin', 'Tune: margin', 'points of 100')}
       {json('rules', 'Model rules (JSON, in order: name, match on repo, label, kind, size, risk, and choice)')}
       {json('repos', 'Repository budgets (JSON: owner/name to each choice\'s jobTokens and jobCostUsd)')}
       {!checked.ok && <p role="alert" className="text-xs text-destructive">{checked.error}</p>}

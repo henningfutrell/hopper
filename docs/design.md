@@ -21731,9 +21731,39 @@ Part 2 (2026-10-27):
   model-routing` reads it, `hopper usage model-routing on|off` and `hopper usage model-routing set --file <json>` change it
   (`src/cli-operator-model-routing.ts`).
 
-Still not done: tuning the rules from grade history (issue #2845; its grade-aware routing is still open as its own part);
-escalation on a waste signal while a cheap job runs; the two gaps of the #2302 caps above (print-mode jobs, the checkpoint
-interval).
+Part 3 (2026-10-27):
+
+- **Tuning from grades** (`tune`, off by default: `on`, `minSamples` 5, `margin` 10; `tuned` in
+  `src/domain/model-routing.ts`). A grade keeps the job's model choice (`choice` in `GradeRow`, from `spec.modelRoute`;
+  in the row's JSON body, so no migration; a job graded before it has none and counts nothing). At intake, with tuning on,
+  a choice a model rule made (or the default) is compared with grade history: on the work's repository when each choice
+  has `minSamples` graded jobs of its kind there, else on its kind of work (a tend job is graded as code). A cheap choice
+  goes strong when the strong model's mean points are higher by more than `margin`; a low-risk strong choice goes cheap
+  when the cheap model's are as high. The route then says `rule: grades` and why, with both means and counts. A label's
+  choice and an escalation are never tuned. The grades of the last 90 days are read once a minute at most, shared with
+  grade-aware routing (`gradeRows`, `src/engine/grade-route.ts`), and only while tuning is on. The rule name `grades` is
+  reserved. Settings → Model routing edits it; `model_routing.settings_changed` carries it (absent in an event from before).
+- **A stalled cheap job** (`cheapStallOf`, `STALL_SIGNALS`). The waste signals of the token ledger (issue #2302 part 4)
+  were signals only. Now, at each checkpoint, a running cheap job with `no_progress` (150 turns with no commit and no push)
+  or `failing_tests` (5 failed local test runs), with model routing and `escalate` on, is paused as the budget pauses a
+  job: `budgetPaused` with `stalled: true` and why, parked, its session kept, listed in Needs you. Picked up, it goes on on
+  the strong model as in part 2 (its why says it stalled). A person decides, not the hopper: the strong model costs more.
+  `resume_loop` and `cache_churn` do not pause: they say nothing of the model.
+- **Near the budget** (`budgetNear`, `BUDGET_NEAR` 0.8). A job whose checkpoint finds it at 80% of a cap is checkpointed
+  each minute (`CHECKPOINT_SOON_GAP_MS`), not each ten, until a checkpoint finds it under: it goes over its budget by a
+  minute's spend at most, not ten minutes'. A job far from its cap costs no extra checkpoint.
+- **A print-mode job's budget** (`budgetLeftUsd` on the execution context, `capReached` of the `claude` dialect). A
+  print-mode turn has no park, so the budget pause could not reach it. Now the turn gives the CLI what is left of the job's
+  cost budget as its own cap (`claude -p --max-budget-usd`, Claude Code's own flag); over it, the CLI ends the turn
+  (`subtype: error_max_budget_usd`, exit 1), and the turn's outcome is `paused`. The run's end then marks `budgetPaused`
+  and parks the job with why (`recordBudgetPause`, `src/engine/park.ts`), `parked.keptChat` set: its executor keeps the
+  chat to resume, so a pick up resumes that session and asks no fresh-start confirmation. A cheap job picked up goes on on
+  the strong model, as in part 2. With none of the budget left, the turn does not start. Only the cost cap: the CLI takes
+  no token cap, so a print-mode job's token cap is still not enforced while it runs. The other print-mode CLIs (Cursor's
+  agent, codex, opencode, omp) take no such cap.
+
+Not done, and why: escalation without a person (the pause is where a person decides to spend more); a token cap for a
+print-mode turn (no CLI flag for it).
 
 Verification: `test/domain/model-routing.test.ts` (the class, the rules in order, the labels, a repository's budget, one
 escalation and the item kept on the strong model, the budget fallback, the setting's schema),
@@ -21742,7 +21772,13 @@ simple job on the cheap model and a complex one on the strong, a failed cheap jo
 event, a cheap job paused by its choice's budget; part 2: a paused cheap job picked up goes on on the strong model with its
 event, a job budget pauses a job model routing did not route), `test/ui/job-tokens-view.test.ts` (the job view's model
 lines; part 2: the job budget line and form), `test/ui/model-routing.test.ts` (part 2: the Settings draft, patch and
-summary; the job budget form), `test/cli/usage-model-routing.test.ts` (part 2: the CLI).
+summary; the job budget form), `test/cli/usage-model-routing.test.ts` (part 2: the CLI). Part 3:
+`test/domain/model-routing.test.ts` (tuning both ways, the scopes, the samples, what is never tuned; the stall; near the
+budget), `test/domain/grades.test.ts` (a grade's model choice), `test/integration/model-routing.test.ts` (a simple job
+tuned to the strong model; a stalled cheap job paused and escalated at its pick up),
+`test/adapters/print-agent-executors.test.ts` (the cap given to the CLI, the turn paused at it, no turn with none left),
+`test/integration/token-ledger-print.test.ts` (a print-mode job parked at its budget, its session resumed on the strong
+model), `test/ui/model-routing.test.ts` (the tuning fields).
 
 ## Stack resources (issue #947, 2026-10-12)
 
@@ -36295,7 +36331,7 @@ A signal with no facts is left out, never counted as 0.
 | `outcome` | finished 1, finished partly done 0.75, failed 0 | 3 |
 | `checks` | pull request merged with its checks passed 1; merged after tending fixed failing checks 0.5; failing checks and not merged 0; else none | 2 |
 | `pull_request` | merged 1; merged, then reverted inside the revert window 0; closed with no merge 0; open or none: none | 3 |
-| `rework` | 1 / (1 + reworks + runs again + retries): a person's rework (`job.rework_requested`), its item run again after it (`job.rerun`), its claims after the first | 2 |
+| `rework` | 1 / (1 + reworks + runs again + retries + reopens + fix issues): a person's rework (`job.rework_requested`), its item run again after it (`job.rerun`), its claims after the first, its issue reopened and a fix issue for its pull request inside the revert window (part 4) | 2 |
 | `cost` | 1 / (1 + cost / $5): the token ledger's estimated cost, when every model in it has a price | 1 |
 | `time` | 1 / (1 + wall time / 120 min): from its start to its end; its time in the queue is in the line's why, not in the value | 1 |
 
@@ -36336,7 +36372,7 @@ disagreements, the best first —, the total, and the newest 200 jobs with both 
 Jobs section's `jobs` scopes.
 
 **Left for later parts.** The grades on the job view, the user grade form there and the rollups view in the UI; grades of
-sagas; follow-up fix issues and reopened issues as rework; the model in grade-aware routing (below).
+sagas; follow-up fix issues and reopened issues as rework (done in part 4, below); the model in grade-aware routing (below).
 
 ## Grade settings and grade-aware routing (issue #2845, part 2, 2026-10-26)
 
@@ -36398,6 +36434,77 @@ settings**.
   ranges as the daemon; a bad field shows why and saves nothing.
 
 `JobGradeView` and `GradesView` moved to `src/domain/grades.ts`, so the UI takes their types from the domain.
+
+## Reopened issues and fix issues as rework (issue #2845, part 4, 2026-10-26)
+
+Two more facts lower a job's `rework` signal, each inside the **revert window**:
+
+- **A reopen of its item's issue** (`work_item.issue_reopened`, a GitHub delivery or the fallback read): after the job's
+  end, and before its item's next job was made. A Run again or a tend queues the item's next job first, which clears the
+  ledger's issue state, so its own reopen of the issue records no `work_item.issue_reopened`: only a reopen with no new
+  job counts, which is a person's or another tool's. It counts for the item's newest job (`getBySourceKey`), within the
+  window from that job's end.
+- **A fix issue for its merged pull request** (`landing_batch.fix_filed`): the landing batch found the job's pull request
+  the culprit of a red batch (`landing_batch.culprit` names it by repository and commit), and filed a fix issue for it,
+  within the window from the merge. A revert of the same pull request still sets `pull_request` to 0 as well: a revert
+  undoes the work, and a fix issue is the work it needs again.
+
+`rework` is 1 / (1 + reworks + runs again + retries + reopens + fix issues). Its why names a reopen (`1 reopened`) and a
+fix issue (`1 fix issue`) only when there is one, so a grade kept before has the same why. `GradeFacts` gets `reopens` and
+`fixIssues`, each absent when 0, so the kept rows need no migration. The grade pass makes due the item's newest job at a
+reopen, and the culprit pull request's job at a fix issue, as at a revert. No new setting: the revert window is the window.
+
+## Item grades (issue #2845, part 5, 2026-10-26)
+
+Requirement (issue #2845): the hopper grades every finished job **and saga**, with an automatic grade and a user grade on
+its page, stored in the database and rolled up. The issue's "saga" is the whole work of one issue: in the glossary a
+**saga** is the coordinator's record of steps (`src/sagas/`), which is no finished work to judge, so the thing graded is
+the **work item** — one item of a source, over every job of it (its parts, its runs again). Glossary: **item grade**.
+
+**What is graded** (`src/domain/item-grades.ts`, pure). An item that ended `done` or `failed` (`GRADED_ITEM_STATES`); a
+dropped item was declined or dismissed, and is not graded. Its facts are its jobs' facts summed (`itemFactsOf`), from the
+kept grades of its jobs:
+
+- `outcome`: the item's own end, `done` as finished, `failed` as failed — not its newest job's.
+- `pull_request`: the first pull request of its jobs that was reverted inside the **revert window**, else its newest job's.
+- `fixChecks`, `reworks`, `reruns`, `reopens`, `fixIssues` summed; the retries summed (`attempts` is 1 plus each job's
+  attempts after its first).
+- `costUsd` summed only when every job has one; `queueMs` and `wallMs` summed; the waste signals of every completion
+  review, once each.
+
+The automatic grade is `autoGradeOf` of these facts with the user's grade settings: the same signals, weights and lines as
+a job's. The keys of the item (executor, model, repository, work kind, machine) are its newest job's, and `jobs` lists each
+graded job with its automatic score, oldest first. A job not graded (an end other than done or failed) is not in it; an
+item with no graded job is not graded.
+
+**The grade pass grades the items after the jobs** (`src/engine/item-grades.ts`), in the same transaction. Due: the item
+of each job it graded again; each of the 200 items that ended last with no item grade kept, or a kept one of another end
+(`endedAt` is the item's `stateSince`); and, when the grading part of the settings changed, every item grade of the last
+90 days. Only a grade that changed is written. An item that ended long ago and was never graded stays so. An item that
+is reopened and works again keeps its last item grade until it ends again.
+
+**The user grade of an item.** As a job's: 1 to 5 and a note, kept with who and when (`item_user_grades`), the newest the
+item's, the rest its history, `disagree` at 40 points or more. Only an item that ended done or failed; it changes no job
+or item.
+
+**Storage** (tenant migration 107, `src/store/grades.ts`). `item_grades`: one row per item by its source key, its keys
+as columns, its grade as JSON. `item_user_grades`: every user grade of an item. Tables only: the build before runs on
+them, and never reads them.
+
+**Reads and the grade.** `GET /api/grades/item?key=<source key>` (`ItemGradeView`; 404 for no such work item);
+`GET /api/grades/items` (`ItemGradesView`, the same `by`, `repo` and `since` as `GET /api/grades`; each group's `jobs` is
+its count of items); `POST /ui/api/grades/item` (`{ key, score, note? }`, an operator's; 409 for an item not ended done or
+failed). `hopper grades --items`, `hopper grades --item <issue URL>` and `hopper grades set <issue URL> <1-5>`. The scope
+area is `grades`, as for the jobs' grades.
+
+**In the UI.** The job view's Grade panel, for a job of a work item, shows its item's grade under the job's: the score,
+over how many jobs and its end, the lines, the item's user grade, and an operator's form that grades the item. An item has
+no page of its own: each of its jobs' pages shows it. The Grades tab of Jobs has Jobs and Items: Items rolls up the item
+grades and lists the items, each linked to its issue.
+
+**The model in grade routing** is the other item part 4 left. Issue #2848 part 3 does it in model routing (model tuning from
+the grades, `rule: grades`): the grade keeps the job's model choice, and intake compares the grades of the cheap and the
+strong model for the same work. Grade-aware routing stays on the executor.
 
 ## A job's egress allowlist (issue #2849, part 1, 2026-10-26)
 
@@ -36464,7 +36571,7 @@ ways: a job's egress is as open as before. The parts left:
    Unix socket bound into it), a NetworkPolicy for lane pods, the internal network for compose and Podman; a visible
    warning on the job where none holds ("egress not enforced").
 3. A denial as a Needs-you item that approves the host for the job's repository, so the retry goes through; the
-   allowlist's view in Settings.
+   allowlist's view in Settings. Built in part 3, below.
 4. Secrets scoped to the job: only what its repository or template names in its environment.
 
 Tests: `test/domain/job-egress.test.ts` (entries, the defaults, the list of a job of a repository, wildcard and port
@@ -36636,3 +36743,48 @@ the setting is on, which `job_egress.changed` records; a command behind `hopper-
 listed host by CONNECT and a listed one by plain HTTP, and gets the hopper's 403 and reason for a host off the list, which
 is on the job's timeline), `test/client/job-sandbox.test.ts` (with bubblewrap: Claude runs in the sandbox behind the
 proxy with the route on, and as before with it off or with no `hopper-egress` file).
+
+### The hosts the jobs ask for, and Settings → Job egress (part 3, 2026-10-26)
+
+**Asks.** A **job egress ask** is a host off the allowlist that the user's jobs were refused (`job.egress_denied`,
+`not_listed`) in the last week (`JOB_EGRESS_ASK_WINDOW_MS`), one per host, port and repository, with the jobs refused and
+the newest refusal (`jobEgressAsks`, `src/domain/job-egress.ts`, pure). The hopper keeps nothing new for it: the asks are
+read from the event log (`store.reads.eventsBetween`, off the event loop) at each `GET /api/job-egress`, which now answers
+`{ egress, defaultHosts, asks }`. An ask ends when:
+
+- the host is on the job's list now — a person approved it, or an admin added it (or a wildcard that holds it) in Settings;
+- a person dismissed it after its newest refusal. A job refused again after that asks again.
+
+A `local_address` refusal makes no ask: listing the name again does not change what it resolves to.
+
+**The answer.** `POST /ui/api/job-egress/asks`, least role admin (the same as the setting), scope area `job-egress`:
+`{ host, repo?, answer: approve | dismiss, for?: repo | all }`. Approve adds `host` (one `host:port`, never a wildcard) to
+the repository's hosts (`for: repo`, the default when `repo` is given) or to every job's hosts (`for: all`)
+(`withJobEgressHost`), in the same transaction as `job_egress.ask_answered` — who, the host and port, the repository, the
+answer and, for an approval, `for`. It answers the new view. A job reads the list at each connection, so its next try goes
+through: nothing wakes the job, it retries as its tool does. The 403's text now says where a person approves the host
+("A person approves it in Needs you (Settings → Job egress), for <repo>; then try again.").
+
+**In the UI.** Needs you has a **Job egress asks** row after Unknown clusters (`egressAskLines`, `ui/src/model/job-egress.ts`),
+one line per ask, that opens Settings → Job egress (`#settings/job-egress`, in the Security and access group,
+`ui/src/views/job-egress.tsx`). That view lists the asks with **Approve for <repo>**, **Approve for every job** and
+**Dismiss**, then the allowlist: the default hosts on or off, the route on or off, every job's hosts (a host a line) and each
+repository's hosts (`owner/name host:port …`, a repository a line), saved as the whole setting through
+`POST /ui/api/job-egress`. The shared read (`useJobEgress`) is read again after a `job.egress_denied` or a `job_egress.*`
+event, so a new refusal shows without a reload.
+
+**Why from the event log.** The refusals are already recorded, once per job, host and port; a table of asks would be a
+second record of the same fact, and a migration. A week bounds the read; an older refusal comes back when a job is refused
+again.
+
+**Not built in part 3, stated.** The parts left are 2 and 4 of the list above: confinement on each runtime and the warning
+where none holds; secrets scoped to the job. An approval is not shown on the job's timeline (it is a setting change, not
+the job's); the job's own 403 tells it to try again.
+
+Tests: `test/domain/job-egress.test.ts` (one ask per host, port and repository with its jobs, newest first; a listed host
+and a dismissed one ask no more until a later refusal; an approval for a repository or every job),
+`test/integration/job-egress.test.ts` (real database and HTTP server: a refused host is an ask, approved for the repository
+the job's next try goes through and the ask is gone, recorded as `job_egress.ask_answered`; a dismissed host asks again only
+after a later job's refusal; a wildcard is no ask), `test/ui/job-egress-needs-you.test.ts` (the Needs you row and its
+lines; the allowlist's text fields), `test/ui/needs-you.test.ts` and `test/ui/routing-view.test.ts` (the new row and
+section in their places).

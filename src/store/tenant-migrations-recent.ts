@@ -39,7 +39,7 @@ import { DISK_MEASURE_TABLE } from './disk-measures.ts';
 import { DELIVERY_LEDGER_TABLE } from './delivery-ledger.ts';
 import { STEP_SCHEDULE_TABLES } from './step-schedules.ts';
 import { KEPT_TRACK_TABLES } from './kept-tracks.ts';
-import { GRADE_TABLES } from './grades.ts'; import { COMPLETION_REVIEW_TABLE } from './completion-reviews.ts'; import { RECOMMENDATION_TABLE } from './review-recommendations.ts';
+import { GRADE_TABLES, ITEM_GRADE_TABLES } from './grades.ts'; import { COMPLETION_REVIEW_TABLE } from './completion-reviews.ts'; import { RECOMMENDATION_TABLE } from './review-recommendations.ts';
 import { MEMORY_ENTRY_TABLE } from './repo-memories.ts';
 import { WORK_PLAN_TABLES } from './work-plans.ts';
 
@@ -225,4 +225,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 106: The plan store (issue #2861): each kept work plan, its plan pieces and plan tasks, the jobs linked to them and the
   // plan artifacts. Tables only: the build before runs on them, and never reads them.
   WORK_PLAN_TABLES,
+  // 107: The item grades (issue #2845 part 5): each ended work item's automatic grade, and every user grade a person gave an
+  // item. Tables only: the build before runs on them, and never reads them.
+  ITEM_GRADE_TABLES,
 ];

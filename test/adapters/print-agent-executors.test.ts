@@ -49,7 +49,7 @@ interface Call { argv: string[]; stdin: string; cwd: string; env: Record<string,
 const calls = (): Call[] => readFileSync(join(dir, 'agent-calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Call);
 const reply = (text: string) => { process.env.FAKE_AGENT_REPLY = text; };
 
-function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, unknown>; signal?: AbortSignal; credentials?: Record<string, string> } = {}) {
+function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, unknown>; signal?: AbortSignal; credentials?: Record<string, string>; budgetLeftUsd?: number } = {}) {
   const saved: Record<string, unknown>[] = [];
   const progress: { message?: string; tasks?: TaskCount }[] = [];
   const tokens: { session: string; use: SessionTokenUse }[] = [];
@@ -60,6 +60,7 @@ function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, un
   const ctx: ExecutionContext = {
     job, laneId: 'local/lane-1', machine: HERE, signal: o.signal ?? new AbortController().signal, progress: (message, tasks) => { progress.push({ message, tasks }); }, saveState: (s) => { saved.push(s); },
     workTree() {}, ...(o.credentials ? { credentials: async () => o.credentials! } : {}), tokenUse: (session, use) => { tokens.push({ session, use }); },
+    ...(o.budgetLeftUsd !== undefined ? { budgetLeftUsd: () => o.budgetLeftUsd } : {}),
   };
   return { ctx, saved, progress, tokens };
 }
@@ -110,6 +111,26 @@ describe('the claude executor\'s token use', () => {
     expect((await ex.run(t.ctx)).kind).toBe('question');
     expect(t.tokens).toEqual([{ session: 'claude-session-1', use: { models: [{ model: 'claude-opus-5-5', turns: 2, input: 3, output: 30, cacheRead: 300, cacheWrite: 20 }], first: expect.any(String), last: expect.any(String) } }]);
     expect(t.tokens[0]!.use.first! >= before && t.tokens[0]!.use.last! >= t.tokens[0]!.use.first!).toBe(true);
+  });
+
+  // Issue #2848 part 3: a print-mode turn has no park, so the CLI itself stops at what is left of the job's cost budget
+  // (`--max-budget-usd`), and the job pauses with its session kept, to resume when a person picks it up.
+  it('gives the CLI what is left of the job\'s cost budget, and pauses the job when the CLI stops there', async () => {
+    reply('Painted.\nHOPPER_DONE');
+    process.env.FAKE_AGENT_MODE = 'budget';
+    const t = ctxFor({ prompt: 'Paint it', cwd: work }, { budgetLeftUsd: 0.005 });
+    expect(await ex.run(t.ctx)).toEqual({ kind: 'paused', why: 'claude stopped at the job\'s cost budget: Reached maximum budget ($0.005)' });
+    expect(calls().at(-1)!.argv).toEqual(expect.arrayContaining(['--max-budget-usd', '0.005']));
+    expect(t.saved.at(-1)).toEqual({ chatId: 'claude-session-1', cwd: work });
+    expect(t.tokens).toHaveLength(1);
+  });
+
+  it('pauses the job before a turn when none of its cost budget is left, and gives no cap with no budget', async () => {
+    const spent = ctxFor({ prompt: 'Paint it', cwd: work }, { budgetLeftUsd: 0 });
+    expect(await ex.run(spent.ctx)).toEqual({ kind: 'paused', why: 'none of the job\'s cost budget is left' });
+    reply('Painted.\nHOPPER_DONE');
+    expect((await ex.run(ctxFor({ prompt: 'Paint it', cwd: work }).ctx)).kind).toBe('finished');
+    expect(calls().at(-1)!.argv).not.toContain('--max-budget-usd');
   });
 });
 

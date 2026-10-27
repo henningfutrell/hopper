@@ -1,0 +1,1 @@
+- A job's grade is now lower when its issue is reopened after it was done, or when a fix is needed for its merged work.

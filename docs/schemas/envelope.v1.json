@@ -439,6 +439,7 @@
         "landing_batch.restarted",
         "hopper.event_loop_stalled",
         "job.egress_denied",
+        "job_egress.ask_answered",
         "job_egress.changed",
         "push_requirements.evaluated",
         "delivery_settings.changed",

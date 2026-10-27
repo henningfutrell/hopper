@@ -1,6 +1,7 @@
 // Model routing's words and forms (issue #2848, part 2): the setting in Settings, an admin's, as a draft a person edits —
 // on and off, escalation, the executors, each model choice's model and budget, and the rules and the repositories' budgets as
-// JSON —, what a save sends, and what is on in one sentence; a person's job budget on one job, its form and its line. Pure.
+// JSON —, what a save sends, and what is on in one sentence; a person's job budget on one job, its form and its line. Part 3:
+// tuning from grades — on and off, the least graded jobs of each model, the margin. Pure.
 import { tokenCount, tokensOf } from './token-ledger.ts';
 import type { JobBudget, ModelBudget, ModelRoutingSettings, TokenTotals } from './wire.ts';
 
@@ -11,6 +12,7 @@ export interface ModelRoutingDraft {
   cheapModel: string; cheapTokens: string; cheapCost: string;
   strongModel: string; strongTokens: string; strongCost: string;
   rules: string; repos: string;
+  tuneOn: boolean; tuneMinSamples: string; tuneMargin: string;
 }
 
 export const modelRoutingDraftOf = (s: ModelRoutingSettings): ModelRoutingDraft => ({
@@ -18,6 +20,7 @@ export const modelRoutingDraftOf = (s: ModelRoutingSettings): ModelRoutingDraft 
   cheapModel: s.cheap.model, cheapTokens: String(s.cheap.jobTokens), cheapCost: String(s.cheap.jobCostUsd),
   strongModel: s.strong.model, strongTokens: String(s.strong.jobTokens), strongCost: String(s.strong.jobCostUsd),
   rules: JSON.stringify(s.rules, null, 2), repos: JSON.stringify(s.repos, null, 2),
+  tuneOn: s.tune.on, tuneMinSamples: String(s.tune.minSamples), tuneMargin: String(s.tune.margin),
 });
 
 type Checked<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -56,9 +59,12 @@ export function modelRoutingPatch(s: ModelRoutingSettings, d: ModelRoutingDraft)
   if (!rules.ok) return rules;
   const repos = jsonOf<ModelRoutingSettings['repos']>(d.repos, 'Repository budgets', (v) => typeof v === 'object' && v !== null && !Array.isArray(v));
   if (!repos.ok) return repos;
+  const minSamples = Number(d.tuneMinSamples.trim()), margin = Number(d.tuneMargin.trim() || '0');
+  if (!Number.isInteger(minSamples) || minSamples < 1) return { ok: false, error: 'Grades: a whole number from 1' };
+  if (!Number.isFinite(margin) || margin < 0 || margin > 100) return { ok: false, error: 'Margin: a number of points from 0 to 100' };
   const to: ModelRoutingSettings = {
     on: d.on, escalate: d.escalate, executors: d.executors.split(',').map((e) => e.trim()).filter((e) => e !== ''),
-    cheap: cheap.value, strong: strong.value, rules: rules.value, repos: repos.value,
+    cheap: cheap.value, strong: strong.value, rules: rules.value, repos: repos.value, tune: { on: d.tuneOn, minSamples, margin },
   };
   const keys = (Object.keys(to) as (keyof ModelRoutingSettings)[]).filter((k) => JSON.stringify(to[k]) !== JSON.stringify(s[k]));
   return { ok: true, patch: keys.length > 0 ? Object.fromEntries(keys.map((k) => [k, to[k]])) as Partial<ModelRoutingSettings> : undefined };
@@ -74,7 +80,8 @@ export function modelRoutingSummary(s: ModelRoutingSettings): string {
   if (!s.on) return 'Off: every job runs on the model its job source or its agent gives it.';
   const model = (c: Choice) => s[c].model || 'the agent\'s default';
   return `On for ${s.executors.join(', ') || 'no executor'}: simple work runs on ${model('cheap')} (budget: ${budgetText(s.cheap)}), other work on ${model('strong')} (budget: ${budgetText(s.strong)}). `
-    + (s.escalate ? 'A cheap job that fails or reaches its budget escalates once to the strong model.' : 'No escalation.');
+    + (s.escalate ? 'A cheap job that fails, stalls or reaches its budget escalates once to the strong model.' : 'No escalation.')
+    + (s.tune.on ? ` Grade history tunes the choice: at least ${s.tune.minSamples} graded jobs of each model, a margin of ${s.tune.margin} points.` : '');
 }
 
 export interface JobBudgetDraft { jobTokens: string; jobCostUsd: string }

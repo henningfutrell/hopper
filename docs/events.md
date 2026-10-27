@@ -4204,7 +4204,7 @@ Version 1 (`docs/schemas/token_budget.settings_changed.v1.json`). An admin chang
 
 ## `model_routing.settings_changed`
 
-Version 1 (`docs/schemas/model_routing.settings_changed.v1.json`). An admin changed model routing (issue #2848): on or off, the executors it routes, each model choice's model and budget (`cheap`, `strong`), the model rules, the repositories' budgets and whether a failed cheap job escalates. `from` and `to`, each whole.
+Version 1 (`docs/schemas/model_routing.settings_changed.v1.json`). An admin changed model routing (issue #2848): on or off, the executors it routes, each model choice's model and budget (`cheap`, `strong`), the model rules, the repositories' budgets, whether a failed cheap job escalates, and (part 3) tuning from grades (`tune`: `on`, `minSamples`, `margin`; absent in an event from before it). `from` and `to`, each whole.
 
 | field | type | required |
 |---|---|---|
@@ -4268,7 +4268,12 @@ Version 1 (`docs/schemas/model_routing.settings_changed.v1.json`). An admin chan
       }
     ],
     "repos": {},
-    "escalate": true
+    "escalate": true,
+    "tune": {
+      "on": false,
+      "minSamples": 5,
+      "margin": 10
+    }
   },
   "to": {
     "on": true,
@@ -4330,7 +4335,12 @@ Version 1 (`docs/schemas/model_routing.settings_changed.v1.json`). An admin chan
         }
       }
     },
-    "escalate": true
+    "escalate": true,
+    "tune": {
+      "on": false,
+      "minSamples": 5,
+      "margin": 10
+    }
   },
   "by": "admin"
 }
@@ -9736,6 +9746,30 @@ Version 1 (`docs/schemas/job.egress_denied.v1.json`). The hopper refused a runni
   "port": 443,
   "repo": "octo/tools",
   "reason": "not_listed"
+}
+```
+
+## `job_egress.ask_answered`
+
+Version 1 (`docs/schemas/job_egress.ask_answered.v1.json`). A person answered a host the user's jobs asked for (issue #2849 part 3, `POST /ui/api/job-egress/asks`): a host off the allowlist that `job.egress_denied` refused (`not_listed`), shown in Needs you and in Settings → Job egress. `host` and `port`, `repo` the jobs' repository. `answer`: `approved`, the host is now on the allowlist — `for` `repo`, for that repository's jobs, or `all`, for every job —, so a job's next try goes through; `dismissed`, it stays off, and asks again only when a job is refused after this. `by` is who.
+
+| field | type | required |
+|---|---|---|
+| `by` | string | yes |
+| `host` | string | yes |
+| `port` | integer | yes |
+| `repo` | string | no |
+| `answer` | `approved` \| `dismissed` | yes |
+| `for` | `repo` \| `all` | no |
+
+```json
+{
+  "by": "Pat",
+  "host": "paste.example.com",
+  "port": 443,
+  "repo": "octo/tools",
+  "answer": "approved",
+  "for": "repo"
 }
 ```
 

@@ -4,7 +4,7 @@
 // machine. Pure.
 import { describe, expect, it } from 'vitest';
 import {
-  autoGradeOf, DEFAULT_GRADE_SETTINGS, disagreesOf, gradeFactsOf, gradeRollup, revertsOf, userPointsOf,
+  autoGradeOf, DEFAULT_GRADE_SETTINGS, disagreesOf, fixIssuesOf, gradeFactsOf, gradeKeysOf, gradeRollup, revertsOf, userPointsOf,
   type GradeFacts, type GradeRow,
 } from '../../src/domain/grades.ts';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
@@ -47,6 +47,11 @@ describe('the automatic grade (issue #2845)', () => {
     expect(line(facts({ reruns: 1, attempts: 2 }), 'rework')?.value).toBeCloseTo(1 / 3, 9);
   });
 
+  it('lowers the rework signal with each reopen of its issue and each fix issue, and says so (part 4)', () => {
+    expect(line(facts({ reopens: 1 }), 'rework')).toMatchObject({ value: 0.5, why: '0 rework, 0 run again, 0 retry, 1 reopened' });
+    expect(line(facts({ reopens: 1, fixIssues: 1 }), 'rework')).toMatchObject({ value: 1 / 3, why: '0 rework, 0 run again, 0 retry, 1 reopened, 1 fix issue' });
+  });
+
   it('halves the cost and time signals at their scales', () => {
     expect(line(facts({ costUsd: DEFAULT_GRADE_SETTINGS.costScaleUsd }), 'cost')?.value).toBe(0.5);
     expect(line(facts({ wallMs: DEFAULT_GRADE_SETTINGS.timeScaleMinutes * 60_000, queueMs: 5000 }), 'time')?.value).toBe(0.5);
@@ -75,7 +80,7 @@ describe('the facts of a job (issue #2845)', () => {
       ev('job.rework_requested', { pullRequest: PR, notes: 'n', nextJobId: 'j3' }, '2026-10-01T03:00:00.000Z', 'j1'),
       ev('job.pull_request_merged', { pullRequest: PR, part: false }, '2026-10-02T00:00:00.000Z', 'j1'),
     ];
-    expect(gradeFactsOf(job, events, { costUsd: 1.5, costKnown: true }, new Map())).toEqual({
+    expect(gradeFactsOf(job, events, { costUsd: 1.5, costKnown: true }, { reverts: new Map() })).toEqual({
       status: 'finished', attempts: 2, fixChecks: 1, reworks: 1, reruns: 0, costUsd: 1.5, queueMs: 600_000, wallMs: 3_600_000,
       pullRequest: { url: PR, state: 'merged', mergedAt: '2026-10-02T00:00:00.000Z' },
     });
@@ -87,13 +92,31 @@ describe('the facts of a job (issue #2845)', () => {
       ev('landing_batch.revert_opened', { repo: 'owner/repo', tip: 't', sha: 's', culpritPullRequest: 14, pullRequest: 20, url: 'https://github.com/owner/repo/pull/20' }, at),
       ev('landing_batch.reverted', { repo: 'owner/repo', tip: 't', sha: 's', pullRequest: 20, url: 'https://github.com/owner/repo/pull/20' }, at),
     ]);
-    const inside = gradeFactsOf(job, events, undefined, revert('2026-10-03T00:00:00.000Z'), 7);
+    const inside = gradeFactsOf(job, events, undefined, { reverts: revert('2026-10-03T00:00:00.000Z') }, 7);
     expect(inside.pullRequest?.reverted).toEqual({ at: '2026-10-03T00:00:00.000Z', url: 'https://github.com/owner/repo/pull/20' });
-    expect(gradeFactsOf(job, events, undefined, revert('2026-10-20T00:00:00.000Z'), 7).pullRequest).not.toHaveProperty('reverted');
+    expect(gradeFactsOf(job, events, undefined, { reverts: revert('2026-10-20T00:00:00.000Z') }, 7).pullRequest).not.toHaveProperty('reverted');
+  });
+
+  it('counts a fix issue for its merged pull request inside the window, and not one after it (part 4)', () => {
+    const events = [ev('job.pull_request_merged', { pullRequest: PR, part: false }, '2026-10-02T00:00:00.000Z', 'j1')];
+    const fixes = (at: string) => fixIssuesOf([
+      ev('landing_batch.culprit', { repo: 'owner/repo', tested: 'dev', tip: 't', index: 1, sha: 's', pullRequest: 14, checks: [], reason: 'r', results: [] }, at),
+      ev('landing_batch.fix_filed', { repo: 'owner/repo', tip: 't', sha: 's', issue: 30, url: 'https://github.com/owner/repo/issues/30' }, at),
+      ev('landing_batch.fix_filed', { repo: 'owner/repo', tip: 't', sha: 'other', issue: 31, url: 'https://github.com/owner/repo/issues/31' }, at),
+    ]);
+    expect(fixes('2026-10-03T00:00:00.000Z')).toEqual(new Map([[PR, { at: '2026-10-03T00:00:00.000Z', url: 'https://github.com/owner/repo/issues/30' }]]));
+    expect(gradeFactsOf(job, events, undefined, { reverts: new Map(), fixes: fixes('2026-10-03T00:00:00.000Z') }, 7)).toMatchObject({ fixIssues: 1 });
+    expect(gradeFactsOf(job, events, undefined, { reverts: new Map(), fixes: fixes('2026-10-20T00:00:00.000Z') }, 7)).not.toHaveProperty('fixIssues');
+  });
+
+  it('counts each reopen of its issue after its end inside the window, and none before its end or after the window (part 4)', () => {
+    const reopens = ['2026-10-01T00:30:00.000Z', '2026-10-02T00:00:00.000Z', '2026-10-05T00:00:00.000Z', '2026-10-20T00:00:00.000Z'];
+    expect(gradeFactsOf(job, [], undefined, { reverts: new Map(), reopens }, 7)).toMatchObject({ reopens: 2 });
+    expect(gradeFactsOf(job, [], undefined, { reverts: new Map() }, 7)).not.toHaveProperty('reopens');
   });
 
   it('counts a run again of the job, and a partly done end', () => {
-    const f = gradeFactsOf({ ...job, partlyDone: PR }, [ev('job.rerun', { by: 'user', nextJobId: 'j4' }, '2026-10-02T00:00:00.000Z', 'j1')], undefined, new Map());
+    const f = gradeFactsOf({ ...job, partlyDone: PR }, [ev('job.rerun', { by: 'user', nextJobId: 'j4' }, '2026-10-02T00:00:00.000Z', 'j1')], undefined, { reverts: new Map() });
     expect(f).toMatchObject({ reruns: 1, partlyDone: true });
     expect(f).not.toHaveProperty('costUsd');
   });
@@ -118,5 +141,15 @@ describe('user grades and rollups (issue #2845)', () => {
       { key: 'herdr-claude', jobs: 2, auto: 70, userGraded: 1, user: 5, disagreements: 0 },
     ]);
     expect(gradeRollup(rows, 'model')).toEqual([{ key: '(none)', jobs: 3, auto: 76.7, userGraded: 2, user: 3, disagreements: 1 }]);
+  });
+});
+
+// Issue #2848 part 3: a grade keeps the job's model choice, so grade history can tune model routing.
+describe('the keys of a grade', () => {
+  it('keep the model choice of the job\'s model route, and none for a job not routed', () => {
+    const job = { id: 'j1', spec: { executor: 'herdr-claude', payload: { model: 'sonnet' } }, status: 'finished', priority: 50, approved: true, createdAt: '', updatedAt: '2026-10-02T00:00:00.000Z', attempts: 1 } as unknown as Job;
+    const route = { choice: 'cheap', model: 'sonnet', rule: 'small-work', why: '', size: 'small', kind: 'code', risk: 'low', budget: { jobTokens: 0, jobCostUsd: 5 } };
+    expect(gradeKeysOf({ ...job, spec: { ...job.spec, modelRoute: route } } as Job, undefined)).toMatchObject({ model: 'sonnet', choice: 'cheap' });
+    expect(gradeKeysOf(job, undefined)).not.toHaveProperty('choice');
   });
 });

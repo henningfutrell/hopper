@@ -10,7 +10,7 @@ const totals = { turns: 3, input: 1000, output: 1000, cacheRead: 0, cacheWrite: 
 describe('model routing in Settings (issue #2848, part 2)', () => {
   it('says what is on', () => {
     expect(modelRoutingSummary(S)).toBe('Off: every job runs on the model its job source or its agent gives it.');
-    expect(modelRoutingSummary({ ...S, on: true })).toBe('On for herdr-claude, claude: simple work runs on sonnet (budget: $5.00), other work on the agent\'s default (budget: the token budget\'s job caps). A cheap job that fails or reaches its budget escalates once to the strong model.');
+    expect(modelRoutingSummary({ ...S, on: true })).toBe('On for herdr-claude, claude: simple work runs on sonnet (budget: $5.00), other work on the agent\'s default (budget: the token budget\'s job caps). A cheap job that fails, stalls or reaches its budget escalates once to the strong model.');
     expect(modelRoutingSummary({ ...S, on: true, escalate: false, cheap: { model: 'haiku', jobTokens: 2_000_000, jobCostUsd: 0 } })).toMatch(/haiku \(budget: 2\.0M tokens\).*No escalation\.$/);
   });
 
@@ -30,6 +30,18 @@ describe('model routing in Settings (issue #2848, part 2)', () => {
     expect(modelRoutingPatch(S, { ...d, cheapCost: '-1' })).toEqual({ ok: false, error: 'Cost: a number of US dollars from 0' });
     expect(modelRoutingPatch(S, { ...d, rules: '{}' })).toEqual({ ok: false, error: 'Rules: not the right shape' });
     expect(modelRoutingPatch(S, { ...d, repos: '[' })).toEqual({ ok: false, error: 'Repository budgets: not JSON' });
+  });
+});
+
+describe('tuning from grades in Settings (issue #2848, part 3)', () => {
+  it('edits tuning on and off, its least grades and its margin, and says it when on', () => {
+    const d = modelRoutingDraftOf(S);
+    expect(d).toMatchObject({ tuneOn: false, tuneMinSamples: '5', tuneMargin: '10' });
+    expect(modelRoutingPatch(S, { ...d, tuneOn: true, tuneMargin: '15' })).toEqual({ ok: true, patch: { tune: { on: true, minSamples: 5, margin: 15 } } });
+    expect(modelRoutingPatch(S, { ...d, tuneMinSamples: '0' })).toEqual({ ok: false, error: 'Grades: a whole number from 1' });
+    expect(modelRoutingPatch(S, { ...d, tuneMargin: '101' })).toEqual({ ok: false, error: 'Margin: a number of points from 0 to 100' });
+    expect(modelRoutingSummary({ ...S, on: true, tune: { on: true, minSamples: 5, margin: 10 } }))
+      .toMatch(/ Grade history tunes the choice: at least 5 graded jobs of each model, a margin of 10 points\.$/);
   });
 });
 

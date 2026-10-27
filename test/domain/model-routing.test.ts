@@ -1,10 +1,11 @@
 // Model routing (issue #2848): the work's class at intake picks the cheap or the strong model and the job's budget; a
 // failed cheap job's next job of the item escalates once to the strong model. Pure.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
-  DEFAULT_MODEL_ROUTING, classifyWork, escalateOnPickUp, jobBudgetOf, modelRouteOf, modelRoutingOf, modelRoutingProblem, type ModelRoute, type ModelRoutingSettings, type WorkItem,
+  DEFAULT_MODEL_ROUTING, cheapStallOf, classifyWork, escalateOnPickUp, jobBudgetOf, modelRouteOf, modelRoutingOf, modelRoutingProblem, type GradedChoice, type ModelRoute,
+  type ModelRoutingSettings, type WorkItem,
 } from '../../src/domain/model-routing.ts';
-import { DEFAULT_TOKEN_BUDGET } from '../../src/domain/token-budget.ts';
+import { DEFAULT_TOKEN_BUDGET, budgetNear } from '../../src/domain/token-budget.ts';
 
 const on: ModelRoutingSettings = { ...DEFAULT_MODEL_ROUTING, on: true };
 const work = (over: Partial<WorkItem> = {}): WorkItem => ({ title: 'Fix the typo in the README', body: 'One word is wrong.', labels: [], repo: 'o/r', ...over });
@@ -131,5 +132,82 @@ describe('the settings', () => {
     expect(modelRoutingProblem({ ...on, rules: [{ name: 'a', match: {}, choice: 'cheap' }, { name: 'a', match: {}, choice: 'strong' }] })).toMatch(/named twice/);
     expect(modelRoutingProblem({ ...on, cheap: { ...on.cheap, model: 'bad model;' } })).toMatch(/model/);
     expect(modelRoutingProblem({ ...on, rules: [{ name: 'label', match: {}, choice: 'cheap' }] })).toMatch(/reserved/);
+  });
+});
+
+// Part 3: grade history tunes the rules' choice (issue #2845's grades): with tuning on, a rule's cheap choice goes strong
+// when the cheap model's graded jobs of the same work did clearly worse, and a low-risk strong choice goes cheap when the
+// cheap model's did as well. The same repository first, else the same kind of work; each choice needs `minSamples`.
+describe('tuning from grades (part 3)', () => {
+  const tuned: ModelRoutingSettings = { ...on, strong: { model: 'opus', jobTokens: 0, jobCostUsd: 0 }, tune: { on: true, minSamples: 2, margin: 10 } };
+  const g = (choice: GradedChoice['choice'], points: number, repo = 'o/r', kind = 'code'): GradedChoice => ({ choice, points, repo, kind });
+  const worseCheap = [g('cheap', 50), g('cheap', 60), g('strong', 80), g('strong', 90)];
+
+  it('moves a rule\'s cheap choice to the strong model when the cheap model\'s grades are lower by more than the margin', () => {
+    expect(modelRouteOf(tuned, work(), 'herdr-claude', undefined, () => worseCheap)).toMatchObject({
+      choice: 'strong', model: 'opus', rule: 'grades', budget: { jobTokens: 0, jobCostUsd: 0 },
+      why: 'Grades: in o/r the cheap model\'s code jobs scored 55 (2 jobs) and the strong model\'s 85 (2 jobs), so the strong model, not the cheap one rule small-work picked.',
+    });
+    // Within the margin: the rule's choice stands.
+    expect(modelRouteOf(tuned, work(), 'herdr-claude', undefined, () => [g('cheap', 75), g('cheap', 75), g('strong', 80), g('strong', 80)])!.rule).toBe('small-work');
+  });
+
+  it('moves a low-risk strong choice to the cheap model when the cheap model\'s grades are as good, never a high-risk one', () => {
+    const asGood = [g('cheap', 90), g('cheap', 90), g('strong', 85), g('strong', 85)];
+    expect(modelRouteOf(tuned, work({ body: LONG }), 'herdr-claude', undefined, () => asGood)).toMatchObject({ choice: 'cheap', model: 'sonnet', rule: 'grades', budget: { jobCostUsd: 5 } });
+    expect(modelRouteOf(tuned, work({ body: LONG, labels: ['security'] }), 'herdr-claude', undefined, () => asGood)).toMatchObject({ choice: 'strong', rule: 'risky-work' });
+  });
+
+  it('compares on the same kind of work when the repository has too few grades, and needs minSamples of each choice', () => {
+    const elsewhere = worseCheap.map((x) => ({ ...x, repo: 'o/other' }));
+    expect(modelRouteOf(tuned, work(), 'herdr-claude', undefined, () => elsewhere)).toMatchObject({ choice: 'strong', rule: 'grades' });
+    expect(modelRouteOf(tuned, work(), 'herdr-claude', undefined, () => elsewhere)!.why).toMatch(/^Grades: in code work the cheap model/);
+    expect(modelRouteOf(tuned, work(), 'herdr-claude', undefined, () => worseCheap.map((x) => ({ ...x, kind: 'research' })))!.rule).toBe('small-work');
+    expect(modelRouteOf(tuned, work(), 'herdr-claude', undefined, () => worseCheap.slice(1))!.rule).toBe('small-work');
+  });
+
+  it('leaves a label\'s choice and an escalation, and reads no grades while tuning is off', () => {
+    expect(modelRouteOf(tuned, work({ labels: ['hopper:model-cheap'] }), 'herdr-claude', undefined, () => worseCheap)).toMatchObject({ choice: 'cheap', rule: 'label' });
+    const cheap = modelRouteOf(on, work(), 'herdr-claude')!;
+    expect(modelRouteOf(tuned, work(), 'herdr-claude', { jobId: 'j1', status: 'failed', route: cheap }, () => [g('cheap', 99), g('cheap', 99), g('strong', 1), g('strong', 1)])!.rule).toBe('escalated');
+    const read = vi.fn(() => worseCheap);
+    expect(modelRouteOf({ ...tuned, tune: { ...tuned.tune, on: false } }, work(), 'herdr-claude', undefined, read)!.rule).toBe('small-work');
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('refuses the reserved rule name grades, and a bad tuning', () => {
+    expect(DEFAULT_MODEL_ROUTING.tune).toEqual({ on: false, minSamples: 5, margin: 10 });
+    expect(modelRoutingProblem({ ...on, rules: [{ name: 'grades', match: {}, choice: 'cheap' }] })).toMatch(/reserved/);
+    expect(modelRoutingProblem({ ...on, tune: { on: true, minSamples: 0, margin: 10 } })).toMatch(/tune.minSamples/);
+  });
+});
+
+// Part 3: a cheap job whose waste signals say it stalled — many turns with no commit and no push, or test runs that fail
+// again and again — is paused as a budget pause is, so a person's pick up puts it on the strong model.
+describe('cheapStallOf (part 3)', () => {
+  const cheap = modelRouteOf(on, work(), 'herdr-claude')!;
+  const noProgress = [{ kind: 'no_progress' as const, why: '150 turns with no commit and no push.' }];
+  it('says why a cheap job stalled, on a no-progress or failing-tests signal only', () => {
+    expect(cheapStallOf(on, cheap, noProgress)).toBe('Paused: the cheap model stalled. 150 turns with no commit and no push. Picked up, the job goes on on the strong model.');
+    expect(cheapStallOf(on, cheap, [{ kind: 'failing_tests', why: '5 test runs failed.' }])).toMatch(/5 test runs failed\./);
+    expect(cheapStallOf(on, cheap, [{ kind: 'cache_churn', why: 'x' }, { kind: 'resume_loop', why: 'y' }])).toBeUndefined();
+  });
+  it('pauses no strong job, no job not routed, and none while routing or escalation is off', () => {
+    expect(cheapStallOf(on, { ...cheap, choice: 'strong' }, noProgress)).toBeUndefined();
+    expect(cheapStallOf(on, undefined, noProgress)).toBeUndefined();
+    expect(cheapStallOf({ ...on, escalate: false }, cheap, noProgress)).toBeUndefined();
+    expect(cheapStallOf({ ...on, on: false }, cheap, noProgress)).toBeUndefined();
+  });
+});
+
+// Part 3: a job near its budget is checkpointed every minute, not every ten, so it goes over by less.
+describe('budgetNear (part 3)', () => {
+  it('is true from 80% of a cap, counted since a pick up', () => {
+    const s = { ...DEFAULT_TOKEN_BUDGET, jobTokens: 1000, jobCostUsd: 10 };
+    expect(budgetNear({ tokens: 799, costUsd: 1 }, undefined, s)).toBe(false);
+    expect(budgetNear({ tokens: 800, costUsd: 1 }, undefined, s)).toBe(true);
+    expect(budgetNear({ tokens: 0, costUsd: 8 }, undefined, s)).toBe(true);
+    expect(budgetNear({ tokens: 1500, costUsd: 1 }, { tokens: 1000, costUsd: 0 }, s)).toBe(false);
+    expect(budgetNear({ tokens: 10_000, costUsd: 100 }, undefined, DEFAULT_TOKEN_BUDGET)).toBe(false);
   });
 });
