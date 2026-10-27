@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "by": {
+      "type": "string"
+    },
+    "defaults": {
+      "type": "boolean"
+    },
+    "hosts": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "repos": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "by",
+    "defaults",
+    "hosts",
+    "repos"
+  ],
+  "additionalProperties": false
+}
