@@ -3,8 +3,8 @@
 import type { Tone } from './jobs-view.ts';
 import type { GradeGroup, GradeLine, GradeSettings, GradeSignal, UserGrade } from './wire.ts';
 
-export const SIGNALS: readonly GradeSignal[] = ['outcome', 'checks', 'pull_request', 'rework', 'cost', 'time'];
-export const SIGNAL_NAMES: Record<GradeSignal, string> = { outcome: 'Outcome', checks: 'Checks', pull_request: 'Pull request', rework: 'Rework', cost: 'Cost', time: 'Time' };
+export const SIGNALS: readonly GradeSignal[] = ['outcome', 'checks', 'pull_request', 'rework', 'cost', 'time', 'review'];
+export const SIGNAL_NAMES: Record<GradeSignal, string> = { outcome: 'Outcome', checks: 'Checks', pull_request: 'Pull request', rework: 'Rework', cost: 'Cost', time: 'Time', review: 'Completion review' };
 
 export const GROUPS: readonly GradeGroup[] = ['executor', 'model', 'repo', 'kind', 'machine'];
 export const GROUP_NAMES: Record<GradeGroup, string> = { executor: 'Executor', model: 'Model', repo: 'Repository', kind: 'Work kind', machine: 'Machine' };
