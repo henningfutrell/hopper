@@ -1,9 +1,10 @@
-// The Planned work tab of Jobs (issue #2840): one work plan, named by its issue, drawn left to right — the work plan, its
-// plan pieces, their plan tasks, then the jobs — each node coloured by its plan status (done a solid fill, running blue,
-// planned dashed grey, needs a person orange), with a bar of how many plan tasks are in each status above it and the
-// plan tasks' depends-on links dashed. A click on a node opens a plan piece's artifact when it is a link, else its issue,
-// or a job's view. Export saves the plan as CSV (a row per plan task) or as nested JSON. Read again each time the store's
-// jobs change, as the Jobs tab is.
+// The Planned work tab of Jobs (issues #2840, #2861): with no plan named, the work plans the plan store keeps; with one, the
+// kept plan drawn left to right — the work plan, its plan pieces, their plan tasks, then the jobs — each node coloured by
+// its plan status (done a solid fill, running blue, planned dashed grey, needs a person orange), with a bar of how many
+// plan tasks are in each status above it and the plan tasks' depends-on links dashed, its sync, and its plan artifacts.
+// A click on a node opens its first artifact that is a link, else its issue, or a job's view. A plan the store does not
+// keep yet is imported from its issue's sub-issues. Export saves the plan as CSV (a row per plan task) or as nested JSON.
+// Read again each time the store's jobs change, as the Jobs tab is.
 import { Download, ListTree } from 'lucide-react';
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { FitGraph } from '@/components/fit-graph';
@@ -14,10 +15,11 @@ import { Input } from '@/components/ui/input';
 import { download, get } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import {
-  exportPath, kindText, layoutPlan, PLAN_NODE_H, PLAN_NODE_W, PLAN_STATUS_ORDER, planHash, planRefOf, STATUS_INFO, type PlanNode,
+  exportPath, kindText, layoutPlan, PLAN_NODE_H, PLAN_NODE_W, PLAN_STATUS_ORDER, planHash, planPath, planRefOf, STATUS_INFO, type PlanNode,
 } from '@/model/planned-work';
 import type { WorkPlan } from '@/model/wire';
 import { useHopper } from '@/store';
+import { ImportPlan, PlanArtifacts, PlanList, PlanSyncControl } from './planned-work-records';
 
 const short = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const subscribe = (fn: () => void) => { window.addEventListener('hashchange', fn); return () => window.removeEventListener('hashchange', fn); };
@@ -91,7 +93,7 @@ function Legend() {
     <div data-slot="planned-work-legend" className="flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px] text-muted-foreground">
       <span>solid fill: done</span><span className={TEXT.busy}>blue: running</span><span>dashed grey: planned</span>
       <span className={TEXT.warn}>orange: needs a person</span><span className={TEXT.warn}>dashed orange line: depends on</span>
-      <span>click a node to open its artifact, issue or job</span>
+      <span>click a node to open its artifact link, issue or job</span>
     </div>
   );
 }
@@ -107,17 +109,22 @@ function Plan({ issueRef: ref }: { issueRef: string }) {
   const [draft, setDraft] = useState(ref);
   const [plan, setPlan] = useState<WorkPlan | null>(null);
   const [error, setError] = useState('');
+  const [missing, setMissing] = useState(false);
+  const [again, setAgain] = useState(0);
   // Read again (debounced) each time the store's jobs change, as the Jobs tab reads its graph.
   useEffect(() => {
     if (!ref) return;
     let live = true;
     const soon = setTimeout(() => {
-      get<WorkPlan>(`/api/planned-work?issue=${encodeURIComponent(ref)}`)
-        .then((p) => { if (live && Array.isArray(p.pieces)) { setPlan(p); setError(''); } }, (e: Error) => { if (live) setError(e.message); });
+      get<WorkPlan>(planPath(ref)).then((p) => { if (live && Array.isArray(p.pieces)) { setPlan(p); setError(''); setMissing(false); } }, (e: Error) => {
+        if (!live) return;
+        setError(e.message);
+        setMissing(/no work plan .* is kept/.test(e.message));
+      });
     }, plan ? 150 : 0);
     return () => { live = false; clearTimeout(soon); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- read again on the store's change only, not on its own answer
-  }, [ref, held]);
+  }, [ref, held, again]);
   const save = (format: 'csv' | 'json') => { download(exportPath(ref, format), `planned-work.${format}`).catch((e: Error) => setError(e.message)); };
   return (
     <Panel title="Planned work" icon={ListTree}
@@ -126,14 +133,18 @@ function Plan({ issueRef: ref }: { issueRef: string }) {
         <Input data-slot="planned-work-issue" aria-label="Work plan issue" placeholder="owner/name#number or issue URL" value={draft}
           onChange={(e) => setDraft(e.target.value)} className="h-8 w-64" />
         <Button type="submit" size="sm" variant="outline">Open</Button>
+        {(!ref || missing) && <ImportPlan issue={ref && missing ? ref : draft} onError={setError} />}
         <Button type="button" size="sm" variant="ghost" disabled={!plan} onClick={() => save('csv')} data-slot="planned-work-export-csv"><Download />CSV</Button>
         <Button type="button" size="sm" variant="ghost" disabled={!plan} onClick={() => save('json')} data-slot="planned-work-export-json"><Download />JSON</Button>
       </form>}
       toolbar={plan ? <Counts plan={plan} /> : undefined} bodyClassName="p-0">
       <div data-slot="planned-work" className={cn('space-y-2', plan && 'p-4')}>
         {error && <p data-slot="planned-work-error" className={cn('px-4 pt-3 text-sm', TEXT.bad)}>{error}</p>}
-        {!ref ? <Empty>Name an issue to see its work plan: its sub-issues are its plan pieces, and theirs its plan tasks.</Empty>
-          : plan ? <><Legend /><PlanGraph plan={plan} /></>
+        {!ref ? <PlanList />
+          : plan ? <>
+            <PlanSyncControl plan={plan} onPlan={setPlan} onError={setError} /><Legend /><PlanGraph plan={plan} />
+            <PlanArtifacts plan={plan} onChange={() => setAgain((n) => n + 1)} onError={setError} />
+          </>
             : !error && <Empty>reading the work plan…</Empty>}
       </div>
     </Panel>

@@ -41,6 +41,7 @@ import { STEP_SCHEDULE_TABLES } from './step-schedules.ts';
 import { KEPT_TRACK_TABLES } from './kept-tracks.ts';
 import { GRADE_TABLES } from './grades.ts'; import { COMPLETION_REVIEW_TABLE } from './completion-reviews.ts'; import { RECOMMENDATION_TABLE } from './review-recommendations.ts';
 import { MEMORY_ENTRY_TABLE } from './repo-memories.ts';
+import { WORK_PLAN_TABLES } from './work-plans.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -221,4 +222,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 105: The bug-report recommendations of the completion reviews (issue #2846 part 2): one per signature. A table only: the
   // build before runs on it, and never reads it.
   RECOMMENDATION_TABLE,
+  // 106: The plan store (issue #2861): each kept work plan, its plan pieces and plan tasks, the jobs linked to them and the
+  // plan artifacts. Tables only: the build before runs on them, and never reads them.
+  WORK_PLAN_TABLES,
 ];

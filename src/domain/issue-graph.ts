@@ -30,11 +30,8 @@ export interface ItemRef { kind: 'issue' | 'pull_request'; repo: string; number:
 
 /** What one read of an issue on GitHub says of its place. */
 export interface IssuePlace {
-  /**
-   * `stateReason`: why it closed, when it is closed (issue #1036). `artifact`: the plan piece's artifact its body names
-   * (issue #2840, `pieceArtifactOf`), empty when it names none; absent when the read did not get the body.
-   */
-  issue: { repo: string; number: number; url: string; title: string; state: string; stateReason?: string; updatedAt: string; artifact?: string };
+  /** `stateReason`: why it closed, when it is closed (issue #1036). */
+  issue: { repo: string; number: number; url: string; title: string; state: string; stateReason?: string; updatedAt: string };
   /** The owner of the issue's repository: an organization or a user (absent: GitHub did not say which). */
   owner: { login: string; type?: 'Organization' | 'User' };
   projects: { owner: string; number: number; url: string; title?: string }[];
@@ -90,10 +87,7 @@ export function placeGraph(place: IssuePlace): IssueGraph {
   };
   const { issue, owner } = place;
   const own = node(ownerId(owner.login), 'owner', { login: owner.login, ...(owner.type ? { type: owner.type } : {}) });
-  const at = node(issue.url, 'issue', {
-    repo: issue.repo, number: issue.number, title: issue.title, state: issue.state, ...(issue.stateReason ? { stateReason: issue.stateReason } : {}), updatedAt: issue.updatedAt,
-    ...(issue.artifact !== undefined ? { artifact: issue.artifact } : {}),
-  });
+  const at = node(issue.url, 'issue', { repo: issue.repo, number: issue.number, title: issue.title, state: issue.state, ...(issue.stateReason ? { stateReason: issue.stateReason } : {}), updatedAt: issue.updatedAt });
   edge(at, 'in_repo', repo(issue.repo));
   edge(repoId(issue.repo), 'owned_by', own);
   for (const p of place.projects) {
