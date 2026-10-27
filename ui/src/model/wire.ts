@@ -163,3 +163,4 @@ export type { InFlight, WorkItem, WorkItemState } from '../../../src/domain/work
 export type { HeaderBadge, HeaderBadgeSettings } from '../../../src/domain/types.ts';
 export type { WaitOn, WaitCheck } from '../../../src/domain/types.ts';
 export type { PullRequestDiff, PullRequestDiffFile } from '../../../src/domain/pull-request-diff.ts';
+export type { MemoryEntryView, MemoryKind, MemoryRepoSetting, MemorySettings, MemoryState, RepoMemoryView } from '../../../src/domain/repo-memory.ts';
