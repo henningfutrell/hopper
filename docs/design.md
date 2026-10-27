@@ -21709,14 +21709,40 @@ What the #2302 caps still do not cover, found here: a print-mode job (the `claud
 park — so its model budget, as its token budget, is not enforced while it runs; its spend still counts in the day budgets.
 The pause runs at checkpoints only (every 10 minutes), so a job may go over its budget by what it spends between two.
 
-Not in this part: a stalled cheap run (a waste signal, a budget pause) escalating while it runs; editing the setting in
-the UI and the CLI; per-job budget overrides by a person; tuning the rules from grade history (issue #2845).
+Part 2 (2026-10-27):
+
+- **Escalation when a cheap run stalls** (`escalateOnPickUp`, `escalateStalled` in `src/engine/token-budget.ts`). A cheap
+  job its budget paused does not go on on the cheap model again: when a person picks it up (`recordUnpark`, here or
+  elsewhere), with model routing and `escalate` on, its route becomes the strong model's — model, budget (the repository's
+  over the choice's), `rule: escalated`, `escalated: { from: cheap, jobId: <itself> }` —, its `payload.model` the strong
+  model (or none, for the agent's default), so its resumed agent gets that `--model`, and `job.model_escalated` records it
+  with the job itself as `after`. The spec is changed through `respecify`, so its trust stamp is signed again. The item's
+  later jobs stay on the strong model, as after a failure. Not automatic at the pause: the strong model costs more, and
+  the pause is where a person decides to spend more; the pick up is that decision.
+- **A job budget** (`jobBudget` on the job, `JobBudget`): a person's caps on one job that has not ended — `jobTokens`,
+  `jobCostUsd`, either or both; a field left out keeps its value — through `POST /ui/api/jobs/:id/budget` (an operator's,
+  `job.budget_set` with `from`, `to` and `by`; 409 for an ended job), `hopper usage job-budget <job id> [--job-tokens]
+  [--job-cost]`, or the job view's Tokens panel. `jobBudgetOf` takes each cap from the job budget, else the model route's,
+  else the token budget's job cap; a 0 falls back. It holds with model routing off too. Read at the job's next checkpoint.
+  Kept on the job record: no migration.
+- **Editing the setting.** Settings → Model routing (`ui/src/views/model-routing.tsx`, `ui/src/model/model-routing.ts`):
+  on and off, the executors, each choice's model and caps, escalation, and the rules and the repositories' budgets as JSON;
+  a save sends the fields that changed, each whole, and the daemon's schema says why it refuses. The CLI: `hopper usage
+  model-routing` reads it, `hopper usage model-routing on|off` and `hopper usage model-routing set --file <json>` change it
+  (`src/cli-operator-model-routing.ts`).
+
+Still not done: tuning the rules from grade history (issue #2845; its grade-aware routing is still open as its own part);
+escalation on a waste signal while a cheap job runs; the two gaps of the #2302 caps above (print-mode jobs, the checkpoint
+interval).
 
 Verification: `test/domain/model-routing.test.ts` (the class, the rules in order, the labels, a repository's budget, one
 escalation and the item kept on the strong model, the budget fallback, the setting's schema),
 `test/integration/model-routing.test.ts` (the real daemon: the setting and its event, nothing routed while it is off, a
 simple job on the cheap model and a complex one on the strong, a failed cheap job's Run again escalated once with its
-event, a cheap job paused by its choice's budget), `test/ui/job-tokens-view.test.ts` (the job view's model lines).
+event, a cheap job paused by its choice's budget; part 2: a paused cheap job picked up goes on on the strong model with its
+event, a job budget pauses a job model routing did not route), `test/ui/job-tokens-view.test.ts` (the job view's model
+lines; part 2: the job budget line and form), `test/ui/model-routing.test.ts` (part 2: the Settings draft, patch and
+summary; the job budget form), `test/cli/usage-model-routing.test.ts` (part 2: the CLI).
 
 ## Stack resources (issue #947, 2026-10-12)
 

@@ -1,8 +1,8 @@
 // Model routing's words and forms (issue #2848, part 2): the setting in Settings, an admin's, as a draft a person edits —
 // on and off, escalation, the executors, each model choice's model and budget, and the rules and the repositories' budgets as
 // JSON —, what a save sends, and what is on in one sentence; a person's job budget on one job, its form and its line. Pure.
-import { tokenCount, tokensOf } from './token-ledger';
-import type { JobBudget, ModelBudget, ModelRoutingSettings, TokenTotals } from './wire';
+import { tokenCount, tokensOf } from './token-ledger.ts';
+import type { JobBudget, ModelBudget, ModelRoutingSettings, TokenTotals } from './wire.ts';
 
 type Choice = 'cheap' | 'strong';
 
