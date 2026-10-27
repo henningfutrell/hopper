@@ -160,6 +160,7 @@ export async function startTestApp(o: {
     ...(o.realLevels ? {} : fakeLevels()),
     // No model in tests (issue #569): a long card has no TL;DR unless a test puts a double here.
     tldrWriter: async () => ({ error: 'no TL;DR model in tests' }),
+    modelReviewWriter: async () => ({ error: 'no model review in tests' }),
     // No AI connection in tests (issue #471): File an issue cannot draft unless a test puts a double here.
     issueDrafter: { provider: 'claude', available: async () => ({ ok: false, reason: 'no drafter in tests' }), draft: async () => ({ error: 'no drafter in tests' }) },
     // OpenFGA, as a deploy runs it (issue #652: no issue is of a trusted origin without it); a test of a hopper without

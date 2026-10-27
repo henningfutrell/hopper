@@ -5,7 +5,8 @@
 // the next pass, on any host, reviews what it left. A job the settings skip is not judged again by this host. A review that
 // names a hopper defect (issue #2846 part 2) makes a bug-report recommendation of its signature, in the same transaction: a
 // new signature waits for a person (`completion_review.recommended`), a known one — open, approved or dismissed — counts the
-// job, and is never recommended again.
+// job, and is never recommended again. Each kept review is an event (`completion_review.kept`), so the grade pass grades
+// the job again with it (issue #2846 part 3), and the model review sweep (src/completion-reviews/) may review it after.
 import { completionReviewOf, completionReviewSettingsOf, shouldReview, type CompletionReview } from '../domain/completion-review.ts';
 import type { UserStore } from '../domain/store.ts';
 import { jobTokenView } from '../domain/token-usage.ts';
@@ -54,6 +55,7 @@ export function createCompletionReviews(store: UserStore): CompletionReviewPass 
       const review = reviewJob(store, job, jobs, now);
       store.tx(() => {
         store.completionReviews.keep(review);
+        store.events.append({ type: 'completion_review.kept', jobId: job.id, data: { outcome: review.outcome, waste: review.waste.map((w) => w.kind), suggestions: review.suggestions.map((s) => s.area) } });
         if (!review.defect) return;
         const { created } = store.reviewRecommendations.recommend({ ...review.defect, jobId: job.id, at: review.reviewedAt });
         if (created) store.events.append({ type: 'completion_review.recommended', jobId: job.id, data: { signature: review.defect.signature, title: review.defect.title } });

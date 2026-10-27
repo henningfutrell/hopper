@@ -23,14 +23,12 @@ const FAULT_TURN_MS = 20_000;
 let server: FakeModelServer;
 let dir: string;
 
-beforeAll(async () => {
-  server = await startFakeModelServer();
+beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), 'jh-acceptance-'));
   useStandInPodman(dir);
   delete process.env.HOPPER_URL;
 });
-afterAll(async () => {
-  await server.close();
+afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -58,7 +56,13 @@ describe.each(REAL_AGENTS)('the real $agent CLI', (a) => {
   const withArgs = () => createPrintAgentExecutor({ agent: a.agent, name: a.agent, bin: bin!, args: a.args(server.url), sshAuth: () => { throw new Error('no ssh'); } });
   const work = (name: string) => join(dir, `${a.agent}-${name}`);
 
-  beforeAll(() => { if (bin) writeAgentFiles(a, server.url); });
+  // A server of its own (issue #2856): a CLI a timed-out turn left running (opencode 2's run and its server, until
+  // the job's reap) still asks its server, and would take the steps of the next CLI's script.
+  beforeAll(async () => {
+    server = await startFakeModelServer();
+    if (bin) writeAgentFiles(a, server.url);
+  });
+  afterAll(async () => { await server.close(); });
 
   it.skipIf(absent)('completes a job: a tool call writes the file, the last message ends with HOPPER_DONE', async () => {
     server.script([a.write('greeting.txt', 'Hello'), { text: 'I wrote greeting.txt.\n\nHOPPER_DONE' }]);

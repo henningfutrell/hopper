@@ -26,11 +26,12 @@ afterAll(async () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-/** What a CLI prints on stdout for one turn, run in `cwd` with `env` over this process's. */
-function stdoutOf(argv: string[], cwd: string, env: Record<string, string>): Promise<string> {
+/** What a CLI prints on stdout for one turn, run in `cwd` with `env` over this process's; `stdin`, the text it reads there (else none). */
+function stdoutOf(argv: string[], cwd: string, env: Record<string, string>, stdin?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     // PWD too: opencode takes its directory from it, not from its cwd.
-    const c = spawn(argv[0]!, argv.slice(1), { cwd, env: { ...process.env, ...env, PWD: cwd }, stdio: ['ignore', 'pipe', 'ignore'] });
+    const c = spawn(argv[0]!, argv.slice(1), { cwd, env: { ...process.env, ...env, PWD: cwd }, stdio: ['pipe', 'pipe', 'ignore'] });
+    c.stdin.end(stdin ?? '');
     let out = '';
     c.stdout.on('data', (d: Buffer) => { out += d.toString(); });
     c.on('error', reject);
@@ -48,9 +49,10 @@ describe.each(REAL_AGENTS)('the fake $agent CLI', (a) => {
     // The turn the fake plays: a tool call, then the answer after the model's reasoning.
     server.script([a.write('greeting.txt', 'Hello'), { text: REPLY, thinking: 'The file is written.' }]);
     const call = { args: a.args(server.url), cwd, model: a.model, text: 'Write greeting.txt.' };
-    const real = await stdoutOf(DIALECTS[a.agent].argv({ ...call, bin: bin! }), cwd, a.env(server.url));
+    const stdin = DIALECTS[a.agent].textOnStdin ? call.text : undefined;
+    const real = await stdoutOf(DIALECTS[a.agent].argv({ ...call, bin: bin! }), cwd, a.env(server.url), stdin);
     expect(DIALECTS[a.agent].read(real)).toMatchObject({ text: REPLY });
-    const fake = await stdoutOf(DIALECTS[a.agent].argv({ ...call, bin: FAKE }), cwd, { FAKE_AGENT_KIND: a.agent, FAKE_AGENT_DIR: dir, FAKE_AGENT_REPLY: REPLY });
+    const fake = await stdoutOf(DIALECTS[a.agent].argv({ ...call, bin: FAKE }), cwd, { FAKE_AGENT_KIND: a.agent, FAKE_AGENT_DIR: dir, FAKE_AGENT_REPLY: REPLY }, stdin);
     expect(driftOf(fake, real)).toEqual([]);
   }, 120_000);
 });

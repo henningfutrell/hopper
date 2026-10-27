@@ -1,11 +1,12 @@
-// The Planned work tab of Jobs (issue #2840): one work plan (GET /api/planned-work) drawn left to right — the work plan,
-// its plan pieces, their plan tasks, then each plan task's jobs —, each node coloured by its plan status, with the
-// plan tasks' depends-on links. A click on a node opens a plan piece's artifact when it is a link, else the node's issue,
-// or a job's view. The hash names the plan (#jobs/planned-work/<owner/name#n, encoded>), so a link opens it.
+// The Planned work tab of Jobs (issues #2840, #2861): one kept work plan (GET /api/planned-work) drawn left to right — the
+// work plan, its plan pieces, their plan tasks, then each plan task's jobs —, each node coloured by its plan status, with
+// the plan tasks' depends-on links. A click on a node opens its first plan artifact that is a link, else the node's issue,
+// or a job's view. The hash names the plan (#jobs/planned-work/<owner/name#n, encoded>), so a link opens it; with none the
+// tab lists the kept plans.
 import { hierarchy, tree as d3tree } from 'd3';
 import { jobHref } from './job.ts';
 import type { Tone } from './jobs-view.ts';
-import type { PlanStatus, WorkPlan } from './wire.ts';
+import type { PlanArtifactView, PlanStatus, WorkPlan } from './wire.ts';
 
 /** Each plan status as the tab names and draws it: done a solid fill, running blue, planned dashed grey, blocked orange. */
 export const STATUS_INFO: Record<PlanStatus, { label: string; tone: Tone; solid: boolean; dashed: boolean; title: string }> = {
@@ -36,21 +37,21 @@ export const PLAN_NODE_H = 50;
 const COL = PLAN_NODE_W + 48;
 const ROW = PLAN_NODE_H + 12;
 
-/** A piece artifact that is a link opens; any other text is only shown. */
-const linkOf = (artifact: string | undefined): string | undefined => (artifact && /^https?:\/\/\S+$/.test(artifact) ? artifact : undefined);
+/** The first artifact that is a link opens; one that is a hopper artifact's id is only shown. */
+const linkOf = (artifacts: readonly PlanArtifactView[]): string | undefined => artifacts.find((a) => /^https?:\/\/\S+$/.test(a.ref))?.ref;
 
 interface Draft { id: string; node: Omit<PlanNode, 'x' | 'y' | 'id'>; children: Draft[] }
 
 /** The work plan laid out left to right (d3's tidy tree), in the API's order: each column one level. */
 export function layoutPlan(plan: WorkPlan): PlanLayout {
-  const issueNode = (kind: PlanNodeKind, i: { id: string; title: string; url: string; status: PlanStatus }, artifact?: string): Draft['node'] =>
-    ({ kind, label: i.title, ref: i.id, status: i.status, text: STATUS_INFO[i.status].label, href: linkOf(artifact) ?? i.url, ...(artifact ? { artifact } : {}) });
+  const issueNode = (kind: PlanNodeKind, i: { id: string; title: string; url: string; status: PlanStatus }, artifacts: readonly PlanArtifactView[] = []): Draft['node'] =>
+    ({ kind, label: i.title, ref: i.id, status: i.status, text: STATUS_INFO[i.status].label, href: linkOf(artifacts) ?? i.url, ...(artifacts[0] ? { artifact: artifacts[0].ref } : {}) });
   const root: Draft = {
     id: `plan:${plan.id}`, node: issueNode('plan', plan),
     children: plan.pieces.map((p) => ({
-      id: `piece:${p.id}`, node: issueNode('piece', p, p.artifact),
+      id: `piece:${p.id}`, node: issueNode('piece', p, p.artifacts),
       children: p.tasks.map((t) => ({
-        id: `task:${t.id}`, node: issueNode('task', t),
+        id: `task:${t.id}`, node: issueNode('task', t, t.artifacts),
         children: t.jobs.map((j) => ({
           id: `job:${t.id}:${j.id}`, children: [],
           node: { kind: 'job', label: `job ${j.id.slice(0, 8)}`, ...(j.planStatus ? { status: j.planStatus } : {}), text: j.stageText, href: jobHref(j.id) },
@@ -83,5 +84,12 @@ export function planRefOf(hash: string): string {
   try { return decodeURIComponent(h.slice(PREFIX.length + 1)); } catch { return ''; }
 }
 
+/** Where the work plan is read. */
+export const planPath = (ref: string): string => `/api/planned-work?plan=${encodeURIComponent(ref)}`;
 /** Where the work plan's export is read, as CSV or as nested JSON. */
-export const exportPath = (ref: string, format: 'csv' | 'json'): string => `/api/planned-work/export?issue=${encodeURIComponent(ref)}&format=${format}`;
+export const exportPath = (ref: string, format: 'csv' | 'json'): string => `/api/planned-work/export?plan=${encodeURIComponent(ref)}&format=${format}`;
+
+/** Each artifact of a work plan, with the plan piece and plan task it is on, in the plan's order. */
+export function artifactsOf(plan: WorkPlan): (PlanArtifactView & { piece: string; task?: string })[] {
+  return plan.pieces.flatMap((p) => [...p.artifacts.map((a) => ({ ...a, piece: p.id })), ...p.tasks.flatMap((t) => t.artifacts.map((a) => ({ ...a, piece: p.id, task: t.id })))]);
+}

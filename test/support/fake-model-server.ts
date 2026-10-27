@@ -88,7 +88,11 @@ async function send(res: ServerResponse, a: Answer): Promise<void> {
   res.end();
 }
 
-export async function startFakeModelServer(steps: ModelStep[] = []): Promise<FakeModelServer> {
+/**
+ * `isTurn`: which requests are the conversation's, in place of the default (it offers tools): for a CLI locked down to no
+ * tools (a draft, issue #2862), whose conversation offers none.
+ */
+export async function startFakeModelServer(steps: ModelStep[] = [], o: { isTurn?: (body: Record<string, unknown>) => boolean } = {}): Promise<FakeModelServer> {
   let queue = [...steps];
   const requests: ModelRequest[] = [];
   const refused: string[] = [];
@@ -106,7 +110,7 @@ export async function startFakeModelServer(steps: ModelStep[] = []): Promise<Fak
       return;
     }
     const body = await readBody(req);
-    const turn = isTurn(body);
+    const turn = (o.isTurn ?? isTurn)(body);
     requests.push({ api, path, step: turn, body });
     const step: ModelStep = turn ? (queue.shift() ?? { fault: 'server-error', text: SCRIPT_ENDED }) : { text: SIDE_TEXT };
     const stream = body.stream === true;

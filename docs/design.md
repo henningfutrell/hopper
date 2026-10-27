@@ -38,7 +38,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 |-----|------|-----------------|
 | `src/domain/` | the heavy steps — which commands are heavy, what each kind keeps, the shims on a job's PATH (`heavy-steps.ts`, issue #2622 part 3); the store's own failure, which a caller tells from a fault of its data (`store-error.ts`, issue #1961); the delivery forecast of a change, its step estimates, promotion sets, delivery settings, the expedite flag and delivery ledger (`delivery-steps.ts`, `promotion-sets.ts`, `delivery-forecast.ts`, `delivery-settings.ts`, `delivery-expedite.ts`, `forecast-accuracy.ts` — the delivery ledger's rows and its repository port, issue #2554), wall-clock time in a time zone (`zoned-time.ts`); the event loop given back between a long timer loop's items (`yield-loop.ts`, issue #2392); how long the event loop was held since a moment, one reading per process that the watchdog gives (`loop-held.ts`, issue #2427); types (`types.ts`, the login line of the job rules and the login section of every run skill (`auth-pending.ts`, issue #472); re-exporting the ones split out to stay readable: `usage.ts` usage readings, usage report, accounts, usage pacing; `decider-policy.ts` the decider's policy; `usage-history.ts` usage samples and the usage graph; `token-usage.ts` the token ledger — a session's token use, its estimated cost, the rollups (pure, issue #2302); `token-waste.ts` its waste signals and tokens per merged pull request (pure, issue #2302 part 4); `machines.ts` attached machines and their edit; `terminal.ts` the job's terminal and the machine's at the executor port, issue #1128; `webhooks.ts` the webhooks edit; `question-gates.ts`; `routing.ts` routing rules; `plugins.ts`; `users.ts` users; `queue-gate.ts` the queue gate; `locked.ts` the locked entry, and who or what dismissed one, issue #1123; `machine-pick.ts` the machine a part that runs claude and names none uses, and how Settings shows a level whose machine cannot run it, pure — issues #442, #482; `review.ts` review sections — proposals and research reports, one model: statuses, versions, the trail, decisions, settings, each section declared by its `ReviewSectionType`, their parts read from the text (pure), issues #537, #543; `questions.ts` a question, its trail and the machine that raised it; `phase.ts` phase shifts — a job's phase (work, research, proposal), fork and switch, the settings, suggestions and what a job is told (pure), issue #548; `sections.ts` the section types — Questions, Proposals, Research, Logins, Failures — in nav order, issue #543; `sources.ts` a job source's status; `yolo-mode.ts` yolo mode — whether a job may merge its own pull request, per repository (pure), issue #579; `change-kinds.ts` change kinds — a pull request's kind from its files and changed lines, and each kind's merge gate (pure), issue #1076; `pull-requests.ts` after done — a done job's verdict (done, partly done, not) and what following its pull request found, issue #579; `pull-request-list.ts` the Pull requests list — each PR waiting job's pull request per job repository, with its yolo mode, and where merging waits (pure), issue #637; `repo-checks.ts` repositories with no checks — the state from what was found, a workflow file's triggers, the Add PR checks job's text (pure), issue #677; `issue-graph.ts` the issue graph — its nodes and edges, the place one read of an issue gives them (pure), issue #437; `work-items.ts` the work-item ledger — the work item states, the reducer that folds an event or a read of GitHub into an item, the counts (pure), issue #1067; `item-lifecycle.ts` the item lifecycle — each state's owner, next check and deadline, the reference a state needs, the reconciler's corrections (pure), issue #1891; `item-snapshots.ts` item snapshots — an item's approved text, its hash, a text change (pure), issue #662; `github-listing.ts` repository listings and the listing cache's port, issue #985; `github-outbox.ts` the GitHub outbox — its rows, its port, the coalescing of the rows due for one issue, a job act's marker (pure), issue #1238; `notifier-deliveries.ts` notifier deliveries — a notifier's rows and their port, issue #1587; `github-deliveries.ts` GitHub deliveries — what a delivery names, the GitHub webhook's view (pure), issue #1079; `shrink-guard.ts` the shrink guard — which files a push that brings in its base branch empties or shrinks, the refusal's text, and a job whose last push it refused (pure), issue #1096; `untracked-pull-requests.ts` the untracked pull requests — which open pull requests no job names and the ledger does not hold, the reason of each, the issue a pull request's text links (pure), issue #1176; `check-logs.ts` a failed check's log — its GitHub Actions job from its link, the excerpt a tend brief quotes, why it could not be read (pure), issue #993; `allowed-hosts.ts` the allowed hosts — the check of a host, the view (pure), issue #1024; `github-rate-limit.ts` the shared rate limiter's arithmetic — a rate-limit bucket from GitHub's headers, the wait before a call, the hold after a refusal, the poll plan, the settings (pure), issue #436; `source-item.ts` a source item and the source as the host takes it; `local-accounts.ts` the local accounts and their port, issue #1380; `job-layout.ts` where a job's files are in its work tree, `.worktrees`, issue #1188; `heap-aborts.ts` heap aborts — the Node report options of a job's tools, what a report's command is for a person, a heap abort's part (pure), issue #2722; `process-crashes.ts` the core dumps and OOM kills of a job's processes — what the job records of each, their parts (pure), issue #2722 part 3; `heap-retry.ts` the heap retry — a run again's larger memory limit and Node heap, its part (pure), issue #2722 part 4; `leftovers.ts` the leftovers a person decides — which the sweep does not judge, and the decisions that stand (pure), issue #1116; `sandbox-runs.ts` the sandbox runs ledger — a sandbox made for one step, its outcome, its port, issue #1349), ports (`ports.ts`, re-exporting the store's from `store.ts`, with the settings repositories from `settings-store.ts`, and the escalation levels' and the review's from `escalation-ports.ts`); `hopper-io-state.ts` the hopper.io state snapshot — what an instance may send for the dashboard, a closed schema and its pure projection, issue #466 | anything else in `src/` |
 | `src/decider/` | `decide(inputs, decisionId): Decision` — pure, no I/O, no clock; lane tuning's rules (`lane-tuning.ts`, `job-costs.ts`, issue #688) and what its decider calls may pick (`lane-calls.ts`); the signed-out tools that keep new jobs off a machine (`signed-out.ts`, issue #1128 part 5), and whether a job held on a not-signed-in question moves (`signedOutMove`, issue #1211); the memory floor (`memory-floor.ts`, issue #2291) and the memory pause (`memory-pause.ts`); the holds a machine's own problems make and their reasons, and the machines held off for reach that a hold or wait names (`machine-holds.ts`, issue #2427) | everything but `domain/` |
-| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `wait-check-leases.ts` (tenant 74) the wait checks' leases (issue #1694); `token-ledger.ts` (tenant 89) the token ledger (issue #2302; tenant 90 its failed test runs); `grades.ts` (tenant 102) the grades (issue #2845); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
+| `src/store/` | the database seam (`db.ts`: Postgres through `postgres-worker.ts`; every call's time totalled by statement, `slow-calls.ts`, issues #1154, #1383), schema, migrations (the instance's `migrations.ts` with migration 15 in `migration-attached-machines.ts`, 17 in `migration-users.ts`, 20 in `migration-accounts.ts`, 21 (owner → the default admin account, issue #220) in `migration-admin.ts`, 22 (no password user realm, issue #237) in `migration-no-password-realm.ts`, the users' tenant track `tenant-migrations.ts`), the instance store (`index.ts`: users, identity links, UI sessions, login codes, the sign-in config — `sign-in-config.ts` —, instance settings) and each user store (`user-store.ts`: repositories, event log, config records — `config.ts`); `migration-config.ts` moved the config documents to config records (issue #198); `migration-level-names.ts` (tenant 5) names escalation levels as levels (issue #209); `migration-jobs-dir.ts` (tenant 11) moves a work tree stored as `~` to the jobs directory (issue #314); `migration-connected-accounts.ts` (tenant 8) adds the connected account and its job source, `connected-accounts.ts` its repository, `migration-device-realms.ts` (23) the github realm through the hopper's app (issue #214), `migration-no-bootstrap.ts` (24) no bootstrap user (issue #238); 25 the join codes (issue #308); 26 the update channels (issue #423); `migration-session-lifetime.ts` (27) sessions that renew (issue #439) and `migration-client-key.ts` (tenant 12) the client targets that held a token variable; `migration-no-gh-source.ts` (tenant 14) takes out the gh CLI job source (issue #359); tenant 15 the usage history's `usage_samples`, `usage-history.ts` its repository and the usage graph's SQL (issue #385); `migration-name-the-machine.ts` (tenant 17) names the one machine that can run claude in a level or usage source that names none (issue #442); `migration-machine-work-trees.ts` (tenant 18) moves the paths that named no machine onto machines and routing rules (issue #361); tenant 21 the `logins` table, `logins.ts` its repository (issue #476); tenant 22 the `failures` and `problems` tables, `failures.ts` their repositories (issue #509); 29 the access tables, `access.ts` their repository (issue #559); tenant 32 the job stream's `job_stream` and `watches` (`migration-job-stream.ts`), `job-stream.ts` their repository (issue #613); tenant 34 the artifacts' `artifacts` and `artifact_shares` (`migration-artifacts.ts`), `artifacts.ts` their repository (issue #624); `migration-lane-recommendations.ts` (tenant 38) the lanes active mode applied made configured lanes (issue #688); `fold-user.ts` one user schema's rows into another's, for `UserRepository.fold` (issue #265); `github-listings.ts` (tenant 52) the listing cache (issue #985); `github-outbox.ts` (tenant 62) the GitHub outbox's rows (issue #1238); `notifier-deliveries.ts` (tenant 73) the notifier deliveries (issue #1587); `work-items.ts` (tenant 55) the work-item ledger — its table, its write in the transaction of each event and issue graph read, its rebuild (issue #1067; tenant 57 rebuilds it, part 4); `kept-secrets.ts` what every user's schema keeps sealed under the master key (issue #659); `sagas.ts` (instance 46) the sagas, their lease and abort as columns (issue #1524); `wait-check-leases.ts` (tenant 74) the wait checks' leases (issue #1694); `token-ledger.ts` (tenant 89) the token ledger (issue #2302; tenant 90 its failed test runs); `grades.ts` (tenant 102) the grades (issue #2845); `work-plans.ts` (tenant 106) the plan store (issue #2861); `rotate-master-key.ts` every value an old master key sealed, sealed again under the new key in one transaction (issue #659) | engine, http, decider |
 | `src/users/` | users (issue #158): one user's runtime (`runtime.ts`, every part of theirs composed over their user store), the runtimes of every user (`runtimes.ts`: start, add, stop, instance events fanned out), a user's environment (`env.ts`: secret prefix, CLI config dirs, user work dir), a user's Jev and TypeSafe API key (`typesafe-key.ts`, issue #657), a user's container-target commands, each in a command box through the sandbox module (`command-boxes.ts`, issue #865), a user's GitHub App private key, answered to the app source by its old variable's name (`github-app-key.ts`, issue #1243), the GitHub Apps installed on the organizations a user's GitHub connection knows, for the app source's setup card (`installed-apps.ts`, issue #1243), a user's system secrets at start and the move of the old copies (`system-secrets.ts`, issue #658), the instance's system secrets and the sign-in config over them (`instance-secrets.ts`), identity → user (`identities.ts`: link or provision), the leftover default admin account folded into the first GitHub admin's user at start (`leftover-admin.ts`, issue #265), a user's job sources split for the sync loop at start and on each change (`job-sources.ts`, issue #356), the doubles a runtime takes at its seams in tests (`seams.ts`), a user's link key and their client targets reached down their links (`link.ts`, issue #308), a machine leaving and a lane pod retired (`machine-leave.ts`, issue #1284), a user's side of the GitHub proxy (`github-proxy.ts`, issue #563), what a quarantine takes back — the job's steps and its item's vault grant (`quarantine.ts`, issue #655 part 6), a user's job stream with the types each part registers, and the user's artifacts that emit on it (`job-stream.ts`, issues #613, #624), a user's executors as the plugins config has them now (`executors.ts`), a machine's lanes set as an edit of the machine sets them, for an applied lane recommendation (`machine-lanes.ts`, issue #688), the master key rotation composed — the store's transaction, then every part on the new key (`master-key-rotation.ts`, issue #659), a user's connected accounts as the runtime makes them (`connected-accounts.ts`) and a job source for each further GitHub account (`further-sources.ts`, issue #1448) | http, decider |
 | `src/webhooks/` | signing, dispatcher, retry/backoff, a subscription's signing secret — a system secret in the user's vault (issue #658), or the runtime variable of one from before (`secrets.ts`, issue #451) —, the UI edit of the subscriptions and their secrets (`edit.ts`, rows in the store) | engine, http, decider |
 | `src/outbound/` | the outbound guard — one per process: each destination's rate limit, dedupe and circuit — and each user's `Outbound`, which writes the user's send log (issue #1014, "Outbound sends"); the dedupe keys, hashed, through `OutboundKeyRepository` in the database (issue #1627); the arithmetic and the types are `src/domain/outbound.ts` | engine, http, store, plugins, decider, webhooks |
@@ -51,6 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), a poison failure, whose assessment throws, handed to a person with the reason (`poison.ts`, issue #1961), a heap abort pattern — the pattern, pure (`heap-pattern.ts`), and what the assessor reads and holds for it, and the heap retry of a failure handed to a person (`heap-holds.ts`) — (issue #2722), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a pass over many of them finds stale, with a fixed number of reads of the jobs (`pass-reads.ts`, issue #1411); what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010), and the check of each give-back it runs — Retry, Continue, I fixed it, Push it, Tend again — from what the act names, which the sync loop asks at the answer and at the send of its GitHub outbox row (`give-backs.ts`, issue #1238 part 5). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice, or several in one call, through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, the risk call on a level's answer (`risk.ts`, issue #679), a call's ceiling (`deadline.ts`), what makes a decision consequential and which of it are the guards (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts`, `risk.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`, `QuestionRisk`) are in `src/domain/minor-decisions.ts`; the question pipeline (the risk call, `QuestionRisk`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
+| `src/completion-reviews/` | the model review of a completion review (issue #2846 part 3, "Completion reviews"): the sweep that asks the model the settings name for each kept review with none, under the daily cost cap, and keeps its answer with the review; its model, Claude through the `claude` CLI (`model.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but `claude-print.ts` |
 | `src/tldr/` | the TL;DR (issue #569, "TL;DR"): its rules — the text a card's TL;DR is written from, which cards get one, the prompt, the answer made plain text, the agent's summary as the fallback, which stored one a card shows (`text.ts`, pure but for the hash) —, the sweep that writes them (`service.ts`), its model: Claude Haiku through the `claude` CLI and the sweep with it (`haiku.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but in `haiku.ts` |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
@@ -4485,7 +4486,7 @@ Only the call and the reading differ (`src/executors/print-agents.ts`), taken fr
 |----------|-----------|---------|--------|---------------|
 | `cursor-agent` | `cursor-agent -p --output-format json --workspace <cwd> <args> [--model m] -- <text>` | `--resume <chat>` | one JSON result: `result`, `session_id` | `is_error` |
 | `codex` | `codex exec --json <args> [--model m] -- <text>` | `codex exec resume --json <args> [--model m] -- <thread> <text>` | JSON lines: `thread.started` `thread_id`; the last `item.completed` `agent_message` `text` | `turn.failed` `error.message` |
-| `opencode` | `opencode run --format json <args> [--model m] -- <text>` | `--session <id>` | JSON lines: `sessionID`; the `text` parts of the last message | an `error` event: `error.name`, `error.data.message` |
+| `opencode` | `opencode run --standalone --format json <args> [--model m]`, the text on stdin | `--session <id>` | JSON lines: `sessionID`; the `text` parts of the last message | an `error` event: `error.name`, `error.data.message` |
 | `omp` | `omp -p --mode json --no-title <args> [--model m] -- <text>` | `--resume <id>` | JSON lines: `session` `id`; `agent_end`'s last assistant message, its `text` parts | `stopReason` `error`: `errorMessage` |
 | `claude` | `claude -p --output-format json <args> [--model m] -- <text>` | `--resume <id>` | one JSON result: `result`, `session_id` | `is_error` |
 
@@ -4493,6 +4494,14 @@ A non-zero exit fails the job with the CLI's own error when it printed one, else
 is `/dev/null`: codex and opencode read a stdin that is not a terminal to its end before the turn, and the
 pipe a run hands its child is never closed, so without it the turn never started (found on the agent
 boxes).
+
+**opencode 2** (issue #2856). Its stdin is a file of the turn's text in the job's scratch dir (`turn-text`), never
+`/dev/null`: opencode 2 quotes a text argument with a space again, and after `--` sends it twice, so an argument would
+reach the model changed (the dialect's `textOnStdin`). `--standalone` runs a private server for the run. Without it,
+`opencode run` starts or joins opencode's background service (`opencode serve --service`), which outlives the turn and
+keeps the environment and config of the run that started it: the next turn, maybe another job's, would run with them.
+opencode 2 is the `@opencode/cli` package (the box image installs it); `opencode-ai` is the 1.x line, which has no
+`--standalone`. Its shell tool is `shell` (1.x: `bash`).
 
 **Claude Code in print mode** (`claude`, issue #533). The owner asked that headless interfaces be preferred where they fit,
 for containers. Evaluated against herdr-claude: print mode shows no startup screen at all — no onboarding, no trust
@@ -14355,7 +14364,7 @@ job rules are one text for every job of a user; what is true for one repository,
 **Verification.** `test/job-rules/repo-job-rules.test.ts`, `test/integration/job-rules.test.ts` (a job of the repository
 gets them, a job of another does not), `test/cli.test.ts`, `test/ui/job-rules-panel.test.ts`.
 
-## Repository memory (issue #2847 part 1, 2026-10-26)
+## Repository memory (issue #2847, 2026-10-26)
 
 Owner requirement: jobs stop finding the same things again. The hopper keeps, for each repository, what earlier jobs
 learned — its conventions (build and test commands, layout, style, traps) and its past fixes — and gives the relevant ones
@@ -14383,7 +14392,7 @@ to its next jobs.
   then how to write memory lines. A repository with no entry yet gets only that last part. The entries it got are
   recorded on its timeline, `job.memory_offered` (their ids and how many were left out), again at a later start only when
   they changed. A running job keeps what it started with; an edit, an approval, a disable or a removal reaches the next
-  job. Post-completion reviews (issue #2846) and grading (issue #2845) can add entries through the same service later.
+  job. Grading (issue #2845) can add entries through the same service later.
 - **Stale entries.** An entry expires `expireDays` (default 180) after its last change: no job is offered it, the view
   marks it `expired`, and a person's approval, an edit or a job learning it again renews it. A later job that finds it
   wrong flags it, as above.
@@ -14398,12 +14407,22 @@ to its next jobs.
   `POST /ui/api/repo-memory/settings` against the version read; least role admin, as the repository job rules
   (`src/http/ui/repo-memory.ts`). `hopper memory list|add|edit|approve|disable|enable|remove` posts there;
   `hopper config set repo-memory` sets the settings.
-- **Left of part 1.** The UI: a view of each repository's entries with edit, delete, approve and disable, and the
-  settings. The API and the CLI do every act meanwhile.
+- **In the UI (part 2).** Settings → Repository memory (`#settings/repo-memory`, `ui/src/views/repo-memory.tsx`, the pure
+  parts `ui/src/model/repo-memory.ts`): the summary of the settings and their form (on, approval, the size cap, the expiry
+  and a row per repository or owner), saved whole against the version read; then the entries, filtered by repository,
+  each with its kind, state, `expired`, area, confidence, and the job that learned it or a person, and a flag's job and
+  reason. An admin approves one no job is offered for its state or age, disables one in use, enables a disabled one,
+  edits its kind, area and text (only what differs is sent; an emptied area is taken away), removes it after a confirm,
+  and adds an entry to the repository the filter names. Each act reads the entries again; the next job of the repository
+  gets it. A reader sees the same with no act.
+- **Not learned from completion reviews.** A completion review's suggestions (issue #2846) are about the hopper's own
+  settings (routing, lanes, templates, prompts), not a convention of the repository; so it adds no entry. A later signal
+  that is about the repository can call the same service.
 
 **Verification.** `test/domain/repo-memory.test.ts`, `test/integration/repo-memory.test.ts` (an entry a job learned and a
 person approved is offered to the next job of the same repository and not of another; an edit, a flag, a disable and a
-removal reach the next job; the settings), `test/cli-operator-memory.test.ts`.
+removal reach the next job; the settings), `test/cli-operator-memory.test.ts`; the UI: `test/ui/repo-memory.test.ts` (the model) and `test/ui/repo-memory-view.test.ts`
+(the view in the whole app: each act posts and the entries are read again; the filter; the settings; a reader).
 
 ## Decide and proceed (issue #1059, 2026-10-13)
 
@@ -29726,8 +29745,16 @@ in on. The hopper holds no model key for it.
   - `codex exec --json --ephemeral --ignore-user-config --ignore-rules --skip-git-repo-check --sandbox read-only`, the
     prompt on stdin (`-`).
   - `cursor-agent -p --mode ask --sandbox enabled --trust`: ask mode is read-only.
-  - `opencode run --format json --pure`, with `OPENCODE_PERMISSION={"*":"deny"}`, no project config and no Claude Code
-    prompt or skills, set in its run script (`OPENCODE_RUN`) so it holds over ssh too.
+  - `opencode run --standalone --format json`, the prompt on stdin (opencode 2, issue #2862). Its lockdown
+    (`OPENCODE_LOCKDOWN`) is in its environment, set in its run script (`OPENCODE_RUN`) so it holds over ssh too: every
+    tool's permission denied in `OPENCODE_CONFIG_CONTENT` (`{"permission":{"*":"deny"}}`, the config opencode reads last,
+    so it wins over the user's own), no project config, no Claude Code prompt or skills, no update check. Denied every
+    tool, opencode offers the model none, and answers a tool call with an error (`No tool named … is currently
+    available`); `test/acceptance/draft-opencode.test.ts` shows it with the real CLI and the fake model server, with the
+    user's own config allowing every tool. `--standalone` runs a private server for the turn, never opencode's background
+    service. opencode 2 has no switch that leaves plugins out (1.x had `--pure`), and takes an effort as the model's
+    variant (`--model provider/model#effort`): with no model named, the effort is left out. opencode 1.x, which has
+    no `--standalone`, cannot draft.
   - `omp -p --no-tools --no-session --no-skills --no-rules --no-extensions --no-lsp`.
   The argv and the reading of the print-mode CLIs are the print-mode executors' dialects (`print-agents.ts`): a dialect's
   `said` reads the answer without a session, which a draft keeps none of; `read`, a job's, still needs one. A CLI with
@@ -29749,7 +29776,7 @@ in on. The hopper holds no model key for it.
 
 - **Nothing of the run kept on the machine.** codex (`--ephemeral`), omp (`--no-session`) and claude keep no session.
   opencode keeps one for every run: its run (`OPENCODE_RUN`) writes the output to a file in the run dir, deletes the
-  session it names (`sessionID`) with `opencode session delete --pure` in the same lockdown environment, whether the run
+  session it names (`sessionID`) with `opencode session delete --standalone` in the same lockdown environment, whether the run
   went well or not, and then prints the output. Cursor's agent keeps its project data under `CURSOR_DATA_DIR`, which holds
   no login: its run (`CURSOR_RUN`) points it into the run dir, so it goes with the dir; and it keeps its chat in its config
   dir (`$CURSOR_CONFIG_DIR`, else `$XDG_CONFIG_HOME/cursor`, else `~/.cursor`) under `chats/<md5 of the run dir's real
@@ -29763,7 +29790,7 @@ in on. The hopper holds no model key for it.
     has free models) and omp has no status call: the draft says it, when it runs;
   - its model list: claude's stream-json initialize handshake (as `claudeModels`), `codex debug models` (the models it
     shows, `visibility: list`), `cursor-agent models` (the lines after `Available models`, `<id> - <name>`),
-    `opencode models` (`provider/model` lines), `omp models --json` (each model's `selector`). A list that fails while the
+    `opencode models --standalone` in the draft's lockdown (`provider/model` lines), `omp models --json` (each model's `selector`). A list that fails while the
     CLI is there and signed in leaves the CLI's own default model: usable, no models.
   Not installed and not signed in are said in the same words as a draft's failure. A client target has no probe call
   (its client runs claude for a level or a usage read only): claude there is usable while the client is dialled in,
@@ -29771,7 +29798,7 @@ in on. The hopper holds no model key for it.
 
 **Not done here.** The UI's machine and provider picker (issue #471), which calls the probe; the run dir on the machine
 when an ssh run is stopped (the kill reaches the local ssh only, as "Run skills" says); whether a draft counts toward
-usage and pacing (issue #470 D11). The prompt of `cursor-agent`, `opencode` and `omp` goes in their argv,
+usage and pacing (issue #470 D11). The prompt of `cursor-agent` and `omp` goes in their argv,
 as their dialects call them: the machine's other users can see it in its process list while the turn runs.
 
 **Verification:** `test/drafting/run.test.ts`, against fake CLIs: each provider locked down, the prompt delivered, the
@@ -29782,6 +29809,9 @@ opencode's session deleted after a run that went well and one that failed, Curso
 data in the run dir, here and over ssh. `test/drafting/probe.test.ts`, against a fake of each CLI's probe calls: each
 provider usable with the models it lists, and their labels; claude's account never in the answer; no models listed;
 over ssh; not signed in, not installed, a refused machine, a timeout; a client target unchecked, or not dialled in.
+`test/acceptance/draft-opencode.test.ts` (issue #2862), with the real opencode 2 CLI against the fake model server: the
+draft comes back, and the tool call the model makes in that turn is refused, with the user's own config allowing every
+tool.
 
 ## A GitLab source (issue #1448, part 2, 2026-10-17)
 
@@ -33226,7 +33256,7 @@ the same kind (its `type`, with its `item`'s or `part`'s type); the check names 
 **What it found.**
 - The omp fake printed `errorMessage: null` on an answer with no error; omp 18.7 prints no such field. The fake no longer
   does.
-- opencode 1.19 retries a 5xx answer and a cut stream with a growing backoff and no limit, and omp 18.7 a 429 and a 5xx
+- opencode 2.1 retries a 429, a 5xx answer and a cut stream with a growing backoff and no limit (1.19: not a 429), and omp 18.7 a 429 and a 5xx
   (still at it after 150 s): only the turn's timeout (`timeoutMs`) ends such a job. The test says so for each
   (`retriesPastTimeout`), so a change in it shows.
 - claude, after a cut stream, asks again with no stream: the `cut` fault ends that connection too.
@@ -36129,70 +36159,99 @@ a notification for a new-repository ask.
 dismissed and not asked again; an owner's `accept` adds the repository and its issue becomes a job; a bad owner is 400),
 `test/ui/new-repositories-view.test.ts`.
 
-## Planned work (issue #2840, parts 1–2, 2026-10-26)
+## Planned work (issues #2840, #2861, 2026-10-26)
 
 Requirement (issue #2840): see all planned work broken down — a plan, its pieces, their tasks —, where each part stands,
-tied to the jobs that do it, and export it. The planned layer is the only new data; job ids and stages are read from the
-jobs, never copied. Glossary: **planned work**, **work plan**, **plan piece**, **plan task**, **plan status**.
+tied to the jobs that do it, and export it. Requirement (issue #2861, which replaced the first build): the hopper's own
+database is where a work plan is kept — the **plan store** —, GitHub's sub-issues are one way to fill it, a plan artifact is a
+record, never a line of an issue's body, and the CLI answers what the API and the tab do. Glossary: **planned work**, **work
+plan**, **plan piece**, **plan task**, **plan status**, **plan store**, **plan sync**, **plan artifact**.
 
-**Where the tree comes from.** GitHub's sub-issues, as the issue graph already keeps them (`sub_issue_of`, "The issue graph"),
-and the required children jobs filed (`job.child_issue_filed` with `required`). Jobs are already issues, so a plan task's
-jobs are the jobs of its issue, and nothing is kept in a second store: the planned layer is the issues themselves. The
-**work plan** is the issue asked for; its sub-issues are its **plan pieces**; theirs are **plan tasks**. A plan piece with
-no sub-issues is its own one plan task; an issue with no sub-issues is a work plan of one plan piece, itself. A sub-issue
-deeper than a plan task belongs to that plan task: its jobs count there. A cycle ends at the first issue seen again. Sub-issues
-are in the order of their repository and number (GitHub's own order is not kept). `dependsOn`: the issues that block a plan
-task, GitHub's issue dependencies (`blocked_by`). An issue a GitHub source did not read yet (not listed: no hopper label)
-is not in the tree; its sub-issues known from their own reads are.
+**The plan store** (`src/domain/work-plans.ts`, `src/store/work-plans.ts`, tenant migration 106). Five tables of the user's
+schema: `work_plans` (a plan: its id — its issue's ref `owner/name#n`, the repository lowercase —, title, URL, `sync`,
+`synced_at`, times), `plan_pieces` and `plan_tasks` (in order; a plan task keeps its issues — its own and every sub-issue
+under it, each with whether it closed as completed at the last sync — and the issues that block it, as JSON),
+`plan_job_links` (a job linked to the plan, a plan piece or a plan task) and `plan_artifacts`. Every read is from the store
+and the job graph: a plan stays, and reads the same, when its GitHub sync is off or no GitHub source runs.
+
+**The plan sync** (`src/engine/plan-sync.ts`). It imports the tree of an issue into the store from the issue graph —
+GitHub's sub-issues as the GitHub sources keep them (`sub_issue_of`, "The issue graph") and the required children jobs filed
+(`job.child_issue_filed` with `required`) —, links the newest job of each issue of the tree (`getBySourceKey`), and keeps each
+linked job's pull request as a `pull_request` plan artifact. It replaces the kept tree; it never removes a job link or an
+artifact, so a person's records outlive a change on GitHub. `POST /ui/api/planned-work/import` runs it once (a new plan's
+`sync`: `github` by default, or `off`); the pass runs it again every 5 minutes, on the host that holds its lease
+(`plan-sync`), for each plan whose sync is `github`, from one read of the issue graph. `POST /ui/api/planned-work/sync` sets a
+plan's sync and, with `github`, syncs it now (409 when the issue graph knows its issue no more: the tree stays). The sync
+reads only the database. **One way only:** the hopper writes nothing to GitHub for a plan — no sub-issue, no body, no label
+—, as "GitHub text is neutral" (AGENTS.md) allows it only the writes it names; a plan edited in the store is not pushed back.
+
+**The tree.** The **work plan** is the issue imported; its sub-issues are its **plan pieces**; theirs are **plan tasks**. A
+plan piece with no sub-issues is its own one plan task; an issue with no sub-issues is a work plan of one plan piece, itself.
+A sub-issue deeper than a plan task belongs to that plan task: its jobs count there. A cycle ends at the first issue seen
+again. Sub-issues are in the order of their repository and number (GitHub's own order is not kept). `dependsOn`: the issues
+that block a plan task, GitHub's issue dependencies (`blocked_by`). An issue a GitHub source did not read yet (not listed: no
+hopper label) is not in the tree; its sub-issues known from their own reads are.
 
 **Where each stands** (`src/domain/planned-work.ts`, pure). The jobs are the job graph's (`readJobGraph`,
-`src/http/job-graph-read.ts`, split from the job graph's route so both read the same jobs), with the newest job of each
-issue of the plan added, though it ended before the queue's window. Each job counts by its job stage: `failed`, or waiting
-on a person (`waitsOnYou`, or `operator_led`), is `blocked`; `done` is `done`; `superseded` and `cancelled` count for
-nothing; any other stage (queued, running, waiting, PR open, partly done) is `running`. A plan task's **plan status**: a
-blocked job blocks it; else a running one runs it; all done is done; with no job that counts, `done` when its issue closed as
-completed (the issue graph's read) or the job graph has its issue done, else `planned`. A plan piece and the work plan roll up
-the same way from what is under them and their own issue's jobs: a blocked part blocks it, only planned parts leave it
-planned, all done is done, and anything else — a part that runs, or done parts beside planned ones — runs it.
+`src/http/job-graph-read.ts`, shared with the job graph's route so both read the same jobs), with the newest job of each
+issue of the plan and every job the store links to it added, though they ended before the queue's window. A plan task's
+jobs: the jobs of its issues and the jobs linked to it, once each. Each job counts by its job stage: `failed`, or waiting on
+a person (`waitsOnYou`, or `operator_led`), is `blocked`; `done` is `done`; `superseded` and `cancelled` count for nothing; any
+other stage (queued, running, waiting, PR open, partly done) is `running`. A plan task's **plan status**: a blocked job blocks
+it; else a running one runs it; all done is done; with no job that counts, `done` when each of its issues closed as completed
+at the last sync or the job graph has it done, else `planned`. A plan piece and the work plan roll up the same way from what is
+under them and their own jobs: a blocked part blocks it, only planned parts leave it planned, all done is done, and anything
+else — a part that runs, or done parts beside planned ones — runs it.
 
-**The route.** `GET /api/planned-work?issue=<owner/name#n | the issue's URL>`, the user's own: a read, so an API token needs
-`planned-work:read` (the Jobs section of the scope registry). 400: not an issue; 404: the issue graph and the lineage links
-know no such issue. Made on each read, never kept; no GitHub read.
+**Plan artifacts.** What a person judges a plan piece or a plan task by: a row of `plan_artifacts` — `type` (`pull_request`,
+`screenshot`, `report`, `link`), `ref` (a URL, or a hopper artifact's id), its plan piece, its plan task (none: the piece's own),
+the job it came from, `source` (`sync` or `person`, with who), and its times. `POST /ui/api/planned-work/artifacts` adds one (the
+same type and ref on the same piece and task again is the one kept), `…/artifacts/remove` removes one. No code reads an issue's
+body for it: the issue graph's read asks GitHub for no body. Not a hopper **artifact** (a page a job made), though its ref can
+name one.
 
-**The piece artifact** (part 2). What a person judges a plan piece by — a screenshot, a pull request, a report — is a line
-of its issue's body: `Artifact: <text or link>` (any case, in bold or as a list item too; the first such line; at most 300
-characters; `pieceArtifactOf`). The issue graph's read of an issue asks GitHub for the body (`issue-place.ts`), keeps only that
-line's text as the issue node's `artifact` attribute — empty when the body has none, so a line taken away clears it —, and
-never the body. A plan piece's `artifact` is that attribute; absent when empty. Not a hopper **artifact** (a page a job made),
-though its link can be one.
+**The routes** (`src/http/planned-work.ts`). Reads, the user's own, so an API token needs `planned-work:read` (the Jobs
+section of the scope registry): `GET /api/planned-work/plans` (every kept plan rolled up, without its tree),
+`GET /api/planned-work?plan=<owner/name#n | the issue's URL>` (one plan: 400 not an issue; 404 the store keeps no such plan),
+and the export. Writes, behind a UI session or an API token with the operator role (`planned-work:import`, `planned-work:sync`, `planned-work:remove` — a plan's and an artifact's —, `planned-work:artifacts`): import, sync,
+`remove` (a plan, its links and artifacts; jobs and issues stay), and the artifacts'. No GitHub read or write.
 
-**The export** (part 2). `GET /api/planned-work/export?issue=…&format=csv|json` answers the same work plan as a file to save
+**The export.** `GET /api/planned-work/export?plan=…&format=csv|json` answers the same work plan as a file to save
 (`content-disposition: attachment`, `src/domain/planned-work-export.ts`, pure). CSV: one row per plan task, the columns
-`plan_id, plan_title, piece_id, piece_title, piece_status, task_id, task_status, job_ids, job_statuses, artifact, updated_at`;
-`job_ids` and `job_statuses` joined by `|`, a job's status its job stage (the Jobs view's word); `artifact` its plan piece's;
-`updated_at` the newest of its issues' updates (the issue graph's) and its jobs' stage changes (`stageSince`); an empty value
-an empty cell. A text cell a spreadsheet would read as a formula (it starts with `=`, `+`, `-`, `@`, a tab or a carriage return)
-starts with a quote mark, since an issue title is anyone's text. JSON: the work plan nested with snake_case keys — `plan_id`,
-`pieces[].piece_id`, `tasks[].task_id`, `depends_on`, `updated_at`, `jobs[]: { id, status }` —, beside the camelCase of
-`GET /api/planned-work` for the rest of the API. Same scope as the read (`planned-work:read`). Nothing leaves the owner's
-hopper but this answer to their own read: no plan data is sent anywhere.
+`plan_id, plan_title, piece_id, piece_title, piece_status, task_id, task_status, job_ids, job_statuses, piece_artifacts,
+task_artifacts, updated_at`; `job_ids`, `job_statuses` and the artifacts' refs joined by `|`, a job's status its job stage (the
+Jobs view's word); `updated_at` the newest of its issues' updates (at the last sync) and its jobs' stage changes
+(`stageSince`); an empty value an empty cell. A text cell a spreadsheet would read as a formula (it starts with `=`, `+`, `-`,
+`@`, a tab or a carriage return) starts with a quote mark, since an issue title is anyone's text. JSON: the work plan nested
+with snake_case keys — `plan_id`, `sync`, `synced_at`, `pieces[].piece_id`, `tasks[].task_id`, `depends_on`, `updated_at`,
+`artifacts[]: { id, type, ref, job_id, source, by, created_at, updated_at }`, `jobs[]: { id, status }` —, beside the camelCase
+of `GET /api/planned-work` for the rest of the API. Nothing leaves the owner's hopper but this answer to their own read.
 
-**The view** (part 2). Jobs → **Planned work** (`#jobs/planned-work/<owner/name#n, encoded>`, `ui/src/views/planned-work.tsx`,
-`ui/src/model/planned-work.ts`): a field names the issue, and the tab draws its work plan left to right — the work plan, its
-plan pieces, their plan tasks, then each plan task's jobs (d3's tidy tree, as the Jobs graph) —, each node by its plan status:
-done a solid fill, running blue, planned dashed grey, blocked (needs a person) orange; each job by its own part in the
-roll-up (`planStatus` on each job of the read). A plan task's depends-on link is a dashed orange bow. Above it, a bar of how
-many plan tasks are in each plan status. A click on a node opens a plan piece's artifact when it is a link, else the node's
-issue on GitHub, or a job's view. CSV and JSON save the export through the session's read (`download`, `ui/src/lib/api.ts`).
-It reads again each time the store's jobs change, as the Jobs tab does. A plan piece's or the work plan's own jobs count in
-their plan status but are not drawn: the graph has one column of jobs, those of the plan tasks.
+**The CLI** (`src/cli-operator-plan.ts`). `hopper plan list`, `hopper plan show <plan>`, `hopper plan export <plan> --format
+csv|json` and `hopper plan import <issue> [--sync github|off]` call the same routes, so the CLI, the API and the tab answer the
+same data, roll-up and export; the CSV prints as the daemon answers it (`raw` on the call), never as a JSON string.
 
-Tests: `test/domain/planned-work.test.ts` (each plan status, the roll-up, the tree's edge cases, the piece artifact and its
-line, `updatedAt`), `test/domain/planned-work-export.test.ts` (the CSV columns and rows, the formula guard, the nested JSON),
-`test/sources/issue-place.test.ts` and `test/domain/issue-graph.test.ts` (the artifact line read and kept),
-`test/integration/planned-work.test.ts` (real database and HTTP: a tree with a done, a planned, a blocked and a running plan
-task, the job stages the job graph's, 400 and 404, the export in both formats), `test/ui/planned-work-model.test.ts` and
-`test/ui/planned-work-view.test.ts` (the layout, the colours, the counts, the clicks, the CSV saved).
+**The view.** Jobs → **Planned work** (`#jobs/planned-work[/<owner/name#n, encoded>]`, `ui/src/views/planned-work.tsx`,
+`ui/src/views/planned-work-records.tsx`, `ui/src/model/planned-work.ts`). With no plan named, the kept plans, each a link. A
+field names an issue: **Open** reads its plan from the store; a plan the store does not keep says so, and **Import from
+GitHub** keeps it and opens it. The tab draws the plan left to right — the work plan, its plan pieces, their plan tasks, then
+each plan task's jobs (d3's tidy tree, as the Jobs graph) —, each node by its plan status: done a solid fill, running blue,
+planned dashed grey, blocked (needs a person) orange; each job by its own part in the roll-up (`planStatus`). A plan task's
+depends-on link is a dashed orange bow. Above it, a bar of how many plan tasks are in each plan status, and the plan's sync
+(Sync now, turn it off or on). A click on a node opens its first artifact that is a link, else its issue on GitHub, or a job's
+view. Under it, the plan artifacts, each removable, and a form that adds one to a plan piece or a plan task. CSV and JSON save
+the export through the session's read (`download`, `ui/src/lib/api.ts`). It reads again each time the store's jobs change, as
+the Jobs tab does. A plan piece's or the work plan's own jobs count in their plan status but are not drawn.
+
+Tests: `test/domain/planned-work.test.ts` (the import of the tree and its edge cases, each plan status, the roll-up, linked
+jobs, artifacts on pieces and tasks, `updatedAt`), `test/domain/planned-work-export.test.ts` (the CSV columns and rows, the
+formula guard, the nested JSON), `test/sources/issue-place.test.ts` (no body kept), `test/integration/planned-work.test.ts`
+(real database and HTTP: import, a done, a planned, a blocked and a running plan task, the job stages the job graph's, the
+plan kept with its sync off and synced again with it on, artifacts added, exported, kept over a sync and removed, `hopper plan`
+answering what the API does, 400 and 404), `test/cli/plan.test.ts` (the calls and usage), `test/ui/planned-work-model.test.ts`
+and `test/ui/planned-work-view.test.ts` (the list, the layout, the colours, the counts, the clicks, import, sync, artifacts,
+both exports), and `test/integration/planned-work-browser.test.ts` (the built tab in Chromium against the real daemon: import,
+the graph from the store, an artifact added, both exports equal to the API's).
 
 ## Grades (issue #2845, part 1, 2026-10-26)
 
@@ -36404,7 +36463,7 @@ helped — and keeps that with the job, so improvements and hopper defects are n
   lanes; two preemptions → routing; three questions → prompt (write the answers in the issue or the job rules); a long wait
   on a person → config (approve ahead); failing tests → template; no progress or cache churn → prompt (smaller parts); a lost
   link or a resume loop → config (the machines); memory → config (the job memory limit, the heavy-step gate). Rules only: no
-  model reads the run, and no text of the session is read.
+  model reads the run, and no text of the session is read (the model review of part 3 comes after, beside it).
 - **Which jobs.** The user's `CompletionReviewSettings`: `on` (default on), `outcomes` (default `failed`), `multiJob` (default
   on: a job of a work item with more than one job is reviewed whatever its end) and `minRunMinutes` (default 5: a first run
   shorter than this is trivial and skipped; a second attempt never is). An admin sets them in Settings → Completion reviews
@@ -36419,8 +36478,7 @@ helped — and keeps that with the job, so improvements and hopper defects are n
 - **Reads.** `GET /api/jobs/:id/completion-review` answers `{ review }`, or `{}` while there is none. The job view's
   **Completion review** panel (`ui/src/views/job-completion-review.tsx`, `ui/src/model/completion-review.ts`) shows it.
 - **Bug-report recommendations** (part 2): see "Bug-report recommendations" below.
-- **Not yet** (later parts of issue #2846): a review by a model (its harness, model and cost cap in the settings); and review
-  outcomes for grading (issue #2845).
+- **The model review** (part 3): see "The model review" below. **Grades** (part 3): see the same section.
 
 Tests: `test/domain/completion-review.test.ts` (the defaults and which jobs, the stages, the restarts, a clean run, a
 stalled one with its suggestions, a push as progress), `test/integration/completion-reviews.test.ts` (real database and HTTP:
@@ -36463,6 +36521,47 @@ Tests: `test/domain/review-defects.test.ts` (the rules and the signature), `test
 (real database and HTTP, GitHub a fake: nothing filed before Approve, Approve files once through the pipeline, a later
 review of the same signature recommends nothing, Dismiss keeps the reason, off refuses, a job's own failure recommends
 nothing), `test/ui/recommendations-needs-you.test.ts`, `test/ui/bug-reports-view.test.ts`, `test/ui/job-completion-review-view.test.ts`.
+
+### The model review (issue #2846 part 3, 2026-10-27)
+
+The rules see only what the hopper kept in numbers. A model can read the same facts and the job's timeline and say more:
+why the run stalled, and what to change. It costs tokens, so it is off until an admin turns it on, and it stops at a daily
+cost cap.
+
+- **Settings.** `CompletionReviewSettings.modelReview` (`src/domain/completion-review.ts`): `on` (default off), `model`
+  (default `haiku`: the alias the `claude` CLI resolves; any model name it takes) and `dailyCostUsd` (default 1, at most 100).
+  Saved in the same `completionReview` setting; one saved before this part reads these defaults
+  (`completionReviewSettingsOf`). Settings → Completion reviews; `POST /ui/api/completion-review` takes `modelReview` with any
+  of its parts, and one left out keeps its value.
+- **Which harness.** One: the `claude` CLI in print mode, locked down as the TL;DR's and the escalation level's run
+  (`src/plugins/claude-print.ts`): no tools, no MCP, no settings, no session, the answer bound to a JSON Schema, the prompt on
+  stdin, in the user's work dir, with the user's CLI config dirs. No setting picks another: no other harness the hopper runs
+  has a locked-down turn with a bound answer here.
+- **The sweep** (`src/completion-reviews/model.ts`, lease `model-reviews`, every minute): with the completion reviews and the
+  model review on, each kept review of the last two days with no model review and no failed one, oldest first, one at a
+  time. The prompt (`modelReviewPrompt`, `src/domain/model-review.ts`, masked) holds the job's title and executor, its
+  failure's cause and summary, the rule review's facts, and its timeline — each event's type and minute, the first and last 30
+  of a longer one —, never the session's text. The answer (`modelReviewAnswer`): a `summary`, `went`, `stalls`, `suggestions`
+  (the same areas) and `hopperDefect` (why it thinks the run hit a defect of the hopper itself), each text at most 500
+  characters and 6 lines each. Kept on the review as `modelReview`, with the `model` that ran, its `costUsd` (the CLI's
+  `total_cost_usd`) and `at`; `completion_review.model_reviewed`. A failed run is kept as `modelFailed` and not asked again.
+- **The cost cap.** Before each ask, the sweep sums `costUsd` of the model reviews of the last day (`modelCostOfDay`); at the
+  cap or above, it asks no more until the sum falls under it, and says so once in the log. A run whose cost the CLI did not say
+  counts as none.
+- **Bug reports stay with the rules.** The model's `hopperDefect` shows on the job view as the model's view; it makes no
+  bug-report recommendation. A recommendation needs a stable signature, so the same defect is one row and a dismissal holds.
+- **Grades** (issue #2845). Each kept review is an event, `completion_review.kept` (its outcome, waste signals and suggestion
+  areas), one of `GRADE_EVENTS`, so the grade pass grades the job again. The automatic grade has a seventh signal, `review`
+  (weight 1 by default): 1 when the review found no waste signal, else 1 / (1 + the waste signals), its why naming them; a job
+  with no review leaves it out. A saved weight setting without it reads the default, and the change of weights grades the
+  kept grades again once.
+- **Reads.** `GET /api/jobs/:id/completion-review` answers `review.modelReview` or `review.modelFailed`; the job view's
+  Completion review panel shows the model's review under the rules' one, with its model and cost.
+
+Tests: `test/domain/model-review.test.ts` (the defaults, the prompt, the answer cut to size, the day's cost and the reviews
+that wait), `test/domain/grades.test.ts` (the `review` signal), `test/integration/completion-review-model.test.ts` (real
+database and HTTP, the model a double: off asks nothing; the settings; the model review kept and its event; the cap; a failed
+answer kept once; the grade's `review` line), `test/ui/completion-review.test.ts`, `test/ui/job-completion-review-view.test.ts`.
 
 ### The job's side: hopper-egress (part 2, 2026-10-26)
 

@@ -45,7 +45,7 @@ beforeEach(() => {
   rmSync(join(dir, 'agent-calls.jsonl'), { force: true });
 });
 
-interface Call { argv: string[]; cwd: string; env: Record<string, string | undefined>; sandbox: { sandboxed?: string; containerHost?: string; pid: number } }
+interface Call { argv: string[]; stdin: string; cwd: string; env: Record<string, string | undefined>; sandbox: { sandboxed?: string; containerHost?: string; pid: number } }
 const calls = (): Call[] => readFileSync(join(dir, 'agent-calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as Call);
 const reply = (text: string) => { process.env.FAKE_AGENT_REPLY = text; };
 
@@ -64,8 +64,11 @@ function ctxFor(payload: Record<string, unknown>, o: { state?: Record<string, un
   return { ctx, saved, progress, tokens };
 }
 
-/** Per agent: its arguments in the test, how a first turn and a resumed turn call its CLI, and its session id. */
-const AGENTS: { agent: PrintAgent; args: string[]; first: (model: string) => string[]; resumed: (id: string) => string[]; session: string; error: string }[] = [
+/**
+ * Per agent: its arguments in the test, how a first turn and a resumed turn call its CLI, its session id, and whether
+ * the text goes on stdin (opencode 2: a text argument is quoted again, after `--` twice) or as the last argument.
+ */
+const AGENTS: { agent: PrintAgent; args: string[]; first: (model: string) => string[]; resumed: (id: string) => string[]; session: string; error: string; stdin?: true }[] = [
   {
     agent: 'codex', args: ['--skip-git-repo-check'], session: 'thread-1',
     first: (m) => ['exec', '--json', '--skip-git-repo-check', '--model', m, '--'],
@@ -73,9 +76,10 @@ const AGENTS: { agent: PrintAgent; args: string[]; first: (model: string) => str
     error: 'codex exited 1 on local: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header',
   },
   {
-    agent: 'opencode', args: ['--auto'], session: 'ses_1',
-    first: (m) => ['run', '--format', 'json', '--auto', '--model', m, '--'],
-    resumed: (id) => ['run', '--format', 'json', '--auto', '--session', id, '--'],
+    // --standalone: a private server for the run, never opencode 2's background service, which outlives the turn.
+    agent: 'opencode', args: ['--auto'], session: 'ses_1', stdin: true,
+    first: (m) => ['run', '--standalone', '--format', 'json', '--auto', '--model', m],
+    resumed: (id) => ['run', '--standalone', '--format', 'json', '--auto', '--session', id],
     error: 'opencode exited 1 on local: APIError: Not Found',
   },
   {
@@ -109,8 +113,10 @@ describe('the claude executor\'s token use', () => {
   });
 });
 
-describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, session, error }) => {
+describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, session, error, stdin }) => {
   const noSsh = () => { throw new Error('no ssh in this test'); };
+  /** The call's arguments and the text it sent, on stdin or as its last argument. */
+  const sentBy = (c: Call): { argv: string[]; text: string } => (stdin ? { argv: c.argv, text: c.stdin } : { argv: c.argv.slice(0, -1), text: c.argv.at(-1)! });
   const ex = createPrintAgentExecutor({ agent, name: agent, bin: FAKE, args, sshAuth: noSsh });
   beforeEach(() => { process.env.FAKE_AGENT_KIND = agent; });
 
@@ -121,8 +127,8 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     const [call] = calls();
     expect(call!.cwd).toBe(work);
     expect(call!.env).toEqual({ TMPDIR: `/tmp/hopper-${ID}`, HOPPER_JOB_ID: ID, CHECKPOINT_DISABLE: '1', GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx2g -Dorg.gradle.workers.max=2 -Dkotlin.compiler.execution.strategy=in-process -Dorg.gradle.daemon.idletimeout=300000', MAVEN_OPTS: '-Xmx2g', NODE_OPTIONS: `--report-on-fatalerror --report-compact --report-directory=/tmp/hopper-${ID}`, HOPPER_REPO: 'o/r', HOPPER_URL: 'http://hopper.test' });
-    expect(call!.argv.slice(0, -1)).toEqual(first('m-1'));
-    expect(call!.argv.at(-1)).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
+    expect(sentBy(call!).argv).toEqual(first('m-1'));
+    expect(sentBy(call!).text).toMatch(/^Write a greeting\n\n\[hopper publishing rule\][\s\S]*HOPPER_FAILED followed by the reason\.$/);
   });
 
   // Issue #794: the last task count the turn wrote is the job's progress.
@@ -143,7 +149,7 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     reply('Done in French.\nHOPPER_DONE');
     const next = ctxFor({ prompt: 'Write a greeting', cwd: work }, { state: firstTurn.saved.at(-1)! });
     expect(await ex.resume!(next.ctx, 'French.')).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'Done in French.', chatId: session } });
-    expect(calls().at(-1)!.argv).toEqual([...resumed(session), 'French.']);
+    expect(sentBy(calls().at(-1)!)).toEqual({ argv: resumed(session), text: 'French.' });
   });
 
   // Issue #1472 part 2: Push it continues the ended job; with no pane to park, a fresh turn starts in its saved work tree.
@@ -155,8 +161,8 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
     expect(await ex.resume!(t.ctx, 'Push the kept work.')).toEqual({ kind: 'finished', result: { machine: 'local', summary: 'Pushed the branch.', chatId: session } });
     const call = calls().at(-1)!;
     expect(call.cwd).toBe(work);
-    expect(call.argv.slice(0, -1)).toEqual(first('m-1').filter((a, i, all) => a !== 'm-1' && all[i + 1] !== 'm-1'));
-    expect(call.argv.at(-1)).toMatch(/^Write a greeting\n\nPush the kept work\.\n\n\[hopper publishing rule\]/);
+    expect(sentBy(call).argv).toEqual(first('m-1').filter((a, i, all) => a !== 'm-1' && all[i + 1] !== 'm-1'));
+    expect(sentBy(call).text).toMatch(/^Write a greeting\n\nPush the kept work\.\n\n\[hopper publishing rule\]/);
   });
 
   // Issue #1295: a turn's agent runs as Claude does in a pane, in the job's sandbox, with podman a client of the job's
@@ -184,7 +190,7 @@ describe.each(AGENTS)('the $agent executor', ({ agent, args, first, resumed, ses
   it('an answer without a marker is a status note: nudged in the same session, at most three times', async () => {
     process.env.FAKE_AGENT_REPLIES = JSON.stringify(['I will now write the file.', 'Wrote it.\nHOPPER_DONE']);
     expect(await ex.run(ctxFor({ prompt: 'p', cwd: work }).ctx)).toMatchObject({ kind: 'finished', result: { summary: 'Wrote it.' } });
-    expect(calls().at(-1)!.argv).toEqual([...resumed(session), STATUS_NOTE_NUDGE]);
+    expect(sentBy(calls().at(-1)!)).toEqual({ argv: resumed(session), text: STATUS_NOTE_NUDGE });
     delete process.env.FAKE_AGENT_REPLIES;
     reply('Still thinking.');
     expect(await ex.run(ctxFor({ prompt: 'p', cwd: work }).ctx)).toEqual({ kind: 'failed', error: `${agent} answered 4 times in a row without a marker: Still thinking.` });

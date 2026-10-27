@@ -609,7 +609,7 @@ export * from './state-backend.ts';
 export * from './artifacts.ts';
 export * from './tldr.ts';
 export * from './pointed-jobs.ts';
-export * from './job-graph.ts'; export * from './planned-work.ts'; export * from './planned-work-export.ts';
+export * from './job-graph.ts'; export * from './planned-work.ts'; export * from './planned-work-export.ts'; export type { PlanArtifactType, PlanSync } from './work-plans.ts';
 export * from './github-watch.ts'; export * from './pending-approvals.ts';
 export * from './drift.ts';
 

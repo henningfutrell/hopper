@@ -7,7 +7,7 @@ import type { DomainEvent, Job } from './types.ts';
 import { machineOfLane } from './raised-by.ts';
 import { workKindOf, type WorkKind } from './skill-library.ts';
 
-export const GRADE_SIGNALS = ['outcome', 'checks', 'pull_request', 'rework', 'cost', 'time'] as const;
+export const GRADE_SIGNALS = ['outcome', 'checks', 'pull_request', 'rework', 'cost', 'time', 'review'] as const;
 export type GradeSignal = (typeof GRADE_SIGNALS)[number];
 
 /**
@@ -22,7 +22,7 @@ export interface GradeSettings {
 }
 
 export const DEFAULT_GRADE_SETTINGS: GradeSettings = {
-  weights: { outcome: 3, checks: 2, pull_request: 3, rework: 2, cost: 1, time: 1 }, revertWindowDays: 7, costScaleUsd: 5, timeScaleMinutes: 120,
+  weights: { outcome: 3, checks: 2, pull_request: 3, rework: 2, cost: 1, time: 1, review: 1 }, revertWindowDays: 7, costScaleUsd: 5, timeScaleMinutes: 120,
   routing: { on: false, minSamples: 10 },
 };
 
@@ -33,13 +33,13 @@ export interface GradeRevert { at: string; url: string }
  * What a job's grade is made from. `fixChecks`: the times tending ran its item again to fix failing checks; `reworks`: a
  * person sent its pull request back; `reruns`: its item ran again after it; `attempts`: its claims. `costUsd`: the token
  * ledger's estimated cost, when every model in it has a price. `queueMs`: from its queue to its start; `wallMs`: from its
- * start to its end.
+ * start to its end. `waste`: the waste signals of its completion review (issue #2846 part 3), when it has one.
  */
 export interface GradeFacts {
   status: 'finished' | 'failed'; partlyDone?: true;
   pullRequest?: { url: string; state: 'open' | 'merged' | 'closed'; mergedAt?: string; reverted?: GradeRevert };
   fixChecks: number; reworks: number; reruns: number; attempts: number;
-  costUsd?: number; queueMs?: number; wallMs?: number;
+  costUsd?: number; queueMs?: number; wallMs?: number; waste?: string[];
 }
 
 /** One signal of a grade: its value (0 to 1), its weight and why. */
@@ -70,10 +70,13 @@ export interface GradeRepository {
   history(jobId: string): UserGrade[];
 }
 
-/** The events a grade is folded from: a job's end, its pull request and the rework it needed, and a landing batch's revert. */
+/**
+ * The events a grade is folded from: a job's end, its pull request and the rework it needed, its completion review, and a
+ * landing batch's revert.
+ */
 export const GRADE_EVENTS = [
   'job.finished', 'job.failed', 'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed',
-  'job.pull_request_tended', 'job.rework_requested', 'job.rerun', 'landing_batch.revert_opened', 'landing_batch.reverted',
+  'job.pull_request_tended', 'job.rework_requested', 'job.rerun', 'completion_review.kept', 'landing_batch.revert_opened', 'landing_batch.reverted',
 ] as const;
 
 /** A user grade's place on the automatic grade's scale: 1 is 0, 5 is 100. */
@@ -107,6 +110,9 @@ function signalOf(signal: GradeSignal, f: GradeFacts, s: GradeSettings): { value
       return f.costUsd === undefined ? undefined : { value: halfAt(f.costUsd, s.costScaleUsd), why: `$${f.costUsd.toFixed(2)} estimated` };
     case 'time':
       return f.wallMs === undefined ? undefined : { value: halfAt(f.wallMs, s.timeScaleMinutes * 60_000), why: `${minutes(f.wallMs)} of work${f.queueMs !== undefined ? `, ${minutes(f.queueMs)} in the queue` : ''}` };
+    case 'review':
+      if (f.waste === undefined) return undefined;
+      return f.waste.length === 0 ? { value: 1, why: 'its completion review found no waste' } : { value: 1 / (1 + f.waste.length), why: `its completion review found ${f.waste.join(', ').replace(/_/g, ' ')}` };
   }
 }
 
@@ -140,12 +146,12 @@ const msBetween = (from: string | undefined, to: string | undefined): number | u
   (from && to ? Math.max(0, Date.parse(to) - Date.parse(from)) : undefined);
 
 /**
- * An ended job's facts, from its record, its own events (`GRADE_EVENTS`), its token cost and the reverts: a revert counts
- * only within `windowDays` of its pull request's merge.
+ * An ended job's facts, from its record, its own events (`GRADE_EVENTS`), its token cost, the reverts — a revert counts
+ * only within `windowDays` of its pull request's merge — and the waste signals of its completion review.
  */
 export function gradeFactsOf(
   job: Job, events: readonly DomainEvent[], cost: { costUsd: number; costKnown: boolean } | undefined,
-  reverts: ReadonlyMap<string, GradeRevert>, windowDays = DEFAULT_GRADE_SETTINGS.revertWindowDays,
+  reverts: ReadonlyMap<string, GradeRevert>, windowDays = DEFAULT_GRADE_SETTINGS.revertWindowDays, waste?: readonly string[],
 ): GradeFacts {
   let pr: GradeFacts['pullRequest'];
   let fixChecks = 0, reworks = 0, reruns = 0;
@@ -165,6 +171,7 @@ export function gradeFactsOf(
     status: job.status === 'failed' ? 'failed' : 'finished', ...(job.partlyDone ? { partlyDone: true as const } : {}),
     ...(pr ? { pullRequest: pr } : {}), fixChecks, reworks, reruns, attempts: job.attempts,
     ...(cost?.costKnown ? { costUsd: cost.costUsd } : {}), ...(queueMs !== undefined ? { queueMs } : {}), ...(wallMs !== undefined ? { wallMs } : {}),
+    ...(waste ? { waste: [...waste] } : {}),
   };
 }
 

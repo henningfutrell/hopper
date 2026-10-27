@@ -57,6 +57,8 @@ export interface UserSeams {
   jobStream?: { inlineMax?: number };
   /** Replaces the TL;DR's model (issue #569; default Claude Haiku through the `claude` CLI). */
   tldrWriter?: TldrWriter;
+  /** Replaces the model review's model (issue #2846 part 3; default the `claude` CLI). */
+  modelReviewWriter?: import('../domain/model-review.ts').ModelReviewWriter;
   /** Replaces File an issue's drafter (issue #471; default the user's own `claude` CLI). */
   issueDrafter?: IssueDrafter;
   /** Replaces the Windows host a step runs on (issue #731; default ssh and scp to the host). */

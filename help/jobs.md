@@ -123,27 +123,32 @@ The view keeps your choice of **List** or **Graph** in this browser.
 
 ### Planned work
 
-The **Planned work** tab shows work before it runs, broken down, and where each part stands. Type an issue (`owner/name#number`, or its URL) and select **Open**. The issue is the **work plan**. Its sub-issues are its **plan pieces**, and their sub-issues are its **plan tasks**. The jobs of each plan task are at the right.
+The **Planned work** tab shows work before it runs, broken down, and where each part stands. The hopper keeps each **work plan** in its own database, so a plan stays when you turn its GitHub sync off.
 
+- With no plan open, the tab lists the plans the hopper keeps. Select one to open it.
+- To add a plan, type an issue (`owner/name#number`, or its URL) and select **Import from GitHub**. The issue is the work plan. Its sub-issues are its **plan pieces**, and their sub-issues are its **plan tasks**. The jobs of each plan task are at the right.
+- **Sync from GitHub** is on for a new plan: every 5 minutes, the hopper reads the sub-issues again. Select **Sync now** to do it at once, or **Turn sync off** to keep the plan as it is. The hopper never changes the issues on GitHub.
 - A node's color shows its **plan status**: a solid fill is done, blue is running, dashed grey is planned, and orange needs a person (a job failed, or waits on you).
 - The bar above the graph shows how many plan tasks are in each status.
 - A dashed orange line goes from a plan task to a plan task that blocks it (GitHub's "blocked by").
-- Select a node to open it: a plan piece opens its artifact when it is a link, else its issue; a job opens its job page.
-- To give a plan piece an artifact, write a line `Artifact: <text or link>` in its issue: a screenshot, a pull request or a report that a person can judge it by. The tab shows it after the next sync of that issue.
+- Select a node to open it: a plan piece or a plan task opens its first artifact that is a link, else its issue; a job opens its job page.
+- **Plan artifacts** are what a person judges a piece or a task by: a screenshot, a report, a link or a pull request. Under the graph, select the piece, the task (or the piece itself), the type, and a URL or a hopper artifact id, then select **Add artifact**. The pull request of a job of the plan is added by itself. Select the bin to remove one.
 - **CSV** saves one row per plan task; **JSON** saves the plan nested. Nothing is sent anywhere else.
 
-The tab shows only the issues that the hopper read (the issues its sources list, and their sub-issues).
+The import sees only the issues that the hopper read (the issues its sources list, and their sub-issues).
+
+From the command line: `hopper plan list`, `hopper plan show owner/name#N`, `hopper plan export owner/name#N --format csv` (or `json`), and `hopper plan import owner/name#N`. They give the same data as the tab.
 
 ### Repository memory
 
 The hopper remembers what jobs learn about a repository, and tells the next jobs of that repository. A job writes a line `HOPPER_MEMORY convention: <text>` or `HOPPER_MEMORY fix: <text>` at the start of its final message. That line becomes a **memory entry** of its repository.
 
-- A new entry waits for a person to approve it. Approve it with `hopper memory approve <id>`. Until then, no job gets it.
+- A new entry waits for a person to approve it. Approve it in **Settings → Repository memory**, or with `hopper memory approve <id>`. Until then, no job gets it.
 - Each job of the repository gets the approved entries when it starts, after the repository job rules. Jobs of other repositories do not get them.
 - An entry that a later job says is wrong is **flagged**: no job gets it until you approve it again or edit it.
 - An entry expires 180 days after its last change. Approve it again to use it again.
-- To see, add, edit, disable or remove entries, use `hopper memory list`, `add`, `edit`, `disable`, `enable` and `remove`, or `GET /api/repo-memory` and `POST /ui/api/repo-memory`. A change reaches the next job.
-- To turn memory off, or to approve new entries without a person, for all repositories or one: `hopper config set repo-memory` with `on` and `approval`, and `repos` for one repository.
+- To see, add, edit, disable or remove entries, open **Settings → Repository memory** and pick the repository. You can also use `hopper memory list`, `add`, `edit`, `disable`, `enable` and `remove`, or `GET /api/repo-memory` and `POST /ui/api/repo-memory`. A change reaches the next job.
+- To turn memory off, or to approve new entries without a person, for all repositories or one: use the settings at the top of **Settings → Repository memory**, or `hopper config set repo-memory` with `on` and `approval`, and `repos` for one repository.
 
 ## How to use it
 
@@ -165,7 +170,7 @@ The view updates live. A job that changes stage moves with no reload.
 
 ## For agents: the API
 
-`GET /api/jobs/graph` gives the same data as the view: `nodes` (each with its `label`, its `stageText` in plain words, and `waitsOnYou`), typed `edges`, `trees` (each with its `root`, its `summary` line, and the nodes not settled yet, `blocking`) and `stages` (how many jobs are in each stage). `GET /api/planned-work?issue=owner/name%23N` gives a work plan, and `GET /api/planned-work/export?issue=…&format=csv` or `format=json` saves it (the scope `planned-work:read`). `GET /api/jobs/<id>/notes` gives a job's notes, and `POST /ui/api/jobs/<id>/notes` with `{ "text": "..." }` sends one (the scope `jobs:notes`, and a box token). `GET /api/jobs/<id>/bom` gives a job's page: its `header`, `summary`, `parts` (each with its `group`, `status`, and its page `href` or GitHub `url`) and `events`, newest first. An API token needs the scope `jobs:read`. See [The operator CLI and the API](cli-and-api.md) and [API tokens and grants](api-tokens.md).
+`GET /api/jobs/graph` gives the same data as the view: `nodes` (each with its `label`, its `stageText` in plain words, and `waitsOnYou`), typed `edges`, `trees` (each with its `root`, its `summary` line, and the nodes not settled yet, `blocking`) and `stages` (how many jobs are in each stage). `GET /api/planned-work/plans` lists the kept work plans, `GET /api/planned-work?plan=owner/name%23N` gives one, and `GET /api/planned-work/export?plan=…&format=csv` or `format=json` saves it (the scope `planned-work:read`). `POST /ui/api/planned-work/import`, `…/sync`, `…/remove`, `…/artifacts` and `…/artifacts/remove` change the plan store (the scopes `planned-work:import`, `planned-work:sync`, `planned-work:remove` and `planned-work:artifacts`). `GET /api/jobs/<id>/notes` gives a job's notes, and `POST /ui/api/jobs/<id>/notes` with `{ "text": "..." }` sends one (the scope `jobs:notes`, and a box token). `GET /api/jobs/<id>/bom` gives a job's page: its `header`, `summary`, `parts` (each with its `group`, `status`, and its page `href` or GitHub `url`) and `events`, newest first. An API token needs the scope `jobs:read`. See [The operator CLI and the API](cli-and-api.md) and [API tokens and grants](api-tokens.md).
 
 ## Limits and troubleshooting
 

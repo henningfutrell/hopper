@@ -77,6 +77,11 @@ describe('probeOn: a provider signed in lists its models', () => {
     expect(calls()[0]!.argv).toEqual(['auth', 'status', '--json']);
   });
 
+  it('opencode: its model list runs standalone, with the draft\'s lockdown (opencode 2, issue #2862)', async () => {
+    expect(await probe('opencode')).toMatchObject({ usable: true });
+    expect(calls().map((c) => c.argv)).toEqual([['models', '--standalone']]);
+  });
+
   it('a CLI that lists no models is still usable: it runs its own default', async () => {
     process.env.FAKE_PROBE_MODE = 'no-models';
     expect(await probe('codex')).toEqual({ usable: true, models: [] });

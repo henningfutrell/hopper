@@ -24,7 +24,7 @@ RUN apt-get update \
 RUN set -eu; case "$AGENT" in \
     claude) npm install -g --no-audit --no-fund @anthropic-ai/claude-code ;; \
     codex) npm install -g --no-audit --no-fund @openai/codex ;; \
-    opencode) npm install -g --no-audit --no-fund opencode-ai ;; \
+    opencode) npm install -g --no-audit --no-fund @opencode/cli ;; \
     omp) npm install -g --no-audit --no-fund bun && BUN_INSTALL=/usr/local bun install -g @oh-my-pi/pi-coding-agent ;; \
     cursor) HOME=/opt/cursor sh -c 'curl -fsS https://cursor.com/install | bash' \
       && chmod -R a+rX /opt/cursor && ln -s "$(readlink -f /opt/cursor/.local/bin/cursor-agent)" /usr/local/bin/cursor-agent ;; \

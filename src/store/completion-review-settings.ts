@@ -12,7 +12,10 @@ export function completionReviewSettings(read: (key: string) => string | undefin
       return text === undefined ? undefined : JSON.parse(text) as Partial<CompletionReviewSettings>;
     },
     setCompletionReview(s) {
-      write('completionReview', JSON.stringify({ on: s.on, outcomes: [...s.outcomes], multiJob: s.multiJob, minRunMinutes: s.minRunMinutes }));
+      write('completionReview', JSON.stringify({
+        on: s.on, outcomes: [...s.outcomes], multiJob: s.multiJob, minRunMinutes: s.minRunMinutes,
+        modelReview: { on: s.modelReview.on, model: s.modelReview.model, dailyCostUsd: s.modelReview.dailyCostUsd },
+      }));
     },
   };
 }

@@ -1,7 +1,7 @@
 // The grade pass (issue #2845, design.md "Grades"): every GRADES_EVERY_MS, on the host that holds its lease, the events
 // after the pass's cursor name the jobs whose grade is due — a job that ended, or one whose pull request, rework or
 // revert came later —, and each such job that ended done or failed is graded again from its record, its own events, its
-// token ledger and the landing batches' reverts. The grades it changed and the new cursor are kept in one transaction, so
+// token ledger, its completion review (issue #2846 part 3) and the landing batches' reverts. The grades it changed and the new cursor are kept in one transaction, so
 // a pass a stop cut short is done again from the same cursor, on any host. The pass grades with the user's grade
 // settings; when their grading part changed since the last pass, every kept grade of the last REGRADE_DAYS is due too.
 import { gradingPartOf } from '../domain/grade-routing.ts';
@@ -60,7 +60,8 @@ export function gradeOf(store: UserStore, jobId: string, now: Date, settings: Gr
   const merged = events.find((e) => e.type === 'job.pull_request_merged');
   const reverts = merged ? revertsOf(store.events.between(REVERT_EVENTS, merged.at)) : new Map();
   const tokens = jobTokenView(jobId, store.tokenLedger.list({ jobId }));
-  const facts = gradeFactsOf(job, events, tokens.sessions > 0 ? tokens.total : undefined, reverts, settings.revertWindowDays);
+  const waste = store.completionReviews.get(jobId)?.waste.map((w) => w.kind);
+  const facts = gradeFactsOf(job, events, tokens.sessions > 0 ? tokens.total : undefined, reverts, settings.revertWindowDays, waste);
   return { ...gradeKeysOf(job, tokens.models[0]?.model, tokens.machines.at(-1)), facts, auto: autoGradeOf(facts, settings), gradedAt: now.toISOString() };
 }
 

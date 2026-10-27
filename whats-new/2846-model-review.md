@@ -1,0 +1,1 @@
+- A model can now review each ended job's run too, beside the hopper's own review, with ideas of what to change. Turn it on in Settings → Completion reviews, pick the model, and set how much it may spend each day.
