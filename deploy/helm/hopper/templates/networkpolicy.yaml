@@ -1,7 +1,8 @@
 {{- if .Values.networkPolicy.enabled -}}
 {{- /*
 Who reaches each part: Postgres the hopper, OpenFGA, its migration and the vault pod; OpenFGA, Solr, the vault pod, the
-tunnel services and the telemetry viewer's OTLP port the hopper alone; the local KMS the pod the vault runs in; the lane pods no one. A runner-only release
+tunnel services and the telemetry viewer's OTLP port the hopper alone; the local KMS the pod the vault runs in; the lane pods no one.
+With lanes.egress.confine (issue #2849 part 6), the lane pods also reach only DNS and the hopper. A runner-only release
 (hopper.enabled=false, issue #1454) has the lane pods' alone.
 */ -}}
 {{- $parts := list -}}
@@ -50,10 +51,14 @@ spec:
   podSelector:
     matchLabels:
       {{- include "hopper.selector" (dict "ctx" $ "component" (index $p 0)) | nindent 6 }}
-  policyTypes: [Ingress]
+  {{- $confined := and (eq (index $p 0) "lanes") $.Values.lanes.egress.confine }}
+  policyTypes: {{ ternary "[Ingress, Egress]" "[Ingress]" $confined }}
   {{- if not (index $p 2) }}
   # They dial out: nothing reaches them.
   ingress: []
+  {{- if $confined }}
+  {{- include "hopper.lanesEgress" $ | nindent 2 }}
+  {{- end }}
   {{- else }}
   ingress:
     - from:

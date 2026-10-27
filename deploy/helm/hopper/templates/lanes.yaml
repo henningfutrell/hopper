@@ -103,6 +103,11 @@ spec:
             # Told to stop, it leaves the hopper and lets the jobs on it end before herdr stops.
             - name: HOPPER_CLIENT_DRAIN
               value: "1"
+            {{- if .Values.lanes.egress.confine }}
+            # Its network reaches only DNS and the hopper (issue #2849 part 6): a job's bare runner says its egress is contained.
+            - name: HOPPER_EGRESS_CONTAINED
+              value: "1"
+            {{- end }}
             {{- include "hopper.podLimits" "lane" | nindent 12 }}
           {{- include "hopper.containerSecurity" . | nindent 10 }}
             readOnlyRootFilesystem: true

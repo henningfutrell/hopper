@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runtimeCommand } from '../../src/client/job-runtime.ts';
-import { egressOutcome, sandboxCommand, sandboxOutcome, sandboxSetupArgv } from '../../src/client/job-sandbox.ts';
+import { bareCommand, bareOutcome, egressOutcome, sandboxCommand, sandboxOutcome, sandboxSetupArgv } from '../../src/client/job-sandbox.ts';
 import { TERMINAL_LINE_MAX } from '../../src/executors/herdr/client.ts';
 import { ENV_SCOPE_FILE, envScopeScript } from '../../src/sandbox/env-scope.ts';
 import { JOB_ENV_KEPT } from '../../src/domain/job-egress.ts';
@@ -241,5 +241,72 @@ describe('the job\'s sandbox command is one a terminal line keeps (issue #2234)'
     const r = spawnSync('/bin/sh', ['-c', sandboxCommand(scratch)], { encoding: 'utf8', env: env({ PATH: `${fake}${delimiter}${tools}`, HOPPER_EGRESS_ROUTE: '1' }) });
     expect(sandboxOutcome(r.stdout)).toBe('none');
     expect(egressOutcome(r.stdout)).toBe('unrouted');
+  });
+});
+
+describe('the bare runner where bubblewrap cannot run: a lane pod, a box in a container (issue #2849 part 6)', () => {
+  /** A PATH with the machine's tools but no bwrap, and the stand-ins first. */
+  const noBwrap = (): string => {
+    const tools = join(root, 'tools');
+    mkdirSync(tools, { recursive: true });
+    for (const t of ['sh', 'mkdir', 'chmod', 'rm', 'uname', 'env', 'sed', 'sort', 'cat', 'id']) {
+      const real = spawnSync('sh', ['-c', `command -v ${t}`], { encoding: 'utf8' }).stdout.trim();
+      if (real && !existsSync(join(tools, t))) writeFileSync(join(tools, t), `#!/bin/sh\nexec ${real} "$@"\n`, { mode: 0o755 });
+    }
+    return `${fake}${delimiter}${tools}`;
+  };
+  // The stand-in hopper-egress: it says what it was given, then runs the command after `--` with its port set.
+  const egress = (): string => {
+    const f = join(root, 'egress');
+    writeFileSync(f, '#!/bin/sh\nprintf "egress %s\\n" "$1"\nshift\nHOPPER_EGRESS_PORT=1 exec "$@"\n', { mode: 0o755 });
+    return f;
+  };
+  /** The pane's steps on such a machine: the sandbox (none), then the bare runner, then `script` in the same shell. */
+  const inBareShell = (script: string, more: NodeJS.ProcessEnv): { stdout: string } => spawnSync('/bin/sh', ['-c',
+    `${sandboxCommand(scratch)}; ${bareCommand(scratch)}; ${script}`], { encoding: 'utf8', env: env({ PATH: noBwrap(), ...more }), timeout: 30000 });
+
+  it('the route on: the runner is written, claude runs behind hopper-egress with no sandbox, and the egress is routed', () => {
+    withNode();
+    const r = inBareShell('command -v claude; claude --model haiku', { HOPPER_EGRESS: egress(), HOPPER_EGRESS_ROUTE: '1' });
+    expect(sandboxOutcome(r.stdout)).toBe('none');
+    expect(bareOutcome(r.stdout)).toBe('on');
+    expect(egressOutcome(r.stdout)).toBe('routed');
+    expect(r.stdout.trim().split('\n').slice(-4)).toEqual([join(scratch, 'sandbox', 'bin', 'claude'), 'egress --', 'sandboxed=no', 'args=--model haiku']);
+  });
+
+  it('a machine whose network reaches only the hopper (HOPPER_EGRESS_CONTAINED): the egress is contained', () => {
+    withNode();
+    const r = inBareShell('claude', { HOPPER_EGRESS: egress(), HOPPER_EGRESS_ROUTE: '1', HOPPER_EGRESS_CONTAINED: '1' });
+    expect(egressOutcome(r.stdout)).toBe('contained');
+    expect(r.stdout).toContain('egress --');
+  });
+
+  it('the route on and no node: the runner runs claude as it is, and the egress is unrouted', () => {
+    const r = inBareShell('claude', { HOPPER_EGRESS: egress(), HOPPER_EGRESS_ROUTE: '1' });
+    expect(bareOutcome(r.stdout)).toBe('on');
+    expect(egressOutcome(r.stdout)).toBe('unrouted');
+    expect(r.stdout).not.toContain('egress --');
+  });
+
+  it('the environment scope on: the agent keeps only the names kept, with no sandbox', () => {
+    mkdirSync(join(scratch, 'credentials', 'hopper'), { recursive: true });
+    writeFileSync(join(scratch, 'credentials', ENV_SCOPE_FILE), envScopeScript([...JOB_ENV_KEPT]));
+    const r = inBareShell(`"${scratch}/sandbox/run" env`, { HOPPER_ENV_SCOPE: '1', HOPPER_DATABASE_URL: 'postgres://secret' });
+    expect(bareOutcome(r.stdout)).toBe('on');
+    expect(egressOutcome(r.stdout)).toBeUndefined();
+    expect(r.stdout).toContain('HOPPER_ENV_SCOPED=1');
+    expect(r.stdout).not.toContain('HOPPER_DATABASE_URL');
+  });
+
+  it('neither the route nor the scope: none, nothing written, and claude stays the machine\'s own', () => {
+    const r = inBareShell('command -v claude', {});
+    expect(bareOutcome(r.stdout)).toBe('none');
+    expect(r.stdout.trim().split('\n').at(-1)).toBe(join(fake, 'claude'));
+    expect(existsSync(join(scratch, 'sandbox'))).toBe(false);
+  });
+
+  it('its command fits a terminal line, even with a long work tree', () => {
+    const long = `/home/agent/${'w'.repeat(120)}/.worktrees/@scratch/${'0'.repeat(8)}-0000-0000-0000-000000000000`;
+    expect(bareCommand(long).length).toBeLessThanOrEqual(TERMINAL_LINE_MAX);
   });
 });
