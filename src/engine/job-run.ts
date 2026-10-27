@@ -10,6 +10,7 @@ import type { TaskCount } from '../domain/task-count.ts';
 import { keptTreeOf, keptWorkOf, WORK_EVENTS, type Job, type KeptTree, type LaneId, type MachineSnapshot } from '../domain/types.ts';
 import { readJobRules, withAsks } from '../job-rules/index.ts';
 import { repoJobRulesFor, withRepoJobRules } from '../job-rules/repo-rules.ts';
+import { offerMemory } from '../repo-memory/index.ts';
 import { withWorkSkill } from '../domain/skill-library.ts';
 import { withConditionalSkills } from '../domain/conditional-skills.ts';
 import { jobSkillsOf } from '../skill-library/index.ts';
@@ -166,10 +167,15 @@ export const left = (c: EngineContext, e: RunEntry): boolean => (c.stopping() ||
 export const cancelOf = (e: RunEntry): Pick<JobRunData, 'cancel'> =>
   (e.cancelReason !== undefined ? { cancel: { reason: e.cancelReason, ...(e.cancelNote ? { note: e.cancelNote } : {}) } } : {});
 
-/** The job rules of job `j` at this start, its repository's, its asks, then its work skill's and its conditional skills' lines. */
-function jobRulesOf(store: EngineContext['store'], j: Job): string {
+/**
+ * The job rules of job `j` at this start, its repository's, its repository's memory (issue #2847), its asks, then its work
+ * skill's and its conditional skills' lines.
+ */
+function jobRulesOf(c: EngineContext, j: Job): string {
+  const { store } = c;
   const skills = jobSkillsOf(store, j);
-  const rules = withAsks(withRepoJobRules(readJobRules(store.config), repoJobRulesFor(store.config, j.source?.repo)), j.spec, j.forkOf, j.followOn);
+  const repoRules = withRepoJobRules(repoJobRulesFor(store.config, j.source?.repo), offerMemory(store, j, new Date(nowIso(c))));
+  const rules = withAsks(withRepoJobRules(readJobRules(store.config), repoRules), j.spec, j.forkOf, j.followOn);
   return withConditionalSkills(withWorkSkill(rules, skills.work.chosen), skills.conditional.map((c) => c.chosen));
 }
 
@@ -181,10 +187,10 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
   const executor = c.executors.get(j.spec.executor);
   const progress = progressOf(c, e, d);
   return {
-    // The job rules as they are at this start (issue #172): an edit reaches the next job. Then its repository's (issue #1472),
-    // then its work skill's line (issue #1911) and its conditional skills' (issue #1924): the skills chosen at its first start.
+    // The job rules as they are at this start (issue #172): an edit reaches the next job. Then its repository's (issue #1472)
+    // and its repository's memory (issue #2847), then its work skill's line (issue #1911) and its conditional skills' (issue #1924): the skills chosen at its first start.
     job: j, laneId: d.laneId, machine: m, signal: e.controller.signal,
-    jobRules: jobRulesOf(store, j),
+    jobRules: jobRulesOf(c, j),
     // A login the job waits on (issue #476) goes to the logins, never into a question.
     logins: c.logins.forRun({ jobId: j.id, laneId: d.laneId, machineId: m.id, run: j.spec.executor }, () => !c.stopping()),
     // The job acts through its source's connection (issue #214), its token kept current on its machine (issue #441).

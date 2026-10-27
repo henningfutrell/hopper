@@ -56,6 +56,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
 | `src/authz/` | access (issue #559, "Access: OpenFGA decides each mint"): the decision before every mint, the push of the model and approvals to OpenFGA, the view (`service.ts`); the access model and what an edit must keep (`model.ts`, @openfga/syntax-transformer); the objects and tuples, the relationship path (`objects.ts`, pure); requesters — whether one may ask, the permission matrix's rows (`requesters.ts`, pure, issue #581); a job's trust and a profile's minimum trust (`trust.ts`, `trust-model.ts`, issue #655); what an edit refuses (`edits.ts`); OpenFGA at the `AuthorizationServer` port (`openfga.ts`, @openfga/sdk). Its rows through the `AccessRepository` port; a job's status and who is live through the composition root | engine, http, store, plugins, executors, decider |
 | `src/job-rules/` | the job rules (issue #172): the config record `job-rules`, the repository job rules (`repo-job-rules`, issue #1472), the default job rules, the fixed lines of the footer (work tree, protocol), their read, view and edit — no I/O but the config records port | everything but `domain/` |
+| `src/repo-memory/` | repository memory (issue #2847, "Repository memory"): a finished job's memory lines learned as memory entries of its repository, the entries offered to each job of it as it starts and recorded as `job.memory_offered`, a person's acts on them and the settings record `repo-memory` (`index.ts`); the pure rules — the settings read, the memory lines read, the offer and its text — are `src/domain/repo-memory.ts`, the table `src/store/repo-memories.ts` — no I/O but the user's store | everything but `domain/`, `secrets/mask.ts` |
 | `src/routing/` | routing rules: the plugins config's `routing` schema and the pure matching applied at intake (`routeItem`) — no I/O (issue #18) | everything but `domain/` |
 | `src/engine/` | the loop: gather → decide → apply (the queue sorter asked while gathering, `queue-order.ts`; the queue gate — auto-accept before each Decision, accept, reject, the user order — `queue-gate.ts`); job lifecycle; parking (`park.ts`) and auto-park on each tick (`auto-park.ts`, issue #650); routing at intake (`source-host.ts`); restart recovery; a job's credential files on its machine, kept current at each renewal (`credentials.ts`, issue #441); the check before a nudge (`nudge-check.ts`, issue #627); item snapshots at intake — record, compare, hold, keep the original, accept the new text (`item-snapshots.ts`, issue #662); the decider calls of lane tuning, Jev first for a machine's lanes and a waiting job's machine (`lane-calls.ts`, issue #688); the job's terminal — a running job's pane read and typed into through its executor, its sessions and their events (`terminal.ts`, issue #1128); the machine's terminal — the panes of the hopper's herdr session on a machine, listed, read and typed into through the first of its executors that reaches it, on the same sessions (`machine-terminal.ts`, issue #1128); a job's checkpoint scrubbed of secrets in a worker thread of its own, off the event loop (`checkpoint-scrub.ts`, `checkpoint-scrub-worker.ts`, issue #1154); the signed-out move — a job held on a not-signed-in question goes on at a signed-in machine (`signed-out-move.ts`, issue #1211); the busy-machine move — a job resuming on a full machine goes on at one with room after a short wait (`busy-move.ts`, issue #1977); the delivery ledger pass and the delivery forecasts' reads of the store (`delivery-ledger.ts`, `delivery-reads.ts`, issue #2554); the no-way move — a job resuming elsewhere, or reopening in a new pane, that gets no way to the hopper on its machine goes back to the queue for another, and a run that failed with no way to the hopper resumes elsewhere from a checkpoint taken at its end (`no-way-move.ts`, issues #2355, #2427); the lost-machine move — a running job whose machine was lost resumes there or elsewhere, and the `job-move` saga kind that ends the agent it left (`lost-move.ts`, `job-move-saga.ts`, issue #1569); the job leases — a claimed or running job held by the hopper that drives it, renewed while it runs, a job whose lease ended taken over by any hopper on the database, and a person's act on a job another hopper drives relayed to it (`leases.ts`, issue #1662); each pass over every job or machine on the holder of its sweep lease (`pass-leases.ts`, issue #1662); a claim's run as the `job-run` saga kind, its steps done by the runner on whichever hopper holds the saga (`job-run.ts`, `run-step.ts`, `job-run-saga.ts`, issue #1662); a run again's heap retry at its start, its scope's larger memory limit (`heap-retry.ts`, issue #2722 part 4); the metered peaks — the most memory each job's machine's meter said it held, the cleanup's peak where the reap read none (`job-peaks.ts`, issue #2737) | http |
 | `src/auth/` | sign-in through realms (issues #39, #185): the sign-in config's load (`config.ts`) and edits (`edit.ts`), the sign-in config at start — named secrets taken in, the environment applied (`start.ts`, issue #216; no bootstrap login, issue #238) — and the `HOPPER_SIGN_IN_*` variables (`environment.ts`), the realms' secrets in the instance's vault (`sealed-secrets.ts`, issue #658), the role rules and who is a super admin (`roles.ts`, pure), the realm ports (`realm.ts`: redirect realm, form realm, gateway realm) and their adapters `ldap.ts` (ldapts), the local accounts' form realm and password hashes (`local-accounts.ts`, Node's scrypt, issue #1380), `oidc.ts` (openid-client), `github.ts` (openid-client + the GitHub REST API), `saml.ts` (@node-saml/node-saml), `gateway.ts` (jose + openid-client), the sign-in service — form realms in order, gateway realms in order, the API door's token check (issue #255), flows, tickets, bindings, no sign-in, a changed sign-in config applied at once (`index.ts`) | engine, http, store, plugins, decider, questions |
@@ -14353,6 +14354,56 @@ job rules are one text for every job of a user; what is true for one repository,
 
 **Verification.** `test/job-rules/repo-job-rules.test.ts`, `test/integration/job-rules.test.ts` (a job of the repository
 gets them, a job of another does not), `test/cli.test.ts`, `test/ui/job-rules-panel.test.ts`.
+
+## Repository memory (issue #2847 part 1, 2026-10-26)
+
+Owner requirement: jobs stop finding the same things again. The hopper keeps, for each repository, what earlier jobs
+learned — its conventions (build and test commands, layout, style, traps) and its past fixes — and gives the relevant ones
+to its next jobs.
+
+- **Memory entries.** One row each in the user's database (tenant migration 103, `memory_entries`,
+  `src/store/repo-memories.ts`): its repository (`owner/name`, lowercase), kind (`convention`, `fix`), an optional area (a
+  path of the repository), one line of text (at most 1000 characters), state (`proposed`, `approved`, `disabled`,
+  `flagged`), confidence (0 to 1), the job that learned it, who changed it last, and when it was made and last changed. At
+  most 200 a repository. Its short id, the first 8 hex digits of its id, is how a job names it.
+- **Learned from a finished job.** A job writes memory lines in its final message, before the end marker:
+  `HOPPER_MEMORY convention: <text>`, `HOPPER_MEMORY fix src/store: <text>` (a path after the kind gives the area), and
+  `HOPPER_MEMORY_WRONG <short id>: <why>` for an entry that is wrong now; at most 5. When the job ends finished
+  (`recordOutcome`), the hopper reads them from its result (`learnFromJob`), masked first: a new entry is `proposed` while
+  the repository's setting asks for approval (the default), else `approved`, with confidence 0.5
+  (`repo_memory.learned`). The same entry again — one repository, kind and area, the same text but for case and spaces —
+  is not added twice: it is 0.1 more confident (at most 0.9) and its age is renewed (`again`). A disabled or flagged
+  entry is not learned again. A wrong line flags an approved or proposed entry (`repo_memory.flagged`): no job is offered
+  it until a person approves or edits it. An executor cuts a final message to its summary but keeps its memory lines
+  (`withMemoryLines`), and a line the terminal wrapped is joined again up to a blank line, a list item or another
+  `HOPPER_` line. A job of no repository, or of one with memory off, learns nothing.
+- **Offered to the next job.** As each job of the repository starts (`jobRulesOf`), it is told, after the repository job
+  rules, a block `[hopper repository memory]`: the approved entries that have not expired, the most confident first, then
+  the newest change, each `- <short id> (<kind>[, <area>]) <text>`, as many as fit in `maxBytes`, and how many did not;
+  then how to write memory lines. A repository with no entry yet gets only that last part. The entries it got are
+  recorded on its timeline, `job.memory_offered` (their ids and how many were left out), again at a later start only when
+  they changed. A running job keeps what it started with; an edit, an approval, a disable or a removal reaches the next
+  job. Post-completion reviews (issue #2846) and grading (issue #2845) can add entries through the same service later.
+- **Stale entries.** An entry expires `expireDays` (default 180) after its last change: no job is offered it, the view
+  marks it `expired`, and a person's approval, an edit or a job learning it again renews it. A later job that finds it
+  wrong flags it, as above.
+- **Settings.** The config record `repo-memory` (`memorySettingsOf`): `on` (default true), `approval` (default true),
+  `maxBytes` (256 to 16384, default 4096), `expireDays` (1 to 3650, default 180), and `repos` — `owner/name` or `owner/*`
+  to its own `on` and `approval`, the owner's first, then the repository's. With approval asked, nothing a job wrote is
+  offered before a person approved it: the text of an entry is told to every job of its repository, as the repository
+  job rules are. No migration: a missing record is the defaults.
+- **A person's acts.** `GET /api/repo-memory?repo=` (the entries, newest change first, each with `shortId` and
+  `expired`, and the settings with their version); `POST /ui/api/repo-memory` — `add` (approved at once, confidence 1),
+  `edit` (renews its age, clears a flag), `approve`, `disable`, `enable`, `remove`, each `repo_memory.changed` —, and
+  `POST /ui/api/repo-memory/settings` against the version read; least role admin, as the repository job rules
+  (`src/http/ui/repo-memory.ts`). `hopper memory list|add|edit|approve|disable|enable|remove` posts there;
+  `hopper config set repo-memory` sets the settings.
+- **Left of part 1.** The UI: a view of each repository's entries with edit, delete, approve and disable, and the
+  settings. The API and the CLI do every act meanwhile.
+
+**Verification.** `test/domain/repo-memory.test.ts`, `test/integration/repo-memory.test.ts` (an entry a job learned and a
+person approved is offered to the next job of the same repository and not of another; an edit, a flag, a disable and a
+removal reach the next job; the settings), `test/cli-operator-memory.test.ts`.
 
 ## Decide and proceed (issue #1059, 2026-10-13)
 

@@ -50,6 +50,7 @@ import { signInConfigProblem } from './auth/config.ts';
 import { withHeldSecrets } from './auth/sealed-secrets.ts';
 import { jobRulesProblem } from './job-rules/index.ts';
 import { repoJobRulesProblem } from './job-rules/repo-rules.ts';
+import { memorySettingsProblem } from './domain/repo-memory.ts';
 import { pluginsConfigProblem } from './plugins/plugins-config.ts';
 import { rulesProblem } from './questions/index.ts';
 import { openInstanceStore } from './store/index.ts';
@@ -109,7 +110,7 @@ and events, as the UI does: --url names it (default HOPPER_URL, else http://127.
 No sign-in is needed: the CLI holds the database's credentials. Each prints the daemon's answer as JSON; the events
 say the operator CLI acted (via cli).
 
-records: ${CONFIG_NAMES.join(', ')}. plugins, rules, job-rules, repo-job-rules, windows-hosts, clusters and podman-hosts are one user's; sign-in is shared.
+records: ${CONFIG_NAMES.join(', ')}. plugins, rules, job-rules, repo-job-rules, repo-memory, windows-hosts, clusters and podman-hosts are one user's; sign-in is shared.
 Every one is edited in the UI too. clusters: how the vault finds a cluster in the AWS accounts (Settings → Clusters).
 --user <id> on config, ssh-key, ledger and the commands on the running daemon names the user (default: the one user, while there is one).
 
@@ -136,13 +137,14 @@ export function recordProblem(name: ConfigName, value: unknown, held: readonly s
   if (name === 'rules') return rulesProblem(value);
   if (name === 'job-rules') return jobRulesProblem(value);
   if (name === 'repo-job-rules') return repoJobRulesProblem(value);
+  if (name === 'repo-memory') return memorySettingsProblem(value);
   if (name === 'windows-hosts') return windowsHostsProblem(value);
   if (name === 'clusters') return clustersProblem(value);
   if (name === 'podman-hosts') return podmanHostsProblem(value);
   return name === 'sign-in' ? signInConfigProblem(withHeldSecrets(value, held)) : pluginsConfigProblem(value);
 }
 
-/** One config record wherever it lives: a user's (plugins, rules, job-rules, repo-job-rules, windows-hosts, clusters, podman-hosts) or the instance's (sign-in). */
+/** One config record wherever it lives: a user's (plugins, rules, job-rules, repo-job-rules, repo-memory, windows-hosts, clusters, podman-hosts) or the instance's (sign-in). */
 type Records = ConfigRecords<ConfigName>;
 
 function put(records: Records, name: ConfigName, json: string, version: string, held: readonly string[]): void {

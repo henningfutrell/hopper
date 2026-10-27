@@ -27,6 +27,7 @@ import { hideCodes } from '../logins/recognise.ts';
 import { watchRunOutput } from '../logins/run-output.ts';
 import { lastTaskCount } from '../domain/task-count.ts';
 import { HEAVY_SHIMS } from '../domain/heavy-steps.ts';
+import { withMemoryLines } from '../domain/repo-memory.ts';
 
 /** The answer's tail kept for whoever answers a question. */
 const OUTPUT_CAP = 16000;
@@ -67,7 +68,7 @@ export function outcomeOf(text: string, machine: string, chatId: string): Execut
   const lines = text.trimEnd().split('\n');
   const last = normaliseMarkerLine(lines.at(-1) ?? '');
   const before = lines.slice(0, -1).join('\n').trim();
-  if (last === 'HOPPER_DONE') return { kind: 'finished', result: { machine, summary: before.slice(0, SUMMARY_CHARS), chatId } };
+  if (last === 'HOPPER_DONE') return { kind: 'finished', result: { machine, summary: withMemoryLines(before, SUMMARY_CHARS), chatId } };
   if (last.startsWith('HOPPER_FAILED')) return { kind: 'failed', error: last.slice('HOPPER_FAILED'.length).trim() || 'HOPPER_FAILED without a reason' };
   if (last === 'HOPPER_QUESTION') return { kind: 'question', question: { text: before, recentOutput: tail(text.trim()), detectedBy: 'marker' } };
   const review = REVIEW_KINDS.find((k) => REVIEW_SECTIONS[k].marker === last);
