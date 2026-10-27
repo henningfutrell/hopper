@@ -6,7 +6,7 @@ import { keptTreeOf, keptWorkOf, REVIEW_KINDS, REVIEW_SECTIONS, WORK_EVENTS, typ
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createSignedOutMove } from './signed-out-move.ts';
-import { BUSY_MOVE_EVERY_MS, createBusyMove } from './busy-move.ts'; import { DELIVERY_LEDGER_EVERY_MS, recordDeliveryLedger } from './delivery-ledger.ts'; import { KEPT_TRACKS_EVERY_MS, keepDeliveryTracks } from './kept-tracks.ts';
+import { BUSY_MOVE_EVERY_MS, createBusyMove } from './busy-move.ts'; import { DELIVERY_LEDGER_EVERY_MS, recordDeliveryLedger } from './delivery-ledger.ts'; import { KEPT_TRACKS_EVERY_MS, keepDeliveryTracks } from './kept-tracks.ts'; import { GRADES_EVERY_MS, keepGrades } from './grades.ts';
 import { preemptRunning } from './preemption.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
@@ -185,7 +185,7 @@ export function createEngine(o: EngineOptions): Engine {
   let busyMovedAt = 0;
   // The delivery ledger pass (issue #2554 part 6): its first pass one interval after the start.
   let ledgerAt = c.clock.now().getTime();
-  let keptTracksAt = 0; // the kept-track pass (issue #2775): its first pass at the first tick
+  let keptTracksAt = 0, gradesAt = 0; // the kept-track pass (issue #2775) and the grade pass (issue #2845): their first pass at the first tick
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
@@ -335,6 +335,10 @@ export function createEngine(o: EngineOptions): Engine {
         if (c.clock.now().getTime() - keptTracksAt >= KEPT_TRACKS_EVERY_MS && passes.held('keptTracks')) {
           keptTracksAt = c.clock.now().getTime();
           try { keepDeliveryTracks(store, c.clock.now()); } catch (e) { console.error('hopper: the kept-track pass failed', e); }
+        }
+        if (c.clock.now().getTime() - gradesAt >= GRADES_EVERY_MS && passes.held('grades')) {
+          gradesAt = c.clock.now().getTime();
+          try { keepGrades(store, c.clock.now()); } catch (e) { console.error('hopper: the grade pass failed', e); }
         }
         c.trigger('tick');
       }, o.tickMs);

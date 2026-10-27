@@ -39,6 +39,7 @@ import { DISK_MEASURE_TABLE } from './disk-measures.ts';
 import { DELIVERY_LEDGER_TABLE } from './delivery-ledger.ts';
 import { STEP_SCHEDULE_TABLES } from './step-schedules.ts';
 import { KEPT_TRACK_TABLES } from './kept-tracks.ts';
+import { GRADE_TABLES } from './grades.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -208,4 +209,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 101: The kept delivery tracks, the deployment records and the cursor of the pass that keeps them (issue #2775). Tables
   // only: the build before runs on them, and never reads them.
   KEPT_TRACK_TABLES,
+  // 102: The grades (issue #2845): each ended job's automatic grade, and every user grade a person gave a job. Tables only:
+  // the build before runs on them, and never reads them.
+  GRADE_TABLES,
 ];
