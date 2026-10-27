@@ -1,0 +1,1 @@
+- Jobs on computers that cannot run the sandbox, such as pods on Kubernetes or a container, now also keep to the job's list of websites and to its trimmed environment when those settings are on. Pods on Kubernetes can be set to reach nothing but the hopper, so the list is their only way out.

@@ -26,7 +26,7 @@ import { jobScratchOf, worktreesOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
 import { seedClaudeConfig, settleStartup } from './startup.ts';
 import { shellQuote } from '../ssh.ts'; import { traceJobStep } from '../../telemetry/job-steps.ts';
-import { ENV_SCOPE_VARIABLE, withEnvKeep } from '../../sandbox/env-scope.ts';
+import { ENV_SCOPE_VARIABLE, withEnvKeep } from '../../sandbox/env-scope.ts'; import { EGRESS_ROUTE_VARIABLE } from '../../sandbox/egress-script.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
 const START_TIMEOUT_MS = 60000;
@@ -94,8 +94,8 @@ export interface PaneState {
   jobWorktree?: string;
   /** The checkout of the job's repository its worktree was made of, when `cwd` is not the job's repository (issues #361, #1103). */
   checkout?: string;
-  /** The job's environment is scoped (issue #2849 part 5): its user's setting asked it at the pane's start. */
-  envScoped?: boolean;
+  /** The job's environment is scoped (issue #2849 part 5), or its connections routed (part 2): its user's setting asked it at the pane's start. */
+  envScoped?: boolean; egressRouted?: boolean;
   /** The job's own container runtime's dir in its scratch dir (issue #1295), when it got one: its resource ledger names it (issue #2504). */
   containerRuntime?: string;
   /** The systemd user scope the pane's shell runs in (issue #410). Absent: the machine has none; the reap goes by HOPPER_JOB_ID. */
@@ -256,7 +256,7 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
     ...(ctx.machine.ssh && ctx.machine.herdr ? { ssh: ctx.machine.ssh } : {}),
     ...(ctx.machine.client ? { client: { machine: ctx.machine.id } } : {}),
     workspaceId, tabId, paneId, ...(terminalId ? { terminal: terminalId } : {}), agentName: agentNameFor(ctx.job.id), cwd, laneId: ctx.laneId,
-    ...(env[ENV_SCOPE_VARIABLE] ? { envScoped: true } : {}),
+    ...(env[ENV_SCOPE_VARIABLE] ? { envScoped: true } : {}), ...(env[EGRESS_ROUTE_VARIABLE] ? { egressRouted: true } : {}),
   };
   ctx.saveState({ ...state });
   return state;
