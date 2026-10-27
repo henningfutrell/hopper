@@ -93,7 +93,7 @@ describe('the nav groups after the merge', () => {
     const { PAGE_TABS } = (await import(nav)) as { PAGE_TABS: Record<string, readonly { id: string; label: string }[]> };
     expect(Object.fromEntries(Object.entries(PAGE_TABS).map(([home, tabs]) => [home, tabs.map((t) => t.id)]))).toEqual({
       approvals: ['access-requests', 'pending-approvals'],
-      jobs: ['jobs', 'queue', 'planned-work'],
+      jobs: ['jobs', 'queue', 'planned-work', 'grades'],
       ask: ['direct-jobs', 'direct-queries'],
       activity: ['events', 'decisions'],
       machines: ['machines', 'accounts', 'logins'],
