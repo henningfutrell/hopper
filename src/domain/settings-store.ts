@@ -143,6 +143,8 @@ export interface UserSettingsRepository {
   /** Preemption (issue #1525): whether a higher-priority job takes a running job's lane, and its minimum run time; absent: never set (on, 10 min). */
   getPreemption(): PreemptionSettings | undefined;
   setPreemption(settings: PreemptionSettings): void;
+  /** Which ended jobs get a completion review (issue #2846); absent: never set (the defaults). */
+  getCompletionReview(): Partial<import('./completion-review.ts').CompletionReviewSettings> | undefined; setCompletionReview(settings: import('./completion-review.ts').CompletionReviewSettings): void;
   /** Asking on the issue thread (issue #435): the policy for own and other repositories; absent: never set. */
   getThreadAsk(): ThreadAskSettings | undefined;
   setThreadAsk(settings: ThreadAskSettings): void;

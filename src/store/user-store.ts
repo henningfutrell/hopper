@@ -40,7 +40,7 @@ import { createSearchPendingRepository } from './search-pending.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
 import { createRepoChecksReadRepository } from './repo-checks.ts';
 import { createIntakeArrivalRepository } from './intake-arrivals.ts'; import { createTokenLedgerRepository } from './token-ledger.ts'; import { createResourceLedgerRepository } from './resource-ledger.ts';
-import { createDiskMeasureRepository } from './disk-measures.ts'; import { createDeliveryLedgerRepository } from './delivery-ledger.ts'; import { createStepScheduleRepository } from './step-schedules.ts'; import { createKeptTrackRepository } from './kept-tracks.ts'; import { createGradeRepository } from './grades.ts';
+import { createDiskMeasureRepository } from './disk-measures.ts'; import { createDeliveryLedgerRepository } from './delivery-ledger.ts'; import { createStepScheduleRepository } from './step-schedules.ts'; import { createKeptTrackRepository } from './kept-tracks.ts'; import { createGradeRepository } from './grades.ts'; import { createCompletionReviewRepository } from './completion-reviews.ts';
 import { createAppInstallationsReadRepository } from './app-installations.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
@@ -130,7 +130,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     settings: createUserSettingsRepository(ctx),
     connectedAccounts: createConnectedAccountRepository(ctx),
     usageHistory: createUsageHistoryRepository(ctx),
-    machineHistory: createMachineHistoryRepository(ctx), diskMeasures: createDiskMeasureRepository(ctx), deliveryLedger: createDeliveryLedgerRepository(ctx), stepSchedules: createStepScheduleRepository(ctx), keptTracks: createKeptTrackRepository(ctx), grades: createGradeRepository(ctx),
+    machineHistory: createMachineHistoryRepository(ctx), diskMeasures: createDiskMeasureRepository(ctx), deliveryLedger: createDeliveryLedgerRepository(ctx), stepSchedules: createStepScheduleRepository(ctx), keptTracks: createKeptTrackRepository(ctx), grades: createGradeRepository(ctx), completionReviews: createCompletionReviewRepository(ctx),
     config: createConfigRecords(ctx, USER_CONFIG),
     credentialAcceptances: createCredentialAcceptanceRepository(ctx),
     waitCheckLeases: createWaitCheckLeases(ctx),
