@@ -34,7 +34,7 @@ describe('the Helm chart\'s lane pods: their egress (issue #2849 part 6)', () =>
   });
 
   it('another DNS selector, and the hopper on another port', () => {
-    const policy = find(render('lanes.replicas=1', 'lanes.egress.confine=true', 'lanes.egress.dnsSelector.app=dns', 'port=8080'), 'NetworkPolicy', 'hopper-lanes');
+    const policy = find(render('lanes.replicas=1', 'lanes.egress.confine=true', 'lanes.egress.dnsSelector.k8s-app=null', 'lanes.egress.dnsSelector.app=dns', 'port=8080'), 'NetworkPolicy', 'hopper-lanes');
     expect(egressOf(policy)[0]?.to?.[0]?.podSelector?.matchLabels).toEqual({ app: 'dns' });
     expect(egressOf(policy)[1]?.ports).toEqual([{ port: 8080, protocol: 'TCP' }]);
   });

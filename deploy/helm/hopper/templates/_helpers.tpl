@@ -160,3 +160,43 @@ local KMS. Neither: the vault seals under the master key.
 {{- define "hopper.vaultRunner" -}}
 {{- if .Values.hopperVault.enabled }}vault{{ else }}hopper{{ end -}}
 {{- end -}}
+
+{{/*
+A confined lane pod's egress (issue #2849 part 6, docs/design.md "Contained machines"): DNS, and the hopper alone — its own
+pod on its port, or, in a runner-only release, the addresses lanes.egress.hopperCidrs names on lanes.hopperUrl's port. So
+the job egress allowlist, through the hopper, is the one way out of the jobs on it.
+*/}}
+{{- define "hopper.lanesEgress" -}}
+{{- $cidrs := .Values.lanes.egress.hopperCidrs | default list -}}
+{{- if and (not .Values.hopper.enabled) (not $cidrs) }}{{ fail "lanes.egress.confine in a runner-only release needs lanes.egress.hopperCidrs: the addresses of the hopper the lane pods join, as CIDRs" }}{{ end -}}
+{{- $port := .Values.port | int -}}
+{{- if not .Values.hopper.enabled -}}
+{{- $u := urlParse (include "hopper.lanesHopperUrl" .) -}}
+{{- $hp := splitList ":" $u.host -}}
+{{- $port = ternary (last $hp | int) (ternary 443 80 (eq $u.scheme "https")) (gt (len $hp) 1) -}}
+{{- end -}}
+egress:
+  - to:
+      - namespaceSelector: {}
+        podSelector:
+          matchLabels:
+            {{- toYaml .Values.lanes.egress.dnsSelector | nindent 12 }}
+    ports:
+      - port: 53
+        protocol: UDP
+      - port: 53
+        protocol: TCP
+  - to:
+      {{- if .Values.hopper.enabled }}
+      - podSelector:
+          matchLabels:
+            {{- include "hopper.selector" (dict "ctx" . "component" "hopper") | nindent 12 }}
+      {{- end }}
+      {{- range $cidrs }}
+      - ipBlock:
+          cidr: {{ . | quote }}
+      {{- end }}
+    ports:
+      - port: {{ $port }}
+        protocol: TCP
+{{- end -}}

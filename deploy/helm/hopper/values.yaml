@@ -267,3 +267,14 @@ lanes:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  # A lane pod's egress (issue #2849 part 6, docs/deploy.md "Lane pods on Kubernetes"). confine: true lets a lane pod reach
+  # only DNS and the hopper, so the job egress allowlist (Settings → Job egress) is its jobs' one way out; turn on the job
+  # egress route there too, or the agent reaches nothing. Needs a network plugin that enforces NetworkPolicy.
+  egress:
+    confine: false
+    # The cluster's DNS pods, in any namespace.
+    dnsSelector:
+      k8s-app: kube-dns
+    # A runner-only release (hopper.enabled=false): the addresses of the hopper it joins, as CIDRs (a NetworkPolicy matches
+    # addresses, not names), reached on lanes.hopperUrl's port. Needed with confine in a runner-only release.
+    hopperCidrs: []

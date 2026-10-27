@@ -103,6 +103,8 @@ export interface FakeHerdrOptions {
   runtime?: 'own' | 'none' | 'failed' | 'silent';
   /** What setting up the job's sandbox says (issue #1295). Default `none`: no bubblewrap. */
   sandbox?: 'on' | 'none' | 'failed';
+  /** What setting up the job's bare runner says (issue #2849 part 6). Default `on`. */
+  bare?: 'on' | 'none' | 'failed';
   /** The status Claude exits with, as the pane's shell says it after Claude (issue #2432). Default 0. */
   claudeExitCode?: number;
   /** The OOM kills in the job's scope, as the pane's shell reads them after Claude (issue #2498). Default 0. */

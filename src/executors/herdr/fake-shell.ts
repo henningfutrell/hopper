@@ -32,6 +32,8 @@ export interface FakeShellOptions {
   runtime?: 'own' | 'none' | 'failed' | 'silent';
   /** What the job's sandbox setup says (issue #1295); default none: the fake machine has no bubblewrap. */
   sandbox?: 'on' | 'none' | 'failed';
+  /** What the job's bare runner setup says (issue #2849 part 6); default on. */
+  bare?: 'on' | 'none' | 'failed';
   /** The status Claude exited with, as the shell says it after Claude (issue #2432); default 0. */
   claudeExitCode?: number;
   /** The OOM kills in the job's scope, as the shell reads them after Claude (issue #2498); default 0. */
@@ -67,6 +69,8 @@ export function shellSays(command: string, o: FakeShellOptions, scoped: boolean)
   if (command.startsWith("g=$(sed -n 's/^0:://p' /proc/self/cgroup")) return { lines: [`${OOM_KILLS_MARK}${scoped ? o.oomKills ?? 0 : 'none'}`] };
   // The job's sandbox (src/client/job-sandbox.ts): its outcome, as two printf words.
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-sandbox ')) return { lines: [`hopper-sandbox-${o.sandbox ?? 'none'}`] };
+  // The job's bare runner (src/client/job-sandbox.ts, issue #2849 part 6): its outcome, as two printf words.
+  if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-bare ')) return { lines: [`hopper-bare-${o.bare ?? 'on'}`] };
   // The job's container runtime guards, its first step (issue #2234).
   if (command.startsWith('o=$(sh -c ') && command.includes(' hopper-guards ')) return { lines: ['hopper-guards-written'] };
   // The job's own container runtime (src/client/job-runtime.ts): its outcome, as two printf words; silent says nothing.

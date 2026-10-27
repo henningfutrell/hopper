@@ -13,7 +13,7 @@ import { REVIEW_KINDS, REVIEW_SECTIONS, type MachineSnapshot } from '../domain/t
 import { scopeUnitOf } from '../client/reap.ts';
 import { scopeLimitProperties, scopeLimitsOf, type JobLimits } from '../domain/job-limits.ts';
 import { runtimeCommand, runtimeEnvOf, turnServiceCommand } from '../client/job-runtime.ts';
-import { SANDBOX_SUBDIR, sandboxCommand } from '../client/job-sandbox.ts';
+import { SANDBOX_SUBDIR, bareCommand, sandboxCommand } from '../client/job-sandbox.ts';
 import { commandOn, run, type Ran } from './command.ts';
 import { resolvePayload, validatePayload, workTreeOn } from './herdr/payload.ts';
 import { makeJobWorktreeCommand } from './herdr/job-worktree.ts';
@@ -101,12 +101,13 @@ export function turnCommand(jobId: string, run: string, limits?: JobLimits): str
  * ends, the turn ending only once it did (issue #1840); its exit code is the agent's. What the setup prints stays out of
  * the agent's answer. A runtime that wrote no environment, or a sandbox that could not be set up, ends the turn (exit 125):
  * it would run next to the host's runtime.
- * A machine where bubblewrap cannot run runs the agent as before, with the job's runtime and its guards.
+ * A machine where bubblewrap cannot run runs the agent as before, with the job's runtime and its guards, or, when the job's
+ * setting routes or scopes it, through the bare runner (issue #2849 part 6).
  */
 export function isolatedTurn(jobId: string, scratch: string, run: string): string {
   const fail = (what: string): string => `{ printf '%s\\n' ${shellQuote(`hopper: the job ${what} could not be set up`)} >&2; exit 125; }`;
   return `{ ${runtimeCommand(jobId, scratch, false, HEAVY_SHIMS)}; } >/dev/null 2>&1; [ -r ${shellQuote(runtimeEnvOf(scratch))} ] || ${fail('container runtime')}; `
-    + `case $( { ${sandboxCommand(scratch)}; } 2>/dev/null) in *hopper-sandbox-on) w=${shellQuote(`${scratch}/${SANDBOX_SUBDIR}/run`)};; *hopper-sandbox-none) w=;; *) ${fail('sandbox')};; esac; `
+    + `case $( { ${sandboxCommand(scratch)}; } 2>/dev/null) in *hopper-sandbox-on) w=${shellQuote(`${scratch}/${SANDBOX_SUBDIR}/run`)};; *hopper-sandbox-none) w=; case $( { ${bareCommand(scratch)}; } 2>/dev/null) in *hopper-bare-on) w=${shellQuote(`${scratch}/${SANDBOX_SUBDIR}/run`)};; *hopper-bare-none) ;; *) ${fail('runner')};; esac;; *) ${fail('sandbox')};; esac; `
     + `${turnServiceCommand(jobId, scratch)} \${w:+"$w"} ${run}; r=$?; [ -n "$sp" ] && { kill "$sp"; wait "$sp"; } 2>/dev/null; exit $r`;
 }
 

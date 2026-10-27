@@ -4,7 +4,7 @@
 import type { ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import { tail } from './monitor.ts';
 import { GUARDS_MARK, RUNTIME_MARK, RUNTIME_SUBDIR, guardsCommand, guardsOutcome, runtimeOutcome, setupCommand } from '../../client/job-runtime.ts';
-import { SANDBOX_MARK, egressOutcome, sandboxCommand, sandboxOutcome, type EgressOutcome } from '../../client/job-sandbox.ts';
+import { BARE_MARK, SANDBOX_MARK, bareCommand, bareOutcome, egressOutcome, sandboxCommand, sandboxOutcome, type EgressOutcome } from '../../client/job-sandbox.ts';
 import { jobScratchOf } from '../../domain/job-layout.ts';
 import { HEAVY_SHIMS } from '../../domain/heavy-steps.ts';
 import { awaitOnScreen } from './pane-wait.ts';
@@ -62,10 +62,34 @@ export async function enterSandbox(d: StartDeps, ctx: ExecutionContext, s: PaneS
   else if (found === 'none') ctx.progress('sandbox: none here (no bubblewrap that runs); Claude runs as the user does');
   else if (found === 'failed') return { kind: 'failed', error: `the job's sandbox could not be set up on ${ctx.machine.id}: ${tail(screen, 10)}` };
   else return { startTimedOut: `pane ${s.paneId} never set up the job's sandbox within ${SANDBOX_WAIT_MS} ms: ${tail(screen, 10)}` };
-  const egress = egressOutcome(screen);
+  let said = screen;
+  let runner = found === 'on';
+  if (found === 'none' && (s.envScoped || s.egressRouted)) {
+    const bare = await enterBareRunner(d, ctx, s);
+    if (typeof bare !== 'string') return bare;
+    said = bare;
+    runner = bareOutcome(bare) === 'on';
+  }
+  const egress = egressOutcome(said);
   if (egress) ctx.progress(EGRESS_PROGRESS[egress]);
-  if (s.envScoped) ctx.progress(found === 'on' ? ENV_SCOPE_PROGRESS.scoped : ENV_SCOPE_PROGRESS.unscoped);
+  if (s.envScoped) ctx.progress(runner ? ENV_SCOPE_PROGRESS.scoped : ENV_SCOPE_PROGRESS.unscoped);
   return null;
+}
+
+/**
+ * The job's bare runner (issue #2849 part 6), on a machine with no bubblewrap that runs, when the job's setting routes or
+ * scopes it: Claude runs through a runner with no sandbox, so the route and the scope hold there too. The screen when done,
+ * else the failure: a scope or a route the job was given must not be dropped in silence.
+ */
+async function enterBareRunner(d: StartDeps, ctx: ExecutionContext, s: PaneState): Promise<string | ExecutionOutcome | StartTimedOut | null> {
+  await d.herdr.runInPane(s.paneId, bareCommand(jobScratchOf(s.cwd, ctx.job.id)));
+  const { found, screen } = await awaitOnScreen(d, ctx, s.paneId, BARE_MARK, bareOutcome, SANDBOX_WAIT_MS);
+  if (ctx.signal.aborted) return null;
+  if (found === 'on') ctx.progress('sandbox: Claude runs through a runner with no sandbox: the job egress route and environment scope hold, the sandbox does not');
+  else if (found === 'none') return screen;
+  else if (found === 'failed') return { kind: 'failed', error: `the job's runner could not be set up on ${ctx.machine.id}: ${tail(screen, 10)}` };
+  else return { startTimedOut: `pane ${s.paneId} never set up the job's runner within ${SANDBOX_WAIT_MS} ms: ${tail(screen, 10)}` };
+  return screen;
 }
 
 /**
@@ -83,6 +107,7 @@ export const ENV_SCOPE_PROGRESS = {
  */
 export const EGRESS_PROGRESS: Record<EgressOutcome, string> = {
   confined: 'egress: confined: the sandbox has a network of its own, whose one way out is the job egress allowlist',
+  contained: 'egress: contained: the machine\'s own network reaches only the hopper, so the job egress allowlist is the agent\'s one way out',
   routed: 'egress warning: routed through the job egress allowlist, but not confined here (the setting is off, or no network namespace of its own holds): a tool that ignores HTTPS_PROXY goes out directly',
-  unrouted: 'egress warning: not routed here (no sandbox, or no node to run hopper-egress): the job\'s connections go out directly, off the job egress allowlist',
+  unrouted: 'egress warning: not routed here (no runner, or no node to run hopper-egress): the job\'s connections go out directly, off the job egress allowlist',
 };
