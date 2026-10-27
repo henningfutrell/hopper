@@ -2,7 +2,8 @@
 // out to through the hopper (`GET /job/egress`, src/http/job-egress.ts): the hopper's default hosts — the model
 // providers, GitHub and the package registries —, unless the user turned them off, then the user's own hosts, then the
 // hosts of the job's repository. An entry is `host:port` or `*.domain:port`; the hopper itself is never on it: a job
-// reaches the hopper at HOPPER_URL, not through its egress.
+// reaches the hopper at HOPPER_URL, not through its egress. Beside it, the job's environment scope (part 5): the variable
+// names its agent keeps of its machine's environment, every other variable absent.
 
 /** The user's job egress setting: kept in the database (a settings key), set through the UI session. */
 export interface JobEgressSettings {
@@ -23,10 +24,39 @@ export interface JobEgressSettings {
    * Off when never set: ports a job's containers publish are then out of the agent's reach.
    */
   confine: boolean;
+  /**
+   * Whether a job's agent runs with its environment scoped (part 5): only the hopper's own names (`JOB_ENV_KEPT`), what the
+   * hopper set for the job, `keep` and its repository's `repoKeep` are in it; every other variable of its machine is absent.
+   * Read at each job's start. Off when never set.
+   */
+  scope: boolean;
+  /** Variable names every job's agent keeps when its environment is scoped: the secrets its tools need. */
+  keep: string[];
+  /** Variable names the jobs of one repository keep, by `owner/name` in lowercase. */
+  repoKeep: Record<string, string[]>;
 }
 
 /** The setting of a user who never set one: the defaults only. */
-export const NO_JOB_EGRESS: JobEgressSettings = { defaults: true, hosts: [], repos: {}, route: false, confine: false };
+export const NO_JOB_EGRESS: JobEgressSettings = { defaults: true, hosts: [], repos: {}, route: false, confine: false, scope: false, keep: [], repoKeep: {} };
+
+/**
+ * The names a scoped job's agent always keeps (part 5): the machine's variables (the ones a user added later keeps,
+ * src/executors/env.ts), the user's config dirs and the agent's sign-in. Also kept: what the hopper set for the job, and
+ * the names that start with `LC_` or `HERDR_` (src/sandbox/env-scope.ts).
+ */
+export const JOB_ENV_KEPT: readonly string[] = [
+  'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG', 'LANGUAGE', 'TERM', 'COLORTERM', 'TZ', 'TMPDIR', 'PWD',
+  'XDG_RUNTIME_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME',
+  'GH_CONFIG_DIR', 'CLAUDE_CONFIG_DIR', 'CLAUDE_CODE_OAUTH_TOKEN',
+];
+
+/** An environment variable name as a job's scope takes it: upper-case letters, digits and `_`, a letter first. */
+const ENV_NAME = /^[A-Z][A-Z0-9_]{0,127}$/;
+
+/** Why `name` is no name a job's environment scope keeps; undefined when it is one. */
+export function jobEnvNameProblem(name: string): string | undefined {
+  return ENV_NAME.test(name) ? undefined : `${JSON.stringify(name)} is not a variable name: upper-case letters, digits and _, a letter first, at most 128`;
+}
 
 /** The hopper's default hosts: the model providers, GitHub and the package registries a job's tools fetch from. */
 export const JOB_EGRESS_DEFAULTS: readonly string[] = [
@@ -58,8 +88,18 @@ export function jobEgressHostProblem(entry: string): string | undefined {
 /** The setting as kept: entries and repositories in lowercase, each list without repeats. */
 export function normalJobEgress(s: JobEgressSettings): JobEgressSettings {
   const lower = (l: readonly string[]): string[] => [...new Set(l.map((h) => h.toLowerCase()))];
-  const repos = Object.fromEntries(Object.entries(s.repos).map(([r, l]): [string, string[]] => [r.toLowerCase(), lower(l)]).filter(([, l]) => l.length > 0));
-  return { defaults: s.defaults, hosts: lower(s.hosts), repos, route: s.route, confine: s.route && s.confine };
+  const byRepo = (m: Record<string, string[]>, f: (l: readonly string[]) => string[]): Record<string, string[]> =>
+    Object.fromEntries(Object.entries(m).map(([r, l]): [string, string[]] => [r.toLowerCase(), f(l)]).filter(([, l]) => l.length > 0));
+  const names = (l: readonly string[]): string[] => [...new Set(l)];
+  return {
+    defaults: s.defaults, hosts: lower(s.hosts), repos: byRepo(s.repos, lower), route: s.route, confine: s.route && s.confine,
+    scope: s.scope, keep: names(s.keep), repoKeep: byRepo(s.repoKeep, names),
+  };
+}
+
+/** The names a scoped job of `repo` keeps of its machine's environment (part 5), beside what the hopper set for it. */
+export function jobEnvKeep(s: JobEgressSettings, repo: string | undefined): string[] {
+  return [...new Set([...JOB_ENV_KEPT, ...s.keep, ...(repo ? s.repoKeep[repo.toLowerCase()] ?? [] : [])])];
 }
 
 /** The allowlist of a job of `repo` (`owner/name`; none for a job with no repository). */

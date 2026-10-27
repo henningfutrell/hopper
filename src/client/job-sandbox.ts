@@ -20,11 +20,16 @@ const NET_PROBE = 'bwrap --dev-bind / / --unshare-net --die-with-parent true';
 /** The file in the sandbox's dir that holds the job's egress as the setup found it: routed or confined. */
 const EGRESS_FILE = 'egress';
 
-// The runner, `<scratch>/sandbox/run <command> [args]`, one line after its `#!/bin/sh`: the job's runtime from env.sh, then
-// the command in bubblewrap. Inside the sandbox already (HOPPER_SANDBOXED), the command as it is. The options are put after
-// the command, then the command rotated behind them, as sh has no arrays. Later mounts go over earlier ones.
+/** The job's environment scope (issue #2849 part 5), in the job's credentials dir: src/sandbox/env-scope.ts `ENV_SCOPE_FILE`. */
+const ENV_SCOPE = 'credentials/hopper/env-scope';
+
+// The runner, `<scratch>/sandbox/run <command> [args]`, one line after its `#!/bin/sh`: the job's environment scope first
+// (issue #2849 part 5: with it on, the file runs the runner again with only the variables kept), the job's runtime from
+// env.sh, then the command in bubblewrap. Inside the sandbox already (HOPPER_SANDBOXED), the command as it is. The options
+// are put after the command, then the command rotated behind them, as sh has no arrays. Later mounts go over earlier ones.
 const RUN = [
-  `s=\${0%/${SANDBOX_SUBDIR}/run}; e=$s/${RUNTIME_SUBDIR}/env.sh; [ -r "$e" ] && . "$e";`,
+  `s=\${0%/${SANDBOX_SUBDIR}/run}; e=$s/${ENV_SCOPE}; [ -z "\${HOPPER_ENV_SCOPED:-}" ] && [ -r "$e" ] && . "$e";`,
+  `e=$s/${RUNTIME_SUBDIR}/env.sh; [ -r "$e" ] && . "$e";`,
   'if [ -n "${HOPPER_SANDBOXED:-}" ]; then exec "$@"; fi;',
   '[ $# -gt 0 ] || { printf "hopper: %s\\n" "sandbox: no command" >&2; exit 125; };',
   'n=$#;',

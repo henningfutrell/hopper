@@ -64,8 +64,18 @@ export async function enterSandbox(d: StartDeps, ctx: ExecutionContext, s: PaneS
   else return { startTimedOut: `pane ${s.paneId} never set up the job's sandbox within ${SANDBOX_WAIT_MS} ms: ${tail(screen, 10)}` };
   const egress = egressOutcome(screen);
   if (egress) ctx.progress(EGRESS_PROGRESS[egress]);
+  if (s.envScoped) ctx.progress(found === 'on' ? ENV_SCOPE_PROGRESS.scoped : ENV_SCOPE_PROGRESS.unscoped);
   return null;
 }
+
+/**
+ * The job's environment scope (issue #2849 part 5), when its user's setting scopes it: its sandbox runner scopes it, so a
+ * job with no sandbox here keeps the machine's whole environment, and says so.
+ */
+export const ENV_SCOPE_PROGRESS = {
+  scoped: 'environment: scoped: the agent keeps only the variables the job environment scope names and the hopper set for the job',
+  unscoped: 'environment warning: not scoped here (no sandbox): the agent keeps the machine\'s whole environment',
+} as const;
 
 /**
  * The job's egress as its sandbox's setup found it (issue #2849), when its user's setting routes it: a warning on the job

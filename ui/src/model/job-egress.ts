@@ -1,11 +1,14 @@
 // The job egress allowlist as the UI shows it (issue #2849 part 3): the hosts the jobs asked for, one Needs you line each, and
-// the allowlist's text fields in Settings → Job egress — a host a line, and a repository's hosts as `owner/name host:port …`.
+// the allowlist's text fields in Settings → Job egress — a host a line, and a repository's hosts as `owner/name host:port …`;
+// the environment scope's names (part 5) the same way: a name a line, and a repository's names as `owner/name NAME …`.
 import type { JobEgressAsk, JobEgressSettings } from '../../../src/domain/job-egress.ts';
 
 /** `GET /api/job-egress`. */
 export interface JobEgressView {
   egress: JobEgressSettings;
   defaultHosts: readonly string[];
+  /** The names a scoped job always keeps (part 5); absent from an older hopper. */
+  keptNames?: readonly string[];
   asks: readonly JobEgressAsk[];
 }
 

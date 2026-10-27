@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runtimeCommand } from '../../src/client/job-runtime.ts';
 import { egressOutcome, sandboxCommand, sandboxOutcome, sandboxSetupArgv } from '../../src/client/job-sandbox.ts';
 import { TERMINAL_LINE_MAX } from '../../src/executors/herdr/client.ts';
+import { ENV_SCOPE_FILE, envScopeScript } from '../../src/sandbox/env-scope.ts';
+import { JOB_ENV_KEPT } from '../../src/domain/job-egress.ts';
 
 const JOB = 'job-1295-sandbox';
 
@@ -176,6 +178,30 @@ describe.skipIf(!bwrapRuns)('the job\'s sandbox (issue #1295)', () => {
     expect(inside).toMatch(/^egress --from net:\[\d+\]$/);
     expect(inside!.split(' ')[2]).not.toBe(outside!.split(' ')[2]);
     expect(rest).toEqual(['sandboxed=1', 'args=--model haiku']);
+  });
+
+  it('with the environment scope on, the agent keeps only the names kept and what the hopper set; every other variable is absent (issue #2849 part 5)', () => {
+    const scope = (names?: readonly string[]): void => {
+      mkdirSync(join(scratch, 'credentials', 'hopper'), { recursive: true });
+      writeFileSync(join(scratch, 'credentials', ENV_SCOPE_FILE), envScopeScript(names));
+    };
+    // The machine's environment: a secret of the daemon's, one the user named, what the hopper set for the job, a name no
+    // shell can unset, and a value over two lines.
+    const machine = env({
+      HOPPER_DATABASE_URL: 'postgres://secret', NPM_TOKEN: 'npm-1', HOPPER_URL: 'http://hopper', HOPPER_ENV_KEEP: 'HOPPER_URL', 'ODD.NAME': 'x',
+      LC_ALL: 'C', NOTE: 'a\nSECRET=b',
+    });
+    const names = (r: { stdout: string }): string[] => r.stdout.split('\n').filter((l) => /^[A-Za-z_.]+=/.test(l)).map((l) => l.slice(0, l.indexOf('=')));
+    scope([...JOB_ENV_KEPT, 'NPM_TOKEN']);
+    const scoped = inSandbox('env', machine);
+    expect(names(scoped)).toEqual(expect.arrayContaining(['PATH', 'HOME', 'NPM_TOKEN', 'HOPPER_URL', 'LC_ALL', 'HOPPER_SANDBOXED', 'HOPPER_ENV_SCOPED']));
+    for (const gone of ['HOPPER_DATABASE_URL', 'ODD.NAME', 'NOTE', 'SECRET', 'FAKE']) expect(names(scoped)).not.toContain(gone);
+    expect(scoped.stdout).toContain('NPM_TOKEN=npm-1');
+    // claude, as herdr starts it, the same.
+    expect(inJobShell('claude --model haiku', machine).stdout.trim().split('\n')).toEqual(['sandboxed=1', 'args=--model haiku']);
+    // Off: the agent's environment as before.
+    scope(undefined);
+    expect(names(inSandbox('env', machine))).toEqual(expect.arrayContaining(['HOPPER_DATABASE_URL', 'NOTE', 'FAKE']));
   });
 
   it('a machine with no runtime of the job\'s: the user\'s runtime dir is empty in it, and so is /run/user/<uid>', () => {

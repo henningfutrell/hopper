@@ -18,7 +18,7 @@ describe('a job egress entry (issue #2849)', () => {
 });
 
 describe('a job\'s egress allowlist (issue #2849)', () => {
-  const settings = { defaults: true, hosts: ['dev.example.com:8443'], repos: { 'octo/tools': ['staging.example.com:443'] }, route: false, confine: false };
+  const settings = { defaults: true, hosts: ['dev.example.com:8443'], repos: { 'octo/tools': ['staging.example.com:443'] }, route: false, confine: false, scope: false, keep: [], repoKeep: {} };
 
   it('holds the defaults, the user\'s hosts and its repository\'s hosts, matched in any case', () => {
     const list = jobEgressList(settings, 'Octo/Tools');

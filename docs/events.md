@@ -9775,7 +9775,7 @@ Version 1 (`docs/schemas/job_egress.ask_answered.v1.json`). A person answered a 
 
 ## `job_egress.changed`
 
-Version 1 (`docs/schemas/job_egress.changed.v1.json`). An admin set the user's job egress allowlist (issue #2849, `POST /ui/api/job-egress`): `defaults`, whether the hopper's default hosts are on it; `route`, whether a job's agent runs behind `hopper-egress` from its next start (part 2; absent before it); `confine`, whether a routed job's sandbox also gets a network namespace of its own whose one way out is `hopper-egress` (part 4; absent before it); `hosts`, how many hosts every job may reach; `repos`, how many repositories have hosts of their own. `by` is who. Never the hosts themselves: GET /api/job-egress reads them.
+Version 1 (`docs/schemas/job_egress.changed.v1.json`). An admin set the user's job egress allowlist (issue #2849, `POST /ui/api/job-egress`): `defaults`, whether the hopper's default hosts are on it; `route`, whether a job's agent runs behind `hopper-egress` from its next start (part 2; absent before it); `confine`, whether a routed job's sandbox also gets a network namespace of its own whose one way out is `hopper-egress` (part 4; absent before it); `scope`, whether a job's agent keeps only the variables of its machine's environment that the setting names, beside what the hopper set for the job (part 5; absent before it); `hosts`, how many hosts every job may reach; `repos`, how many repositories have hosts of their own; `keep`, how many variable names every job keeps, and `repoKeep`, how many repositories have names of their own (part 5). `by` is who. Never the hosts or the names themselves: GET /api/job-egress reads them.
 
 | field | type | required |
 |---|---|---|
@@ -9783,8 +9783,11 @@ Version 1 (`docs/schemas/job_egress.changed.v1.json`). An admin set the user's j
 | `defaults` | boolean | yes |
 | `route` | boolean | no |
 | `confine` | boolean | no |
+| `scope` | boolean | no |
 | `hosts` | integer | yes |
 | `repos` | integer | yes |
+| `keep` | integer | no |
+| `repoKeep` | integer | no |
 
 ```json
 {
@@ -9792,8 +9795,11 @@ Version 1 (`docs/schemas/job_egress.changed.v1.json`). An admin set the user's j
   "defaults": true,
   "route": true,
   "confine": true,
+  "scope": true,
   "hosts": 1,
-  "repos": 2
+  "repos": 2,
+  "keep": 1,
+  "repoKeep": 1
 }
 ```
 
