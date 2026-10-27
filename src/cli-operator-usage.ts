@@ -2,9 +2,10 @@
 // /api/usage/tokens — the user's token use and estimated cost by repository, or by the group, split and filters it is given —,
 // and with `--job` one job's, GET /api/jobs/:id/tokens. The daemon checks the filters and answers 400 for a bad one.
 // `hopper usage budget [set …]` (part 3): the token budget, GET /api/token-budget, or an admin's POST /ui/api/token-budget;
-// with the day caps, in all and per repository (part 5).
+// with the day caps, in all and per repository (part 5). `usage model-routing` and `usage job-budget`: cli-operator-model-routing.ts.
 import { parseArgs } from 'node:util';
 import { usage, type Call } from './cli-operator-call.ts';
+import { MODEL_ROUTING_USAGE, modelRoutingCall } from './cli-operator-model-routing.ts';
 
 export const USAGE_USAGE = `  hopper usage tokens [--repo <owner/repo>] [--since <date>] [--by <group>] [--split <group>]
                                                      token use and estimated cost by job, issue, repo, machine, lane, account, model or day
@@ -15,7 +16,8 @@ export const USAGE_USAGE = `  hopper usage tokens [--repo <owner/repo>] [--since
                                                      most the jobs, or each repository's, may spend in a UTC day before none starts
   hopper usage budget set [--job-tokens <n>] [--job-cost <usd>] [--day-tokens <n>] [--day-cost <usd>]
                           [--repo-day-tokens <n>] [--repo-day-cost <usd>]
-                                                     change it; 0 turns that cap off`;
+                                                     change it; 0 turns that cap off
+${MODEL_ROUTING_USAGE}`;
 
 const LINE = 'usage tokens [--repo <owner/repo>] [--since <date>] [--by <group>] [--split <group>] | usage tokens --job <id> | usage budget [set [--job-tokens <n>] [--job-cost <usd>] [--day-tokens <n>] [--day-cost <usd>] [--repo-day-tokens <n>] [--repo-day-cost <usd>]]';
 
@@ -29,6 +31,7 @@ const amount = (s: string | undefined): number | undefined => {
 };
 
 export function usageCall(args: string[]): Call {
+  if (args[0] === 'model-routing' || args[0] === 'job-budget') return modelRoutingCall(args);
   let parsed;
   try {
     parsed = parseArgs({ args, allowPositionals: true, strict: true, options: { job: { type: 'string' }, repo: { type: 'string' }, since: { type: 'string' }, by: { type: 'string' }, split: { type: 'string' }, ...Object.fromEntries(CAPS.map(([o]) => [o, { type: 'string' as const }])) } });

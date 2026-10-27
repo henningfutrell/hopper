@@ -4,7 +4,7 @@
 // a person's pick up lets it go on, and its budget then counts from what it had spent (`budgetFrom`, set by the unpark).
 import { budgetReached, dayBudgetHold, dayBudgetOn, daySpendOf, spendOf, tokenBudgetOf, type JobBudgetPaused, type TokenSpend } from '../domain/token-budget.ts';
 import { sumTokenUse } from '../domain/token-usage.ts';
-import { jobBudgetOf } from '../domain/model-routing.ts';
+import { escalateOnPickUp, jobBudgetOf, modelRoutingOf } from '../domain/model-routing.ts';
 import type { UserStore } from '../domain/ports.ts';
 import type { Job, JobId } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -17,8 +17,8 @@ export function budgetPauseOf(c: Pick<EngineContext, 'store' | 'clock'>, jobId: 
   const { store } = c;
   const job = store.jobs.get(jobId);
   if (job?.status !== 'running' || job.budgetPaused) return undefined;
-  // Its model route's budget (issue #2848) over the user's job caps.
-  const budget = jobBudgetOf(job.spec.modelRoute, tokenBudgetOf(store.settings.getTokenBudget()));
+  // A person's job budget, else its model route's (issue #2848), over the user's job caps.
+  const budget = jobBudgetOf(job.spec.modelRoute, tokenBudgetOf(store.settings.getTokenBudget()), job.jobBudget);
   if (budget.jobTokens <= 0 && budget.jobCostUsd <= 0) return undefined;
   const spend = jobSpend(store, jobId);
   const why = budgetReached(spend, job.budgetFrom, budget);
@@ -41,6 +41,23 @@ export function pauseForBudget(c: Pick<EngineContext, 'store' | 'clock'>, jobId:
   } catch (e) {
     console.warn(`hopper: the token budget of job ${jobId} could not be checked: ${(e as Error).message}`);
   }
+}
+
+/**
+ * A cheap job a person picks up after its budget paused it (issue #2848, part 2): a stalled cheap run goes on on the strong
+ * model, not on the cheap one again — its route, its model, and so the `--model` its resumed agent gets, and
+ * `job.model_escalated` with the job itself as `after`. The item's later jobs stay on the strong model. In the pick up's
+ * transaction.
+ */
+export function escalateStalled(c: Pick<EngineContext, 'store'>, job: Job): void {
+  const { store } = c;
+  const to = escalateOnPickUp(modelRoutingOf(store.settings.getModelRouting()), job.spec.modelRoute, job.id, job.source?.repo);
+  if (!to) return;
+  const { model: _cheap, ...payload } = job.spec.payload;
+  const spec = { ...job.spec, modelRoute: to, payload: to.model ? { ...payload, model: to.model } : payload };
+  store.jobs.respecify(job.id, spec);
+  if (job.fromConfig) { const { model: _was, ...was } = job.fromConfig; store.jobs.update(job.id, { fromConfig: to.model ? { ...was, model: to.model } : was }); }
+  store.events.append({ type: 'job.model_escalated', jobId: job.id, data: { from: 'cheap', to: 'strong', model: to.model, after: job.id, why: to.why } });
 }
 
 /**

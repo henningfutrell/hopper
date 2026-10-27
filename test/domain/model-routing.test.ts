@@ -2,7 +2,7 @@
 // failed cheap job's next job of the item escalates once to the strong model. Pure.
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_MODEL_ROUTING, classifyWork, jobBudgetOf, modelRouteOf, modelRoutingOf, modelRoutingProblem, type ModelRoute, type ModelRoutingSettings, type WorkItem,
+  DEFAULT_MODEL_ROUTING, classifyWork, escalateOnPickUp, jobBudgetOf, modelRouteOf, modelRoutingOf, modelRoutingProblem, type ModelRoute, type ModelRoutingSettings, type WorkItem,
 } from '../../src/domain/model-routing.ts';
 import { DEFAULT_TOKEN_BUDGET } from '../../src/domain/token-budget.ts';
 
@@ -93,6 +93,32 @@ describe('jobBudgetOf', () => {
     const user = { ...DEFAULT_TOKEN_BUDGET, jobTokens: 9000, jobCostUsd: 20, dayTokens: 7 };
     expect(jobBudgetOf(undefined, user)).toEqual(user);
     expect(jobBudgetOf(route({ jobTokens: 0, jobCostUsd: 5 }), user)).toEqual({ ...user, jobTokens: 9000, jobCostUsd: 5 });
+  });
+
+  it('takes a person\'s job budget over the route\'s and the user\'s, each 0 falling back (part 2)', () => {
+    const user = { ...DEFAULT_TOKEN_BUDGET, jobTokens: 9000, jobCostUsd: 20 };
+    expect(jobBudgetOf(route({ jobTokens: 0, jobCostUsd: 5 }), user, { jobTokens: 0, jobCostUsd: 12 })).toEqual({ ...user, jobTokens: 9000, jobCostUsd: 12 });
+    expect(jobBudgetOf(undefined, user, { jobTokens: 500, jobCostUsd: 0 })).toEqual({ ...user, jobTokens: 500, jobCostUsd: 20 });
+  });
+});
+
+describe('escalateOnPickUp (part 2)', () => {
+  it('puts a cheap job a person picks up after its budget pause on the strong model, with the strong budget', () => {
+    const s: ModelRoutingSettings = { ...on, strong: { model: 'opus', jobTokens: 0, jobCostUsd: 30 }, repos: { 'o/a': { strong: { jobCostUsd: 40 } } } };
+    const cheap = modelRouteOf(s, work(), 'herdr-claude')!;
+    expect(escalateOnPickUp(s, cheap, 'j1', 'o/a')).toEqual({
+      ...cheap, choice: 'strong', model: 'opus', rule: 'escalated', budget: { jobTokens: 0, jobCostUsd: 40 }, escalated: { from: 'cheap', jobId: 'j1' },
+      why: 'Escalated: the cheap model reached its budget in job j1, so the job goes on on the strong model.',
+    });
+    expect(escalateOnPickUp(s, cheap, 'j1', 'o/b')!.budget).toEqual({ jobTokens: 0, jobCostUsd: 30 });
+  });
+
+  it('leaves a strong job, a job not routed, and a cheap job while routing or escalation is off', () => {
+    const cheap = modelRouteOf(on, work(), 'herdr-claude')!;
+    expect(escalateOnPickUp(on, modelRouteOf(on, work({ labels: ['security'] }), 'herdr-claude'), 'j1', undefined)).toBeUndefined();
+    expect(escalateOnPickUp(on, undefined, 'j1', undefined)).toBeUndefined();
+    expect(escalateOnPickUp({ ...on, escalate: false }, cheap, 'j1', undefined)).toBeUndefined();
+    expect(escalateOnPickUp({ ...on, on: false }, cheap, 'j1', undefined)).toBeUndefined();
   });
 });
 

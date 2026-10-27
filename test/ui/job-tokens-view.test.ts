@@ -83,6 +83,20 @@ describe('a job\'s token use on its job view', () => {
     expect(document.querySelector('[data-slot="job-model-route"]')).toBeNull();
   });
 
+  it('shows a person\'s job budget against its spend, and a form to set it while the job has not ended (part 2)', async () => {
+    const running = { ...job, status: 'running', jobBudget: { jobTokens: 0, jobCostUsd: 12, at: '2026-10-21T08:00:00.000Z', by: 'ada' } } as Job;
+    await boot(VIEW, running);
+    expect(text('job-own-budget')).toBe('Job budget: $2.50 of $12.00 spent, set by ada');
+    expect(document.querySelector('[data-slot="job-budget-form"]')).not.toBeNull();
+    expect((document.querySelector('[aria-label="US dollars"]') as HTMLInputElement).value).toBe('12');
+  });
+
+  it('shows no job budget form for a job that ended', async () => {
+    await boot(VIEW);
+    expect(document.querySelector('[data-slot="job-budget-form"]')).toBeNull();
+    expect(document.querySelector('[data-slot="job-own-budget"]')).toBeNull();
+  });
+
   it('says so when no agent session of it was read', async () => {
     await boot(NONE);
     expect(text('job-tokens-none')).toContain('No token use read');

@@ -300,7 +300,7 @@ Version 1 (`docs/schemas/job.respecified.v1.json`). A sync worked out a job that
 
 ## `job.model_escalated`
 
-Version 1 (`docs/schemas/job.model_escalated.v1.json`). Model routing (issue #2848) put a new job on a stronger model than its rules give it: its item's earlier job (`after`) ran on the `from` model choice and failed. `to` is the choice, `model` its model ('': the agent's own default), `why` its words. Once per item: its later jobs stay on the strong model with no new event.
+Version 1 (`docs/schemas/job.model_escalated.v1.json`). Model routing (issue #2848) put a new job on a stronger model than its rules give it: its item's earlier job (`after`) ran on the `from` model choice and failed. `to` is the choice, `model` its model ('': the agent's own default), `why` its words. Once per item: its later jobs stay on the strong model with no new event. Part 2: a person picked up a cheap job its budget paused, and it goes on on the strong model; `after` is the job itself.
 
 | field | type | required |
 |---|---|---|
@@ -317,6 +317,26 @@ Version 1 (`docs/schemas/job.model_escalated.v1.json`). Model routing (issue #28
   "model": "opus",
   "after": "j-0001",
   "why": "Escalated: the cheap model's job j-0001 failed, so this job runs on the strong model."
+}
+```
+
+## `job.budget_set`
+
+Version 1 (`docs/schemas/job.budget_set.v1.json`). A person set a job's own budget (issue #2848, part 2): `to` its caps (`jobTokens`, `jobCostUsd`; 0: that cap off, so its model route's or the token budget's holds), `from` the caps it had, `by` who set it. Read at its next checkpoint.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | no |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "to": {
+    "jobTokens": 0,
+    "jobCostUsd": 12
+  },
+  "by": "ada"
 }
 ```
 

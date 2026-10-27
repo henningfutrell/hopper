@@ -5,7 +5,7 @@ import type { EventType } from '../../../src/domain/types.ts';
 const ALL: Record<EventType, true> = {
   'job.queued': true, 'job.prioritized': true, 'job.held': true, 'job.approved': true, 'job.claimed': true,
   'job.started': true, 'job.progressed': true, 'job.finished': true, 'job.failed': true, 'job.cancelled': true,
-  'job.requeued': true, 'job.reattached': true, 'job.link_lost': true, 'job.reprioritized': true, 'job.respecified': true, 'job.model_escalated': true, 'lane.opened': true, 'lane.closed': true, 'lane.unhealthy': true,
+  'job.requeued': true, 'job.reattached': true, 'job.link_lost': true, 'job.reprioritized': true, 'job.respecified': true, 'job.model_escalated': true, 'job.budget_set': true, 'lane.opened': true, 'lane.closed': true, 'lane.unhealthy': true,
   'decision.made': true, 'question.asked': true, 'question.escalated': true, 'question.escalated_to_human': true,
   'question.answered': true, 'question.closed': true, 'question.dismissed': true, 'question.expired': true,
   'question.lapsed': true, 'question.cancelled': true,

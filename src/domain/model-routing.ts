@@ -1,7 +1,9 @@
 // Model routing (issue #2848, design.md "Model routing"): at intake the hopper reads the work's class — its size, kind,
 // risk and repository — and the user's model rules pick the **cheap model** or the **strong model** for the job, with the
 // job's budget from that choice. The item's next job after a failed cheap job runs on the strong model: escalated once,
-// and the item stays there. The budget is enforced by the token budget's pause (issue #2302). Pure.
+// and the item stays there; so does a cheap job a person picks up after its budget paused it (part 2: a stalled cheap run
+// goes on on the strong model, not on the cheap one again). The budget is enforced by the token budget's pause (issue
+// #2302); a person's **job budget** on one job holds over it. Pure.
 import { z } from 'zod';
 import { glob } from './glob.ts';
 import type { TokenBudgetSettings } from './token-budget.ts';
@@ -141,11 +143,25 @@ export function modelRouteOf(s: ModelRoutingSettings, w: WorkItem, executor: str
   return route('strong', 'default', 'No model rule matched: the strong model.');
 }
 
-/** The caps that hold for the job: its route's, each 0 falling back to the user's job cap. */
-export function jobBudgetOf(route: ModelRoute | undefined, user: TokenBudgetSettings): TokenBudgetSettings {
-  if (!route) return user;
-  return { ...user, jobTokens: route.budget.jobTokens > 0 ? route.budget.jobTokens : user.jobTokens, jobCostUsd: route.budget.jobCostUsd > 0 ? route.budget.jobCostUsd : user.jobCostUsd };
+/** A person's caps on one job (part 2), over its route's and the user's: each 0 falls back to them. Kept on the job. */
+export interface JobBudget extends ModelBudget { at: string; by?: string }
+
+/** The caps that hold for the job: its job budget's, else its route's, else the user's job cap; a 0 falls back. */
+export function jobBudgetOf(route: ModelRoute | undefined, user: TokenBudgetSettings, own?: ModelBudget): TokenBudgetSettings {
+  const pick = (k: keyof ModelBudget): number => (own && own[k] > 0 ? own[k] : route && route.budget[k] > 0 ? route.budget[k] : user[k]);
+  return { ...user, jobTokens: pick('jobTokens'), jobCostUsd: pick('jobCostUsd') };
 }
+
+/**
+ * The route a cheap job goes on with when a person picks it up after its budget paused it (part 2): the strong model and
+ * its budget, escalated from the job itself; undefined: routing or escalation is off, or the job is not on the cheap model.
+ */
+export function escalateOnPickUp(s: ModelRoutingSettings, route: ModelRoute | undefined, jobId: string, repo: string | undefined): ModelRoute | undefined {
+  if (!s.on || !s.escalate || route?.choice !== 'cheap') return undefined;
+  return { ...route, choice: 'strong', model: s.strong.model, rule: 'escalated', budget: budgetOf(s, 'strong', repo), escalated: { from: 'cheap', jobId },
+    why: `Escalated: the cheap model reached its budget in job ${jobId}, so the job goes on on the strong model.` };
+}
+
 
 const text = z.string().trim().min(1).max(200);
 const tokens = z.number().int().min(0).max(MAX_BUDGET_TOKENS);
@@ -159,6 +175,8 @@ const rule = z.strictObject({
   choice: z.enum(MODEL_CHOICES),
 });
 const repoBudget = z.strictObject({ jobTokens: tokens.optional(), jobCostUsd: cost.optional() });
+/** A person's job budget, as they set it: either cap, or both; 0 takes it off. */
+export const jobBudgetBody = repoBudget.refine((b) => b.jobTokens !== undefined || b.jobCostUsd !== undefined, { message: 'name jobTokens or jobCostUsd' });
 
 /** The whole setting, as stored and as an admin saves it. */
 export const MODEL_ROUTING = z.strictObject({

@@ -1,7 +1,8 @@
 // Model routing (issue #2848): an admin turns it on; at intake a simple job gets the cheap model and a complex one the
 // strong model, with the job's budget from that choice; a failed cheap job's next job escalates once to the strong
 // model, and says so. The budget is enforced as the token budget's (issue #2302): a job whose spend reaches its model's
-// budget at a checkpoint is paused, not killed. Real daemon, the test executor and the fake herdr.
+// budget at a checkpoint is paused, not killed; picked up, a cheap one goes on on the strong model (part 2). A person's
+// job budget on one job holds over both (part 2). Real daemon, the test executor and the fake herdr.
 import { homedir } from 'node:os';
 import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -107,5 +108,52 @@ describe('the budget of a model choice', () => {
     const parked = await a.waitForStatus(job.id, 'parked', 10_000);
     expect(parked.budgetPaused).toMatchObject({ tokens: 1610, why: 'Paused: the job used 1,610 tokens, its token budget is 1,000 tokens.' });
     expect(parked.agentSession).toBeDefined();
+  });
+
+  it('puts a cheap job a person picks up after its budget pause on the strong model, once (part 2)', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [`${homedir()}/shed`], checkpoint: capture });
+    const a = await boot(herdr);
+    const token = await a.login();
+    await set(a, token, { ...ON, cheap: { model: 'sonnet', jobTokens: 1000, jobCostUsd: 0 } });
+    const job = await a.pull({}, { executor: 'herdr-claude', prompt: 'Paint the shed', title: 'Paint the shed', env: {} });
+    await a.waitForStatus(job.id, 'running', 10_000);
+    await waitFor(() => herdr.prompts.length > 0, { what: 'the prompt sent' });
+    await a.user().engine.checkpoints.take(job.id);
+    await a.waitForStatus(job.id, 'parked', 10_000);
+    expect((await a.ui(`/ui/api/jobs/${job.id}/requeue`, {}, { token })).status).toBe(200);
+    const picked = (await a.api<Job>('GET', `/api/jobs/${job.id}`)).body;
+    expect(picked.spec.payload.model).toBe('opus');
+    expect(picked.spec.modelRoute).toMatchObject({ choice: 'strong', model: 'opus', rule: 'escalated', escalated: { from: 'cheap', jobId: job.id }, budget: { jobTokens: 0 } });
+    const escalated = (await a.events('types=job.model_escalated')).filter((e) => e.jobId === job.id);
+    expect(escalated).toHaveLength(1);
+    expect(escalated[0]!.data).toMatchObject({ from: 'cheap', to: 'strong', model: 'opus', after: job.id });
+  });
+});
+
+// A person's job budget (part 2): on one job, over its model route's and the user's caps, with routing off too.
+describe('a job budget', () => {
+  it('pauses a job over the budget a person set on it, and records who set it', async () => {
+    const WORKING = { steps: ['● Sanding'], output: [], end: 'working' as const };
+    const usage = { input_tokens: 10, output_tokens: 100, cache_read_input_tokens: 1000, cache_creation_input_tokens: 500 };
+    const line = JSON.stringify({ type: 'assistant', timestamp: '2026-10-21T08:00:00.000Z', requestId: 'r-m1', message: { id: 'm1', model: 'claude-sonnet-5-5', content: [{ type: 'text', text: 'x' }], usage } });
+    const capture: CheckpointCapture = { taken: { branch: 'hopper/shed', base: 'b'.repeat(40), head: 'c'.repeat(40), commits: [], patch: gzipSync(''), session: gzipSync(`${line}\n`) } };
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [`${homedir()}/shed`], checkpoint: capture });
+    const a = await boot(herdr);
+    const token = await a.login();
+    const job = await a.pull({}, { executor: 'herdr-claude', prompt: 'Paint the shed', title: 'Paint the shed', env: {} });
+    expect(job.spec.modelRoute).toBeUndefined();
+    const r = await a.ui<Job>(`/ui/api/jobs/${job.id}/budget`, { jobTokens: 1000 }, { token });
+    expect(r.status).toBe(200);
+    expect(r.body.jobBudget).toMatchObject({ jobTokens: 1000, jobCostUsd: 0 });
+    expect((await a.ui(`/ui/api/jobs/${job.id}/budget`, {}, { token })).status).toBe(400);
+    expect((await a.ui('/ui/api/jobs/nope/budget', { jobTokens: 5 }, { token })).status).toBe(404);
+    const set = (await a.events('types=job.budget_set')).filter((e) => e.jobId === job.id);
+    expect(set).toHaveLength(1);
+    expect(set[0]!.data).toMatchObject({ to: { jobTokens: 1000, jobCostUsd: 0 } });
+    await a.waitForStatus(job.id, 'running', 10_000);
+    await waitFor(() => herdr.prompts.length > 0, { what: 'the prompt sent' });
+    await a.user().engine.checkpoints.take(job.id);
+    const parked = await a.waitForStatus(job.id, 'parked', 10_000);
+    expect(parked.budgetPaused).toMatchObject({ tokens: 1610, why: 'Paused: the job used 1,610 tokens, its token budget is 1,000 tokens.' });
   });
 });
