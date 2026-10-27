@@ -1,6 +1,6 @@
 // Issue #2845, part 1: grades. Each ended job gets an automatic grade — a score of 0 to 100 from its signals (its outcome,
 // its checks, its pull request, the rework it needed, its cost and its time), each weighted, with the breakdown —, and a
-// person may give it a user grade of 1 to 5 with a note. Grades roll up by harness, model, repository, work kind or
+// person may give it a user grade of 1 to 5 with a note. Grades roll up by executor, model, repository, work kind or
 // machine. Pure.
 import { describe, expect, it } from 'vitest';
 import {
@@ -100,14 +100,14 @@ describe('user grades and rollups (issue #2845)', () => {
     expect(disagreesOf(90, 4)).toBe(false);
   });
 
-  const row = (jobId: string, harness: string, score: number, user?: number): GradeRow => ({
-    jobId, endedAt: '2026-10-01T00:00:00.000Z', harness, kind: 'code', repo: 'owner/repo',
+  const row = (jobId: string, executor: string, score: number, user?: number): GradeRow => ({
+    jobId, endedAt: '2026-10-01T00:00:00.000Z', executor, kind: 'code', repo: 'owner/repo',
     auto: { score, lines: [] }, ...(user !== undefined ? { user: { score: user, by: 'p', at: '2026-10-02T00:00:00.000Z' } } : {}),
   });
 
   it('rolls up by a group: jobs, the mean of each grade and the disagreements, the best first', () => {
     const rows = [row('a', 'herdr-claude', 80, 5), row('b', 'herdr-claude', 60), row('c', 'codex', 90, 1)];
-    expect(gradeRollup(rows, 'harness')).toEqual([
+    expect(gradeRollup(rows, 'executor')).toEqual([
       { key: 'codex', jobs: 1, auto: 90, userGraded: 1, user: 1, disagreements: 1 },
       { key: 'herdr-claude', jobs: 2, auto: 70, userGraded: 1, user: 5, disagreements: 0 },
     ]);

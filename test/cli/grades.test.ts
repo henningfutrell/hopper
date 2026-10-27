@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { gradesCall } from '../../src/cli-operator-grades.ts';
 
 describe('hopper grades (issue #2845)', () => {
-  it('reads the rollup by harness, or with the group and filters it is given', () => {
+  it('reads the rollup by executor, or with the group and filters it is given', () => {
     expect(gradesCall([])).toEqual({ role: 'viewer', path: '/api/grades' });
     expect(gradesCall(['--by', 'model', '--repo', 'octo/shed', '--since', '2026-10-01']))
       .toEqual({ role: 'viewer', path: '/api/grades?by=model&repo=octo%2Fshed&since=2026-10-01' });

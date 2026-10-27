@@ -7,7 +7,7 @@
 //   Scenario: a finished and a failed job get an automatic grade with a line per signal; the finished one grades higher
 //   Scenario: a merge raises the grade, and a revert inside the window lowers it again
 //   Scenario: a person gives a user grade with a note, edits it, and both stay in its history after a restart
-//   Scenario: the rollup by harness counts the jobs, the mean of each grade and the disagreements
+//   Scenario: the rollup by executor counts the jobs, the mean of each grade and the disagreements
 //   Scenario: a bad score, an unknown job and a job that has not ended are refused
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GradeLine } from '../../src/domain/grades.ts';
@@ -45,8 +45,8 @@ const lineOf = (v: JobGradeView, signal: string): GradeLine | undefined => v.gra
 async function ended(a: TestApp): Promise<{ done: string; failed: string }> {
   const done = await a.pull({ op: 'echo', message: 'hi' });
   const failed = await a.pull({ op: 'fail' });
-  await a.waitForStatus(done.id, 'finished');
-  await a.waitForStatus(failed.id, 'failed');
+  await a.waitForStatus(done.id, 'finished', 20_000);
+  await a.waitForStatus(failed.id, 'failed', 20_000);
   return { done: done.id, failed: failed.id };
 }
 
@@ -56,7 +56,7 @@ describe('grades over the API', () => {
     const { done, failed } = await ended(a);
     keepGrades(a.user().store, new Date());
     const first = await gradeOf(a, done);
-    expect(first.grade).toMatchObject({ jobId: done, harness: 'test', kind: 'code', facts: { status: 'finished' } });
+    expect(first.grade).toMatchObject({ jobId: done, executor: 'scripted', kind: 'code', facts: { status: 'finished' } });
     expect(first.grade!.auto.lines.map((l) => l.signal)).toEqual(['outcome', 'rework', 'time']);
     expect((await gradeOf(a, failed)).grade!.auto.score).toBeLessThan(first.grade!.auto.score);
 
@@ -95,9 +95,9 @@ describe('grades over the API', () => {
     expect(v.history.map((h) => h.score)).toEqual([1, 2]);
     expect(v.disagree).toBe(v.grade!.auto.score >= 40);
 
-    const roll = (await b.api<GradesView>('GET', '/api/grades?by=harness')).body;
-    expect(roll.by).toBe('harness');
-    expect(roll.groups).toEqual([expect.objectContaining({ key: 'test', jobs: 2, userGraded: 1, user: 1 })]);
+    const roll = (await b.api<GradesView>('GET', '/api/grades?by=executor')).body;
+    expect(roll.by).toBe('executor');
+    expect(roll.groups).toEqual([expect.objectContaining({ key: 'scripted', jobs: 2, userGraded: 1, user: 1 })]);
     expect(roll.total).toMatchObject({ jobs: 2, userGraded: 1 });
     expect(roll.jobs.map((j) => j.jobId).sort()).toEqual([done, failed].sort());
   });

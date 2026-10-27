@@ -1,9 +1,10 @@
 // Grades (issue #2845, design.md "Grades"): each ended job's **automatic grade** — a score of 0 to 100 from its grade
 // signals, each a value of 0 to 1 with its weight and why, so the breakdown says how the score came about — and a person's
 // **user grade** of 1 to 5 with a note, its history kept. A signal the job has no facts for is left out, and the score is
-// the weighted mean of the rest. Grades roll up by harness (the job's executor), model, repository, work kind or machine,
+// the weighted mean of the rest. Grades roll up by executor, model, repository, work kind or machine,
 // so it shows which setup does good work. Pure: the grade pass folds the facts and keeps the rows.
 import type { DomainEvent, Job } from './types.ts';
+import { machineOfLane } from './raised-by.ts';
 import { workKindOf, type WorkKind } from './skill-library.ts';
 
 export const GRADE_SIGNALS = ['outcome', 'checks', 'pull_request', 'rework', 'cost', 'time'] as const;
@@ -43,12 +44,12 @@ export interface AutoGrade { score: number; lines: GradeLine[] }
 /** A person's grade of a job: 1 to 5, with a note. */
 export interface UserGrade { score: number; note?: string; by: string; at: string }
 
-export const GRADE_GROUPS = ['harness', 'model', 'repo', 'kind', 'machine'] as const;
+export const GRADE_GROUPS = ['executor', 'model', 'repo', 'kind', 'machine'] as const;
 export type GradeGroup = (typeof GRADE_GROUPS)[number];
 
 /** A job's grade as kept: its keys, its facts and automatic grade, and its user grade, when a person gave one. */
 export interface GradeRow {
-  jobId: string; endedAt: string; harness: string; model?: string; repo?: string; kind: WorkKind; machine?: string;
+  jobId: string; endedAt: string; executor: string; model?: string; repo?: string; kind: WorkKind; machine?: string;
   facts?: GradeFacts; auto: AutoGrade; gradedAt?: string; user?: UserGrade;
 }
 
@@ -165,12 +166,16 @@ export function gradeFactsOf(
 /** Whether a job ended in a way a grade judges: done (finished) or failed. A cancelled or rejected job did no work to judge. */
 export const gradedEnd = (status: Job['status']): boolean => status === 'finished' || status === 'failed';
 
-/** An ended job's keys: harness (its executor), model (the costliest in its token ledger, else the one its payload names). */
-export function gradeKeysOf(job: Job, model: string | undefined): Pick<GradeRow, 'jobId' | 'endedAt' | 'harness' | 'model' | 'repo' | 'kind' | 'machine'> {
+/**
+ * An ended job's keys: its executor, model (the costliest in its token ledger, else the one its payload names),
+ * machine (its lane's, else the one its token ledger was read on last, else its machine pin).
+ */
+export function gradeKeysOf(job: Job, model: string | undefined, machine?: string): Pick<GradeRow, 'jobId' | 'endedAt' | 'executor' | 'model' | 'repo' | 'kind' | 'machine'> {
   const m = model ?? (typeof job.spec.payload.model === 'string' ? job.spec.payload.model : undefined);
+  const at = machineOfLane(job.laneId) ?? machine ?? job.spec.machineId;
   return {
-    jobId: job.id, endedAt: job.finishedAt ?? job.updatedAt, harness: job.spec.executor, ...(m ? { model: m } : {}),
-    ...(job.source?.repo ? { repo: job.source.repo.toLowerCase() } : {}), kind: workKindOf(job.spec), ...(job.machineId ? { machine: job.machineId } : {}),
+    jobId: job.id, endedAt: job.finishedAt ?? job.updatedAt, executor: job.spec.executor, ...(m ? { model: m } : {}),
+    ...(job.source?.repo ? { repo: job.source.repo.toLowerCase() } : {}), kind: workKindOf(job.spec), ...(at ? { machine: at } : {}),
   };
 }
 

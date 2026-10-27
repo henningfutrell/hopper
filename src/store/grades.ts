@@ -7,7 +7,7 @@ import { parse, type StoreContext } from './context.ts';
 import type { Row } from './db.ts';
 
 export const GRADE_TABLES = `CREATE TABLE IF NOT EXISTS job_grades (
-    job_id TEXT PRIMARY KEY, ended_at TEXT NOT NULL, harness TEXT NOT NULL, model TEXT, repo TEXT, kind TEXT NOT NULL, machine_id TEXT,
+    job_id TEXT PRIMARY KEY, ended_at TEXT NOT NULL, executor TEXT NOT NULL, model TEXT, repo TEXT, kind TEXT NOT NULL, machine_id TEXT,
     score INTEGER NOT NULL, graded_at TEXT NOT NULL, body TEXT NOT NULL);
   CREATE INDEX IF NOT EXISTS job_grades_ended ON job_grades (ended_at);
   CREATE TABLE IF NOT EXISTS job_user_grades (job_id TEXT NOT NULL, at TEXT NOT NULL, by_person TEXT NOT NULL, score INTEGER NOT NULL, note TEXT, PRIMARY KEY (job_id, at))`;
@@ -42,10 +42,10 @@ export function createGradeRepository(c: StoreContext): GradeRepository {
     save(rows, cursor) {
       c.tx(() => {
         for (const { user: _, ...g } of rows) {
-          c.db.run(`INSERT INTO job_grades (job_id, ended_at, harness, model, repo, kind, machine_id, score, graded_at, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (job_id) DO UPDATE SET ended_at = excluded.ended_at, harness = excluded.harness, model = excluded.model, repo = excluded.repo,
+          c.db.run(`INSERT INTO job_grades (job_id, ended_at, executor, model, repo, kind, machine_id, score, graded_at, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (job_id) DO UPDATE SET ended_at = excluded.ended_at, executor = excluded.executor, model = excluded.model, repo = excluded.repo,
             kind = excluded.kind, machine_id = excluded.machine_id, score = excluded.score, graded_at = excluded.graded_at, body = excluded.body`,
-          g.jobId, g.endedAt, g.harness, g.model ?? null, g.repo ?? null, g.kind, g.machine ?? null, g.auto.score, g.gradedAt ?? g.endedAt, JSON.stringify(g));
+          g.jobId, g.endedAt, g.executor, g.model ?? null, g.repo ?? null, g.kind, g.machine ?? null, g.auto.score, g.gradedAt ?? g.endedAt, JSON.stringify(g));
         }
         if (cursor !== undefined) {
           c.db.run(`INSERT INTO event_cursors (consumer, seq) VALUES (?, ?)

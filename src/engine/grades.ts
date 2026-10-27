@@ -57,7 +57,7 @@ export function gradeOf(store: UserStore, jobId: string, now: Date, settings: Gr
   const reverts = merged ? revertsOf(store.events.between(REVERT_EVENTS, merged.at)) : new Map();
   const tokens = jobTokenView(jobId, store.tokenLedger.list({ jobId }));
   const facts = gradeFactsOf(job, events, tokens.sessions > 0 ? tokens.total : undefined, reverts, settings.revertWindowDays);
-  return { ...gradeKeysOf(job, tokens.models[0]?.model), facts, auto: autoGradeOf(facts, settings), gradedAt: now.toISOString() };
+  return { ...gradeKeysOf(job, tokens.models[0]?.model, tokens.machines.at(-1)), facts, auto: autoGradeOf(facts, settings), gradedAt: now.toISOString() };
 }
 
 /** One pass at `now`: answers how many grades it wrote. */
