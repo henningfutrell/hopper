@@ -8,7 +8,7 @@
 //   Scenario: an item that has not ended done or failed has no grade
 //   Scenario: a person gives an item a user grade with a note, edits it, and both stay after a restart; the rollup counts it
 //   Scenario: an unknown item, an item not ended and a bad score are refused
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JobGradeView } from '../../src/domain/grades.ts';
 import type { ItemGradesView, ItemGradeView } from '../../src/domain/item-grades.ts';
 import { keepGrades } from '../../src/engine/grades.ts';
@@ -35,9 +35,13 @@ async function boot(dbPath?: string): Promise<{ a: TestApp; dbPath: string }> {
 
 const itemOf = async (a: TestApp, key: string) => (await a.api<ItemGradeView>('GET', `/api/grades/item?key=${encodeURIComponent(key)}`)).body;
 
+/** A failed job's item, its hand-off cleared, so the item ended failed. */
 async function failedItem(a: TestApp): Promise<{ jobId: string; key: string }> {
   const job = await a.pull({ op: 'fail' });
   await a.waitForStatus(job.id, 'failed', 20_000);
+  await vi.waitFor(() => expect(a.user().store.workItems.get(job.source!.key)?.state).toBe('needs_you'), { timeout: 10_000 });
+  a.user().store.events.append({ type: 'handoff.closed', jobId: job.id, data: { handoffId: 'h1', end: 'cleared' } });
+  expect(a.user().store.workItems.get(job.source!.key)?.state).toBe('failed');
   return { jobId: job.id, key: job.source!.key };
 }
 

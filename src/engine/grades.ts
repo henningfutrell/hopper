@@ -5,6 +5,7 @@
 // fix issues, and its item's issue reopens. The grades it changed and the new cursor are kept in one transaction, so
 // a pass a stop cut short is done again from the same cursor, on any host. The pass grades with the user's grade
 // settings; when their grading part changed since the last pass, every kept grade of the last REGRADE_DAYS is due too.
+// Then the item grades (part 5, `item-grades.ts`), in the same transaction.
 import { gradingPartOf } from '../domain/grade-routing.ts';
 import {
   autoGradeOf, fixIssuesOf, GRADE_EVENTS, gradedEnd, gradeFactsOf, gradeKeysOf, revertsOf, type GradeRow, type GradeSettings,
@@ -12,6 +13,7 @@ import {
 import type { Job } from '../domain/types.ts';
 import type { UserStore } from '../domain/store.ts';
 import { jobTokenView } from '../domain/token-usage.ts';
+import { itemGradesDue } from './item-grades.ts';
 
 export const GRADES_EVERY_MS = 60_000;
 /** Events read per query after the cursor. */
@@ -92,13 +94,14 @@ export function gradeOf(store: UserStore, jobId: string, now: Date, settings: Gr
   return { ...gradeKeysOf(job, tokens.models[0]?.model, tokens.machines.at(-1)), facts, auto: autoGradeOf(facts, settings), gradedAt: now.toISOString() };
 }
 
-/** One pass at `now`: answers how many grades it wrote. */
+/** One pass at `now`: answers how many job grades it wrote. */
 export function keepGrades(store: UserStore, now: Date): number {
   const { due, cursor } = dueOf(store, now);
   const settings = store.settings.getGradeSettings();
   const part = gradingPartOf(settings);
   const regrade = store.settings.getGradedWith() !== part;
-  if (regrade) for (const r of store.grades.list({ since: new Date(now.getTime() - REGRADE_DAYS * DAY).toISOString() })) due.add(r.jobId);
+  const regradeSince = new Date(now.getTime() - REGRADE_DAYS * DAY).toISOString();
+  if (regrade) for (const r of store.grades.list({ since: regradeSince })) due.add(r.jobId);
   const changed: GradeRow[] = [];
   for (const jobId of due) {
     const g = gradeOf(store, jobId, now, settings);
@@ -107,8 +110,10 @@ export function keepGrades(store: UserStore, now: Date): number {
     if (kept && JSON.stringify({ ...kept, user: undefined, gradedAt: undefined }) === JSON.stringify({ ...g, gradedAt: undefined })) continue;
     changed.push(g);
   }
+  const items = itemGradesDue(store, changed, settings, now, regrade ? regradeSince : undefined);
   store.tx(() => {
     if (changed.length > 0 || cursor !== store.grades.cursor()) store.grades.save(changed, cursor);
+    if (items.length > 0) store.grades.saveItems(items);
     if (regrade) store.settings.setGradedWith(part);
   });
   return changed.length;

@@ -6,6 +6,7 @@
 import type { DomainEvent, Job } from './types.ts';
 import { machineOfLane } from './raised-by.ts';
 import { workKindOf, type WorkKind } from './skill-library.ts';
+import type { ItemGradeRow } from './item-grades.ts';
 
 export const GRADE_SIGNALS = ['outcome', 'checks', 'pull_request', 'rework', 'cost', 'time', 'review'] as const;
 export type GradeSignal = (typeof GRADE_SIGNALS)[number];
@@ -77,6 +78,12 @@ export interface GradeRepository {
   /** Adds a user grade to the job's history: the newest is its user grade. */
   grade(jobId: string, g: UserGrade): void;
   history(jobId: string): UserGrade[];
+  /** The item grades (part 5): kept, read by key or by filter, and a person's user grade of an item with its history. */
+  saveItems(rows: ItemGradeRow[]): void;
+  getItem(key: string): ItemGradeRow | undefined;
+  listItems(q?: { since?: string; repo?: string; keys?: readonly string[]; limit?: number }): ItemGradeRow[];
+  gradeItem(key: string, g: UserGrade): void;
+  itemHistory(key: string): UserGrade[];
 }
 
 /**
@@ -225,9 +232,9 @@ export interface GradeRollupRow { key: string; jobs: number; auto: number; userG
 
 const mean = (xs: number[]): number => Math.round((xs.reduce((n, x) => n + x, 0) / xs.length) * 10) / 10;
 
-/** The rows summed per group, the best mean automatic grade first. A group the row cannot name is `(none)`. */
-export function gradeRollup(rows: readonly GradeRow[], by: GradeGroup): GradeRollupRow[] {
-  const groups = new Map<string, GradeRow[]>();
+/** The rows — jobs' or items' — summed per group, the best mean automatic grade first. A group the row cannot name is `(none)`. */
+export function gradeRollup(rows: readonly Pick<GradeRow, GradeGroup | 'auto' | 'user'>[], by: GradeGroup): GradeRollupRow[] {
+  const groups = new Map<string, Pick<GradeRow, GradeGroup | 'auto' | 'user'>[]>();
   for (const r of rows) {
     const key = r[by] ?? '(none)';
     groups.set(key, [...(groups.get(key) ?? []), r]);
