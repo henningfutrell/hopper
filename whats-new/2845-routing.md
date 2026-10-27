@@ -1,0 +1,1 @@
+- An admin can now change how grades weigh each part of a job's work, and turn on routing by grades: a new job then goes to the agent that did best on the same kind of work.

@@ -36199,10 +36199,46 @@ disagreements, the best first —, the total, and the newest 200 jobs with both 
 `hopper grades --job <id>` and `hopper grades set <job> <1-5> [--note]` call them. API token scopes: `grades:read` and the
 Jobs section's `jobs` scopes.
 
-**Left for later parts.** The grades on the job view, the user grade form there and the rollups view in the UI; the grade
-settings (weights, revert window, scales) as an admin's setting; grades of sagas; follow-up fix issues and reopened issues
-as rework; grade-aware routing — off by default, with a minimum sample size — that prefers the executor and model that do
-best on similar work.
+**Left for later parts.** The grades on the job view, the user grade form there and the rollups view in the UI; grades of
+sagas; follow-up fix issues and reopened issues as rework; the model in grade-aware routing (below).
+
+## Grade settings and grade-aware routing (issue #2845, part 2, 2026-10-26)
+
+Requirement (issue #2845): the weights are configurable with sensible defaults, and routing can read the grade history to
+prefer the executor that does best on similar work — off by default behind a setting, with a configurable minimum sample
+size. Glossary: **grade settings**, **grade-aware routing**, **grade route**.
+
+**The grade settings** (`GradeSettings`, the user's setting `gradeSettings`, `src/store/grade-settings.ts`). The weights
+of the six grade signals (0 leaves one out), the revert window (7 days), the cost and time scales ($5, 120 min) and
+`routing` — `on` (false) and `minSamples` (10). Read merged on `DEFAULT_GRADE_SETTINGS`, so a field never set reads its
+default. `GET /api/grades/settings`; `POST /ui/api/grades/settings`, an admin's: the fields given change, the rest stay,
+each weight on its own. A weight 0 to 100, a window of 1 to 90 days, a time scale of 1 to 10080 minutes, `minSamples` 1 to
+10000 (else 400).
+
+**A change grades again.** The grade pass grades with the user's grade settings, and keeps the grading part of the settings
+it graded with (`gradingPartOf`: the weights, the window and the scales; the setting `gradePassSettings`). When that part
+differs at a pass, every kept grade of a job that ended in the last 90 days is due too; the new part is kept with the
+grades, in one transaction. A change of the routing part grades nothing again.
+
+**Grade-aware routing** (`src/domain/grade-routing.ts`, pure; `src/engine/grade-route.ts`). At intake, and at each sync
+of a job that has not started (issue #375), with `routing.on`, a job that no routing rule gave an executor goes to the
+configured executor whose graded jobs of the same work did best:
+
+1. The scope is the job's repository and work kind; when that has too few grades, its work kind alone.
+2. A scope compares only when the job's own executor (its source's) and at least one other configured executor each have
+   `minSamples` grades there. Else the next scope; with none, the job keeps its executor.
+3. A graded job counts its user grade when a person gave one (1 is 0, 5 is 100), else its automatic grade. The executor
+   with the highest mean wins; a tie or a lower mean keeps the job's own.
+
+A routing rule that sets the executor wins: it is a person's choice. The job's spec records the route (`spec.gradeRoute`:
+`executor`, `from`, `on` — `repo` or `kind` —, the winner's mean `score` and `samples`, and `fromScore`, `fromSamples`),
+in `job.queued`, and only while the job runs that executor: an executor changed on the job by hand drops it. Intake reads
+the grades of the last 90 days once a minute at most, as the grade pass changes them once a minute; the setting is read at
+each item.
+
+Only the executor is routed. A grade's `model` is the costliest in the job's token ledger, which is not always a model the
+executor takes in its payload; the model choice stays the source's, and model routing (issue #2848) is where grades tune
+it. Left for a later part, with the UI's settings form.
 
 ## A job's egress allowlist (issue #2849, part 1, 2026-10-26)
 
