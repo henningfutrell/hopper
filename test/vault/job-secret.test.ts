@@ -7,8 +7,12 @@ import { createUserGitHubProxy } from '../../src/users/github-proxy.ts';
 import type { Job, MachineSnapshot } from '../../src/domain/types.ts';
 import { mintLinkKey } from '../../src/client/link.ts';
 
-// No skill of the user's own, no work skill chosen yet: the job gets the built-in one (issue #1911).
-const noSkills = { events: { recent: () => [], append: () => undefined }, skillLibrary: { getWorkSkills: () => undefined, versions: () => [] } };
+// No skill of the user's own, no work skill chosen yet: the job gets the built-in one (issue #1911). The job egress
+// route is off (issue #2849).
+const noSkills = {
+  events: { recent: () => [], append: () => undefined }, skillLibrary: { getWorkSkills: () => undefined, versions: () => [] },
+  settings: { getJobEgress: () => ({ route: false }) },
+};
 const proxy = createUserGitHubProxy({
   user: { id: 'u1', name: 'u1' } as never, store: noSkills as never, linkPrivateKey: mintLinkKey().privateKey, accounts: { endpoints: () => ({ url: 'https://github.com', apiUrl: 'https://api.github.com' }) } as never,
   url: () => 'http://hopper:4790', artifactUrl: (id) => id, publicUrl: () => undefined, sources: () => [], clock: { now: () => new Date() }, logger: { warn: () => undefined },

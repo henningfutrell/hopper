@@ -138,6 +138,16 @@ describe.skipIf(!bwrapRuns)('the job\'s sandbox (issue #1295)', () => {
     expect(r.stdout.trim().split('\n')).toEqual(['1', `hopper-runtime-${JOB}`]);
   });
 
+  it('with the egress route on, claude runs in the sandbox behind hopper-egress; with it off, or no hopper-egress, as before (issue #2849)', () => {
+    // The stand-in hopper-egress: it says what it was given, then runs the command after `--` with its port set.
+    const egress = join(root, 'egress');
+    writeFileSync(egress, '#!/bin/sh\nprintf "egress %s\\n" "$1"\nshift\nHOPPER_EGRESS_PORT=1 exec "$@"\n', { mode: 0o755 });
+    const on = inJobShell('claude --model haiku', env({ HOPPER_EGRESS: egress, HOPPER_EGRESS_ROUTE: '1' }));
+    expect(on.stdout.trim().split('\n')).toEqual(['egress --', 'sandboxed=1', 'args=--model haiku']);
+    expect(inJobShell('claude --model haiku', env({ HOPPER_EGRESS: egress })).stdout.trim().split('\n')).toEqual(['sandboxed=1', 'args=--model haiku']);
+    expect(inJobShell('claude --model haiku', env({ HOPPER_EGRESS: join(root, 'none'), HOPPER_EGRESS_ROUTE: '1' })).stdout.trim().split('\n')).toEqual(['sandboxed=1', 'args=--model haiku']);
+  });
+
   it('a machine with no runtime of the job\'s: the user\'s runtime dir is empty in it, and so is /run/user/<uid>', () => {
     const uid = execFileSync('id', ['-u'], { encoding: 'utf8' }).trim();
     const r = spawnSync('sh', ['-c', `${sandboxCommand(scratch)} >/dev/null; "${scratch}/sandbox/run" sh -c 'ls -A "${host}"; ls -A /run/user/${uid}; echo end'`],

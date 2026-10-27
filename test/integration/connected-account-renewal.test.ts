@@ -183,7 +183,7 @@ describe('a job of the connected account holds no GitHub token (#652)', () => {
     // hopper-artifact (issue #624); and git's way to the hopper (issue #652). Never a GitHub token.
     const url = expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect(env).toMatchObject({ HOPPER_TOKEN_FILE: join(dir, 'hopper', 'token'), HOPPER_GH: join(dir, 'hopper', 'gh'), HOPPER_SKILL: join(dir, 'hopper', 'skill'), HOPPER_ARTIFACT: join(dir, 'hopper', 'artifact'), HOPPER_URL: url, GIT_CONFIG_COUNT: '5' });
-    expect(Object.keys(env!).filter((k) => !k.startsWith('GIT_CONFIG_')).sort()).toEqual(['HOPPER_ARTIFACT', 'HOPPER_GH', 'HOPPER_HEAVY', 'HOPPER_LOGIN', 'HOPPER_RELAY', 'HOPPER_REQUIREMENTS', 'HOPPER_SKILL', 'HOPPER_STEP', 'HOPPER_TOKEN_FILE', 'HOPPER_URL', 'HOPPER_WORK_SKILL']);
+    expect(Object.keys(env!).filter((k) => !k.startsWith('GIT_CONFIG_')).sort()).toEqual(['HOPPER_ARTIFACT', 'HOPPER_EGRESS', 'HOPPER_GH', 'HOPPER_HEAVY', 'HOPPER_LOGIN', 'HOPPER_RELAY', 'HOPPER_REQUIREMENTS', 'HOPPER_SKILL', 'HOPPER_STEP', 'HOPPER_TOKEN_FILE', 'HOPPER_URL', 'HOPPER_WORK_SKILL']);
     expect(existsSync(join(dir, 'gh'))).toBe(false);
     const token = await app.user().connectedAccounts.token('github');
     expect(JSON.stringify(env)).not.toContain(token);

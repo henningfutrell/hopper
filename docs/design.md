@@ -36300,7 +36300,7 @@ ways: a job's egress is as open as before. The parts left:
 
 1. The job's side: a local HTTP CONNECT proxy on 127.0.0.1 where the job runs (a client like `hopper-relay`), that turns
    each CONNECT into a `/job/egress` connection, and `HTTPS_PROXY`/`HTTP_PROXY` in the job's environment, `NO_PROXY` for
-   the hopper.
+   the hopper. Built in part 2, below.
 2. Confinement on each runtime: bubblewrap's own network namespace for the job's sandbox (the proxy reached through a
    Unix socket bound into it), a NetworkPolicy for lane pods, the internal network for compose and Podman; a visible
    warning on the job where none holds ("egress not enforced").
@@ -36352,3 +36352,51 @@ Tests: `test/domain/completion-review.test.ts` (the defaults and which jobs, the
 stalled one with its suggestions, a push as progress), `test/integration/completion-reviews.test.ts` (real database and HTTP:
 the settings and their event, a failed job reviewed once after it settled, a finished one skipped, none while off, 404),
 `test/ui/completion-review.test.ts` and `test/ui/job-completion-review-view.test.ts`.
+
+### The job's side: hopper-egress (part 2, 2026-10-26)
+
+**The client** (`src/sandbox/egress-script.ts`). `hopper-egress` is an HTTP proxy on a port of 127.0.0.1 where the job
+runs. The hopper writes it into the job's credentials dir at each start, beside its proxy token, as it writes
+`hopper-relay`: a POSIX sh script (`HOPPER_EGRESS`) that runs a Node module with no dependency. It reads the token file at
+each connection, so a token that changes after a move is used at once.
+
+- `CONNECT host:port` → one `GET /job/egress?to=host:port`. On the hopper's 101 the client answers `200 Connection
+  established`, and the connection is a byte pipe: TLS goes end to end, and the hopper sees only the host and the port.
+- A plain HTTP request to an `http://` URL (absolute form, as `HTTP_PROXY` sends it) → the same connection to
+  `host:port` (80 when none), with the request sent on it in origin form and its `proxy-*` headers removed.
+- A no from the hopper (403 off the list, 502 for a host that does not answer, or the hopper out of reach) goes back to the
+  tool as the same status and its `no: <reason>` text. The hopper records the denial on the job ("The way out" above);
+  the client writes nothing on the terminal, as the agent's screen is there.
+- `sh "$HOPPER_EGRESS" -- COMMAND` runs the command with `HTTPS_PROXY`, `HTTP_PROXY` (and their lowercase names) set to the
+  proxy, `NO_PROXY` to `localhost`, `127.0.0.1`, `::1` and the hopper's host (with what it held before), and
+  `HOPPER_EGRESS_PORT` to the port; it passes SIGINT, SIGTERM and SIGHUP on to the command and ends with the command's exit
+  code. With no command it says the port on stderr and holds it. With no `node` on the machine, a command runs as it is,
+  with a line on stderr that its connections are not routed.
+
+**The job egress route** (`route` in the setting, `HOPPER_EGRESS_ROUTE`). Off when never set: a job runs as it did before
+until an admin turns it on (`POST /ui/api/job-egress` with `route: true`; `job_egress.changed` records `route`). The hopper
+reads it when it places a job's credentials (`jobProxy`, `src/users/github-proxy.ts`), so a change applies from each job's
+next start. With it on, the job's environment holds `HOPPER_EGRESS_ROUTE=1`, and the job's sandbox runner
+(`src/client/job-sandbox.ts`) runs bubblewrap behind `hopper-egress`: `exec sh "$HOPPER_EGRESS" -- bwrap …`. So the agent —
+Claude in a pane, or a print-mode agent's turn — and every tool it starts have the proxy in their environment. The proxy
+itself runs outside bubblewrap, in the job's scope, and the reap stops it with the job. A runner inside the sandbox, or a
+command that already runs behind it (`HOPPER_EGRESS_PORT` set), does not start a second one.
+
+**Why the runner, and why off by default.** The runner is the one place both the pane's Claude and a print-mode turn go
+through, so one line covers both, and the proxy lives exactly as long as the agent. Off by default, because in this part
+nothing confines a job: a tool that ignores `HTTPS_PROXY` (Node's own `fetch`, a raw socket) still goes out directly. The
+route gives an admin the hopper's view of a job's connections and the denials on its timeline, and it lets them build the
+allowlist before part 3 makes it the only way out.
+
+**Not built in part 2, stated.** A machine with no bubblewrap that runs has no sandbox runner, so its agent does not run
+behind the proxy even with the route on. A job started before the route changed keeps what its start gave it. The parts
+left are 2 to 4 of the list above: confinement on each runtime (the sandbox's own network namespace, which reaches the
+proxy through a Unix socket bound into it; a NetworkPolicy for lane pods; the internal network for compose and Podman) and
+the warning where none holds; a denial as a Needs-you item and the allowlist's view in Settings; secrets scoped to the
+job.
+
+Tests: `test/integration/job-egress.test.ts` (a job starts with `HOPPER_EGRESS`, and with `HOPPER_EGRESS_ROUTE` only when
+the setting is on, which `job_egress.changed` records; a command behind `hopper-egress` gets the proxy variables, reaches a
+listed host by CONNECT and a listed one by plain HTTP, and gets the hopper's 403 and reason for a host off the list, which
+is on the job's timeline), `test/client/job-sandbox.test.ts` (with bubblewrap: Claude runs in the sandbox behind the
+proxy with the route on, and as before with it off or with no `hopper-egress` file).
