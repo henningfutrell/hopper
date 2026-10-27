@@ -57,6 +57,12 @@ describe('a job\'s completion review on its job view', () => {
     expect(texts('completion-review-suggestion')).toEqual(['Lanes: It waited 42 min for a lane: add a lane or a machine, or give its jobs a higher priority.']);
   });
 
+  it('names the bug report its review recommends, and what became of it (issue #2846 part 2)', async () => {
+    const defect = { signature: 'cause:swept', title: 'The sweep stopped the processes of a job that was at work', description: 'd' };
+    await boot({ review: { ...REVIEW, defect }, recommendation: { ...defect, jobId: 'j1', state: 'dismissed', jobs: 2, at: REVIEW.reviewedAt, lastAt: REVIEW.reviewedAt, by: 'admin', reason: 'fixed' } });
+    expect(texts('completion-review-defect')[0]).toBe('Bug report recommendedThe sweep stopped the processes of a job that was at work · found in 2 jobsDismissed by admin: fixed. It is not recommended again.');
+  });
+
   it('shows nothing for a job with no review', async () => {
     await boot({});
     expect(document.body.textContent).not.toContain('Completion review');
