@@ -2,7 +2,10 @@
 // that holds its lease, each job that ended in the last REVIEW_WINDOW_MS — at least REVIEW_SETTLE_MS ago, so its run's last
 // token read is in — and has no review yet is judged by the user's settings, and reviewed when they say so: from its events,
 // its token ledger and its work item's jobs (`completionReviewOf`). The review is kept in the database, so a stop loses none:
-// the next pass, on any host, reviews what it left. A job the settings skip is not judged again by this host.
+// the next pass, on any host, reviews what it left. A job the settings skip is not judged again by this host. A review that
+// names a hopper defect (issue #2846 part 2) makes a bug-report recommendation of its signature, in the same transaction: a
+// new signature waits for a person (`completion_review.recommended`), a known one — open, approved or dismissed — counts the
+// job, and is never recommended again.
 import { completionReviewOf, completionReviewSettingsOf, shouldReview, type CompletionReview } from '../domain/completion-review.ts';
 import type { UserStore } from '../domain/store.ts';
 import { jobTokenView } from '../domain/token-usage.ts';
@@ -24,8 +27,10 @@ const jobsOf = (store: UserStore, job: Job): number => (job.source?.key ? Math.m
 export function reviewJob(store: UserStore, job: Job, jobs: number, at: Date): CompletionReview {
   const events = store.events.recent(EVENTS, undefined, job.id).reverse().map((e) => ({ type: e.type, at: e.at, data: e.data }));
   const view = jobTokenView(job.id, store.tokenLedger.list({ jobId: job.id }));
+  const causeId = store.failures.forJob(job.id)?.causeId;
   return completionReviewOf({
-    job: { ...job, commits: job.checkpoint?.commits.length ?? 0 }, events, ...(view.sessions > 0 ? { tokens: view.total } : {}), jobs, at: at.toISOString(),
+    job: { ...job, commits: job.checkpoint?.commits.length ?? 0 }, events, ...(view.sessions > 0 ? { tokens: view.total } : {}), jobs,
+    ...(job.status === 'failed' ? { failure: causeId ? { causeId } : {} } : {}), at: at.toISOString(),
   });
 }
 
@@ -47,7 +52,12 @@ export function createCompletionReviews(store: UserStore): CompletionReviewPass 
       const jobs = jobsOf(store, job);
       if (!shouldReview(settings, job, jobs)) { skipped.add(job.id); continue; }
       const review = reviewJob(store, job, jobs, now);
-      store.completionReviews.keep(review);
+      store.tx(() => {
+        store.completionReviews.keep(review);
+        if (!review.defect) return;
+        const { created } = store.reviewRecommendations.recommend({ ...review.defect, jobId: job.id, at: review.reviewedAt });
+        if (created) store.events.append({ type: 'completion_review.recommended', jobId: job.id, data: { signature: review.defect.signature, title: review.defect.title } });
+      });
       kept.push(review);
     }
     return kept;
