@@ -211,6 +211,8 @@
         "completion_review.settings_changed",
         "completion_review.recommended",
         "completion_review.recommendation_decided",
+        "completion_review.kept",
+        "completion_review.model_reviewed",
         "library_skill.saved",
         "library_skill.removed",
         "library_skill.refreshed",

@@ -4410,6 +4410,46 @@ Version 1 (`docs/schemas/completion_review.recommendation_decided.v1.json`). A p
 }
 ```
 
+## `completion_review.kept`
+
+Version 1 (`docs/schemas/completion_review.kept.v1.json`). The completion review pass kept the review of this ended job (issue #2846 part 3): its `outcome`, its `waste` signals and the area of each of its `suggestions`. The grade pass grades the job again with it (issue #2845: the `review` signal).
+
+| field | type | required |
+|---|---|---|
+| `outcome` | `finished` \| `failed` \| `cancelled` | yes |
+| `waste` | `no_progress` \| `failing_tests` \| `resume_loop` \| `cache_churn`[] | yes |
+| `suggestions` | `config` \| `routing` \| `lane` \| `template` \| `prompt`[] | yes |
+
+```json
+{
+  "outcome": "failed",
+  "waste": [
+    "failing_tests"
+  ],
+  "suggestions": [
+    "template"
+  ]
+}
+```
+
+## `completion_review.model_reviewed`
+
+Version 1 (`docs/schemas/completion_review.model_reviewed.v1.json`). The model review of this job's completion review was written (issue #2846 part 3): `model`, the model that ran; `costUsd`, its cost when the CLI said it, counted against the daily cost cap; `hopperDefect`, the model thinks the run hit a defect of the hopper. `error`: the model failed, and is not asked again for this review.
+
+| field | type | required |
+|---|---|---|
+| `model` | string | yes |
+| `costUsd` | number | no |
+| `hopperDefect` | boolean | no |
+| `error` | string | no |
+
+```json
+{
+  "model": "claude-haiku-4-5",
+  "costUsd": 0.012
+}
+```
+
 ## `library_skill.saved`
 
 Version 1 (`docs/schemas/library_skill.saved.v1.json`). A person kept a new version of a library skill (issue #1911): `name`, its content id `version` and its place `seq` (1, 2, …); `source` says whether a person wrote it (`created`) copied it from another skill's version (`duplicated`, with that `name` and `version`), or imported it from a folder of a GitHub repository (`imported`: `repo`, the folder `path` — empty: the root —, the `ref` it follows, the `commit` read). Never its files: GET /api/skill-library/{name} answers them.
