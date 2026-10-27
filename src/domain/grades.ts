@@ -13,12 +13,17 @@ export type GradeSignal = (typeof GRADE_SIGNALS)[number];
 /**
  * How the automatic grade weighs its signals: a weight of 0 leaves a signal out. `revertWindowDays`: a revert of a job's
  * pull request this long after its merge or sooner lowers its grade. `costScaleUsd` and `timeScaleMinutes`: the estimated
- * cost and the wall time that give half the cost and time signal.
+ * cost and the wall time that give half the cost and time signal. `routing`: grade-aware routing (`grade-routing.ts`), off
+ * by default; `minSamples`, the graded jobs of matching work each executor needs before intake compares them.
  */
-export interface GradeSettings { weights: Record<GradeSignal, number>; revertWindowDays: number; costScaleUsd: number; timeScaleMinutes: number }
+export interface GradeSettings {
+  weights: Record<GradeSignal, number>; revertWindowDays: number; costScaleUsd: number; timeScaleMinutes: number;
+  routing: { on: boolean; minSamples: number };
+}
 
 export const DEFAULT_GRADE_SETTINGS: GradeSettings = {
   weights: { outcome: 3, checks: 2, pull_request: 3, rework: 2, cost: 1, time: 1 }, revertWindowDays: 7, costScaleUsd: 5, timeScaleMinutes: 120,
+  routing: { on: false, minSamples: 10 },
 };
 
 /** The revert of a job's merged pull request: when it merged, and its own pull request. */

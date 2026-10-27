@@ -46,6 +46,11 @@ export const jobSpec = strict({
     rule: z.string(),
     set: strict({ machine: z.string().optional(), executor: z.string().optional(), priority: z.number().optional(), workTree: z.string().optional() }),
   }).optional(),
+  // Grade-aware routing gave it its executor (issue #2845; additive).
+  gradeRoute: strict({
+    executor: z.string(), from: z.string(), on: z.enum(['repo', 'kind']), score: z.number(), samples: z.number().int(),
+    fromScore: z.number(), fromSamples: z.number().int(),
+  }).optional(),
   // Asked for a proposal (issue #537; additive).
   proposal: z.literal(true).optional(),
   // Asked to research (issue #543; additive).
