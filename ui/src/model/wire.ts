@@ -148,7 +148,7 @@ export type { VaultGrant, VaultGrantAsk, VaultGrantItem, VaultGrantView } from '
 export type { SearchAnswer, SearchFacet, SearchState, SearchStatus, SuggestAnswer } from '../../../src/domain/search.ts';
 export type { JobTranscript, TranscriptPart, TranscriptTurn } from '../../../src/domain/transcript.ts';
 export type { JobTokenView, TokenRollupRow, TokenTotals } from '../../../src/domain/token-usage.ts';
-export type { TokenBudgetSettings } from '../../../src/domain/token-budget.ts';
+export type { TokenBudgetSettings } from '../../../src/domain/token-budget.ts'; export type { JobBudget, ModelBudget, ModelRoutingSettings } from '../../../src/domain/model-routing.ts';
 export type { BugReportRecommendation, RecommendationState, ReviewDefect } from '../../../src/domain/review-defects.ts';
 export type { GradeGroup, GradeLine, GradeSettings, GradeSignal, GradesView, JobGradeView, UserGrade } from '../../../src/domain/grades.ts';
 export type { CompletionReview, CompletionReviewSettings, Restart, RestartKind, ReviewOutcome, ReviewStage, StageTime, Suggestion, SuggestionArea } from '../../../src/domain/completion-review.ts';
