@@ -17,6 +17,10 @@
 //   Scenario: in a network namespace of its own, a command reaches a listed host only through hopper-egress, and the
 //             hopper at HOPPER_URL as it is
 //
+// Feature: a job's environment scope (part 5)
+//   Scenario: with the scope on, a job starts with the scope variable and a scope file of its names; a bad name is refused
+//   Scenario: run as its sandbox runner runs it, the scope leaves a secret of the machine's environment out
+//
 // Feature: the hosts the jobs ask for (part 3)
 //   Scenario: a refused host is an ask; approved for the repository, the job's next try goes through and the ask is gone
 //   Scenario: a dismissed host asks no more until a job is refused again
@@ -24,9 +28,9 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer as createHttpServer, request } from 'node:http';
 import { createServer, type Server, type Socket } from 'node:net';
 import type { Server as HttpServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ADMIN_ID } from '../../src/domain/users.ts';
 import { running, start, stopGitProxies, type Started } from '../support/git-proxy.ts';
@@ -101,7 +105,7 @@ describe('a job\'s egress allowlist (issue #2849 part 1)', () => {
   it('a listed name that resolves to a loopback address is refused', async () => {
     const { t, jobId, url, token } = await atWork();
     const port = await echoServer();
-    t.app.user(ADMIN_ID).store.settings.setJobEgress({ defaults: true, hosts: [`localhost:${port}`], repos: {}, route: false, confine: false });
+    t.app.user(ADMIN_ID).store.settings.setJobEgress({ defaults: true, hosts: [`localhost:${port}`], repos: {}, route: false, confine: false, scope: false, keep: [], repoKeep: {} });
     const no = await egress(url, `localhost:${port}`, token) as { status: number; text: string };
     expect(no.status).toBe(403);
     expect(no.text).toContain(`no: localhost:${port} resolves to a loopback or link-local address`);
@@ -118,15 +122,15 @@ describe('a job\'s egress allowlist (issue #2849 part 1)', () => {
     const { t } = await atWork();
     const session = await t.app.login();
     const read = await t.app.api<{ egress: unknown; defaultHosts: string[] }>('GET', '/api/job-egress', undefined, { 'x-hopper-session': session });
-    expect(read.body.egress).toEqual({ defaults: true, hosts: [], repos: {}, route: false, confine: false });
+    expect(read.body.egress).toEqual({ defaults: true, hosts: [], repos: {}, route: false, confine: false, scope: false, keep: [], repoKeep: {} });
     expect(read.body.defaultHosts).toContain('github.com:443');
     const bad = await t.app.ui('/ui/api/job-egress', { defaults: true, hosts: ['https://example.com'], repos: {} }, { token: session });
     expect(bad.status).toBe(400);
     const egress = { defaults: false, hosts: ['Dev.Example.com:8443'], repos: { 'Octo/Tools': ['*.example.org:443'] } };
-    expect((await t.app.ui('/ui/api/job-egress', egress, { token: session })).body).toEqual({ egress: { defaults: false, hosts: ['dev.example.com:8443'], repos: { 'octo/tools': ['*.example.org:443'] }, route: false, confine: false } });
-    expect(t.app.user(ADMIN_ID).store.settings.getJobEgress()).toEqual({ defaults: false, hosts: ['dev.example.com:8443'], repos: { 'octo/tools': ['*.example.org:443'] }, route: false, confine: false });
+    expect((await t.app.ui('/ui/api/job-egress', egress, { token: session })).body).toEqual({ egress: { defaults: false, hosts: ['dev.example.com:8443'], repos: { 'octo/tools': ['*.example.org:443'] }, route: false, confine: false, scope: false, keep: [], repoKeep: {} } });
+    expect(t.app.user(ADMIN_ID).store.settings.getJobEgress()).toEqual({ defaults: false, hosts: ['dev.example.com:8443'], repos: { 'octo/tools': ['*.example.org:443'] }, route: false, confine: false, scope: false, keep: [], repoKeep: {} });
     const changed = t.app.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === 'job_egress.changed');
-    expect(changed.map((e) => e.data)).toEqual([{ by: expect.any(String), defaults: false, route: false, confine: false, hosts: 1, repos: 1 }]);
+    expect(changed.map((e) => e.data)).toEqual([{ by: expect.any(String), defaults: false, route: false, confine: false, scope: false, hosts: 1, repos: 1, keep: 0, repoKeep: 0 }]);
   });
 });
 
@@ -183,7 +187,7 @@ describe('the job\'s side, hopper-egress (issue #2849 part 2)', () => {
     expect(off.env.HOPPER_EGRESS_ROUTE).toBeUndefined();
     const session = await t.app.login();
     expect((await t.app.ui('/ui/api/job-egress', { defaults: true, hosts: [], repos: {}, route: true }, { token: session })).status).toBe(200);
-    expect(t.app.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === 'job_egress.changed').map((e) => e.data)).toEqual([{ by: expect.any(String), defaults: true, route: true, confine: false, hosts: 0, repos: 0 }]);
+    expect(t.app.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === 'job_egress.changed').map((e) => e.data)).toEqual([{ by: expect.any(String), defaults: true, route: true, confine: false, scope: false, hosts: 0, repos: 0, keep: 0, repoKeep: 0 }]);
     const on = await running(t);
     expect(on.env.HOPPER_EGRESS_ROUTE).toBe('1');
     expect(on.env.HOPPER_EGRESS_CONFINE).toBeUndefined();
@@ -193,7 +197,7 @@ describe('the job\'s side, hopper-egress (issue #2849 part 2)', () => {
     const t = await start();
     const echo = await echoServer();
     const web = await httpServer();
-    t.app.user(ADMIN_ID).store.settings.setJobEgress({ defaults: true, hosts: [`127.0.0.1:${echo}`], repos: { 'octo/tools': [`127.0.0.1:${web}`] }, route: true, confine: false });
+    t.app.user(ADMIN_ID).store.settings.setJobEgress({ defaults: true, hosts: [`127.0.0.1:${echo}`], repos: { 'octo/tools': [`127.0.0.1:${web}`] }, route: true, confine: false, scope: false, keep: [], repoKeep: {} });
     const { job, env } = await running(t);
     const code = `process.env.TO = '127.0.0.1:${echo} example.com:443'; process.env.HTTP = '127.0.0.1:${web}';\n${CLIENT}`;
     const r = await behindEgress(t, env, code);
@@ -261,11 +265,11 @@ describe('a confined job (issue #2849 part 4)', () => {
   it('with confine on, a job starts with the confine variable; confine without the route is kept off', async () => {
     const t = await start();
     const session = await t.app.login();
-    const half = await t.app.ui<{ egress: unknown }>('/ui/api/job-egress', { defaults: true, hosts: [], repos: {}, route: false, confine: true }, { token: session });
-    expect(half.body.egress).toEqual({ defaults: true, hosts: [], repos: {}, route: false, confine: false });
-    expect((await t.app.ui('/ui/api/job-egress', { defaults: true, hosts: [], repos: {}, route: true, confine: true }, { token: session })).status).toBe(200);
+    const half = await t.app.ui<{ egress: unknown }>('/ui/api/job-egress', { defaults: true, hosts: [], repos: {}, route: false, confine: true, scope: false, keep: [], repoKeep: {} }, { token: session });
+    expect(half.body.egress).toEqual({ defaults: true, hosts: [], repos: {}, route: false, confine: false, scope: false, keep: [], repoKeep: {} });
+    expect((await t.app.ui('/ui/api/job-egress', { defaults: true, hosts: [], repos: {}, route: true, confine: true, scope: false, keep: [], repoKeep: {} }, { token: session })).status).toBe(200);
     const changed = t.app.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === 'job_egress.changed').map((e) => e.data);
-    expect(changed[0]).toEqual({ by: expect.any(String), defaults: true, route: true, confine: true, hosts: 0, repos: 0 });
+    expect(changed[0]).toEqual({ by: expect.any(String), defaults: true, route: true, confine: true, scope: false, hosts: 0, repos: 0, keep: 0, repoKeep: 0 });
     const on = await running(t);
     expect(on.env.HOPPER_EGRESS_ROUTE).toBe('1');
     expect(on.env.HOPPER_EGRESS_CONFINE).toBe('1');
@@ -274,11 +278,47 @@ describe('a confined job (issue #2849 part 4)', () => {
   it.skipIf(!netnsRuns)('in a network namespace of its own, a command reaches a listed host only through hopper-egress, and the hopper at HOPPER_URL as it is', async () => {
     const t = await start();
     const echo = await echoServer();
-    t.app.user(ADMIN_ID).store.settings.setJobEgress({ defaults: true, hosts: [`127.0.0.1:${echo}`], repos: {}, route: true, confine: true });
+    t.app.user(ADMIN_ID).store.settings.setJobEgress({ defaults: true, hosts: [`127.0.0.1:${echo}`], repos: {}, route: true, confine: true, scope: false, keep: [], repoKeep: {} });
     const { env } = await running(t);
     const r = await confinedBehindEgress(t, env, `process.env.TO = '127.0.0.1:${echo}';\n${CONFINED_CLIENT}`);
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout.trim().split('\n')).toEqual(['proxy 200 echo hello', 'direct ECONNREFUSED', 'hopper 200']);
+  });
+});
+
+describe('a job\'s environment scope (issue #2849 part 5)', () => {
+  const scoped = { defaults: true, hosts: [], repos: {}, route: false, confine: false, scope: true, keep: ['NPM_TOKEN'], repoKeep: { 'Octo/Tools': ['STAGING_KEY'] } };
+  const scopeFile = (t: Started, env: Record<string, string>): string => join(t.root, dirname(env.HOPPER_EGRESS!), 'env-scope');
+
+  it('with the scope on, a job starts with the scope variable and a scope file of its names; a bad name is refused', async () => {
+    const t = await start();
+    const off = await running(t);
+    expect(off.env.HOPPER_ENV_SCOPE).toBeUndefined();
+    expect(readFileSync(scopeFile(t, off.env), 'utf8')).toMatch(/^# hopper: this job's environment is not scoped/);
+    const session = await t.app.login();
+    expect((await t.app.ui('/ui/api/job-egress', { ...scoped, keep: ['npm-token'] }, { token: session })).status).toBe(400);
+    const set = await t.app.ui<{ egress: unknown }>('/ui/api/job-egress', scoped, { token: session });
+    expect(set.body.egress).toEqual({ ...scoped, repoKeep: { 'octo/tools': ['STAGING_KEY'] } });
+    const changed = t.app.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === 'job_egress.changed').map((e) => e.data);
+    expect(changed).toEqual([{ by: expect.any(String), defaults: true, route: false, confine: false, scope: true, hosts: 0, repos: 0, keep: 1, repoKeep: 1 }]);
+    const on = await running(t);
+    expect(on.env.HOPPER_ENV_SCOPE).toBe('1');
+    const text = readFileSync(scopeFile(t, on.env), 'utf8');
+    for (const name of [' PATH ', ' HOME ', ' NPM_TOKEN ', ' STAGING_KEY ']) expect(text).toContain(name);
+  });
+
+  it('run as its sandbox runner runs it, the scope leaves a secret of the machine\'s environment out', async () => {
+    const t = await start();
+    t.app.user(ADMIN_ID).store.settings.setJobEgress({ ...scoped, repoKeep: { 'octo/tools': ['STAGING_KEY'] } });
+    const { env } = await running(t);
+    // The runner's first step (src/client/job-sandbox.ts): the scope file sourced, then what runs prints its environment.
+    const runner = join(t.root, 'runner');
+    writeFileSync(runner, `#!/bin/sh\n[ -z "\${HOPPER_ENV_SCOPED:-}" ] && . '${scopeFile(t, env)}'; env\n`, { mode: 0o755 });
+    const r = spawnSync(runner, [], { encoding: 'utf8', env: { PATH: process.env.PATH, HOME: t.root, NPM_TOKEN: 'npm-1', STAGING_KEY: 'k', HOPPER_DATABASE_URL: 'postgres://secret', AWS_SECRET_ACCESS_KEY: 's' } });
+    const names = r.stdout.split('\n').filter(Boolean).map((l) => l.slice(0, l.indexOf('=')));
+    expect(names).toEqual(expect.arrayContaining(['PATH', 'HOME', 'NPM_TOKEN', 'STAGING_KEY', 'HOPPER_ENV_SCOPED']));
+    expect(names).not.toContain('HOPPER_DATABASE_URL');
+    expect(names).not.toContain('AWS_SECRET_ACCESS_KEY');
   });
 });
 
