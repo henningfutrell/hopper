@@ -1,12 +1,13 @@
 // A job's completion review on its job view (issue #2846): GET /api/jobs/:id/completion-review, read again as the job's
 // state changes. Where its time went, what went well, where it stalled, its restarts and waste signals, and the changes that
 // would have helped. Nothing shows until the hopper kept a review: a job that runs, or that the settings skip, has none. A
-// review that found a hopper defect (issue #2846 part 2) names the bug report it recommends, and what became of it.
+// review that found a hopper defect (issue #2846 part 2) names the bug report it recommends, and what became of it. The
+// model's review beside it (issue #2846 part 3), when the model review is on: its summary, lines, and model and cost.
 import { ClipboardCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Panel } from '@/components/panel';
 import { get } from '@/lib/api';
-import { AREA_NAMES, durationText, OUTCOME_NAMES, recommendationJobs, recommendationState, restartLine, STAGE_NAMES } from '@/model/completion-review';
+import { AREA_NAMES, durationText, modelReviewBy, OUTCOME_NAMES, recommendationJobs, recommendationState, restartLine, STAGE_NAMES } from '@/model/completion-review';
 import { WASTE_NAMES } from '@/model/token-ledger';
 import type { BugReportRecommendation, CompletionReview, Job } from '@/model/wire';
 
@@ -51,6 +52,17 @@ export function JobCompletionReview({ job }: { job: Job }) {
           {recommendation && <p className="text-xs text-muted-foreground">{recommendationState(recommendation)}</p>}
         </div>
       )}
+      {review.modelReview && (
+        <div data-slot="completion-review-model" className="space-y-2 border-t pt-2">
+          <div className="text-xs font-medium text-muted-foreground">The model&apos;s review · {modelReviewBy(review.modelReview)}</div>
+          <p data-slot="completion-review-model-summary">{review.modelReview.summary}</p>
+          <List title="What went well" slot="completion-review-model-went" lines={review.modelReview.went} />
+          <List title="Where it stalled" slot="completion-review-model-stall" lines={review.modelReview.stalls} />
+          <List title="What would have helped" slot="completion-review-model-suggestion" lines={review.modelReview.suggestions.map((s) => `${AREA_NAMES[s.area]}: ${s.text}`)} />
+          {review.modelReview.hopperDefect && <p data-slot="completion-review-model-defect" className="text-xs">The model thinks the run hit a hopper defect: {review.modelReview.hopperDefect}</p>}
+        </div>
+      )}
+      {review.modelFailed && <p data-slot="completion-review-model-failed" className="text-xs text-muted-foreground">No model review: {review.modelFailed.error}</p>}
     </Panel>
   );
 }

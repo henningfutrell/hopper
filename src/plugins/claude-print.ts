@@ -30,6 +30,8 @@ export interface ClaudePrintOptions {
   userEnv?: Readonly<Record<string, string>>;
   /** Where a device login the run waits on is reported (issue #476): it goes to the logins, never into the reply. */
   logins?: RunLogins;
+  /** Told the run's cost in USD, when the CLI said it (`total_cost_usd`). */
+  onCost?: (usd: number) => void;
 }
 
 /**
@@ -135,6 +137,16 @@ export function parsePrint<T extends object>(stdout: string, schema: z.ZodType<T
   return ran ? { ...parsed.data, model: ran } : parsed.data;
 }
 
+/** The cost in USD a print run said (`total_cost_usd`); undefined: it said none. */
+export function costOfPrint(stdout: string): number | undefined {
+  try {
+    const cost = (JSON.parse(stdout) as { total_cost_usd?: unknown } | null)?.total_cost_usd;
+    return typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? cost : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Run one prompt; resolve the schema-valid structured_output with the model that ran, or `{ error }`. */
 export function claudePrint<T extends object>(o: ClaudePrintOptions, schema: z.ZodType<T>, prompt: string, signal: AbortSignal): Promise<Ran<T> | { error: string }> {
   return new Promise((resolve) => {
@@ -179,6 +191,8 @@ export function claudePrint<T extends object>(o: ClaudePrintOptions, schema: z.Z
       const said = withoutRunMarks(stderr).trim().slice(0, 300);
       if (code !== 0) return finish({ error: `claude exited ${code}: ${said}${left.length ? `; ${leftReason(left)}` : ''}` });
       if (left.length) return finish({ error: leftReason(left) });
+      const cost = o.onCost ? costOfPrint(stdout) : undefined;
+      if (cost !== undefined) o.onCost!(cost);
       finish(parsePrint(stdout, schema));
     });
     child.stdin.on('error', () => {});

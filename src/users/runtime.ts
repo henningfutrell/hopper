@@ -32,7 +32,7 @@ import { createLastAccounts, createLogins, createSignIns, setupTokenSignIn, type
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
 import { userTypesafeKey } from './typesafe-key.ts';
-import { openTldrs, type Tldrs } from '../tldr/haiku.ts'; import { createItemReconciler } from '../work-items/reconcile.ts';
+import { openTldrs, type Tldrs } from '../tldr/haiku.ts'; import { createClaudeReviewWriter, createModelReviews, MODEL_REVIEWS_EVERY_MS, type ModelReviews } from '../completion-reviews/model.ts'; import { createItemReconciler } from '../work-items/reconcile.ts';
 import { openUserSystemSecrets } from './system-secrets.ts';
 import { withSystemScope } from '../vault/system-view.ts'; import { withLiveEgress } from '../vault/live-egress.ts';
 import type { SystemSecrets } from '../vault/system.ts';
@@ -153,7 +153,7 @@ export interface UserRuntime {
   /** The TypeSafe API key Jev asks with (issue #657): kept in the vault's system scope, set on the Jev page. */
   typesafeKey: TypesafeKey;
   /** The TL;DR of every long card (issue #569): its sweep. */
-  tldrs: Tldrs;
+  tldrs: Tldrs; modelReviews: ModelReviews; // the model review of each completion review (issue #2846 part 3): its sweep
   dispatcher: WebhookDispatcher; executors: ExecutorRegistry; outbound: Outbound; // the user's outbound sends (issue #1014)
   directJobs: DirectJobs; // issue #901: jobs a person submits straight to the hopper, with no GitHub issue
   /** The user's connected GitHub account (issue #214). */
@@ -323,8 +323,8 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const logins = createLogins({ store, clock, lastAccounts: createLastAccounts({ repo: store.lastAccounts, sources: () => host.usageSources().map((u) => ({ name: u.name, ...u.state?.() })) }) }), signIns = createSignIns({ logins, sources: () => host.usageSources(), clock, ...(o.leases ? { hosts: o.leases } : {}), onSignedIn: (s) => { answerSignedOut({ store, questions }, s); }, setupToken: setupTokenSignIn({ ...seams.setupToken, dir: dataDir, set: (x, by) => vault.set(x, by) }) }); // the Claude sign-in for pods (issue #1287)
   // Decider calls (issue #550) go through Jev first, through TypeSafe with the user's TypeSafe API key (issue #657).
   const minorDecisions: MinorDecisions = createMinorDecisions({ store, clock, logger, timeoutMs: JEV_TIMEOUT_MS, jev, typesafeKey: () => typesafeKey.view() });
-  // The TL;DR of every long card (issue #569): Claude Haiku through the `claude` CLI, in the user's work dir.
-  const tldrs = openTldrs({ store, clock, logger, sweepMs: config.tickMs, lease: lease('tldr'), cwd: dataDir, userEnv: cliEnv, ...(seams.tldrWriter ? { writer: seams.tldrWriter } : {}) }), itemReconciler = createItemReconciler({ ledger: store.workItems, jobs: store.jobs, events: store.events, outbox: store.githubOutbox, lease: lease('item-reconcile'), runAgain: (jobId, brief) => sync.rerun(jobId, 'reconciler', brief), now: () => clock.now().toISOString(), log: (line) => logger.warn(line), ...(seams.itemReconcileEveryMs ? { intervalMs: seams.itemReconcileEveryMs } : {}) }); // the item reconciler (issue #1891)
+  // The model review (issue #2846 part 3), and the TL;DR of every long card (issue #569): Claude through the `claude` CLI, in the user's work dir.
+  const modelReviews = createModelReviews({ store, clock, logger, sweepMs: MODEL_REVIEWS_EVERY_MS, lease: lease('model-reviews'), writer: seams.modelReviewWriter ?? createClaudeReviewWriter({ cwd: dataDir, userEnv: cliEnv }) }), tldrs = openTldrs({ store, clock, logger, sweepMs: config.tickMs, lease: lease('tldr'), cwd: dataDir, userEnv: cliEnv, ...(seams.tldrWriter ? { writer: seams.tldrWriter } : {}) }), itemReconciler = createItemReconciler({ ledger: store.workItems, jobs: store.jobs, events: store.events, outbox: store.githubOutbox, lease: lease('item-reconcile'), runAgain: (jobId, brief) => sync.rerun(jobId, 'reconciler', brief), now: () => clock.now().toISOString(), log: (line) => logger.warn(line), ...(seams.itemReconcileEveryMs ? { intervalMs: seams.itemReconcileEveryMs } : {}) }); // the item reconciler (issue #1891)
   // Read at each question and failure: reached only after `engine` exists.
   const gated = (machineId: string): boolean => engine.blastRadius.gates(machineId);
   const questions = createQuestionService({
@@ -411,7 +411,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined, recovering: Promise<void> = Promise.resolve();
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, podmanHost: (name) => { const h = readPodmanHosts(store.config).find((x) => x.name === name); return h && createPodmanHostRuntime(h, { auth: sshAuth, sshDir: join(dataDir, 'ssh') }); }, podmanHostSocket: (name) => { const h = readPodmanHosts(store.config).find((x) => x.name === name); return h && podmanHostSocket(h, { auth: sshAuth, sshDir: join(dataDir, 'ssh') }); }, needSteps, bastions, stepSchedules, directJobs, sandboxRequests, heavyGate: createHeavyGate({ clock, idGen: randomUUID, machines: () => host.machines().list(), machineOf: (job) => store.lanes.list().find((l) => l.id === job.laneId)?.machineId, peaks: (job) => (job.source?.repo ? store.reads.memoryPeaks(job.source.repo, new Date(clock.now().getTime() - HEAVY_HISTORY_DAYS * 86_400_000).toISOString(), HEAVY_HISTORY_JOBS) : Promise.resolve([])) }), // issue #2622 parts 3, 4
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, modelReviews, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts, gitlabAccount,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
@@ -423,7 +423,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       search.start(); await engine.start(); // search first: every job event from here on marks its job for the index
       await failures.backfill.once(); // the done-check backfill (issue #637), before the sync and the assessor judge the same failures
       sync.start();
-      history.start(); minorDecisions.start(); tldrs.start(); failures.start(); recovering = proxy.githubProxy.promotions.recover().catch((e: unknown) => { logger.warn(`hopper: Promote to GitHub: the sends a stop left could not be looked for: ${(e as Error).message}`); }); // the promotions' sends a stop left (issue #1591): each linked to what GitHub made, or gone
+      history.start(); minorDecisions.start(); tldrs.start(); modelReviews.start(); failures.start(); recovering = proxy.githubProxy.promotions.recover().catch((e: unknown) => { logger.warn(`hopper: Promote to GitHub: the sends a stop left could not be looked for: ${(e as Error).message}`); }); // the promotions' sends a stop left (issue #1591): each linked to what GitHub made, or gone
       connectedAccounts.start(); mintReconcile.start(); // the renewer (issue #441); the sandboxes' tokens a hopper that stopped left bound, unbound at start, then every 5 minutes (issue #1371): a token that expired while the hopper was down renews at once
       sandboxHolds.start(); stepSchedules.start(); jobStream.start(); itemReconciler.start(); proxy.githubProxy.bugReports.start(); proxy.githubProxy.watches.start(); proxy.githubProxy.componentWatchers.start(); proxy.githubProxy.landingBatches.start(); proxy.githubProxy.ledgerFallbackRead.start(); proxy.githubProxy.repoChecks.start(); proxy.githubProxy.pendingApprovals.start(); proxy.githubProxy.subIssueLinks.start(); // Report a bug's kept reports (issue #694), the GitHub watches (issue #427), the component watchers (issue #1077), the landing batches (issue #1073), the ledger's fallback read (issue #1067), the repositories' checks' schedule (issue #1250), the pending approvals' (issue #2088), the kept sub-issue links (issue #1607)
 
@@ -432,7 +432,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
       stopped ??= (async () => {
         await search.stop(); jobStream.stop(); itemReconciler.stop(); await recovering; await proxy.githubProxy.bugReports.stop(); await proxy.githubProxy.watches.stop(); await proxy.githubProxy.componentWatchers.stop(); await proxy.githubProxy.landingBatches.stop(); await proxy.githubProxy.ledgerFallbackRead.stop(); await proxy.githubProxy.repoChecks.stop(); await proxy.githubProxy.pendingApprovals.stop(); await proxy.githubProxy.subIssueLinks.stop();
         await failures.stop(); signIns.stop(); await bastions.stopAll(); await mintReconcile.stop(); sandboxHolds.stop(); stepSchedules.stop();
-        minorDecisions.stop(); await tldrs.stop();
+        minorDecisions.stop(); await tldrs.stop(); await modelReviews.stop();
         await sync.stop();
         history.stop(); connectedAccounts.stop();
         await questions.stop();

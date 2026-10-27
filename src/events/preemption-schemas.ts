@@ -3,12 +3,15 @@
 // A wait release (issue #2303): a Decision ended the agent of a job on its own wait, a job waiting for memory on its machine.
 // A completion review setting (issue #2846, design.md "Completion reviews"): an admin changed which ended jobs are reviewed.
 // A bug-report recommendation (issue #2846 part 2, design.md "Bug-report recommendations"): a review made one, a person decided it.
+// A completion review kept, and its model review (issue #2846 part 3).
 // Part of EVENT_SCHEMAS (schemas.ts), with its docs (docs.ts) and examples (examples.ts).
 import { z } from 'zod';
-import { REVIEW_OUTCOMES } from '../domain/completion-review.ts';
+import { REVIEW_OUTCOMES, SUGGESTION_AREAS } from '../domain/completion-review.ts';
+import { WASTE_KINDS } from '../domain/token-waste.ts';
 
 const settings = z.strictObject({ enabled: z.boolean(), minRunMinutes: z.number().min(0) });
-const reviews = z.strictObject({ on: z.boolean(), outcomes: z.array(z.enum(REVIEW_OUTCOMES)), multiJob: z.boolean(), minRunMinutes: z.number().min(0) });
+const modelReview = z.strictObject({ on: z.boolean(), model: z.string(), dailyCostUsd: z.number().min(0) });
+const reviews = z.strictObject({ on: z.boolean(), outcomes: z.array(z.enum(REVIEW_OUTCOMES)), multiJob: z.boolean(), minRunMinutes: z.number().min(0), modelReview: modelReview.optional() });
 
 export const PREEMPTION_EVENT_SCHEMAS = {
   'job.preempted': z.strictObject({ by: z.string(), byPriority: z.number(), priority: z.number(), reason: z.string() }),
@@ -18,6 +21,8 @@ export const PREEMPTION_EVENT_SCHEMAS = {
   'completion_review.settings_changed': z.strictObject({ from: reviews, to: reviews, by: z.string() }),
   'completion_review.recommended': z.strictObject({ signature: z.string(), title: z.string() }),
   'completion_review.recommendation_decided': z.strictObject({ signature: z.string(), state: z.enum(['approved', 'dismissed']), by: z.string(), reason: z.string().optional(), reportId: z.string().optional() }),
+  'completion_review.kept': z.strictObject({ outcome: z.enum(REVIEW_OUTCOMES), waste: z.array(z.enum(WASTE_KINDS)), suggestions: z.array(z.enum(SUGGESTION_AREAS)) }),
+  'completion_review.model_reviewed': z.strictObject({ model: z.string(), costUsd: z.number().min(0).optional(), hopperDefect: z.literal(true).optional(), error: z.string().optional() }),
 } as const;
 
 /** Its part of the event reference (docs.ts). */
@@ -29,6 +34,8 @@ export const PREEMPTION_EVENT_DOCS = {
   'completion_review.settings_changed': 'An admin changed which ended jobs get a completion review (issue #2846): on or off (`on`), the ends reviewed (`outcomes`), whether a job of a work item with more than one job is reviewed whatever its end (`multiJob`), and the run time below which a first run is trivial (`minRunMinutes`). `from` and `to`.',
   'completion_review.recommended': 'The completion review of this job found a hopper defect of a signature no review found before (issue #2846 part 2): a bug-report recommendation waits for a person in Needs you and Your reports. `signature`: the defect\'s (`cause:<cause id>`, or `requeue-loop` with the first cause); `title`: the report\'s. Nothing is filed until a person approves it.',
   'completion_review.recommendation_decided': 'A person decided a bug-report recommendation (issue #2846 part 2): `approved` sent it to Report a bug as a report of the job whose review found it (`reportId`: the bug report it made, which `bug_report.filed` or `bug_report.kept` follows), or `dismissed` it with a `reason`. A review that finds the same `signature` later recommends nothing.',
+  'completion_review.kept': 'The completion review pass kept the review of this ended job (issue #2846 part 3): its `outcome`, its `waste` signals and the area of each of its `suggestions`. The grade pass grades the job again with it (issue #2845: the `review` signal).',
+  'completion_review.model_reviewed': 'The model review of this job\'s completion review was written (issue #2846 part 3): `model`, the model that ran; `costUsd`, its cost when the CLI said it, counted against the daily cost cap; `hopperDefect`, the model thinks the run hit a defect of the hopper. `error`: the model failed, and is not asked again for this review.',
 } as const;
 
 /** Its examples (examples.ts). */
@@ -40,4 +47,6 @@ export const PREEMPTION_EVENT_EXAMPLES = {
   'completion_review.settings_changed': { from: { on: true, outcomes: ['failed'], multiJob: true, minRunMinutes: 5 }, to: { on: true, outcomes: ['failed', 'cancelled'], multiJob: true, minRunMinutes: 10 }, by: 'admin' },
   'completion_review.recommended': { signature: 'cause:swept', title: 'The sweep stopped the processes of a job that was at work' },
   'completion_review.recommendation_decided': { signature: 'cause:swept', state: 'dismissed', by: 'admin', reason: 'fixed by the sweep change' },
+  'completion_review.kept': { outcome: 'failed', waste: ['failing_tests'], suggestions: ['template'] },
+  'completion_review.model_reviewed': { model: 'claude-haiku-4-5', costUsd: 0.012 },
 } as const;
