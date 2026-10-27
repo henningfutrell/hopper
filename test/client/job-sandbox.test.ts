@@ -10,12 +10,15 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runtimeCommand } from '../../src/client/job-runtime.ts';
-import { sandboxCommand, sandboxOutcome, sandboxSetupArgv } from '../../src/client/job-sandbox.ts';
+import { egressOutcome, sandboxCommand, sandboxOutcome, sandboxSetupArgv } from '../../src/client/job-sandbox.ts';
+import { TERMINAL_LINE_MAX } from '../../src/executors/herdr/client.ts';
 
 const JOB = 'job-1295-sandbox';
 
 /** Whether bubblewrap runs here as the sandbox needs it: no bwrap, or no user namespaces (a container), is an environment skip. */
 const bwrapRuns = spawnSync('bwrap', ['--dev-bind', '/', '/', '--proc', '/proc', '--unshare-pid', '--unshare-ipc', '--die-with-parent', 'true']).status === 0;
+/** Whether it makes a network namespace too, as a confined job's sandbox needs (issue #2849 part 4). */
+const netnsRuns = bwrapRuns && spawnSync('bwrap', ['--dev-bind', '/', '/', '--unshare-net', '--die-with-parent', 'true']).status === 0;
 
 // The stand-in podman: each call logged to $FAKE/calls with the runtime it was given.
 const FAKE_PODMAN = `#!/bin/sh
@@ -65,6 +68,8 @@ const env = (more: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
   HOME: root, PATH: `${fake}${delimiter}/usr/bin${delimiter}/bin`, FAKE: fake, XDG_RUNTIME_DIR: host,
   HERDR_SOCKET_PATH: join(root, '.config', 'herdr', 'sessions', 'hopper', 'herdr.sock'), ...more,
 });
+/** A node on the stand-ins' PATH: the setup routes a job only where node runs hopper-egress. */
+const withNode = (): void => writeFileSync(join(fake, 'node'), `#!/bin/sh\nexec ${process.execPath} "$@"\n`, { mode: 0o755 });
 const own = (): string => join(host, `hopper-runtime-${JOB}`);
 const calls = (): string[] => readFileSync(join(fake, 'calls'), 'utf8').split('\n').filter(Boolean);
 
@@ -142,10 +147,35 @@ describe.skipIf(!bwrapRuns)('the job\'s sandbox (issue #1295)', () => {
     // The stand-in hopper-egress: it says what it was given, then runs the command after `--` with its port set.
     const egress = join(root, 'egress');
     writeFileSync(egress, '#!/bin/sh\nprintf "egress %s\\n" "$1"\nshift\nHOPPER_EGRESS_PORT=1 exec "$@"\n', { mode: 0o755 });
+    withNode();
     const on = inJobShell('claude --model haiku', env({ HOPPER_EGRESS: egress, HOPPER_EGRESS_ROUTE: '1' }));
     expect(on.stdout.trim().split('\n')).toEqual(['egress --', 'sandboxed=1', 'args=--model haiku']);
     expect(inJobShell('claude --model haiku', env({ HOPPER_EGRESS: egress })).stdout.trim().split('\n')).toEqual(['sandboxed=1', 'args=--model haiku']);
     expect(inJobShell('claude --model haiku', env({ HOPPER_EGRESS: join(root, 'none'), HOPPER_EGRESS_ROUTE: '1' })).stdout.trim().split('\n')).toEqual(['sandboxed=1', 'args=--model haiku']);
+  });
+
+  it('the setup says the job\'s egress only when its setting routes it: routed, unrouted with no hopper-egress, and routed with confine where no network namespace holds (issue #2849)', () => {
+    const egress = join(root, 'egress');
+    writeFileSync(egress, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    withNode();
+    const said = (more: NodeJS.ProcessEnv): string | undefined => egressOutcome(spawnSync('sh', ['-c', sandboxCommand(scratch)], { encoding: 'utf8', env: env(more) }).stdout);
+    expect(said({ HOPPER_EGRESS: egress })).toBeUndefined();
+    expect(said({ HOPPER_EGRESS: egress, HOPPER_EGRESS_ROUTE: '1' })).toBe('routed');
+    expect(said({ HOPPER_EGRESS: join(root, 'none'), HOPPER_EGRESS_ROUTE: '1' })).toBe('unrouted');
+    expect(said({ HOPPER_EGRESS: egress, HOPPER_EGRESS_ROUTE: '1', HOPPER_EGRESS_CONFINE: '1' })).toBe(netnsRuns ? 'confined' : 'routed');
+  });
+
+  it.skipIf(!netnsRuns)('confined, claude runs in a network namespace of its own, between hopper-egress --socket outside and --from inside (issue #2849 part 4)', () => {
+    // The stand-in hopper-egress: it says its mode and its network namespace, then runs the command after `--`.
+    const egress = join(root, 'egress');
+    writeFileSync(egress, '#!/bin/sh\nprintf "egress %s %s\\n" "$1" "$(readlink /proc/self/ns/net)"\nshift 3\nHOPPER_EGRESS_PORT=1 exec "$@"\n', { mode: 0o755 });
+    withNode();
+    const r = inJobShell('claude --model haiku', env({ HOPPER_EGRESS: egress, HOPPER_EGRESS_ROUTE: '1', HOPPER_EGRESS_CONFINE: '1' }));
+    const [outside, inside, ...rest] = r.stdout.trim().split('\n');
+    expect(outside).toMatch(/^egress --socket net:\[\d+\]$/);
+    expect(inside).toMatch(/^egress --from net:\[\d+\]$/);
+    expect(inside!.split(' ')[2]).not.toBe(outside!.split(' ')[2]);
+    expect(rest).toEqual(['sandboxed=1', 'args=--model haiku']);
   });
 
   it('a machine with no runtime of the job\'s: the user\'s runtime dir is empty in it, and so is /run/user/<uid>', () => {
@@ -169,5 +199,21 @@ describe('the job\'s sandbox where bubblewrap cannot run (issue #1295)', () => {
 
   it('the setup argv runs alone, for a test', () => {
     expect(sandboxSetupArgv(scratch).slice(0, 2)).toEqual(['sh', '-c']);
+  });
+});
+
+describe('the job\'s sandbox command is one a terminal line keeps (issue #2234)', () => {
+  it('it fits, even with a long work tree', () => {
+    const long = `/home/agent/${'w'.repeat(120)}/.worktrees/@scratch/${'0'.repeat(8)}-0000-0000-0000-000000000000`;
+    expect(sandboxCommand(long).length).toBeLessThanOrEqual(TERMINAL_LINE_MAX);
+  });
+
+  it('no bwrap and the route on: none, and the egress unrouted (issue #2849)', () => {
+    const tools = join(root, 'tools');
+    mkdirSync(tools);
+    for (const t of ['sh', 'mkdir', 'chmod', 'rm']) writeFileSync(join(tools, t), `#!/bin/sh\nexec ${execFileSync('sh', ['-c', `command -v ${t}`], { encoding: 'utf8' }).trim()} "$@"\n`, { mode: 0o755 });
+    const r = spawnSync('/bin/sh', ['-c', sandboxCommand(scratch)], { encoding: 'utf8', env: env({ PATH: `${fake}${delimiter}${tools}`, HOPPER_EGRESS_ROUTE: '1' }) });
+    expect(sandboxOutcome(r.stdout)).toBe('none');
+    expect(egressOutcome(r.stdout)).toBe('unrouted');
   });
 });

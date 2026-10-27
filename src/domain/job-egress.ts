@@ -17,10 +17,16 @@ export interface JobEgressSettings {
    * allowlist's hosts only. Read at each job's start. Off when never set.
    */
   route: boolean;
+  /**
+   * Whether a routed job's agent is also confined (part 4): its sandbox gets a network namespace of its own, whose one way
+   * out is `hopper-egress`, so a tool that ignores HTTPS_PROXY reaches nothing. Only with `route`. Read at each job's start.
+   * Off when never set: ports a job's containers publish are then out of the agent's reach.
+   */
+  confine: boolean;
 }
 
 /** The setting of a user who never set one: the defaults only. */
-export const NO_JOB_EGRESS: JobEgressSettings = { defaults: true, hosts: [], repos: {}, route: false };
+export const NO_JOB_EGRESS: JobEgressSettings = { defaults: true, hosts: [], repos: {}, route: false, confine: false };
 
 /** The hopper's default hosts: the model providers, GitHub and the package registries a job's tools fetch from. */
 export const JOB_EGRESS_DEFAULTS: readonly string[] = [
@@ -53,7 +59,7 @@ export function jobEgressHostProblem(entry: string): string | undefined {
 export function normalJobEgress(s: JobEgressSettings): JobEgressSettings {
   const lower = (l: readonly string[]): string[] => [...new Set(l.map((h) => h.toLowerCase()))];
   const repos = Object.fromEntries(Object.entries(s.repos).map(([r, l]): [string, string[]] => [r.toLowerCase(), lower(l)]).filter(([, l]) => l.length > 0));
-  return { defaults: s.defaults, hosts: lower(s.hosts), repos, route: s.route };
+  return { defaults: s.defaults, hosts: lower(s.hosts), repos, route: s.route, confine: s.route && s.confine };
 }
 
 /** The allowlist of a job of `repo` (`owner/name`; none for a job with no repository). */

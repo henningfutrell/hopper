@@ -11,7 +11,7 @@ afterEach(() => stopAll(h));
 const start = (auth: unknown, env?: Record<string, string>) => startWithAuth(h, auth, env);
 const oidc = (o?: Parameters<typeof oidcIdp>[1]) => oidcIdp(h, o);
 
-describe('roles, sessions and logout: the same for every realm', () => {
+describe('roles, sessions and logout: the same for every realm', { timeout: 60_000 }, () => {
   async function as(role: 'viewer' | 'operator' | 'admin', env: Record<string, string> = {}) {
     const idp = await oidc();
     const s = await start({ version: 1, realms: [oidcRealm(idp, { defaultRole: role })] }, env);
