@@ -95,7 +95,10 @@ Acknowledge before working here: you have read this file, `docs/design.md`, and
   park (issue #2167, `docs/design.md` "Parking a proposal or a research report"): `GET`/`POST /job/park`, with the job's proxy token, only
   while it is at work, lists its user's open proposals and research reports, and parks one whose job waits on it or picks up one a job
   parked — never a running job, never itself, never an item a person parked —, kept as `job <its id>`, `via` `job`; it decides no item and
-  changes no other job, question, webhook or setting. A machine's address check (issue #698,
+  changes no other job, question, webhook or setting. A running job's egress (issue #2849,
+  `docs/design.md` "A job's egress allowlist"): `GET /job/egress?to=<host>:<port>`, an HTTP/1.1 upgrade with the job's proxy token, only while it is at work,
+  is joined by the hopper to that host only when its user's **job egress allowlist** holds it for the job's repository — never a listed name that
+  resolves to a loopback or link-local address —; a refusal is recorded once on the job (`job.egress_denied`); it changes no job, question, webhook or setting. A machine's address check (issue #698,
   `docs/design.md` "GitHub through the hopper"): `GET /job/address` answers 204 to anyone the Host guard lets in, so an ssh
   target's probe learns which of the hopper's addresses its jobs reach; it changes and records nothing. A GitHub delivery (issue #1079,
   `docs/design.md` "GitHub deliveries"): `POST /github/webhook`, signed with the GitHub webhook secret (HMAC-SHA256, a system

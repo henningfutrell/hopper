@@ -9348,6 +9348,46 @@ Version 1 (`docs/schemas/hopper.event_loop_stalled.v1.json`). The hopper's event
 }
 ```
 
+## `job.egress_denied`
+
+Version 1 (`docs/schemas/job.egress_denied.v1.json`). The hopper refused a running job's connection out (issue #2849, `GET /job/egress`): `host` and `port` as the job named them, `repo` the job's repository. `reason`: `not_listed`, the host and port are not on the job's egress allowlist (the hopper's defaults, the user's hosts and the repository's); `local_address`, a listed name resolves to a loopback, link-local or unspecified address, which a job never reaches through the hopper. Recorded once per job, host and port while the hopper runs; the job got 403 each time. Shows on the job's timeline.
+
+| field | type | required |
+|---|---|---|
+| `host` | string | yes |
+| `port` | integer | yes |
+| `repo` | string | no |
+| `reason` | `not_listed` \| `local_address` | yes |
+
+```json
+{
+  "host": "paste.example.com",
+  "port": 443,
+  "repo": "octo/tools",
+  "reason": "not_listed"
+}
+```
+
+## `job_egress.changed`
+
+Version 1 (`docs/schemas/job_egress.changed.v1.json`). An admin set the user's job egress allowlist (issue #2849, `POST /ui/api/job-egress`): `defaults`, whether the hopper's default hosts are on it; `hosts`, how many hosts every job may reach; `repos`, how many repositories have hosts of their own. `by` is who. Never the hosts themselves: GET /api/job-egress reads them.
+
+| field | type | required |
+|---|---|---|
+| `by` | string | yes |
+| `defaults` | boolean | yes |
+| `hosts` | integer | yes |
+| `repos` | integer | yes |
+
+```json
+{
+  "by": "Pat",
+  "defaults": true,
+  "hosts": 1,
+  "repos": 2
+}
+```
+
 ## `push_requirements.evaluated`
 
 Version 1 (`docs/schemas/push_requirements.evaluated.v1.json`). A running job evaluated the push requirements of a commit in its work tree (issue #2555), with `sh "$HOPPER_REQUIREMENTS" check`: `repo`, `branch`, its `base` and the commit, `head`. `requirements`: each requirement that applied (`passed` or `failed`, each check with its command `run`, its `exit`, its `thresholds` and the values it `measured`, and a failed one's `problem`) and each one it skipped, with the `reason`; `level`: where it came from (`default`, `repo`, `path`, `job`). `passed`: every requirement that applied passed. The git proxy takes a push of that commit only after a passing one, where requirements apply. Never a check's output.
