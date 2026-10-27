@@ -18,7 +18,7 @@ const input = (o: Partial<CompletionReviewInput> & { end?: number; status?: stri
 
 describe('completion reviews (issue #2846)', () => {
   it('is on by default for failed jobs and for work items of more than one job, from 5 minutes of run', () => {
-    expect(DEFAULT_COMPLETION_REVIEW).toEqual({ on: true, outcomes: ['failed'], multiJob: true, minRunMinutes: 5 });
+    expect(DEFAULT_COMPLETION_REVIEW).toEqual({ on: true, outcomes: ['failed'], multiJob: true, minRunMinutes: 5, modelReview: { on: false, model: 'haiku', dailyCostUsd: 1 } });
     const job = (status: string, ranMin: number, attempts = 1) => ({ status, attempts, startedAt: at(0), finishedAt: at(ranMin) });
     expect(shouldReview(DEFAULT_COMPLETION_REVIEW, job('failed', 30), 1)).toBe(true);
     expect(shouldReview(DEFAULT_COMPLETION_REVIEW, job('finished', 30), 1)).toBe(false);

@@ -29,7 +29,7 @@ describe('completion reviews', () => {
   it('are on by default for failed jobs; an admin changes which, and the change is an event', async () => {
     const a = await boot();
     const token = await a.login();
-    const defaults = { on: true, outcomes: ['failed'], multiJob: true, minRunMinutes: 5 };
+    const defaults = { on: true, outcomes: ['failed'], multiJob: true, minRunMinutes: 5, modelReview: { on: false, model: 'haiku', dailyCostUsd: 1 } };
     expect((await a.api('GET', '/api/completion-review')).body).toEqual(defaults);
     const r = await set(a, token, { outcomes: ['cancelled', 'failed'], minRunMinutes: 0 });
     expect(r.status).toBe(200);

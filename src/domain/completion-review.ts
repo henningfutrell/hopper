@@ -2,31 +2,42 @@
 // kept — the job's events, its token ledger and its chain of runs — and keeps the review with the job. Where its time went
 // (each stage, longest first), what went well, where it stalled, its restarts and their causes, its waste signals (issue
 // #2302, `token-waste.ts`), and the changes of config, routing, lanes, templates or prompts that would have helped. Rules
-// only: no model reads the run. The settings say which jobs are reviewed. Pure: the pass (src/engine/completion-reviews.ts)
-// gathers the facts and keeps the review.
+// only; a model may review the run beside it after (issue #2846 part 3, `model-review.ts`). The settings say which jobs are
+// reviewed. Pure: the pass (src/engine/completion-reviews.ts) gathers the facts and keeps the review.
 import type { WaitOnKind } from './wait-on.ts';
 import { tokenWaste, type TokenWaste } from './token-waste.ts';
 import type { TokenTotals } from './token-usage.ts';
 import { defectOf, type ReviewDefect, type ReviewFailure } from './review-defects.ts';
+import type { ModelReview, ModelReviewFailure } from './model-review.ts';
 
 /** The ends of a job a completion review may follow: `finished` (done, or partly done), `failed` and `cancelled`. */
 export const REVIEW_OUTCOMES = ['finished', 'failed', 'cancelled'] as const;
 export type ReviewOutcome = (typeof REVIEW_OUTCOMES)[number];
 
+/** The model review's part of the settings (`model-review.ts`): off by default; the model the `claude` CLI runs, and the daily cost cap in USD. */
+export interface ModelReviewSettings { on: boolean; model: string; dailyCostUsd: number }
+
+export const DEFAULT_MODEL_REVIEW: ModelReviewSettings = { on: false, model: 'haiku', dailyCostUsd: 1 };
+
+/** The highest daily cost cap an admin may set. */
+export const MAX_MODEL_REVIEW_DAILY_USD = 100;
+
 /**
  * Which ended jobs are reviewed. `on`: off, none is. `outcomes`: the ends reviewed. `multiJob`: a job of a work item that had
  * more than one job is reviewed whatever its end. `minRunMinutes`: a job that ran less than this, on its first run, is
- * trivial and not reviewed.
+ * trivial and not reviewed. `modelReview`: the model review beside the rule review (`model-review.ts`).
  */
-export interface CompletionReviewSettings { on: boolean; outcomes: ReviewOutcome[]; multiJob: boolean; minRunMinutes: number }
+export interface CompletionReviewSettings { on: boolean; outcomes: ReviewOutcome[]; multiJob: boolean; minRunMinutes: number; modelReview: ModelReviewSettings }
 
-/** Default: on, for failed jobs and for the jobs of work items with more than one job, from 5 minutes of run. */
-export const DEFAULT_COMPLETION_REVIEW: CompletionReviewSettings = { on: true, outcomes: ['failed'], multiJob: true, minRunMinutes: 5 };
+/** Default: on, for failed jobs and for the jobs of work items with more than one job, from 5 minutes of run; no model review. */
+export const DEFAULT_COMPLETION_REVIEW: CompletionReviewSettings = { on: true, outcomes: ['failed'], multiJob: true, minRunMinutes: 5, modelReview: DEFAULT_MODEL_REVIEW };
 
 /** The longest minimum run time, a day in minutes. */
 export const MAX_REVIEW_MIN_RUN_MINUTES = 24 * 60;
 
-export const completionReviewSettingsOf = (s: Partial<CompletionReviewSettings> | undefined): CompletionReviewSettings => ({ ...DEFAULT_COMPLETION_REVIEW, ...s });
+/** The settings as kept, on the defaults: one saved before the model review existed reads its defaults. */
+export const completionReviewSettingsOf = (s: Partial<CompletionReviewSettings> | undefined): CompletionReviewSettings =>
+  ({ ...DEFAULT_COMPLETION_REVIEW, ...s, modelReview: { ...DEFAULT_MODEL_REVIEW, ...s?.modelReview } });
 
 /**
  * Where a job's time went: `queued` (waiting for a lane, held too), `running` (on a lane), `person` (waiting on a person: a
@@ -67,6 +78,9 @@ export interface CompletionReview {
   suggestions: Suggestion[];
   /** A hopper defect the run hit (issue #2846 part 2, `review-defects.ts`): a bug-report recommendation. */
   defect?: ReviewDefect;
+  /** The model's review beside this one (issue #2846 part 3), or why it failed. */
+  modelReview?: ModelReview;
+  modelFailed?: ModelReviewFailure;
 }
 
 /** One event of the job, as the review reads it. */
@@ -238,4 +252,6 @@ export interface CompletionReviewRepository {
   get(jobId: string): CompletionReview | undefined;
   /** Of `jobIds`, those with a kept review. */
   reviewed(jobIds: readonly string[]): Set<string>;
+  /** The reviews kept since `since`, at most `limit`. */
+  since(since: string, limit: number): CompletionReview[];
 }

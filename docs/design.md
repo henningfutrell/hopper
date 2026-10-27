@@ -51,6 +51,7 @@ Fastify for HTTP, Postgres (`pg`) for storage, the only store (issue #53) ("Depl
 | `src/review/` | the review of every review section — Proposals, Research (issues #537, #543, "Sections"): `ReviewService`, one per section from its type (`service.ts`: the structural pre-check (`pre-check.ts`, pure) → the reviewer levels, lowest first → a person; a person's decision, one the section declares; the sweep and recovery), the reviewer reply it accepts (`reply.ts`), each section's settings (`settings.ts`). The reviewers are escalation levels (their `review`, `src/plugins/`); items through the `ReviewItemRepository` port, a table per kind; the job's side (waiting, ending, moving on to the next section it asks for, re-queued with what to do next) is the engine's (`src/engine/reviews.ts`) | engine, http, store, plugins, executors, decider |
 | `src/failures/` | the failure assessor (issue #509, "Failure assessment"): the signature (`signature.ts`, pure), the known causes (`causes.ts`, pure), the judgement of one failed job (`assess.ts`, pure), a timed-out job's rules (`timed-out.ts`, pure), what the assessor reads of a job's chain (`chain.ts`), its pull request lookup and Continue (`timeouts.ts`, issue #630), the machine it ran on and its evidence (`evidence.ts`, pure), the profile (`profile.ts`, pure), the service — assessing on `job.failed`, the pending runs again through the sync loop's Run again, the checks, the prune (`service.ts`) —, the check before any run again that finishes a job whose work is done at its source in its place, and a done-check miss's look again before it is assessed (`done-at-source.ts`, issue #637), the done-check backfill (`backfill.ts`, issue #637), a poison failure, whose assessment throws, handed to a person with the reason (`poison.ts`, issue #1961), a heap abort pattern — the pattern, pure (`heap-pattern.ts`), and what the assessor reads and holds for it, and the heap retry of a failure handed to a person (`heap-holds.ts`) — (issue #2722), the hand-offs to a person (issue #516: when one opens, `handoff.ts`, pure; opening, closing and a person's resolution, `handoffs.ts`; what a pass over many of them finds stale, with a fixed number of reads of the jobs (`pass-reads.ts`, issue #1411); what a job that follows one is told, `brief.ts`, pure — issue #551; the work check, asking the source what an open hand-off's work shows, `work-check.ts`, and its card, `card.ts`, pure — issue #621) and what the Failures view reads, with each action's refusal (`view.ts`), and a stuck cause's bulk action (`stuck.ts`, issue #1010), and the check of each give-back it runs — Retry, Continue, I fixed it, Push it, Tend again — from what the act names, which the sync loop asks at the answer and at the send of its GitHub outbox row (`give-backs.ts`, issue #1238 part 5). Its records, problems and hand-offs through the `FailureRepository`, `ProblemRepository` and `HandoffRepository` ports | engine, http, store, plugins, executors, decider, questions |
 | `src/minor-decisions/` | decider calls through Jev first (issue #550, "Decider calls"): Jev at its seam (`jev.ts`, `jev_pick.py`: one TypeSafe Choice, or several in one call, through `typesafe_sdk`), the service — each point's settings, the pick and whether it is applied, the comparison with what was decided after it, the override, the view (`service.ts`) —, the risk call on a level's answer (`risk.ts`, issue #679), a call's ceiling (`deadline.ts`), what makes a decision consequential and which of it are the guards (`guard.ts`, over the question risk rules), the view from the events (`view.ts`), the user's TypeSafe API key — checked, kept in the vault's system scope, imported once from the variable (`typesafe-key.ts`, issue #657); all but `jev.ts`, `service.ts`, `risk.ts` and `typesafe-key.ts` pure. Its ports (`JevChooser`, `JevFirst`, `QuestionRisk`) are in `src/domain/minor-decisions.ts`; the question pipeline (the risk call, `QuestionRisk`) and the failure assessor (`src/failures/jev.ts`) ask it | engine, http, store, plugins, executors, decider |
+| `src/completion-reviews/` | the model review of a completion review (issue #2846 part 3, "Completion reviews"): the sweep that asks the model the settings name for each kept review with none, under the daily cost cap, and keeps its answer with the review; its model, Claude through the `claude` CLI (`model.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but `claude-print.ts` |
 | `src/tldr/` | the TL;DR (issue #569, "TL;DR"): its rules — the text a card's TL;DR is written from, which cards get one, the prompt, the answer made plain text, the agent's summary as the fallback, which stored one a card shows (`text.ts`, pure but for the hash) —, the sweep that writes them (`service.ts`), its model: Claude Haiku through the `claude` CLI and the sweep with it (`haiku.ts`, composed by the user runtime alone) | engine, http, executors, decider; plugins but in `haiku.ts` |
 | `src/reliability/` | lane reliability (issue #535, "High priority everywhere"): runs read from the event log and each lane's figures over a window (`measure.ts`), the lane fault (`fault.ts`, over the failure assessor's known causes), choosing the priority lanes with hysteresis (`rank.ts`); all pure | everything but `domain/` and `failures/causes.ts` |
 | `src/blast-radius/` | blast radius (issue #542, "Blast radius and actor machines"): a discovery's output read into its facts (`read.ts`), each machine's reach and level rated by the rules, what a discovery changed, and why the gate keeps a machine (`rate.ts`); a template's rating from its operation profiles and vault secrets (`template.ts`, issue #584, "A template's blast radius"); all pure | everything but `domain/` and `client/discover.ts` |
@@ -36412,7 +36413,7 @@ helped — and keeps that with the job, so improvements and hopper defects are n
   lanes; two preemptions → routing; three questions → prompt (write the answers in the issue or the job rules); a long wait
   on a person → config (approve ahead); failing tests → template; no progress or cache churn → prompt (smaller parts); a lost
   link or a resume loop → config (the machines); memory → config (the job memory limit, the heavy-step gate). Rules only: no
-  model reads the run, and no text of the session is read.
+  model reads the run, and no text of the session is read (the model review of part 3 comes after, beside it).
 - **Which jobs.** The user's `CompletionReviewSettings`: `on` (default on), `outcomes` (default `failed`), `multiJob` (default
   on: a job of a work item with more than one job is reviewed whatever its end) and `minRunMinutes` (default 5: a first run
   shorter than this is trivial and skipped; a second attempt never is). An admin sets them in Settings → Completion reviews
@@ -36427,8 +36428,7 @@ helped — and keeps that with the job, so improvements and hopper defects are n
 - **Reads.** `GET /api/jobs/:id/completion-review` answers `{ review }`, or `{}` while there is none. The job view's
   **Completion review** panel (`ui/src/views/job-completion-review.tsx`, `ui/src/model/completion-review.ts`) shows it.
 - **Bug-report recommendations** (part 2): see "Bug-report recommendations" below.
-- **Not yet** (later parts of issue #2846): a review by a model (its harness, model and cost cap in the settings); and review
-  outcomes for grading (issue #2845).
+- **The model review** (part 3): see "The model review" below. **Grades** (part 3): see the same section.
 
 Tests: `test/domain/completion-review.test.ts` (the defaults and which jobs, the stages, the restarts, a clean run, a
 stalled one with its suggestions, a push as progress), `test/integration/completion-reviews.test.ts` (real database and HTTP:
@@ -36471,6 +36471,47 @@ Tests: `test/domain/review-defects.test.ts` (the rules and the signature), `test
 (real database and HTTP, GitHub a fake: nothing filed before Approve, Approve files once through the pipeline, a later
 review of the same signature recommends nothing, Dismiss keeps the reason, off refuses, a job's own failure recommends
 nothing), `test/ui/recommendations-needs-you.test.ts`, `test/ui/bug-reports-view.test.ts`, `test/ui/job-completion-review-view.test.ts`.
+
+### The model review (issue #2846 part 3, 2026-10-27)
+
+The rules see only what the hopper kept in numbers. A model can read the same facts and the job's timeline and say more:
+why the run stalled, and what to change. It costs tokens, so it is off until an admin turns it on, and it stops at a daily
+cost cap.
+
+- **Settings.** `CompletionReviewSettings.modelReview` (`src/domain/completion-review.ts`): `on` (default off), `model`
+  (default `haiku`: the alias the `claude` CLI resolves; any model name it takes) and `dailyCostUsd` (default 1, at most 100).
+  Saved in the same `completionReview` setting; one saved before this part reads these defaults
+  (`completionReviewSettingsOf`). Settings → Completion reviews; `POST /ui/api/completion-review` takes `modelReview` with any
+  of its parts, and one left out keeps its value.
+- **Which harness.** One: the `claude` CLI in print mode, locked down as the TL;DR's and the escalation level's run
+  (`src/plugins/claude-print.ts`): no tools, no MCP, no settings, no session, the answer bound to a JSON Schema, the prompt on
+  stdin, in the user's work dir, with the user's CLI config dirs. No setting picks another: no other harness the hopper runs
+  has a locked-down turn with a bound answer here.
+- **The sweep** (`src/completion-reviews/model.ts`, lease `model-reviews`, every minute): with the completion reviews and the
+  model review on, each kept review of the last two days with no model review and no failed one, oldest first, one at a
+  time. The prompt (`modelReviewPrompt`, `src/domain/model-review.ts`, masked) holds the job's title and executor, its
+  failure's cause and summary, the rule review's facts, and its timeline — each event's type and minute, the first and last 30
+  of a longer one —, never the session's text. The answer (`modelReviewAnswer`): a `summary`, `went`, `stalls`, `suggestions`
+  (the same areas) and `hopperDefect` (why it thinks the run hit a defect of the hopper itself), each text at most 500
+  characters and 6 lines each. Kept on the review as `modelReview`, with the `model` that ran, its `costUsd` (the CLI's
+  `total_cost_usd`) and `at`; `completion_review.model_reviewed`. A failed run is kept as `modelFailed` and not asked again.
+- **The cost cap.** Before each ask, the sweep sums `costUsd` of the model reviews of the last day (`modelCostOfDay`); at the
+  cap or above, it asks no more until the sum falls under it, and says so once in the log. A run whose cost the CLI did not say
+  counts as none.
+- **Bug reports stay with the rules.** The model's `hopperDefect` shows on the job view as the model's view; it makes no
+  bug-report recommendation. A recommendation needs a stable signature, so the same defect is one row and a dismissal holds.
+- **Grades** (issue #2845). Each kept review is an event, `completion_review.kept` (its outcome, waste signals and suggestion
+  areas), one of `GRADE_EVENTS`, so the grade pass grades the job again. The automatic grade has a seventh signal, `review`
+  (weight 1 by default): 1 when the review found no waste signal, else 1 / (1 + the waste signals), its why naming them; a job
+  with no review leaves it out. A saved weight setting without it reads the default, and the change of weights grades the
+  kept grades again once.
+- **Reads.** `GET /api/jobs/:id/completion-review` answers `review.modelReview` or `review.modelFailed`; the job view's
+  Completion review panel shows the model's review under the rules' one, with its model and cost.
+
+Tests: `test/domain/model-review.test.ts` (the defaults, the prompt, the answer cut to size, the day's cost and the reviews
+that wait), `test/domain/grades.test.ts` (the `review` signal), `test/integration/completion-review-model.test.ts` (real
+database and HTTP, the model a double: off asks nothing; the settings; the model review kept and its event; the cap; a failed
+answer kept once; the grade's `review` line), `test/ui/completion-review.test.ts`, `test/ui/job-completion-review-view.test.ts`.
 
 ### The job's side: hopper-egress (part 2, 2026-10-26)
 

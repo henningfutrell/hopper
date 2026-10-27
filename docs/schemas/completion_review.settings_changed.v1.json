@@ -25,6 +25,27 @@
         "minRunMinutes": {
           "type": "number",
           "minimum": 0
+        },
+        "modelReview": {
+          "type": "object",
+          "properties": {
+            "on": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": "string"
+            },
+            "dailyCostUsd": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "on",
+            "model",
+            "dailyCostUsd"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -58,6 +79,27 @@
         "minRunMinutes": {
           "type": "number",
           "minimum": 0
+        },
+        "modelReview": {
+          "type": "object",
+          "properties": {
+            "on": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": "string"
+            },
+            "dailyCostUsd": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "on",
+            "model",
+            "dailyCostUsd"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [

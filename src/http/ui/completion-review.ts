@@ -1,5 +1,5 @@
 // Completion reviews (issue #2846, design.md "Completion reviews"): an ended job's review, read at
-// GET /api/jobs/:id/completion-review, and which ended jobs are reviewed — an admin's setting, read at
+// GET /api/jobs/:id/completion-review with the model's review beside it (issue #2846 part 3), and which ended jobs are reviewed — an admin's setting, read at
 // GET /api/completion-review and changed at POST /ui/api/completion-review. Read by the review pass at each pass, so a
 // change applies without a restart. The bug-report recommendations (issue #2846 part 2): listed at
 // GET /api/completion-review/recommendations; Approve sends one to Report a bug as a report of the job whose review found it —
@@ -10,7 +10,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { BugReportRefused, keyedReportId } from '../../bug-reports/index.ts';
 import { RECOMMENDATION_STATES, type BugReportRecommendation } from '../../domain/review-defects.ts';
-import { completionReviewSettingsOf, MAX_REVIEW_MIN_RUN_MINUTES, REVIEW_OUTCOMES, type CompletionReview, type CompletionReviewSettings } from '../../domain/completion-review.ts';
+import { completionReviewSettingsOf, MAX_MODEL_REVIEW_DAILY_USD, MAX_REVIEW_MIN_RUN_MINUTES, REVIEW_OUTCOMES, type CompletionReview, type CompletionReviewSettings } from '../../domain/completion-review.ts';
 import { HttpError, parseWith } from '../errors.ts';
 import type { Operation } from '../openapi-operation.ts';
 import { signedInOf, type TenantParts } from '../tenants.ts';
@@ -19,7 +19,7 @@ import { personOf } from './sessions.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 
-const PARTS = ['on', 'outcomes', 'multiJob', 'minRunMinutes'] as const;
+const PARTS = ['on', 'outcomes', 'multiJob', 'minRunMinutes', 'modelReview'] as const;
 
 /** Any of the parts; one left out keeps its value. */
 export const completionReviewBody = z.strictObject({
@@ -27,6 +27,11 @@ export const completionReviewBody = z.strictObject({
   outcomes: z.array(z.enum(REVIEW_OUTCOMES)).max(REVIEW_OUTCOMES.length).optional(),
   multiJob: z.boolean().optional(),
   minRunMinutes: z.number().min(0).max(MAX_REVIEW_MIN_RUN_MINUTES).optional(),
+  modelReview: z.strictObject({
+    on: z.boolean().optional(),
+    model: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9._:[\]-]{0,99}$/, 'a model name: letters, digits, ., _, :, [, ], -').optional(),
+    dailyCostUsd: z.number().min(0).max(MAX_MODEL_REVIEW_DAILY_USD).optional(),
+  }).optional(),
 }).refine((b) => PARTS.some((k) => b[k] !== undefined), { message: `name one of ${PARTS.join(', ')}` });
 
 export const recommendationBody = z.strictObject({ signature: z.string().min(1).max(200) });
@@ -37,12 +42,12 @@ const recommendationQuery = z.object({ state: z.enum(RECOMMENDATION_STATES).opti
 const keyOf = (signature: string): string => `review-${signature}`;
 
 export const COMPLETION_REVIEW_OPERATIONS: Operation[] = [
-  { method: 'get', path: '/api/jobs/:id/completion-review', tag: 'Jobs', summary: 'An ended job\'s completion review', description: 'Issue #2846: the review the hopper made of the job\'s run after it ended, from its events, its token ledger and its work item\'s jobs; rules only, no model reads the run. `recommendation`: the bug-report recommendation of the hopper defect its review found (`review.defect`), as GET /api/completion-review/recommendations lists it. `review` absent: the job did not end, ended less than a minute ago, or the settings (`GET /api/completion-review`) skip it. `outcome` (`finished`, `failed`, `cancelled`); `durationMs` from its creation to its end; `stages`, the time in each stage, longest first (`queued`: waiting for a lane; `running`; `person`: a question, or its own wait on an approval, a grant or an infra plan; `waiting`: its own wait on anything else; `parked`); `jobs`, the jobs of its work item; `questions`; `went`, what went well, and `stalls`, where it lost time, in plain words; `restarts` (`requeued`, `preempted`, `parked` by the hopper, `link_lost`, `oom_killed`, `heap_retry`), each with its `count` and first `causes`; `waste`, its waste signals (as on `GET /api/jobs/:id/tokens`); `suggestions`, the changes that would have helped, each with its `area` (`config`, `routing`, `lane`, `template`, `prompt`) and `text`. 404: no such job.', returns: '`{ review?: CompletionReview, recommendation?: BugReportRecommendation }`', errors: [404] },
+  { method: 'get', path: '/api/jobs/:id/completion-review', tag: 'Jobs', summary: 'An ended job\'s completion review', description: 'Issue #2846: the review the hopper made of the job\'s run after it ended, from its events, its token ledger and its work item\'s jobs; rules only. `review.modelReview`, when the model review is on (issue #2846 part 3): the model\'s own review beside it — `summary`, `went`, `stalls`, `suggestions`, `hopperDefect` (why the model thinks the run hit a hopper defect), `model`, `costUsd`, `at` —; `review.modelFailed` (`error`, `at`): the model failed, and is not asked again. `recommendation`: the bug-report recommendation of the hopper defect its review found (`review.defect`), as GET /api/completion-review/recommendations lists it. `review` absent: the job did not end, ended less than a minute ago, or the settings (`GET /api/completion-review`) skip it. `outcome` (`finished`, `failed`, `cancelled`); `durationMs` from its creation to its end; `stages`, the time in each stage, longest first (`queued`: waiting for a lane; `running`; `person`: a question, or its own wait on an approval, a grant or an infra plan; `waiting`: its own wait on anything else; `parked`); `jobs`, the jobs of its work item; `questions`; `went`, what went well, and `stalls`, where it lost time, in plain words; `restarts` (`requeued`, `preempted`, `parked` by the hopper, `link_lost`, `oom_killed`, `heap_retry`), each with its `count` and first `causes`; `waste`, its waste signals (as on `GET /api/jobs/:id/tokens`); `suggestions`, the changes that would have helped, each with its `area` (`config`, `routing`, `lane`, `template`, `prompt`) and `text`. 404: no such job.', returns: '`{ review?: CompletionReview, recommendation?: BugReportRecommendation }`', errors: [404] },
   { method: 'get', path: '/api/completion-review/recommendations', tag: 'Jobs', summary: 'The bug-report recommendations of the completion reviews', description: 'Issue #2846 part 2: one per hopper defect a completion review found, by its `signature` (`cause:<cause id>`: the sweep stopped a job at work, or its session lost its way to the hopper; `requeue-loop`, with its first cause: the hopper queued one job again 3 times or more), newest first (at most 200): its `title` and `description`, the report it would file; `jobId`, the job whose review found it first, and `jobs`, how many reviewed jobs found it; `state` — `open`: it waits for a person, `approved`: it went to Report a bug (`reportId`), `dismissed` (`reason`) —, `by` and `decidedAt`. `state` in the query lists only those. Not cached.', returns: '`{ recommendations: BugReportRecommendation[] }`', errors: [400] },
   { method: 'post', path: '/ui/api/completion-review/recommendations/approve', tag: 'Jobs', summary: 'Approve a bug-report recommendation', description: 'Issue #2846 part 2: the recommendation goes to Report a bug as a report of the job whose review found it — its private work removed, scrubbed of identifiers and masked, as a job\'s own report (issues #2812, #2818) —, with the resend key of its signature (issue #2813), and is sent at once as Approve on a job\'s report sends it: a new issue on the hopper\'s repository, through the person\'s own connection, or kept to send later. `completion_review.recommendation_decided` (`approved`). 409 while public bug reports are off (issue #2818) or when it waits no more, 404 when there is none, 502 when GitHub refused it (it stays open).', role: 'operator', body: recommendationBody, returns: 'as POST /ui/api/bug-reports/approve', errors: [404, 409, 502] },
   { method: 'post', path: '/ui/api/completion-review/recommendations/dismiss', tag: 'Jobs', summary: 'Dismiss a bug-report recommendation', description: 'Issue #2846 part 2: the recommendation is not filed, and its `reason` (at most 500 characters) is kept; a review that finds the same signature later recommends nothing. `completion_review.recommendation_decided` (`dismissed`). 409 when it waits no more, 404 when there is none.', role: 'operator', body: dismissRecommendationBody, returns: '`BugReportRecommendation`', errors: [404, 409] },
-  { method: 'get', path: '/api/completion-review', tag: 'Jobs', summary: 'Which ended jobs get a completion review', description: 'Issue #2846: `on` (default on); `outcomes`, the ends reviewed (`finished`, `failed`, `cancelled`; default `failed`); `multiJob`, a job of a work item that had more than one job is reviewed whatever its end (default on); `minRunMinutes`, a job that ran less than this on its first run is trivial and skipped (default 5).', returns: '`CompletionReviewSettings`' },
-  { method: 'post', path: '/ui/api/completion-review', tag: 'Jobs', summary: 'Change which ended jobs get a completion review', description: 'Any of the parts; one left out keeps its value (`completion_review.settings_changed`). `minRunMinutes` from 0 to a day. Applies from the next pass, without a restart; a review already kept stays.', role: 'admin', body: completionReviewBody, returns: '`CompletionReviewSettings`', errors: [400] },
+  { method: 'get', path: '/api/completion-review', tag: 'Jobs', summary: 'Which ended jobs get a completion review', description: 'Issue #2846: `on` (default on); `outcomes`, the ends reviewed (`finished`, `failed`, `cancelled`; default `failed`); `multiJob`, a job of a work item that had more than one job is reviewed whatever its end (default on); `minRunMinutes`, a job that ran less than this on its first run is trivial and skipped (default 5); `modelReview` (issue #2846 part 3), the model review beside the rule review: `on` (default off), `model`, the model the `claude` CLI runs (default `haiku`), and `dailyCostUsd`, the daily cost cap (default 1): no model review is asked while the model reviews of the last day cost this or more.', returns: '`CompletionReviewSettings`' },
+  { method: 'post', path: '/ui/api/completion-review', tag: 'Jobs', summary: 'Change which ended jobs get a completion review', description: 'Any of the parts; one left out keeps its value, and so does each part of `modelReview` (`completion_review.settings_changed`). `minRunMinutes` from 0 to a day; `modelReview.dailyCostUsd` from 0 to 100. Applies from the next pass, without a restart; a review already kept stays.', role: 'admin', body: completionReviewBody, returns: '`CompletionReviewSettings`', errors: [400] },
 ];
 
 export const completionReviewView = (t: Pick<TenantParts, 'store'>): CompletionReviewSettings => completionReviewSettingsOf(t.store.settings.getCompletionReview());
@@ -111,6 +116,10 @@ export function registerCompletionReviewRoutes(app: FastifyInstance, o: { admin:
       const to: CompletionReviewSettings = {
         on: patch.on ?? from.on, outcomes: patch.outcomes ? REVIEW_OUTCOMES.filter((k) => patch.outcomes!.includes(k)) : from.outcomes,
         multiJob: patch.multiJob ?? from.multiJob, minRunMinutes: patch.minRunMinutes ?? from.minRunMinutes,
+        modelReview: {
+          on: patch.modelReview?.on ?? from.modelReview.on, model: patch.modelReview?.model ?? from.modelReview.model,
+          dailyCostUsd: patch.modelReview?.dailyCostUsd ?? from.modelReview.dailyCostUsd,
+        },
       };
       if (JSON.stringify(from) === JSON.stringify(to)) return;
       t.store.settings.setCompletionReview(to);

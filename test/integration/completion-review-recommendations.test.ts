@@ -4,6 +4,7 @@
 // report of the job; Dismiss keeps the reason, and the same signature is not recommended again.
 import { afterEach, describe, expect, it } from 'vitest';
 import type { BugReportRecommendation } from '../../src/domain/review-defects.ts';
+import { DEFAULT_COMPLETION_REVIEW } from '../../src/domain/completion-review.ts';
 import { ADMIN_ID, type Job } from '../../src/domain/types.ts';
 import { createCompletionReviews } from '../../src/engine/completion-reviews.ts';
 import { createFakeGitHub } from '../support/fake-forges.ts';
@@ -36,7 +37,7 @@ async function start(o: { publicReports?: boolean } = {}) {
   connectGitHub(app, [], { login: 'reporter' });
   const store = app.user(ADMIN_ID).store;
   if (o.publicReports !== false) store.settings.setPublicBugReports(true);
-  store.settings.setCompletionReview({ on: true, outcomes: ['failed'], multiJob: true, minRunMinutes: 0 });
+  store.settings.setCompletionReview({ ...DEFAULT_COMPLETION_REVIEW, minRunMinutes: 0 });
   const token = await app.login();
   return { app, github, store, token, pass: createCompletionReviews(store) };
 }

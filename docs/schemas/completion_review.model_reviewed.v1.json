@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "model": {
+      "type": "string"
+    },
+    "costUsd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "hopperDefect": {
+      "type": "boolean",
+      "const": true
+    },
+    "error": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "model"
+  ],
+  "additionalProperties": false
+}

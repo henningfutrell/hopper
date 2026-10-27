@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "finished",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "waste": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "no_progress",
+          "failing_tests",
+          "resume_loop",
+          "cache_churn"
+        ]
+      }
+    },
+    "suggestions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "config",
+          "routing",
+          "lane",
+          "template",
+          "prompt"
+        ]
+      }
+    }
+  },
+  "required": [
+    "outcome",
+    "waste",
+    "suggestions"
+  ],
+  "additionalProperties": false
+}

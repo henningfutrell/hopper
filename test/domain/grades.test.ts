@@ -52,9 +52,15 @@ describe('the automatic grade (issue #2845)', () => {
     expect(line(facts({ wallMs: DEFAULT_GRADE_SETTINGS.timeScaleMinutes * 60_000, queueMs: 5000 }), 'time')?.value).toBe(0.5);
   });
 
+  it('reads the waste signals of its completion review, when it has one (issue #2846 part 3)', () => {
+    expect(line(facts({}), 'review')).toBeUndefined();
+    expect(line(facts({ waste: [] }), 'review')).toMatchObject({ value: 1, weight: 1, why: 'its completion review found no waste' });
+    expect(line(facts({ waste: ['failing_tests', 'no_progress'] }), 'review')).toMatchObject({ value: 1 / 3, why: 'its completion review found failing tests, no progress' });
+  });
+
   it('weighs each signal by the settings, and a weight of 0 leaves it out', () => {
     const f = facts({ status: 'failed', costUsd: 0 });
-    const only = { ...DEFAULT_GRADE_SETTINGS, weights: { outcome: 0, checks: 0, pull_request: 0, rework: 0, cost: 1, time: 0 } };
+    const only = { ...DEFAULT_GRADE_SETTINGS, weights: { outcome: 0, checks: 0, pull_request: 0, rework: 0, cost: 1, time: 0, review: 0 } };
     expect(autoGradeOf(f, only)).toMatchObject({ score: 100, lines: [{ signal: 'cost', weight: 1 }] });
   });
 });

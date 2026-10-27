@@ -1,5 +1,6 @@
 // The completion reviews (issue #2846, tenant migration 102): one row per ended job, the review as JSON. The completion
-// review pass writes it once, after the job ended; the job page reads it.
+// review pass writes it once, after the job ended, and the model review pass adds the model's review to it (issue #2846 part
+// 3); the job page reads it.
 import type { CompletionReview, CompletionReviewRepository } from '../domain/completion-review.ts';
 import type { StoreContext } from './context.ts';
 
@@ -18,6 +19,10 @@ export function createCompletionReviewRepository(c: StoreContext): CompletionRev
     reviewed(jobIds) {
       if (jobIds.length === 0) return new Set();
       return new Set(c.db.all(`SELECT job_id FROM completion_reviews WHERE job_id IN (${jobIds.map(() => '?').join(', ')})`, ...jobIds).map((r) => String(r.job_id)));
+    },
+    since(since, limit) {
+      return c.db.all('SELECT review FROM completion_reviews WHERE reviewed_at >= ? ORDER BY reviewed_at, job_id LIMIT ?', since, limit)
+        .map((r) => JSON.parse(String(r.review)) as CompletionReview);
     },
   };
 }
