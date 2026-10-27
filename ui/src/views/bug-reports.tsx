@@ -3,7 +3,7 @@
 // Discard, issue #2818), waiting to send (kept while GitHub could not take it, with why), open or closed on GitHub, with
 // its link; what the scrub removed before it was kept (issues #2812, #2818). The public warning, and the admin's switch
 // for public bug reports, off by default (issue #2818). The hopper sends the kept ones and reads the states every 10
-// minutes; Refresh does it now.
+// minutes; Refresh does it now. Above the reports, the bug reports the completion reviews recommend (issue #2846 part 2).
 import { Bug, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -15,6 +15,7 @@ import { get, post, RoleRefused, SessionRejected } from '@/lib/api';
 import { filedBy, PUBLIC_REPORT_WARNING, removedLine, reportLine, sentLine, stateLabel, type BugReportAnswer, type BugReportView, type YourReports } from '@/model/bug-report';
 import { useHopper } from '@/store';
 import { useCanAdmin, useCanOperate } from '@/store/selectors';
+import { RecommendedReports } from './recommended-reports';
 
 const STATE_VARIANT: Record<BugReportView['state'], 'default' | 'secondary' | 'outline'> = { approval: 'outline', sending: 'outline', waiting: 'outline', open: 'default', closed: 'secondary' };
 
@@ -99,6 +100,7 @@ export function BugReports() {
             {view.publicReports ? 'Public bug reports are on: Report a bug and your jobs\' approved reports post on GitHub.' : 'Public bug reports are off: nothing is posted. An admin turns them on.'}
           </label>
         )}
+        <RecommendedReports canOperate={canOperate} busy={busy} run={run} done={load} />
         <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
           <p>The bug reports you or your jobs filed with Report a bug. A job's report waits for your approval. A report waits when GitHub cannot take it; the hopper sends it later.</p>
           {canOperate && <Button size="sm" variant="outline" disabled={busy} onClick={() => void refresh()}><RefreshCw />Refresh</Button>}

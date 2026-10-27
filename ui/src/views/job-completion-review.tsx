@@ -1,13 +1,14 @@
 // A job's completion review on its job view (issue #2846): GET /api/jobs/:id/completion-review, read again as the job's
 // state changes. Where its time went, what went well, where it stalled, its restarts and waste signals, and the changes that
-// would have helped. Nothing shows until the hopper kept a review: a job that runs, or that the settings skip, has none.
+// would have helped. Nothing shows until the hopper kept a review: a job that runs, or that the settings skip, has none. A
+// review that found a hopper defect (issue #2846 part 2) names the bug report it recommends, and what became of it.
 import { ClipboardCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Panel } from '@/components/panel';
 import { get } from '@/lib/api';
-import { AREA_NAMES, durationText, OUTCOME_NAMES, restartLine, STAGE_NAMES } from '@/model/completion-review';
+import { AREA_NAMES, durationText, OUTCOME_NAMES, recommendationJobs, recommendationState, restartLine, STAGE_NAMES } from '@/model/completion-review';
 import { WASTE_NAMES } from '@/model/token-ledger';
-import type { CompletionReview, Job } from '@/model/wire';
+import type { BugReportRecommendation, CompletionReview, Job } from '@/model/wire';
 
 function List({ title, slot, lines }: { title: string; slot: string; lines: readonly string[] }) {
   if (lines.length === 0) return null;
@@ -21,10 +22,11 @@ function List({ title, slot, lines }: { title: string; slot: string; lines: read
 
 export function JobCompletionReview({ job }: { job: Job }) {
   const [review, setReview] = useState<CompletionReview | null>(null);
+  const [recommendation, setRecommendation] = useState<BugReportRecommendation | null>(null);
   useEffect(() => {
     let gone = false;
-    get<{ review?: CompletionReview }>(`/api/jobs/${encodeURIComponent(job.id)}/completion-review`)
-      .then((v) => { if (!gone) setReview(v?.review ?? null); }, () => { if (!gone) setReview(null); });
+    get<{ review?: CompletionReview; recommendation?: BugReportRecommendation }>(`/api/jobs/${encodeURIComponent(job.id)}/completion-review`)
+      .then((v) => { if (!gone) { setReview(v?.review ?? null); setRecommendation(v?.recommendation ?? null); } }, () => { if (!gone) setReview(null); });
     return () => { gone = true; };
   }, [job.id, job.status]);
   if (!review) return null;
@@ -42,6 +44,13 @@ export function JobCompletionReview({ job }: { job: Job }) {
       <List title="Restarts" slot="completion-review-restart" lines={review.restarts.map(restartLine)} />
       <List title="Waste signals" slot="completion-review-waste" lines={review.waste.map((w) => `${WASTE_NAMES[w.kind]}: ${w.why}`)} />
       <List title="What would have helped" slot="completion-review-suggestion" lines={review.suggestions.map((s) => `${AREA_NAMES[s.area]}: ${s.text}`)} />
+      {review.defect && (
+        <div data-slot="completion-review-defect">
+          <div className="text-xs font-medium text-muted-foreground">Bug report recommended</div>
+          <p><a className="underline" href="#reports">{review.defect.title}</a>{recommendation ? recommendationJobs(recommendation) : ''}</p>
+          {recommendation && <p className="text-xs text-muted-foreground">{recommendationState(recommendation)}</p>}
+        </div>
+      )}
     </Panel>
   );
 }
