@@ -21588,6 +21588,66 @@ them out when they do not fit), `test/engine/checkpoint-scrub.test.ts` (counted 
 them), `test/integration/token-ledger-print.test.ts` (the real daemon and the `claude` executor: a question and its
 answer count both turns in one session).
 
+## Model routing (issue #2848, 2026-10-26)
+
+Owner request: the token ledger and the token budget (issue #2302) say what a job spent and cap it, but every job ran on
+one model. Send simple work to a cheaper model and complex or risky work to a stronger one, each with a budget of its own;
+escalate on failure instead of retrying on the same model; keep the rules in the database, editable; show the choice on the
+job page.
+
+- **The work class** (`classifyWork`, `src/domain/model-routing.ts`, pure). At intake the hopper reads the item: its
+  **size** — a label (`size:small`, `size:s`, `size:xs`, `good first issue`; `size:large`, `size:l`, `size:xl`, `epic`)
+  first, else `small` for a text of at most 1,500 characters and at most 6 list items (`SMALL_WORK`), else `large` —; its
+  **kind** — `research`, `proposal` (asked for one, issues #537, #543), `tend` (issue #967), else `code` —; its **risk** —
+  `high` for a label `security`, `risk:high`, `breaking`, `breaking-change` or `migration`, or a risky word in its title
+  (security, vulnerability, migration, auth, credential, secret, encryption, permission), else `low` —; and its repository.
+  Rules on text, not a model call: the class is cheap, the same each time, and a person can read why.
+- **The choice** (`modelRouteOf`). Two **model choices**, `cheap` and `strong`, each a `model` (an alias or id the agent
+  CLI takes; `''`: the agent's own default, no `--model`) and a job budget (`jobTokens`, `jobCostUsd`). A job label
+  `hopper:model-cheap` or `hopper:model-strong` picks the choice; else the first **model rule** whose every field matches
+  the class (`repo` a glob as the routing rules', `label`, `kind`, `size`, `risk`); else the strong model, so work no rule
+  calls simple never goes cheap by accident. Default rules: `risky-work` (risk high) → strong, `research` and `proposal` →
+  strong, `tend` → cheap, `small-work` (size small) → cheap. Default models: cheap `sonnet` with a $5 job budget; strong
+  `''` (what jobs ran on before) with no budget of its own. The rule names `label`, `escalated` and `default` are model
+  routing's own and refused in a rule.
+- **The model route** (`spec.modelRoute`, in `job.queued`'s spec): the choice, the model, the rule, why in words, the class
+  and the budget. The model goes to the job's payload (`payload.model`), which the executors already pass (`--model`). An
+  item whose source names a model (a job source's `model` option) keeps it and gets no route: a model a person set wins. A
+  later sync keeps the job's routed model (`fromConfigFor` with the job's route), so a job that has not started is never
+  respecified back to no model. Only the executor instances the setting names (`executors`, default `herdr-claude` and
+  `claude`): their agent takes Claude's model names; another framework's would not.
+- **Escalation** (`escalate`, on by default). When an item's job ran on the cheap model and failed, the item's next job —
+  a person's Run again, the failure assessor's run again, tending's — runs on the strong model, with `escalated: { from,
+  jobId }`, and `job.model_escalated` (`from`, `to`, `model`, `after`, `why`) on the new job. Once: the item's later jobs
+  stay on the strong model, and record no new escalation. Escalation does not wait for a retry on the same model.
+- **The budget** (`jobBudgetOf`). A repository's budget per choice (`repos`) over the choice's own; a cap of 0 falls back
+  to the token budget's job cap. The token budget's pause (`budgetPauseOf`, `src/engine/token-budget.ts`) reads the job's
+  caps this way at each checkpoint: over them, the job is parked with why, its agent session kept, and Needs you lists it —
+  never killed. Checked end to end in `test/integration/model-routing.test.ts`: a cheap job over its choice's token cap,
+  with no token budget set, is paused.
+- **The setting** (`ModelRoutingSettings`, the user's setting `modelRouting`): `on` (off by default: turning it on changes
+  the model of new jobs), `executors`, `cheap`, `strong`, `rules`, `repos`, `escalate`. A setting stored before a field
+  reads that field's default (`modelRoutingOf`). `GET /api/model-routing` reads it; an admin's `POST /ui/api/model-routing`
+  replaces any field whole (`model_routing.settings_changed`, `from` and `to`), checked by the same schema (`MODEL_ROUTING`):
+  a rule named twice, a reserved name or a model name with a space is refused (400). It applies at the next intake, with no
+  restart; a job routed already keeps its model and budget.
+- **The job page.** The job view's Tokens panel (`ui/src/views/job-tokens.tsx`, `modelRouteLines` in
+  `ui/src/model/token-ledger.ts`) shows the choice and model, the escalation, why, and each cap of its budget against what
+  the job spent.
+
+What the #2302 caps still do not cover, found here: a print-mode job (the `claude` executor) is never paused — it has no
+park — so its model budget, as its token budget, is not enforced while it runs; its spend still counts in the day budgets.
+The pause runs at checkpoints only (every 10 minutes), so a job may go over its budget by what it spends between two.
+
+Not in this part: a stalled cheap run (a waste signal, a budget pause) escalating while it runs; editing the setting in
+the UI and the CLI; per-job budget overrides by a person; tuning the rules from grade history (issue #2845).
+
+Verification: `test/domain/model-routing.test.ts` (the class, the rules in order, the labels, a repository's budget, one
+escalation and the item kept on the strong model, the budget fallback, the setting's schema),
+`test/integration/model-routing.test.ts` (the real daemon: the setting and its event, nothing routed while it is off, a
+simple job on the cheap model and a complex one on the strong, a failed cheap job's Run again escalated once with its
+event, a cheap job paused by its choice's budget), `test/ui/job-tokens-view.test.ts` (the job view's model lines).
+
 ## Stack resources (issue #947, 2026-10-12)
 
 Owner request: the hopper showed resource use per machine (issue #560), but nothing of its own database or the other
