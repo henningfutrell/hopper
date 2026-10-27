@@ -4485,7 +4485,7 @@ Only the call and the reading differ (`src/executors/print-agents.ts`), taken fr
 |----------|-----------|---------|--------|---------------|
 | `cursor-agent` | `cursor-agent -p --output-format json --workspace <cwd> <args> [--model m] -- <text>` | `--resume <chat>` | one JSON result: `result`, `session_id` | `is_error` |
 | `codex` | `codex exec --json <args> [--model m] -- <text>` | `codex exec resume --json <args> [--model m] -- <thread> <text>` | JSON lines: `thread.started` `thread_id`; the last `item.completed` `agent_message` `text` | `turn.failed` `error.message` |
-| `opencode` | `opencode run --format json <args> [--model m] -- <text>` | `--session <id>` | JSON lines: `sessionID`; the `text` parts of the last message | an `error` event: `error.name`, `error.data.message` |
+| `opencode` | `opencode run --standalone --format json <args> [--model m]`, the text on stdin | `--session <id>` | JSON lines: `sessionID`; the `text` parts of the last message | an `error` event: `error.name`, `error.data.message` |
 | `omp` | `omp -p --mode json --no-title <args> [--model m] -- <text>` | `--resume <id>` | JSON lines: `session` `id`; `agent_end`'s last assistant message, its `text` parts | `stopReason` `error`: `errorMessage` |
 | `claude` | `claude -p --output-format json <args> [--model m] -- <text>` | `--resume <id>` | one JSON result: `result`, `session_id` | `is_error` |
 
@@ -4493,6 +4493,14 @@ A non-zero exit fails the job with the CLI's own error when it printed one, else
 is `/dev/null`: codex and opencode read a stdin that is not a terminal to its end before the turn, and the
 pipe a run hands its child is never closed, so without it the turn never started (found on the agent
 boxes).
+
+**opencode 2** (issue #2856). Its stdin is a file of the turn's text in the job's scratch dir (`turn-text`), never
+`/dev/null`: opencode 2 quotes a text argument with a space again, and after `--` sends it twice, so an argument would
+reach the model changed (the dialect's `textOnStdin`). `--standalone` runs a private server for the run. Without it,
+`opencode run` starts or joins opencode's background service (`opencode serve --service`), which outlives the turn and
+keeps the environment and config of the run that started it: the next turn, maybe another job's, would run with them.
+opencode 2 is the `@opencode/cli` package (the box image installs it); `opencode-ai` is the 1.x line, which has no
+`--standalone`. Its shell tool is `shell` (1.x: `bash`).
 
 **Claude Code in print mode** (`claude`, issue #533). The owner asked that headless interfaces be preferred where they fit,
 for containers. Evaluated against herdr-claude: print mode shows no startup screen at all — no onboarding, no trust
@@ -33226,7 +33234,7 @@ the same kind (its `type`, with its `item`'s or `part`'s type); the check names 
 **What it found.**
 - The omp fake printed `errorMessage: null` on an answer with no error; omp 18.7 prints no such field. The fake no longer
   does.
-- opencode 1.19 retries a 5xx answer and a cut stream with a growing backoff and no limit, and omp 18.7 a 429 and a 5xx
+- opencode 2.1 retries a 429, a 5xx answer and a cut stream with a growing backoff and no limit (1.19: not a 429), and omp 18.7 a 429 and a 5xx
   (still at it after 150 s): only the turn's timeout (`timeoutMs`) ends such a job. The test says so for each
   (`retriesPastTimeout`), so a change in it shows.
 - claude, after a cut stream, asks again with no stream: the `cut` fault ends that connection too.

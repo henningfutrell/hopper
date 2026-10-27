@@ -157,19 +157,22 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
     // The job's own scratch dir (issue #410), so the reap can remove it; the work tree's scratch dirs ignore themselves.
     // TMPDIR is its temp link (issue #506), so a Unix socket path under TMPDIR fits.
     const scratch = jobScratchOf(cwd, ctx.job.id);
-    // Stdin is /dev/null: codex and opencode read a stdin that is not a terminal to its end before the turn,
-    // and the one a run would hand them is never closed (issue #307).
+    // Stdin is /dev/null, or a file of the text for a CLI that reads it there (opencode, issue #2856): codex and
+    // opencode read a stdin that is not a terminal to its end before the turn, and the one a run would hand them is
+    // never closed (issue #307).
     // The job's way to the hopper (issues #563, #652: no GitHub token, git through the hopper), HOPPER_JOB_ID, the scratch dir and JOB_TOOL_ENV (issue #1502) with Gradle's idle timeout (issue #2489) come from the hopper; a payload cannot move them.
     const credentials = await ctx.credentials?.(scratch);
     const limits = scopeLimitsOf(ctx.machine);
     const vars = Object.entries({ ...p.env, ...credentials, TMPDIR: jobTmpOf(ctx.job.id), HOPPER_JOB_ID: ctx.job.id, ...jobToolEnv(p.env, limits, jobTmpOf(ctx.job.id)) }).map(([k, v]) => shellQuote(`${k}=${v}`));
     const argv = dialect.argv({ bin: o.bin, args: o.args, cwd, ...(p.model ? { model: p.model } : {}), ...(chatId ? { session: chatId } : {}), text }).map(shellQuote);
+    const textFile = `${scratch}/turn-text`;
+    const writeText = dialect.textOnStdin ? `printf %s ${shellQuote(text)} >${shellQuote(textFile)} && ` : '';
     // On the first turn, the job's repository fetched or cloned in a work tree that is no repository (issue #361),
     // with the job's variables (its git through the hopper); what it says goes to stderr, never into the agent's answer.
     const checkout = !chatId && p.repo ? `( export ${vars.join(' ')}; ${makeJobWorktreeCommand(cwd, ctx.job.id, { repo: p.repo, ...(p.repoUrl ? { url: p.repoUrl } : {}), worktrees: false })} ) >&2; ` : '';
     // The job's own container runtime and its sandbox (issue #1295), in the turn's scope.
-    const isolated = isolatedTurn(ctx.job.id, scratch, `env ${vars.join(' ')} ${argv.join(' ')} </dev/null`);
-    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `sh -c ${shellQuote(isolated)}`, limits)}; }`;
+    const isolated = isolatedTurn(ctx.job.id, scratch, `env ${vars.join(' ')} ${argv.join(' ')} <${dialect.textOnStdin ? shellQuote(textFile) : '/dev/null'}`);
+    const script = `${mkScratchCommand(cwd, ctx.job.id)} && ${writeText}${linkTmpCommand(scratch, ctx.job.id)} && cd ${shellQuote(cwd)} && ${checkout}{ ${turnCommand(ctx.job.id, `sh -c ${shellQuote(isolated)}`, limits)}; }`;
     const where = ctx.machine.id;
     try {
       ctx.progress(`${label} ${chatId ? 'resumed' : 'started'} on ${where}`);

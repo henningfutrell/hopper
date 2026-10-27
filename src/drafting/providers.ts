@@ -73,7 +73,7 @@ export function draftArgv(c: DraftCall): DraftArgv {
       // Ask mode is read-only Q&A; the sandbox on; `--trust` so the fresh run dir asks nothing. No effort flag.
       return { argv: ['sh', '-c', CURSOR_RUN, 'sh', ...turn(['--mode', 'ask', '--sandbox', 'enabled', '--trust'], asked)], stdin: '' };
     case 'opencode':
-      return { argv: ['sh', '-c', OPENCODE_RUN, 'sh', ...turn(['--pure', ...(c.effort ? ['--variant', c.effort] : [])], asked)], stdin: '' };
+      return { argv: ['sh', '-c', OPENCODE_RUN, 'sh', ...turn(['--pure', ...(c.effort ? ['--variant', c.effort] : [])], asked)], stdin: asked };
     case 'omp':
       return {
         argv: turn(['--no-tools', '--no-session', '--no-skills', '--no-rules', '--no-extensions', '--no-lsp', ...(c.effort ? [`--thinking=${c.effort}`] : [])], asked),
