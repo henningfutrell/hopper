@@ -208,6 +208,7 @@
         "token_budget.settings_changed",
         "model_routing.settings_changed",
         "preemption.settings_changed",
+        "completion_review.settings_changed",
         "library_skill.saved",
         "library_skill.removed",
         "library_skill.refreshed",

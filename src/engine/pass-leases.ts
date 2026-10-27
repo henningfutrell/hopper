@@ -29,6 +29,8 @@ export const PASS_LEASES = {
   keptTracks: 'kept-tracks',
   /** The grade pass (issue #2845). */
   grades: 'grades',
+  /** The completion review pass (issue #2846). */
+  completionReviews: 'completion-reviews',
   /** The wakes a stop lost (issue #1571). */
   missedWakes: 'missed-wakes',
 } as const;
