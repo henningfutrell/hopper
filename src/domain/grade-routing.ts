@@ -31,7 +31,8 @@ export function gradeSettingsOf(patch: GradeSettingsPatch | undefined, base: Gra
 export const gradingPartOf = (s: GradeSettings): string =>
   JSON.stringify({ weights: s.weights, revertWindowDays: s.revertWindowDays, costScaleUsd: s.costScaleUsd, timeScaleMinutes: s.timeScaleMinutes });
 
-const pointsOf = (r: GradeRow): number => (r.user ? userPointsOf(r.user.score) : r.auto.score);
+/** A graded job's points: its user grade when a person gave one, else its automatic grade. */
+export const pointsOf = (r: GradeRow): number => (r.user ? userPointsOf(r.user.score) : r.auto.score);
 const mean = (xs: number[]): number => Math.round((xs.reduce((n, x) => n + x, 0) / xs.length) * 10) / 10;
 
 /** Each executor's mean points and count over the rows. */

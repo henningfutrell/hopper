@@ -29,8 +29,11 @@ export const MAX_BUDGET_COST_USD = 1e6;
 /** What a job spent: every token, and the estimated cost. */
 export interface TokenSpend { tokens: number; costUsd: number }
 
-/** A job paused by its token budget: when, what it had spent then, and why. Kept until a person picks it up. */
-export interface JobBudgetPaused extends TokenSpend { at: string; why: string }
+/**
+ * A job paused by its token budget: when, what it had spent then, and why. Kept until a person picks it up. `stalled`: a
+ * cheap job paused for its waste signals, not its budget (issue #2848 part 3).
+ */
+export interface JobBudgetPaused extends TokenSpend { at: string; why: string; stalled?: true }
 
 export const spendOf = (t: TokenTotals): TokenSpend => ({ tokens: t.input + t.output + t.cacheRead + t.cacheWrite, costUsd: t.costUsd });
 
@@ -47,6 +50,15 @@ export function budgetReached(spend: TokenSpend, from: TokenSpend | undefined, s
   if (s.jobTokens > 0 && tokens >= s.jobTokens) return `Paused: the job used ${tokensText(tokens)}${since}, its token budget is ${tokensText(s.jobTokens)}.`;
   if (s.jobCostUsd > 0 && cost >= s.jobCostUsd) return `Paused: the job used an estimated ${usd(cost)}${since}, its cost budget is ${usd(s.jobCostUsd)}.`;
   return undefined;
+}
+
+/** From this share of a cap, a job is near its budget (issue #2848 part 3): checkpointed each minute, not each ten. */
+export const BUDGET_NEAR = 0.8;
+
+/** Whether the job's spend since `from` is at BUDGET_NEAR of a cap or more. */
+export function budgetNear(spend: TokenSpend, from: TokenSpend | undefined, s: TokenBudgetSettings): boolean {
+  const tokens = spend.tokens - (from?.tokens ?? 0), cost = spend.costUsd - (from?.costUsd ?? 0);
+  return (s.jobTokens > 0 && tokens >= s.jobTokens * BUDGET_NEAR) || (s.jobCostUsd > 0 && cost >= s.jobCostUsd * BUDGET_NEAR);
 }
 
 /** What the user's jobs spent on one UTC day (`YYYY-MM-DD`): in all, and per repository. */

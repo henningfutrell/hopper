@@ -62,13 +62,16 @@ export function keepTokenUse(c: Pick<EngineContext, 'store' | 'clock'>, job: Job
 
 /**
  * `spent`: told after a checkpoint kept a job's token use, while the job may still run (issue #2302, part 3: the budget
- * pause looks at it there).
+ * pause looks at it there). True: the job is near its budget (issue #2848 part 3), and is checkpointed every
+ * CHECKPOINT_SOON_GAP_MS until a checkpoint says it is not, so it goes over its budget by a minute's spend at most.
  */
-export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' | 'clock' | 'stopping' | 'deliveredSecrets'>, everyMs = CHECKPOINT_EVERY_MS, spent?: (jobId: string) => void): Checkpoints {
+export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' | 'clock' | 'stopping' | 'deliveredSecrets'>, everyMs = CHECKPOINT_EVERY_MS, spent?: (jobId: string) => boolean): Checkpoints {
   const { store } = c;
   const inFlight = new Set<string>();
   /** When each job's checkpoint was last tried, taken or not: a machine that cannot be reached is not asked every pass. */
   const tried = new Map<string, number>();
+  /** The jobs near their budget. */
+  const near = new Set<string>();
 
   const keepUse = (job: Job, use: SessionTokenUse | undefined): void => { if (use && job.agentSession) keepTokenUse(c, job, job.agentSession, use); };
 
@@ -109,7 +112,7 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
         store.events.append({ type: 'job.checkpointed', jobId, data: { machineId: k.machineId, bytes: k.bytes, session: k.session, commits: k.commits.length } });
         return k;
       });
-      if (use) spent?.(jobId);
+      if (use && spent) { if (spent(jobId)) near.add(jobId); else near.delete(jobId); }
       return kept;
     } catch (e) {
       // The error says where it failed: a machine not reached, or a script that ran there and refused (issue #1353).
@@ -152,7 +155,7 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
         if (c.stopping()) return;
         if (!c.executors.get(job.spec.executor)?.checkpoint) continue;
         const last = Math.max(job.checkpoint ? Date.parse(job.checkpoint.at) : 0, tried.get(job.id) ?? 0);
-        if (now - last < everyMs) continue;
+        if (now - last < (near.has(job.id) ? Math.min(everyMs, CHECKPOINT_SOON_GAP_MS) : everyMs)) continue;
         const said = await take(job.id);
         if (typeof said === 'string' && !c.stopping()) console.warn(`hopper: no checkpoint of job ${job.id}: ${said}`);
       }
@@ -161,7 +164,7 @@ export function createCheckpoints(c: Pick<EngineContext, 'store' | 'executors' |
         const ended = job && TERMINAL_STATUSES.includes(job.status) ? Date.parse(job.finishedAt ?? job.updatedAt) : undefined;
         if (!job || (ended !== undefined && now - ended >= CHECKPOINT_KEEP_MS)) store.checkpoints.remove(id);
       }
-      for (const id of tried.keys()) if (!store.jobs.get(id) || !AT_WORK.includes(store.jobs.get(id)!.status)) tried.delete(id);
+      for (const id of tried.keys()) if (!store.jobs.get(id) || !AT_WORK.includes(store.jobs.get(id)!.status)) { tried.delete(id); near.delete(id); }
     },
   };
 }

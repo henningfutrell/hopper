@@ -21731,9 +21731,39 @@ Part 2 (2026-10-27):
   model-routing` reads it, `hopper usage model-routing on|off` and `hopper usage model-routing set --file <json>` change it
   (`src/cli-operator-model-routing.ts`).
 
-Still not done: tuning the rules from grade history (issue #2845; its grade-aware routing is still open as its own part);
-escalation on a waste signal while a cheap job runs; the two gaps of the #2302 caps above (print-mode jobs, the checkpoint
-interval).
+Part 3 (2026-10-27):
+
+- **Tuning from grades** (`tune`, off by default: `on`, `minSamples` 5, `margin` 10; `tuned` in
+  `src/domain/model-routing.ts`). A grade keeps the job's model choice (`choice` in `GradeRow`, from `spec.modelRoute`;
+  in the row's JSON body, so no migration; a job graded before it has none and counts nothing). At intake, with tuning on,
+  a choice a model rule made (or the default) is compared with grade history: on the work's repository when each choice
+  has `minSamples` graded jobs of its kind there, else on its kind of work (a tend job is graded as code). A cheap choice
+  goes strong when the strong model's mean points are higher by more than `margin`; a low-risk strong choice goes cheap
+  when the cheap model's are as high. The route then says `rule: grades` and why, with both means and counts. A label's
+  choice and an escalation are never tuned. The grades of the last 90 days are read once a minute at most, shared with
+  grade-aware routing (`gradeRows`, `src/engine/grade-route.ts`), and only while tuning is on. The rule name `grades` is
+  reserved. Settings → Model routing edits it; `model_routing.settings_changed` carries it (absent in an event from before).
+- **A stalled cheap job** (`cheapStallOf`, `STALL_SIGNALS`). The waste signals of the token ledger (issue #2302 part 4)
+  were signals only. Now, at each checkpoint, a running cheap job with `no_progress` (150 turns with no commit and no push)
+  or `failing_tests` (5 failed local test runs), with model routing and `escalate` on, is paused as the budget pauses a
+  job: `budgetPaused` with `stalled: true` and why, parked, its session kept, listed in Needs you. Picked up, it goes on on
+  the strong model as in part 2 (its why says it stalled). A person decides, not the hopper: the strong model costs more.
+  `resume_loop` and `cache_churn` do not pause: they say nothing of the model.
+- **Near the budget** (`budgetNear`, `BUDGET_NEAR` 0.8). A job whose checkpoint finds it at 80% of a cap is checkpointed
+  each minute (`CHECKPOINT_SOON_GAP_MS`), not each ten, until a checkpoint finds it under: it goes over its budget by a
+  minute's spend at most, not ten minutes'. A job far from its cap costs no extra checkpoint.
+- **A print-mode job's budget** (`budgetLeftUsd` on the execution context, `capReached` of the `claude` dialect). A
+  print-mode turn has no park, so the budget pause could not reach it. Now the turn gives the CLI what is left of the job's
+  cost budget as its own cap (`claude -p --max-budget-usd`, Claude Code's own flag); over it, the CLI ends the turn
+  (`subtype: error_max_budget_usd`, exit 1), and the turn's outcome is `paused`. The run's end then marks `budgetPaused`
+  and parks the job with why (`recordBudgetPause`, `src/engine/park.ts`), `parked.keptChat` set: its executor keeps the
+  chat to resume, so a pick up resumes that session and asks no fresh-start confirmation. A cheap job picked up goes on on
+  the strong model, as in part 2. With none of the budget left, the turn does not start. Only the cost cap: the CLI takes
+  no token cap, so a print-mode job's token cap is still not enforced while it runs. The other print-mode CLIs (Cursor's
+  agent, codex, opencode, omp) take no such cap.
+
+Not done, and why: escalation without a person (the pause is where a person decides to spend more); a token cap for a
+print-mode turn (no CLI flag for it).
 
 Verification: `test/domain/model-routing.test.ts` (the class, the rules in order, the labels, a repository's budget, one
 escalation and the item kept on the strong model, the budget fallback, the setting's schema),
@@ -21742,7 +21772,13 @@ simple job on the cheap model and a complex one on the strong, a failed cheap jo
 event, a cheap job paused by its choice's budget; part 2: a paused cheap job picked up goes on on the strong model with its
 event, a job budget pauses a job model routing did not route), `test/ui/job-tokens-view.test.ts` (the job view's model
 lines; part 2: the job budget line and form), `test/ui/model-routing.test.ts` (part 2: the Settings draft, patch and
-summary; the job budget form), `test/cli/usage-model-routing.test.ts` (part 2: the CLI).
+summary; the job budget form), `test/cli/usage-model-routing.test.ts` (part 2: the CLI). Part 3:
+`test/domain/model-routing.test.ts` (tuning both ways, the scopes, the samples, what is never tuned; the stall; near the
+budget), `test/domain/grades.test.ts` (a grade's model choice), `test/integration/model-routing.test.ts` (a simple job
+tuned to the strong model; a stalled cheap job paused and escalated at its pick up),
+`test/adapters/print-agent-executors.test.ts` (the cap given to the CLI, the turn paused at it, no turn with none left),
+`test/integration/token-ledger-print.test.ts` (a print-mode job parked at its budget, its session resumed on the strong
+model), `test/ui/model-routing.test.ts` (the tuning fields).
 
 ## Stack resources (issue #947, 2026-10-12)
 

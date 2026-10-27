@@ -16,7 +16,8 @@ import { EngineError } from './errors.ts';
 import { recordCommentWake, recordConflictWake } from './wait.ts';
 import { changedSince, gateItem, holdForChange, recordSnapshot, refreshEdit, refreshText } from './item-snapshots.ts';
 import { carryNotes } from './notes.ts';
-import { gradeRouter } from './grade-route.ts';
+import { gradedChoicesOf, gradeRouter, gradeRows } from './grade-route.ts';
+import type { GradeRow } from '../domain/grades.ts';
 import type { GradeRoute } from '../domain/grade-routing.ts';
 
 const clamp = (p: number): number => Math.max(0, Math.min(100, p));
@@ -132,13 +133,15 @@ function route(c: EngineContext, item: SourceItem, source: { name: string }): Ro
 
 /**
  * What model routing chooses for the item's new job (issue #2848, design.md "Model routing"), from its spec and the item's
- * job before it; undefined: off, not an executor it routes, or the item's source names its model (that model wins).
+ * job before it; undefined: off, not an executor it routes, or the item's source names its model (that model wins). `graded`:
+ * the grade history its tuning reads (part 3).
  */
-function modelRouteFor(c: EngineContext, item: SourceItem, spec: JobSpec, earlier: Job | undefined): ModelRoute | undefined {
+function modelRouteFor(c: EngineContext, item: SourceItem, spec: JobSpec, earlier: Job | undefined, graded: () => GradeRow[]): ModelRoute | undefined {
   if (item.model) return undefined;
   const work = { title: item.title, ...(item.body !== undefined ? { body: item.body } : {}), labels: item.labels, ...(item.repo !== undefined ? { repo: item.repo } : {}),
     research: spec.research === true, proposal: spec.proposal === true, tend: spec.tend === true };
-  return modelRouteOf(modelRoutingOf(c.store.settings.getModelRouting()), work, spec.executor, earlier && { jobId: earlier.id, status: earlier.status, ...(earlier.spec.modelRoute ? { route: earlier.spec.modelRoute } : {}) });
+  return modelRouteOf(modelRoutingOf(c.store.settings.getModelRouting()), work, spec.executor, earlier && { jobId: earlier.id, status: earlier.status, ...(earlier.spec.modelRoute ? { route: earlier.spec.modelRoute } : {}) },
+    () => gradedChoicesOf(graded()));
 }
 
 /**
@@ -157,7 +160,8 @@ function problemWith(c: EngineContext, item: SourceItem, spec: JobSpec): string 
 
 export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'cancel' | 'finishWaiting'>): SourceHost {
   const { store } = c;
-  const gradeRouteOf = gradeRouter(c);
+  const grades = gradeRows(c);
+  const gradeRouteOf = gradeRouter(c, grades);
 
   /** The new job for an item, or null when its key's newest job is not re-runnable. A key's earlier job is its `rerunOf`. */
   function ingest(offered: SourceItem, source: SourceRef, brief?: string, tend = false, seen?: { jobId: string | undefined }): Job | null {
@@ -172,7 +176,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
     // Tending's job (issue #967): it may elbow in past a lane cap, so a pull request's conflict never waits for a lane.
     const asked = { ...specFor(item, source, priority, routedBy, fromConfigFor(item, routedBy, graded), graded), ...(tend ? { tend: true as const } : {}) };
     // Model routing (issue #2848): the model and budget from the work's class, escalated after the item's failed cheap job.
-    const modelRoute = modelRouteFor(c, item, asked, store.jobs.getBySourceKey(item.key));
+    const modelRoute = modelRouteFor(c, item, asked, store.jobs.getBySourceKey(item.key), grades);
     const fromConfig = fromConfigFor(item, routedBy, graded, modelRoute);
     const spec = modelRoute ? { ...withParts(asked, fromConfig, routedBy, graded), modelRoute } : asked;
     const invalid = problemWith(c, item, spec);

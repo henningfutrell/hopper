@@ -4204,7 +4204,7 @@ Version 1 (`docs/schemas/token_budget.settings_changed.v1.json`). An admin chang
 
 ## `model_routing.settings_changed`
 
-Version 1 (`docs/schemas/model_routing.settings_changed.v1.json`). An admin changed model routing (issue #2848): on or off, the executors it routes, each model choice's model and budget (`cheap`, `strong`), the model rules, the repositories' budgets and whether a failed cheap job escalates. `from` and `to`, each whole.
+Version 1 (`docs/schemas/model_routing.settings_changed.v1.json`). An admin changed model routing (issue #2848): on or off, the executors it routes, each model choice's model and budget (`cheap`, `strong`), the model rules, the repositories' budgets, whether a failed cheap job escalates, and (part 3) tuning from grades (`tune`: `on`, `minSamples`, `margin`; absent in an event from before it). `from` and `to`, each whole.
 
 | field | type | required |
 |---|---|---|
@@ -4268,7 +4268,12 @@ Version 1 (`docs/schemas/model_routing.settings_changed.v1.json`). An admin chan
       }
     ],
     "repos": {},
-    "escalate": true
+    "escalate": true,
+    "tune": {
+      "on": false,
+      "minSamples": 5,
+      "margin": 10
+    }
   },
   "to": {
     "on": true,
@@ -4330,7 +4335,12 @@ Version 1 (`docs/schemas/model_routing.settings_changed.v1.json`). An admin chan
         }
       }
     },
-    "escalate": true
+    "escalate": true,
+    "tune": {
+      "on": false,
+      "minSamples": 5,
+      "margin": 10
+    }
   },
   "by": "admin"
 }

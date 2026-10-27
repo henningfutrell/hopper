@@ -198,7 +198,7 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     getTokenBudget: () => { const text = read('tokenBudget'); return text === undefined ? undefined : JSON.parse(text) as Partial<TokenBudgetSettings>; },
     setTokenBudget: (s) => write('tokenBudget', JSON.stringify({
       jobTokens: s.jobTokens, jobCostUsd: s.jobCostUsd, dayTokens: s.dayTokens, dayCostUsd: s.dayCostUsd, repoDayTokens: s.repoDayTokens, repoDayCostUsd: s.repoDayCostUsd })),
-    getModelRouting: () => { const t = read('modelRouting'); return t === undefined ? undefined : JSON.parse(t) as Partial<ModelRoutingSettings>; }, setModelRouting: (s) => write('modelRouting', JSON.stringify({ on: s.on, executors: s.executors, cheap: s.cheap, strong: s.strong, rules: s.rules, repos: s.repos, escalate: s.escalate })),
+    getModelRouting: () => { const t = read('modelRouting'); return t === undefined ? undefined : JSON.parse(t) as Partial<ModelRoutingSettings>; }, setModelRouting: (s) => write('modelRouting', JSON.stringify({ on: s.on, executors: s.executors, cheap: s.cheap, strong: s.strong, rules: s.rules, repos: s.repos, escalate: s.escalate, tune: s.tune })),
     getThreadAsk: () => { const text = read('threadAsk'); return text === undefined ? undefined : JSON.parse(text) as ThreadAskSettings; },
     setThreadAsk: (s) => write('threadAsk', JSON.stringify({ ownRepos: s.ownRepos, otherRepos: s.otherRepos })),
     getTldr() { const text = read('tldr'); return text === undefined ? undefined : JSON.parse(text) as TldrSettings; }, setTldr(settings) { write('tldr', JSON.stringify({ enabled: settings.enabled })); },

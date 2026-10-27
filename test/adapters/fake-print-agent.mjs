@@ -12,7 +12,8 @@
 // UTF-8 in the answer's word "greeting"; `no-final` prints the events before the answer only, and exits 0. Like the real
 // CLIs, it reads stdin to its end first, and logs it. `opencode session delete <id>` (a draft's cleanup, issue #474) only
 // appends the id, its argv and the opencode variables it ran with to opencode-deleted.jsonl. As opencode 2 does
-// (issue #2862), opencode refuses `--pure` and `--variant`: it prints its help and exits 1.
+// (issue #2862), opencode refuses `--pure` and `--variant`: it prints its help and exits 1. `budget` (claude, issue #2848): over
+// `--max-budget-usd` it stops as claude does there.
 import { spawn } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -123,6 +124,12 @@ else if (kind === 'codex') {
   // Its token use, per model (issue #2302): what the hopper keeps in the token ledger. The real CLI names the model
   // it was given.
   const modelUsage = { [after('--model') ?? 'claude-opus-5-5']: { inputTokens: 3, outputTokens: 30, cacheReadInputTokens: 300, cacheCreationInputTokens: 20, costUSD: 0.01 } };
+  // Over `--max-budget-usd` (issue #2848 part 3), as claude 2.1.304 prints it: is_error, no result, and exit 1.
+  const cap = after('--max-budget-usd');
+  if (mode === 'budget' && cap !== undefined) {
+    out({ type: 'result', subtype: 'error_max_budget_usd', is_error: true, num_turns: 1, session_id: session, terminal_reason: 'budget_exhausted', errors: [`Reached maximum budget ($${cap})`], modelUsage });
+    printed(1);
+  }
   out({ type: 'result', subtype: 'success', is_error: false, num_turns: 2, result: toolOutput ? `${toolOutput}\n${answer}` : answer, session_id: session, permission_denials: [], modelUsage });
 } else {
   process.stderr.write(`fake-print-agent: FAKE_AGENT_KIND must be codex, opencode, omp or claude, not ${kind}\n`);

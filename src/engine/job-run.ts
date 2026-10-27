@@ -27,7 +27,8 @@ import { runNotes } from './notes.ts';
 import { hostPoolOf } from '../decider/memory-floor.ts';
 import { heapRetryMachine } from './heap-retry.ts';
 import { recordOutcome } from './outcome.ts';
-import { recordPark, releaseParked } from './park.ts';
+import { recordBudgetPause, recordPark, releaseParked } from './park.ts';
+import { budgetLeftUsd } from './token-budget.ts';
 import { requeuePreempted } from './preemption.ts';
 import { requeue } from './recovery.ts';
 
@@ -224,6 +225,8 @@ export function contextOf(c: EngineContext, e: RunEntry, d: JobRunData, j: Job, 
     missedHeartbeat: () => c.checkpoints?.soon(j.id),
     // A print-mode turn's token use (issue #2302, part 6), kept even when the job ended meanwhile.
     tokenUse: (session, use) => store.tx(() => { const now = store.jobs.get(j.id); if (now) keepTokenUse(c, now, session, use, true); }),
+    // What is left of its cost budget (issue #2848 part 3): a print-mode turn's own cap.
+    budgetLeftUsd: () => budgetLeftUsd(c, j.id),
   };
 }
 
@@ -348,6 +351,12 @@ export function jobRunSteps(c: EngineContext, cleanup: Cleanup) {
       if (!d.lost && outcome.kind === 'failed' && !cancel && await moveNoWay(c, job.id, d.laneId, outcome.error)) return {};
       // What the run spent, read once more before its end is recorded (issue #2302): the last turns are in the token ledger.
       if (!d.lost) await c.checkpoints?.tokens(job.id);
+      // Its agent stopped at its budget (issue #2848 part 3): paused as the budget parks a job, its chat kept.
+      if (outcome.kind === 'paused' && !cancel) {
+        store.tx(() => { const j = runJob(c, d); if (j?.status === 'running') recordBudgetPause(c, j, d.laneId, outcome.why); });
+        laneEnded(c, d.laneId, undefined);
+        return {};
+      }
       const recorded = recordOutcome(c, job, d.laneId, outcome, cancel, await machineOf(c, d.laneId));
       if (!cancel) laneEnded(c, d.laneId, outcome.kind === 'failed' ? outcome.error : undefined);
       if (recorded.kind === 'question') c.questions.handle(recorded.questionId);

@@ -1,7 +1,7 @@
 // The token ledger (issue #2302, part 6): a print-mode Claude job keeps no agent session the checkpoint reads; each turn's
 // JSON result says what it spent (`modelUsage`), and the hopper adds it to the job's ledger, by the turn's session. Real
 // daemon, the `claude` executor over a stand-in CLI that answers as claude 2.1 does.
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -55,5 +55,34 @@ describe('the token ledger of a print-mode Claude job', () => {
     await a.waitForStatus(job.id, 'finished');
     const tokens = await a.api<{ total: TokenTotals; sessions: number }>('GET', `/api/jobs/${job.id}/tokens`);
     expect(tokens.body).toMatchObject({ sessions: 1, total: { turns: 4, input: 6, output: 60, cacheRead: 600, cacheWrite: 40, costKnown: true } });
+  });
+});
+
+// Issue #2848 part 3: a print-mode job has no park, so its cost budget goes to the CLI as `--max-budget-usd`; when the CLI
+// stops there, the job is paused with its session kept — parked, as the budget parks a job with a pane —, and picked up it
+// resumes that session, a cheap one on the strong model.
+describe('the budget of a print-mode Claude job', () => {
+  it('pauses the job where the CLI stopped at its budget, and resumes its session when a person picks it up', async () => {
+    const a = await boot();
+    const token = await a.login();
+    await a.ui('/ui/api/model-routing', { on: true, executors: ['claude'], cheap: { model: 'sonnet', jobTokens: 0, jobCostUsd: 0.5 }, strong: { model: 'opus', jobTokens: 0, jobCostUsd: 0 } }, { token });
+    process.env.FAKE_AGENT_MODE = 'budget';
+    try {
+      const job = await a.pull({}, { executor: 'claude', prompt: 'Paint the shed', title: 'Fix a typo', env: {} });
+      expect(job.spec.modelRoute).toMatchObject({ choice: 'cheap', budget: { jobCostUsd: 0.5 } });
+      const parked = await a.waitForStatus(job.id, 'parked', 10_000);
+      expect(parked.budgetPaused?.why).toBe('Paused: claude stopped at the job\'s cost budget: Reached maximum budget ($0.5)');
+      expect(parked.parked).toMatchObject({ auto: true, keptChat: true });
+      process.env.FAKE_AGENT_REPLY = 'Painted it.\nHOPPER_DONE';
+      // Its chat is kept: no fresh start to confirm.
+      expect((await a.ui(`/ui/api/jobs/${job.id}/requeue`, {}, { token })).status).toBe(200);
+      const done = await a.waitForStatus(job.id, 'finished', 10_000);
+      expect(done.spec.modelRoute).toMatchObject({ choice: 'strong', rule: 'escalated' });
+      const calls = readFileSync(join(dir, 'agent-calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { argv: string[] });
+      expect(calls.at(-1)!.argv).toEqual(expect.arrayContaining(['--resume', 'claude-session-1', '--model', 'opus']));
+      expect(calls.at(-1)!.argv).not.toContain('--max-budget-usd');
+    } finally {
+      delete process.env.FAKE_AGENT_MODE;
+    }
   });
 });
