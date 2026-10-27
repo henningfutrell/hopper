@@ -68,13 +68,11 @@ describe('issuePlaceFrom', () => {
     expect(place.subIssues).toEqual([{ kind: 'issue', repo: 'me/r', number: 2, url: 'https://github.com/me/r/issues/2', state: 'closed', stateReason: 'not_planned' }]);
   });
 
-  it('reads a plan piece\'s artifact from the Artifact line of the body (issue #2840): none is empty, no body leaves it out', () => {
-    const answer = (body?: string) => issuePlaceFrom({ data: { repository: { owner: { __typename: 'User', login: 'me' }, issue: {
-      url: 'https://github.com/me/r/issues/1', number: 1, title: 't', state: 'OPEN', updatedAt: 'u', ...(body !== undefined ? { body } : {}),
+  it('keeps nothing of the body (issue #2861): a plan artifact is a record of the plan store, never a line of an issue', () => {
+    const place = issuePlaceFrom({ data: { repository: { owner: { __typename: 'User', login: 'me' }, issue: {
+      url: 'https://github.com/me/r/issues/1', number: 1, title: 't', state: 'OPEN', updatedAt: 'u', body: 'Goal.\n\nArtifact: a screenshot of the board',
     } } } }, 'place');
-    expect(answer('Goal.\n\nArtifact: a screenshot of the board').issue.artifact).toBe('a screenshot of the board');
-    expect(answer('Goal.').issue.artifact).toBe('');
-    expect(answer().issue.artifact).toBeUndefined();
+    expect(place.issue).toEqual({ repo: 'me/r', number: 1, url: 'https://github.com/me/r/issues/1', title: 't', state: 'open', updatedAt: 'u' });
   });
 
   it('no issue is an error that names the read', () => {

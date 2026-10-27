@@ -6,7 +6,7 @@ import { keptTreeOf, keptWorkOf, REVIEW_KINDS, REVIEW_SECTIONS, WORK_EVENTS, typ
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createSignedOutMove } from './signed-out-move.ts';
-import { BUSY_MOVE_EVERY_MS, createBusyMove } from './busy-move.ts'; import { DELIVERY_LEDGER_EVERY_MS, recordDeliveryLedger } from './delivery-ledger.ts'; import { KEPT_TRACKS_EVERY_MS, keepDeliveryTracks } from './kept-tracks.ts'; import { COMPLETION_REVIEWS_EVERY_MS, createCompletionReviews } from './completion-reviews.ts'; import { GRADES_EVERY_MS, keepGrades } from './grades.ts';
+import { BUSY_MOVE_EVERY_MS, createBusyMove } from './busy-move.ts'; import { DELIVERY_LEDGER_EVERY_MS, recordDeliveryLedger } from './delivery-ledger.ts'; import { KEPT_TRACKS_EVERY_MS, keepDeliveryTracks } from './kept-tracks.ts'; import { COMPLETION_REVIEWS_EVERY_MS, createCompletionReviews } from './completion-reviews.ts'; import { GRADES_EVERY_MS, keepGrades } from './grades.ts'; import { PLAN_SYNC_EVERY_MS, syncWorkPlans } from './plan-sync.ts';
 import { preemptRunning } from './preemption.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
@@ -188,6 +188,7 @@ export function createEngine(o: EngineOptions): Engine {
   let keptTracksAt = 0, gradesAt = 0; // the kept-track pass (issue #2775) and the grade pass (issue #2845): their first pass at the first tick
   // The completion review pass (issue #2846): its first pass at the first tick.
   let reviewsAt = 0; const completionReviews = createCompletionReviews(store);
+  let planSyncAt = c.clock.now().getTime(); // the plan sync (issue #2861): its first pass one interval after the start
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
@@ -345,6 +346,10 @@ export function createEngine(o: EngineOptions): Engine {
         if (c.clock.now().getTime() - reviewsAt >= COMPLETION_REVIEWS_EVERY_MS && passes.held('completionReviews')) {
           reviewsAt = c.clock.now().getTime();
           try { completionReviews(c.clock.now()); } catch (e) { console.error('hopper: the completion review pass failed', e); }
+        }
+        if (c.clock.now().getTime() - planSyncAt >= PLAN_SYNC_EVERY_MS && passes.held('planSync')) {
+          planSyncAt = c.clock.now().getTime();
+          try { syncWorkPlans(store, c.clock.now()); } catch (e) { console.error('hopper: the plan sync failed', e); }
         }
         c.trigger('tick');
       }, o.tickMs);

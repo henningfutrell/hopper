@@ -7,26 +7,26 @@ import type { Job } from '../domain/types.ts';
 import type { WorkItem } from '../domain/work-items.ts';
 import { awaitsBatch } from '../domain/work-item-landing.ts';
 import { awaitingBatchKeys } from '../sources/intake-live.ts';
+import { lineageLinks } from '../engine/plan-sync.ts';
 import type { TenantParts } from './tenants.ts';
 
-/** The job graph's bounds: followed jobs read, steps back along a job's origins, lineage links read. */
+/** The job graph's bounds: followed jobs read, steps back along a job's origins. */
 const GRAPH_FOLLOWED = 500;
 const GRAPH_STEPS = 5;
-const GRAPH_LINKS = 5000;
 
 /** The job graph, with the lineage links and the issue graph it was made of. */
 export interface JobGraphRead { graph: JobGraph; links: JobGraphLink[]; issueGraph: { nodes: GraphNode[]; edges: GraphEdge[] } }
 
 /**
  * The job graph of the jobs /api/queue holds, the partly done and PR-open jobs whose pull requests wait, the jobs with an
- * open question or hand-off, the newest job of each of their issues — and of each issue `issueKeys` names from the issue
- * graph and the lineage links (planned work's issues, by source key) —, and the jobs these ran again, forked from or
- * carried out — with their issues, pull requests, open questions and hand-offs, and typed edges.
+ * open question or hand-off, the newest job of each of their issues — and of each issue `extra.issueKeys` names (planned
+ * work's issues, by source key) —, the jobs `extra.jobIds` names (the jobs the plan store links to a work plan), and the
+ * jobs these ran again, forked from or carried out — with their issues, pull requests, open questions and hand-offs, and
+ * typed edges.
  */
-export function readJobGraph(t: TenantParts, issueKeys?: (issueGraph: JobGraphRead['issueGraph'], links: readonly JobGraphLink[]) => readonly string[]): JobGraphRead {
+export function readJobGraph(t: TenantParts, extra?: { issueKeys: readonly string[]; jobIds: readonly string[] }): JobGraphRead {
   const { store, engine } = t;
-  const links = store.events.recent(GRAPH_LINKS, ['job.child_issue_filed']).map((e) => e.data as unknown as JobGraphLink)
-    .filter((l) => typeof l.parent?.repo === 'string' && typeof l.parent.number === 'number' && typeof l.child?.repo === 'string' && typeof l.child.number === 'number');
+  const links = lineageLinks(store);
   const issueGraph = { nodes: store.issueGraph.nodes(), edges: store.issueGraph.edges() };
   const q = engine.getQueue();
   const jobs = new Map<string, Job>();
@@ -42,9 +42,13 @@ export function readJobGraph(t: TenantParts, issueKeys?: (issueGraph: JobGraphRe
     const j = jobs.has(jobId) ? undefined : store.jobs.get(jobId);
     if (j) jobs.set(j.id, j);
   }
+  for (const id of extra?.jobIds ?? []) {
+    const j = jobs.has(id) ? undefined : store.jobs.get(id);
+    if (j) jobs.set(j.id, j);
+  }
   // The newest job of each issue here (issue #1036): the issue reads its stage from it, and it supersedes a failure before
   // it, though it ended before the queue's window. So does each issue asked for.
-  for (const key of new Set([...[...jobs.values()].map((j) => j.source?.key), ...issueKeys?.(issueGraph, links) ?? []])) {
+  for (const key of new Set([...[...jobs.values()].map((j) => j.source?.key), ...extra?.issueKeys ?? []])) {
     const newest = key ? store.jobs.getBySourceKey(key) : undefined;
     if (newest && !jobs.has(newest.id)) jobs.set(newest.id, newest);
   }
