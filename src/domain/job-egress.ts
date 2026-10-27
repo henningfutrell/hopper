@@ -12,10 +12,15 @@ export interface JobEgressSettings {
   hosts: string[];
   /** Hosts the jobs of one repository may reach, by `owner/name` in lowercase. */
   repos: Record<string, string[]>;
+  /**
+   * Whether a job's agent runs behind `hopper-egress` (part 2): its connections then go out through the hopper, to the
+   * allowlist's hosts only. Read at each job's start. Off when never set.
+   */
+  route: boolean;
 }
 
 /** The setting of a user who never set one: the defaults only. */
-export const NO_JOB_EGRESS: JobEgressSettings = { defaults: true, hosts: [], repos: {} };
+export const NO_JOB_EGRESS: JobEgressSettings = { defaults: true, hosts: [], repos: {}, route: false };
 
 /** The hopper's default hosts: the model providers, GitHub and the package registries a job's tools fetch from. */
 export const JOB_EGRESS_DEFAULTS: readonly string[] = [
@@ -48,7 +53,7 @@ export function jobEgressHostProblem(entry: string): string | undefined {
 export function normalJobEgress(s: JobEgressSettings): JobEgressSettings {
   const lower = (l: readonly string[]): string[] => [...new Set(l.map((h) => h.toLowerCase()))];
   const repos = Object.fromEntries(Object.entries(s.repos).map(([r, l]): [string, string[]] => [r.toLowerCase(), lower(l)]).filter(([, l]) => l.length > 0));
-  return { defaults: s.defaults, hosts: lower(s.hosts), repos };
+  return { defaults: s.defaults, hosts: lower(s.hosts), repos, route: s.route };
 }
 
 /** The allowlist of a job of `repo` (`owner/name`; none for a job with no repository). */

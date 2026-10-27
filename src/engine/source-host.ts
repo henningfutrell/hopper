@@ -16,6 +16,8 @@ import { EngineError } from './errors.ts';
 import { recordCommentWake, recordConflictWake } from './wait.ts';
 import { changedSince, gateItem, holdForChange, recordSnapshot, refreshEdit, refreshText } from './item-snapshots.ts';
 import { carryNotes } from './notes.ts';
+import { gradeRouter } from './grade-route.ts';
+import type { GradeRoute } from '../domain/grade-routing.ts';
 
 const clamp = (p: number): number => Math.max(0, Math.min(100, p));
 
@@ -45,9 +47,9 @@ const originFrom = (item: SourceItem, job: Job): SourceItem => (item.origin || !
  * What the item and the routing rule give a job's spec (issue #375). The job's own work tree is a routing
  * rule's, which pins the job to its machine (issues #324, #361); anything else runs in its machine's.
  */
-function fromConfigFor(item: SourceItem, routedBy: RoutedBy | undefined, routed?: ModelRoute): SpecFromConfig {
+function fromConfigFor(item: SourceItem, routedBy: RoutedBy | undefined, graded?: GradeRoute, routed?: ModelRoute): SpecFromConfig {
   return specFromConfig({
-    executor: routedBy?.set.executor ?? item.executor, model: item.model || routed?.model || undefined, cwd: routedBy?.set.workTree,
+    executor: routedBy?.set.executor ?? graded?.executor ?? item.executor, model: item.model || routed?.model || undefined, cwd: routedBy?.set.workTree,
     machineId: routedBy?.set.machine, rule: routedBy?.rule,
   });
 }
@@ -72,19 +74,20 @@ function specFromConfig(f: { executor: string } & { [K in Exclude<keyof SpecFrom
 
 const same = (a: SpecFromConfig, b: SpecFromConfig): boolean => JSON.stringify(a) === JSON.stringify(b);
 
-/** `spec` with the parts `f` gives: set where `f` has one, removed where it has none. */
-function withParts(spec: JobSpec, f: SpecFromConfig, routedBy: RoutedBy | undefined): JobSpec {
+/** `spec` with the parts `f` gives: set where `f` has one, removed where it has none. Its grade route only while it runs the route's executor. */
+function withParts(spec: JobSpec, f: SpecFromConfig, routedBy: RoutedBy | undefined, graded?: GradeRoute): JobSpec {
   const { cwd: _c, model: _m, ...rest } = spec.payload;
-  const { machineId: _p, routedBy: _r, ...base } = spec;
+  const { machineId: _p, routedBy: _r, gradeRoute: _g, ...base } = spec;
   return {
     ...base, executor: f.executor,
     payload: { ...rest, ...(f.cwd !== undefined ? { cwd: f.cwd } : {}), ...(f.model !== undefined ? { model: f.model } : {}) },
     ...(f.machineId !== undefined ? { machineId: f.machineId } : {}),
     ...(routedBy ? { routedBy } : {}),
+    ...(graded && graded.executor === f.executor ? { gradeRoute: graded } : {}),
   };
 }
 
-function specFor(item: SourceItem, source: { name: string }, priority: number, routedBy: RoutedBy | undefined, f: SpecFromConfig): JobSpec {
+function specFor(item: SourceItem, source: { name: string }, priority: number, routedBy: RoutedBy | undefined, f: SpecFromConfig, graded?: GradeRoute): JobSpec {
   // `body` is the item's own text, without the context block: what the command executor runs.
   const spec: JobSpec = {
     executor: f.executor, payload: { prompt: item.prompt, body: item.body, env: item.env }, priority, goal: item.title,
@@ -96,7 +99,7 @@ function specFor(item: SourceItem, source: { name: string }, priority: number, r
     // Labelled hopper:specialty (issue #762): it may elbow in past a machine's lane cap; no other job may.
     ...(item.labels.includes(SPECIALTY_LABEL) ? { specialty: true as const } : {}),
   };
-  return withParts(spec, f, routedBy);
+  return withParts(spec, f, routedBy, graded);
 }
 
 /**
@@ -105,12 +108,12 @@ function specFor(item: SourceItem, source: { name: string }, priority: number, r
  * what the config gave it last (`fromConfig`; absent on a job from before: the spec as it is) —, and then
  * keeps the hand value.
  */
-function respecified(job: Job, to: SpecFromConfig, routedBy: RoutedBy | undefined): JobSpec {
+function respecified(job: Job, to: SpecFromConfig, routedBy: RoutedBy | undefined, graded?: GradeRoute): JobSpec {
   const now = fromSpec(job.spec);
   const was = job.fromConfig ?? now;
   const pick = <K extends keyof SpecFromConfig>(k: K): SpecFromConfig[K] | undefined => (now[k] === was[k] ? to[k] : now[k]);
   const parts = specFromConfig({ executor: pick('executor')!, model: pick('model'), cwd: pick('cwd'), machineId: pick('machineId'), rule: to.rule });
-  return withParts(job.spec, parts, routedBy);
+  return withParts(job.spec, parts, routedBy, graded);
 }
 
 /**
@@ -154,6 +157,7 @@ function problemWith(c: EngineContext, item: SourceItem, spec: JobSpec): string 
 
 export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'cancel' | 'finishWaiting'>): SourceHost {
   const { store } = c;
+  const gradeRouteOf = gradeRouter(c);
 
   /** The new job for an item, or null when its key's newest job is not re-runnable. A key's earlier job is its `rerunOf`. */
   function ingest(offered: SourceItem, source: SourceRef, brief?: string, tend = false, seen?: { jobId: string | undefined }): Job | null {
@@ -164,12 +168,13 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
     const routedBy = route(c, item, source);
     const priority = clamp(routedBy?.set.priority ?? item.priority);
     const ref = refFor(item, source);
+    const graded = gradeRouteOf(item, routedBy);
     // Tending's job (issue #967): it may elbow in past a lane cap, so a pull request's conflict never waits for a lane.
-    const asked = { ...specFor(item, source, priority, routedBy, fromConfigFor(item, routedBy)), ...(tend ? { tend: true as const } : {}) };
+    const asked = { ...specFor(item, source, priority, routedBy, fromConfigFor(item, routedBy, graded), graded), ...(tend ? { tend: true as const } : {}) };
     // Model routing (issue #2848): the model and budget from the work's class, escalated after the item's failed cheap job.
     const modelRoute = modelRouteFor(c, item, asked, store.jobs.getBySourceKey(item.key));
-    const fromConfig = fromConfigFor(item, routedBy, modelRoute);
-    const spec = modelRoute ? { ...withParts(asked, fromConfig, routedBy), modelRoute } : asked;
+    const fromConfig = fromConfigFor(item, routedBy, graded, modelRoute);
+    const spec = modelRoute ? { ...withParts(asked, fromConfig, routedBy, graded), modelRoute } : asked;
     const invalid = problemWith(c, item, spec);
     return store.tx((): Job | null => {
       // Two hoppers that run one item again at once (issue #1892): the second waits here, then reads the first's new job.
@@ -235,11 +240,12 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       const routedBy = route(c, item, source);
       const priority = clamp(routedBy?.set.priority ?? item.priority);
       const reason = routedBy?.set.priority !== undefined ? `rule:${routedBy.rule}` : item.priorityReason;
+      const graded = gradeRouteOf(item, routedBy);
       return store.tx(() => {
         const job = store.jobs.get(jobId);
         if (!job || TERMINAL_STATUSES.includes(job.status)) return false;
         // Its model route is the job's own from intake (issue #2848): a sync keeps its model.
-        const to = fromConfigFor(item, routedBy, job.spec.modelRoute);
+        const to = fromConfigFor(item, routedBy, graded, job.spec.modelRoute);
         let changed = false;
         // A job queued before origins were judged (issue #652, the backfill): its issue is offered once it is of a trusted
         // origin or a person approved it; the job takes that origin, and its hold goes.
@@ -257,7 +263,7 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
         const was = job.fromConfig ?? fromSpec(job.spec);
         const waiting = job.status === 'queued' || job.status === 'held';
         if (waiting && job.attempts === 0 && job.pendingAnswer === undefined && !same(was, to)) {
-          const spec = respecified(job, to, routedBy);
+          const spec = respecified(job, to, routedBy, graded);
           const invalid = problemWith(c, item, spec);
           if (invalid !== undefined) console.warn(`hopper: job ${jobId} keeps its spec: ${invalid}`);
           else {

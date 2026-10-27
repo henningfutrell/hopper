@@ -21,12 +21,10 @@ import type { FastifyInstance } from 'fastify';
 import { jobEgressAllows, jobEgressList } from '../domain/job-egress.ts';
 import type { JobStatus } from '../domain/types.ts';
 import { parseProxyToken } from '../github-proxy/token.ts';
+import { JOB_EGRESS_PATH, JOB_EGRESS_PROTOCOL } from '../sandbox/egress-script.ts';
 import { classifyRequest, peerList, type Lan } from './reach.ts';
 import type { Tenants } from './tenants.ts';
 
-/** The route on the hopper's URL a job's connection out goes to, and the upgrade's protocol. */
-export const JOB_EGRESS_PATH = '/job/egress';
-export const JOB_EGRESS_PROTOCOL = 'hopper-egress/1';
 
 const AT_WORK: readonly JobStatus[] = ['running', 'waiting_answer', 'waiting_on'];
 const BEARER = /^Bearer\s+(\S+)$/i;

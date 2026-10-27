@@ -13,6 +13,7 @@ import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { cleanupDue } from './cleanup.ts';
 import { recordReport } from './reviews.ts';
 import { recordEndWait, wakeOn } from './wait.ts';
+import { learnFromJob } from '../repo-memory/index.ts';
 
 /** What the caller must do after the commit: clean up a terminal job, or start the answer chain. */
 export type Recorded = { kind: 'terminal' } | { kind: 'question'; questionId: string } | { kind: 'report'; review: ReviewKind; itemId: string } | { kind: 'wait' };
@@ -138,6 +139,8 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
       const maskedResult = typeof outcome.result === 'string' ? maskGitHubTokens(outcome.result) : outcome.result;
       store.jobs.update(job.id, { status: 'finished', result: maskedResult, finishedAt: at, pendingAnswer: undefined, ...part, ...cleanupDue(c) });
       store.events.append({ type: 'job.finished', jobId: job.id, laneId, data: { ...(maskedResult !== undefined && maskedResult !== null ? { result: maskedResult } : {}), ...part } });
+      // The memory lines of its final message (issue #2847): what a later job of its repository is offered.
+      learnFromJob(store, job, maskedResult, at, c.idGen);
     } else if (outcome.kind === 'failed') {
       fail(c, job, laneId, outcome.error, at, outcome.tail, outcome.liveness);
     } else if (outcome.kind === 'report') {

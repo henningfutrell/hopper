@@ -3,7 +3,7 @@
 import type { CleanupDue } from './cleanup.ts';
 import type { EventType } from './event-types.ts';
 import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
-import type { RoutedBy } from './routing.ts';
+import type { RoutedBy } from './routing.ts'; import type { GradeRoute } from './grade-routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
 import type { SignedOutTool, UsageLimitPair, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts'; import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLaneHealth, MachineLeaving, PendingLoad, UpdateSwap } from './machines.ts'; import type { MachineSandboxHost } from './sandbox-host.ts';
@@ -82,8 +82,11 @@ export interface JobSpec {
   machineId?: MachineId;
   /** Free metadata for the router (grok-bot-jev state: cached_artifact, prior_error, same_error_count, ...). */
   meta?: Record<string, unknown>;
-  /** The routing rule that set this job's machine, executor, priority or work tree (issue #18), at intake or a later sync (issue #375). */
-  routedBy?: RoutedBy;
+  /**
+   * `routedBy`: the routing rule that set this job's machine, executor, priority or work tree (issue #18), at intake or a
+   * later sync (issue #375). `gradeRoute`: grade-aware routing gave it its executor (issue #2845): from which, and the grades.
+   */
+  routedBy?: RoutedBy; gradeRoute?: GradeRoute;
   /** Asked for a proposal (issue #537): its agent writes one instead of doing the work, and is told so after the job rules. */
   proposal?: true;
   /**

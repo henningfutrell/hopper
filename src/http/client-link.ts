@@ -36,7 +36,7 @@ import { HttpError, parseWith } from './errors.ts';
 import { classifyRequest, peerList, publicOriginOf, type Lan } from './reach.ts';
 import type { Tenants } from './tenants.ts';
 import { holdsTemplate } from '../vault/vault.ts';
-import { RELAY_PATH } from '../sandbox/relay-script.ts'; import { JOB_EGRESS_PATH } from './job-egress.ts';
+import { RELAY_PATH } from '../sandbox/relay-script.ts'; import { JOB_EGRESS_PATH } from '../sandbox/egress-script.ts';
 
 export interface ClientLinkOptions {
   tenants: Tenants;

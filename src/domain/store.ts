@@ -354,9 +354,9 @@ export interface SandboxRepository {
 
 /**
  * The config records the store holds (design.md "Config in the database", issue #198): a user's
- * `plugins`, `rules`, `job-rules`, `repo-job-rules` (issue #1472), `windows-hosts` (issue #731), `clusters` (issue #1766) and `podman-hosts` (issue #2272), and the instance's `sign-in`. No config lives in a file.
+ * `plugins`, `rules`, `job-rules`, `repo-job-rules` (issue #1472), `repo-memory` (issue #2847), `windows-hosts` (issue #731), `clusters` (issue #1766) and `podman-hosts` (issue #2272), and the instance's `sign-in`. No config lives in a file.
  */
-export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'repo-job-rules', 'windows-hosts', 'clusters', 'podman-hosts'] as const;
+export const USER_CONFIG = ['plugins', 'rules', 'job-rules', 'repo-job-rules', 'repo-memory', 'windows-hosts', 'clusters', 'podman-hosts'] as const;
 export const INSTANCE_CONFIG = ['sign-in'] as const;
 export const CONFIG_NAMES = [...USER_CONFIG, ...INSTANCE_CONFIG] as const;
 export type UserConfigName = (typeof USER_CONFIG)[number];
@@ -555,7 +555,7 @@ export interface UserStore {
   connectedAccounts: ConnectedAccountRepository; appInstallations: import('./connected-accounts.ts').AppInstallationsReadRepository;
   /** The token ledger (issue #2302): each model's token use in each agent session of each job; the resource ledger (issue #2504): what the hopper made for each job on a machine. */
   usageHistory: UsageHistoryRepository; tokenLedger: import('./token-usage.ts').TokenLedgerRepository; resourceLedger: import('./resource-ledger.ts').ResourceLedgerRepository;
-  machineHistory: MachineHistoryRepository; diskMeasures: import('./hopper-disk.ts').DiskMeasureRepository; deliveryLedger: import('./forecast-accuracy.ts').DeliveryLedgerRepository; stepSchedules: import('./step-schedules.ts').StepScheduleRepository; keptTracks: import('./kept-tracks.ts').KeptTrackRepository; grades: import('./grades.ts').GradeRepository; completionReviews: import('./completion-review.ts').CompletionReviewRepository; // each machine's last disk measure (issue #2494); each step of each change, predicted and actual (issue #2554 part 6); the step schedules and their runs (issue #2716); each job's kept delivery track and deployment record (issue #2775); each ended job's grades (issue #2845)
+  machineHistory: MachineHistoryRepository; diskMeasures: import('./hopper-disk.ts').DiskMeasureRepository; deliveryLedger: import('./forecast-accuracy.ts').DeliveryLedgerRepository; stepSchedules: import('./step-schedules.ts').StepScheduleRepository; keptTracks: import('./kept-tracks.ts').KeptTrackRepository; memoryEntries: import('./repo-memory.ts').MemoryEntryRepository; grades: import('./grades.ts').GradeRepository; completionReviews: import('./completion-review.ts').CompletionReviewRepository; // each machine's last disk measure (issue #2494); each step of each change, predicted and actual (issue #2554 part 6); the step schedules and their runs (issue #2716); each job's kept delivery track and deployment record (issue #2775); each ended job's grades (issue #2845)
   /** `plugins`, `rules` and `job-rules`. */
   config: ConfigRecords<UserConfigName>;
   /** Run fn in one transaction. Re-entrant: a nested tx joins the outer one. Throw = rollback. */
