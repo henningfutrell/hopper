@@ -11,6 +11,9 @@
     "route": {
       "type": "boolean"
     },
+    "confine": {
+      "type": "boolean"
+    },
     "hosts": {
       "type": "integer",
       "minimum": -9007199254740991,
