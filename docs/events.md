@@ -8779,6 +8779,91 @@ Version 1 (`docs/schemas/step_schedule.run_failed.v1.json`). A run of a step sch
 }
 ```
 
+## `repo_memory.learned`
+
+Version 1 (`docs/schemas/repo_memory.learned.v1.json`). A finished job wrote a memory line (issue #2847): `HOPPER_MEMORY <kind>[ <area>]: <text>` in its final message. A new entry is `proposed` while the repository's setting asks a person to approve it, else `approved`; `again`: the repository had the same entry, and it is now more `confident` and its age renewed.
+
+| field | type | required |
+|---|---|---|
+| `entry` | string | yes |
+| `repo` | string | yes |
+| `kind` | `convention` \| `fix` | yes |
+| `area` | string | no |
+| `text` | string | yes |
+| `state` | `proposed` \| `approved` | yes |
+| `confidence` | number | yes |
+| `again` | boolean | yes |
+
+```json
+{
+  "entry": "5b0e2c7a-0000-4000-8000-000000002847",
+  "repo": "acme/app",
+  "kind": "convention",
+  "text": "Run `npm run check` before a push: it runs the type check, the lint and the tests.",
+  "state": "proposed",
+  "confidence": 0.5,
+  "again": false
+}
+```
+
+## `repo_memory.flagged`
+
+Version 1 (`docs/schemas/repo_memory.flagged.v1.json`). A finished job wrote `HOPPER_MEMORY_WRONG <id>: <reason>` (issue #2847): the entry is `flagged`, and no job is offered it until a person approves or edits it.
+
+| field | type | required |
+|---|---|---|
+| `entry` | string | yes |
+| `repo` | string | yes |
+| `reason` | string | yes |
+
+```json
+{
+  "entry": "5b0e2c7a-0000-4000-8000-000000002847",
+  "repo": "acme/app",
+  "reason": "npm run check no longer runs the tests; npm test does."
+}
+```
+
+## `repo_memory.changed`
+
+Version 1 (`docs/schemas/repo_memory.changed.v1.json`). A person added, edited, approved, disabled, enabled or removed a memory entry (issue #2847), from the UI, the API or `hopper memory`. The next job of the repository gets the change.
+
+| field | type | required |
+|---|---|---|
+| `entry` | string | yes |
+| `repo` | string | yes |
+| `change` | `added` \| `edited` \| `approved` \| `disabled` \| `enabled` \| `removed` | yes |
+| `by` | string | yes |
+
+```json
+{
+  "entry": "5b0e2c7a-0000-4000-8000-000000002847",
+  "repo": "acme/app",
+  "change": "approved",
+  "by": "Pat"
+}
+```
+
+## `job.memory_offered`
+
+Version 1 (`docs/schemas/job.memory_offered.v1.json`). The memory entries of its repository this job was told as it started (issue #2847), by id, the most confident first; `left`: the approved ones that did not fit in the settings' `maxBytes`. Recorded again at a later start only when they changed.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `entries` | string[] | yes |
+| `left` | integer | yes |
+
+```json
+{
+  "repo": "acme/app",
+  "entries": [
+    "5b0e2c7a-0000-4000-8000-000000002847"
+  ],
+  "left": 0
+}
+```
+
 ## `landing_batch.due`
 
 Version 1 (`docs/schemas/landing_batch.due.v1.json`). A batch run of a repository's landing branch is due (issue #1589): recorded before the hopper makes its `branch` at the `tip` and opens its pull request into the `tested` branch, with the text it carries (`merges`, the issues it `closes`) and `why`. A pass that stops before `landing_batch.started` starts the same batch run, and takes the pull request it finds on that branch in place of a second one.

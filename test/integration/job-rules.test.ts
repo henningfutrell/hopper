@@ -133,11 +133,12 @@ describe('the repository job rules', () => {
     const a = await start({ jobRules: 'Be brief.' });
     const token = await a.login();
     expect((await a.ui('/ui/api/repo-job-rules', { repos: { 'acme/*': 'Production stays with a person.', 'acme/app': 'Follow it to qa.' }, version: 'missing' }, { token })).status).toBe(200);
-    expect(await runJob(a, 'acme/app')).toBe([
+    expect((await runJob(a, 'acme/app'))?.replace(/\n\[hopper repository memory\][\s\S]*$/, '')).toBe([
       'Be brief.',
       '[hopper repository rules] Rules set in the hopper for every job of acme/*:', 'Production stays with a person.',
       '[hopper repository rules] Rules set in the hopper for every job of acme/app:', 'Follow it to qa.',
     ].join('\n'));
-    expect(await runJob(a, 'other/app')).toBe('Be brief.');
+    // Then its repository's memory (issue #2847, test/integration/repo-memory.test.ts).
+    expect(await runJob(a, 'other/app')).toMatch(/^Be brief\.\n\[hopper repository memory\] The hopper keeps no memory entry of other\/app for jobs yet\.\n/);
   });
 });

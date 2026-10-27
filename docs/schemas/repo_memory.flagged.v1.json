@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "entry": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "entry",
+    "repo",
+    "reason"
+  ],
+  "additionalProperties": false
+}

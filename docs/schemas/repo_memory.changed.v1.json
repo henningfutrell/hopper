@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "entry": {
+      "type": "string"
+    },
+    "repo": {
+      "type": "string"
+    },
+    "change": {
+      "type": "string",
+      "enum": [
+        "added",
+        "edited",
+        "approved",
+        "disabled",
+        "enabled",
+        "removed"
+      ]
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "entry",
+    "repo",
+    "change",
+    "by"
+  ],
+  "additionalProperties": false
+}
