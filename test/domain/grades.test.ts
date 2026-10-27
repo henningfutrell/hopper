@@ -4,7 +4,7 @@
 // machine. Pure.
 import { describe, expect, it } from 'vitest';
 import {
-  autoGradeOf, DEFAULT_GRADE_SETTINGS, disagreesOf, fixIssuesOf, gradeFactsOf, gradeRollup, revertsOf, userPointsOf,
+  autoGradeOf, DEFAULT_GRADE_SETTINGS, disagreesOf, fixIssuesOf, gradeFactsOf, gradeKeysOf, gradeRollup, revertsOf, userPointsOf,
   type GradeFacts, type GradeRow,
 } from '../../src/domain/grades.ts';
 import type { DomainEvent, Job } from '../../src/domain/types.ts';
@@ -141,5 +141,15 @@ describe('user grades and rollups (issue #2845)', () => {
       { key: 'herdr-claude', jobs: 2, auto: 70, userGraded: 1, user: 5, disagreements: 0 },
     ]);
     expect(gradeRollup(rows, 'model')).toEqual([{ key: '(none)', jobs: 3, auto: 76.7, userGraded: 2, user: 3, disagreements: 1 }]);
+  });
+});
+
+// Issue #2848 part 3: a grade keeps the job's model choice, so grade history can tune model routing.
+describe('the keys of a grade', () => {
+  it('keep the model choice of the job\'s model route, and none for a job not routed', () => {
+    const job = { id: 'j1', spec: { executor: 'herdr-claude', payload: { model: 'sonnet' } }, status: 'finished', priority: 50, approved: true, createdAt: '', updatedAt: '2026-10-02T00:00:00.000Z', attempts: 1 } as unknown as Job;
+    const route = { choice: 'cheap', model: 'sonnet', rule: 'small-work', why: '', size: 'small', kind: 'code', risk: 'low', budget: { jobTokens: 0, jobCostUsd: 5 } };
+    expect(gradeKeysOf({ ...job, spec: { ...job.spec, modelRoute: route } } as Job, undefined)).toMatchObject({ model: 'sonnet', choice: 'cheap' });
+    expect(gradeKeysOf(job, undefined)).not.toHaveProperty('choice');
   });
 });

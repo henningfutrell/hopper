@@ -33,6 +33,18 @@ describe('model routing in Settings (issue #2848, part 2)', () => {
   });
 });
 
+describe('tuning from grades in Settings (issue #2848, part 3)', () => {
+  it('edits tuning on and off, its least grades and its margin, and says it when on', () => {
+    const d = modelRoutingDraftOf(S);
+    expect(d).toMatchObject({ tuneOn: false, tuneMinSamples: '5', tuneMargin: '10' });
+    expect(modelRoutingPatch(S, { ...d, tuneOn: true, tuneMargin: '15' })).toEqual({ ok: true, patch: { tune: { on: true, minSamples: 5, margin: 15 } } });
+    expect(modelRoutingPatch(S, { ...d, tuneMinSamples: '0' })).toEqual({ ok: false, error: 'Grades: a whole number from 1' });
+    expect(modelRoutingPatch(S, { ...d, tuneMargin: '101' })).toEqual({ ok: false, error: 'Margin: a number of points from 0 to 100' });
+    expect(modelRoutingSummary({ ...S, on: true, tune: { on: true, minSamples: 5, margin: 10 } }))
+      .toMatch(/ Grade history tunes the choice: at least 5 graded jobs of each model, a margin of 10 points\.$/);
+  });
+});
+
 describe('a job budget (issue #2848, part 2)', () => {
   it('sends the caps that differ from the job\'s, and refuses a bad one', () => {
     expect(jobBudgetPatch(undefined, { jobTokens: '', jobCostUsd: '0' })).toEqual({ ok: true, patch: undefined });

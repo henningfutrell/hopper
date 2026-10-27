@@ -157,3 +157,54 @@ describe('a job budget', () => {
     expect(parked.budgetPaused).toMatchObject({ tokens: 1610, why: 'Paused: the job used 1,610 tokens, its token budget is 1,000 tokens.' });
   });
 });
+
+// Part 3: grade history tunes the rules (issue #2845's grades, kept with the job's model choice): with tuning on, a simple
+// job the rules send to the cheap model goes to the strong one when the cheap model's graded jobs did clearly worse.
+describe('tuning from grades (part 3)', () => {
+  let n = 0;
+  const seed = (a: TestApp, choice: 'cheap' | 'strong', score: number, k: number): void => a.user().store.grades.save(Array.from({ length: k }, () => ({
+    jobId: `seeded-${++n}`, endedAt: new Date().toISOString(), executor: 'scripted', repo: 'owner/a', kind: 'code' as const, choice, auto: { score, lines: [] },
+  })));
+
+  it('sends a simple job to the strong model when the cheap model\'s grades are lower, only with tuning on', async () => {
+    const a = await boot();
+    const token = await a.login();
+    seed(a, 'cheap', 40, 3);
+    seed(a, 'strong', 90, 3);
+    await set(a, token, ON);
+    const off = await a.pull({ op: 'echo' }, { title: 'Fix a typo', body: 'One word is wrong.', repo: 'owner/a' });
+    expect(off.spec.modelRoute).toMatchObject({ choice: 'cheap', rule: 'small-work' });
+    expect((await set(a, token, { tune: { on: true, minSamples: 3, margin: 10 } })).status).toBe(200);
+    const tuned = await a.pull({ op: 'echo' }, { title: 'Fix another typo', body: 'One word is wrong.', repo: 'owner/a' });
+    expect(tuned.spec.payload.model).toBe('opus');
+    expect(tuned.spec.modelRoute).toMatchObject({ choice: 'strong', rule: 'grades' });
+    expect(tuned.spec.modelRoute!.why).toMatch(/^Grades: in owner\/a the cheap model's code jobs scored 40 \(3 jobs\) and the strong model's 90 \(3 jobs\)/);
+  });
+});
+
+// Part 3: a cheap job whose waste signals say it stalled is paused at its checkpoint as its budget would pause it, with no
+// budget set; picked up, it goes on on the strong model.
+describe('a stalled cheap job (part 3)', () => {
+  const WORKING = { steps: ['● Sanding'], output: [], end: 'working' as const };
+  const turn = (i: number): string => JSON.stringify({ type: 'assistant', timestamp: '2026-10-21T08:00:00.000Z', requestId: `r-${i}`,
+    message: { id: `m${i}`, model: 'claude-sonnet-5-5', content: [{ type: 'text', text: 'x' }], usage: { input_tokens: 1, output_tokens: 1 } } });
+  // 150 turns, no commit, no push.
+  const capture: CheckpointCapture = { taken: { branch: 'hopper/shed', base: 'b'.repeat(40), head: 'b'.repeat(40), commits: [], patch: gzipSync(''),
+    session: gzipSync(`${Array.from({ length: 150 }, (_, i) => turn(i)).join('\n')}\n`) } };
+
+  it('is paused with why, and picked up goes on on the strong model', async () => {
+    const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [WORKING], repositories: [`${homedir()}/shed`], checkpoint: capture });
+    const a = await boot(herdr);
+    const token = await a.login();
+    await set(a, token, { ...ON, cheap: { model: 'sonnet', jobTokens: 0, jobCostUsd: 0 } });
+    const job = await a.pull({}, { executor: 'herdr-claude', prompt: 'Paint the shed', title: 'Paint the shed', env: {} });
+    expect(job.spec.modelRoute).toMatchObject({ choice: 'cheap' });
+    await a.waitForStatus(job.id, 'running', 10_000);
+    await waitFor(() => herdr.prompts.length > 0, { what: 'the prompt sent' });
+    await a.user().engine.checkpoints.take(job.id);
+    const parked = await a.waitForStatus(job.id, 'parked', 10_000);
+    expect(parked.budgetPaused?.why).toBe('Paused: the cheap model stalled. 150 turns with no commit and no push. Picked up, the job goes on on the strong model.');
+    expect((await a.ui(`/ui/api/jobs/${job.id}/requeue`, {}, { token })).status).toBe(200);
+    expect((await a.api<Job>('GET', `/api/jobs/${job.id}`)).body.spec.modelRoute).toMatchObject({ choice: 'strong', model: 'opus', rule: 'escalated' });
+  });
+});
