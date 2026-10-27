@@ -9765,13 +9765,14 @@ Version 1 (`docs/schemas/job_egress.ask_answered.v1.json`). A person answered a 
 
 ## `job_egress.changed`
 
-Version 1 (`docs/schemas/job_egress.changed.v1.json`). An admin set the user's job egress allowlist (issue #2849, `POST /ui/api/job-egress`): `defaults`, whether the hopper's default hosts are on it; `route`, whether a job's agent runs behind `hopper-egress` from its next start (part 2; absent before it); `hosts`, how many hosts every job may reach; `repos`, how many repositories have hosts of their own. `by` is who. Never the hosts themselves: GET /api/job-egress reads them.
+Version 1 (`docs/schemas/job_egress.changed.v1.json`). An admin set the user's job egress allowlist (issue #2849, `POST /ui/api/job-egress`): `defaults`, whether the hopper's default hosts are on it; `route`, whether a job's agent runs behind `hopper-egress` from its next start (part 2; absent before it); `confine`, whether a routed job's sandbox also gets a network namespace of its own whose one way out is `hopper-egress` (part 4; absent before it); `hosts`, how many hosts every job may reach; `repos`, how many repositories have hosts of their own. `by` is who. Never the hosts themselves: GET /api/job-egress reads them.
 
 | field | type | required |
 |---|---|---|
 | `by` | string | yes |
 | `defaults` | boolean | yes |
 | `route` | boolean | no |
+| `confine` | boolean | no |
 | `hosts` | integer | yes |
 | `repos` | integer | yes |
 
@@ -9780,6 +9781,7 @@ Version 1 (`docs/schemas/job_egress.changed.v1.json`). An admin set the user's j
   "by": "Pat",
   "defaults": true,
   "route": true,
+  "confine": true,
   "hosts": 1,
   "repos": 2
 }

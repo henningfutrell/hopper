@@ -23,6 +23,7 @@ export const jobEgressBody = z.strictObject({
   hosts: z.array(entry).max(200),
   repos: z.record(z.string().regex(REPO, 'a repository is owner/name'), z.array(entry).max(200)).refine((r) => Object.keys(r).length <= 500, 'at most 500 repositories'),
   route: z.boolean().default(false),
+  confine: z.boolean().default(false),
 });
 export const jobEgressAskBody = z.strictObject({
   host: entry.refine((h) => !h.startsWith('*.'), 'an ask is one host, not a wildcard'),
@@ -31,7 +32,7 @@ export const jobEgressAskBody = z.strictObject({
   for: z.enum(['repo', 'all']).optional(),
 }).refine((b) => !(b.answer === 'approve' && b.for === 'repo' && !b.repo), 'approve for the repository names the repository');
 
-const VIEW = '`egress`: `defaults` (whether the hopper\'s default hosts are on the allowlist), `hosts` (every job\'s) and `repos` (`owner/name` → the hosts of that repository\'s jobs) and `route` (whether a job\'s agent runs behind `hopper-egress`, so its connections go out through the hopper to these hosts only; read at each job\'s start, off when not given); `defaultHosts`: the hopper\'s default hosts — the model providers, GitHub and the package registries; `asks`: the hosts off the allowlist the jobs were refused in the last week, that no person answered since, newest first — `host` (`host:port`), `repo`, `jobIds`, `at` (the newest refusal). An entry is `host:port`, or `*.domain:port` for the names under a domain.';
+const VIEW = '`egress`: `defaults` (whether the hopper\'s default hosts are on the allowlist), `hosts` (every job\'s) and `repos` (`owner/name` → the hosts of that repository\'s jobs) and `route` (whether a job\'s agent runs behind `hopper-egress`, so its connections go out through the hopper to these hosts only; read at each job\'s start, off when not given) and `confine` (with `route` only: whether the job\'s sandbox also gets a network namespace of its own whose one way out is `hopper-egress`; off when not given, and off whenever `route` is off); `defaultHosts`: the hopper\'s default hosts — the model providers, GitHub and the package registries; `asks`: the hosts off the allowlist the jobs were refused in the last week, that no person answered since, newest first — `host` (`host:port`), `repo`, `jobIds`, `at` (the newest refusal). An entry is `host:port`, or `*.domain:port` for the names under a domain.';
 
 export const JOB_EGRESS_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/job-egress', tag: 'Vault', summary: 'The job egress allowlist', description: `Issue #2849: the hosts a running job may connect out to through the hopper (\`GET /job/egress\`, with its proxy token). A job of a repository gets the defaults (when on), the user's hosts and that repository's hosts. ${VIEW}`, returns: '`{ egress, defaultHosts, asks }`' },
@@ -54,7 +55,7 @@ export function registerJobEgressRoutes(app: FastifyInstance, o: { admin: Guard;
     const egress: JobEgressSettings = normalJobEgress(parseWith(jobEgressBody, req.body));
     t.store.tx(() => {
       t.store.settings.setJobEgress(egress);
-      t.store.events.append({ type: 'job_egress.changed', data: { by: personOf(s), defaults: egress.defaults, route: egress.route, hosts: egress.hosts.length, repos: Object.keys(egress.repos).length } });
+      t.store.events.append({ type: 'job_egress.changed', data: { by: personOf(s), defaults: egress.defaults, route: egress.route, confine: egress.confine, hosts: egress.hosts.length, repos: Object.keys(egress.repos).length } });
     });
     return { egress };
   });
