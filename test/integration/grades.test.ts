@@ -6,6 +6,7 @@
 // Feature: grades over the API
 //   Scenario: a finished and a failed job get an automatic grade with a line per signal; the finished one grades higher
 //   Scenario: a merge raises the grade, and a revert inside the window lowers it again
+//   Scenario: a reopen of its issue and a fix issue for its merged pull request lower its rework signal (part 4)
 //   Scenario: a person gives a user grade with a note, edits it, and both stay in its history after a restart
 //   Scenario: the rollup by executor counts the jobs, the mean of each grade and the disagreements
 //   Scenario: a bad score, an unknown job and a job that has not ended are refused
@@ -71,6 +72,27 @@ describe('grades over the API', () => {
     const reverted = await gradeOf(a, done);
     expect(lineOf(reverted, 'pull_request')).toMatchObject({ value: 0, why: 'merged, then reverted by https://github.com/octo/shed/pull/20' });
     expect(reverted.grade!.auto.score).toBeLessThan(merged.grade!.auto.score);
+    expect(keepGrades(a.user().store, new Date())).toBe(0);
+  });
+
+  it('grades a job again when its issue reopens and when a fix issue names its merged pull request (part 4)', async () => {
+    const { a } = await boot();
+    const job = await a.pull({ op: 'echo', message: 'hi' });
+    await a.waitForStatus(job.id, 'finished', 20_000);
+    keepGrades(a.user().store, new Date());
+    expect(lineOf(await gradeOf(a, job.id), 'rework')).toMatchObject({ value: 1, why: 'none' });
+
+    add(a, 'work_item.issue_reopened', { key: job.source!.key, via: 'delivery' });
+    expect(keepGrades(a.user().store, new Date())).toBe(1);
+    expect(lineOf(await gradeOf(a, job.id), 'rework')).toMatchObject({ value: 0.5, why: '0 rework, 0 run again, 0 retry, 1 reopened' });
+
+    add(a, 'job.pull_request_followed', { pullRequest: PR, part: false }, job.id);
+    add(a, 'job.pull_request_merged', { pullRequest: PR, part: false }, job.id);
+    keepGrades(a.user().store, new Date());
+    add(a, 'landing_batch.culprit', { repo: 'octo/shed', tested: 'dev', tip: 't', index: 1, sha: 's', pullRequest: 11, checks: [], reason: 'checks failed', results: [] });
+    add(a, 'landing_batch.fix_filed', { repo: 'octo/shed', tip: 't', sha: 's', issue: 30, url: 'https://github.com/octo/shed/issues/30' });
+    expect(keepGrades(a.user().store, new Date())).toBe(1);
+    expect(lineOf(await gradeOf(a, job.id), 'rework')).toMatchObject({ why: '0 rework, 0 run again, 0 retry, 1 reopened, 1 fix issue' });
     expect(keepGrades(a.user().store, new Date())).toBe(0);
   });
 
