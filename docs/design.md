@@ -14414,9 +14414,9 @@ to its next jobs.
   edits its kind, area and text (only what differs is sent; an emptied area is taken away), removes it after a confirm,
   and adds an entry to the repository the filter names. Each act reads the entries again; the next job of the repository
   gets it. A reader sees the same with no act.
-- **Not learned from completion reviews.** A completion review (issue #2846) reads no text of the job's session, and its
-  suggestions are about the hopper's own settings (routing, lanes, templates, prompts), not a convention of the
-  repository; so it adds no entry. A later signal that is about the repository can call the same service.
+- **Not learned from completion reviews.** A completion review's suggestions (issue #2846) are about the hopper's own
+  settings (routing, lanes, templates, prompts), not a convention of the repository; so it adds no entry. A later signal
+  that is about the repository can call the same service.
 
 **Verification.** `test/domain/repo-memory.test.ts`, `test/integration/repo-memory.test.ts` (an entry a job learned and a
 person approved is offered to the next job of the same repository and not of another; an edit, a flag, a disable and a
