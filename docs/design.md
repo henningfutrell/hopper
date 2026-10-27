@@ -36569,8 +36569,7 @@ ways: a job's egress is as open as before. The parts left:
    the hopper. Built in part 2, below.
 2. Confinement on each runtime: bubblewrap's own network namespace for the job's sandbox (the proxy reached through a
    Unix socket bound into it), a NetworkPolicy for lane pods, the internal network for compose and Podman; a visible
-   warning on the job where none holds ("egress not enforced"). The sandbox's namespace and the warning are built in
-   part 4, below.
+   warning on the job where none holds ("egress not enforced").
 3. A denial as a Needs-you item that approves the host for the job's repository, so the retry goes through; the
    allowlist's view in Settings. Built in part 3, below.
 4. Secrets scoped to the job: only what its repository or template names in its environment.
@@ -36789,66 +36788,3 @@ the job's next try goes through and the ask is gone, recorded as `job_egress.ask
 after a later job's refusal; a wildcard is no ask), `test/ui/job-egress-needs-you.test.ts` (the Needs you row and its
 lines; the allowlist's text fields), `test/ui/needs-you.test.ts` and `test/ui/routing-view.test.ts` (the new row and
 section in their places).
-
-### A confined job: the sandbox's own network (part 4, 2026-10-27)
-
-**The problem.** With the route on, the agent and its tools have the proxy in their environment, but a tool that ignores
-`HTTPS_PROXY` — a raw socket, a client that reads no proxy variable — still goes out directly. Part 4 closes that way for
-the job's bubblewrap sandbox, and puts a warning on the job wherever it stays open.
-
-**The setting** (`confine`, `HOPPER_EGRESS_CONFINE`). Off when never set, and only with the route: the hopper keeps it off
-whenever `route` is off (`normalJobEgress`). An admin turns it on in Settings → Job egress (**Confine each routed job's
-agent**) or with `POST /ui/api/job-egress` `confine: true`; `job_egress.changed` records it. Read at each job's start, as
-the route is; the job's environment then holds `HOPPER_EGRESS_CONFINE=1` beside `HOPPER_EGRESS_ROUTE=1` (`egressVars`).
-
-**The setup decides once** (`src/client/job-sandbox.ts`). When the job's sandbox is set up and the route is on, the setup
-writes the job's egress into the sandbox's dir (`sandbox/egress`), and the runner reads it at each run:
-
-- `unrouted`: no `hopper-egress` file, or no `node` to run it. Nothing is written; the agent runs as it did.
-- `routed`: the agent runs behind `hopper-egress`, as in part 2.
-- `confined`: the setting asks it and bubblewrap makes a network namespace here (a trial run, `--unshare-net`).
-
-**Confined, the runner** runs `sh "$HOPPER_EGRESS" --socket <sock> -- bwrap … --unshare-net -- sh "$HOPPER_EGRESS" --from
-<sock> -- <the agent>`, the socket under `TMPDIR` (a short path, as a Unix socket path must be):
-
-- Outside, `hopper-egress --socket` is the same proxy as part 2's, on the Unix socket, not on a port. It runs bubblewrap
-  as it is.
-- Inside, the namespace has only its own loopback: no route out, no name server. `hopper-egress --from` holds a port on its
-  127.0.0.1 and joins each connection to the socket as it is, then runs the agent with the proxy variables set to that
-  port (as part 2's, and `NODE_USE_ENV_PROXY=1`, so Node's own `fetch` and `http` use them too). A Unix socket on the file
-  system is the one way between the namespaces: bubblewrap binds the whole file system in.
-- **The hopper itself** is reached directly, never through the allowlist, as before: a CONNECT to the hopper's host and
-  port goes from the proxy straight to the hopper. When `HOPPER_URL` is on loopback, `--from` also holds the same address
-  and port inside and joins each connection to the hopper through the socket, so `HOPPER_URL`, `hopper-gh` and git through
-  the hopper work with no change. When it is not, `NO_PROXY` leaves the hopper out, and a tool reaches it through the proxy.
-- The agent's tools see the job's podman socket, a Unix socket, as before.
-
-**The warning on the job.** The pane's sandbox step prints the egress before its own outcome (`hopper-egress-<word>`,
-`egressOutcome`), and the start puts it on the job's progress (`EGRESS_PROGRESS`, `src/executors/herdr/start-isolation.ts`):
-`egress: confined: …` when it holds; `egress warning: routed … not confined here …` when the setting is off or no network
-namespace holds; `egress warning: not routed here …` when there is no sandbox or no node. A job whose setting does not route
-it gets no line. A print-mode turn takes the same runner, so the same confinement, but it shows no line: its setup's output
-stays out of the agent's answer.
-
-**Why a setting of its own, and off by default.** Confined, the agent's loopback is its own: a port that a container of
-the job publishes, or that another process on the machine holds, is out of its reach (a job's own Postgres in podman, a
-test daemon on the host). A routed job keeps its machine's loopback. So confinement is a person's choice, made knowing that
-cost, not a change the route made to jobs that already run with it.
-
-**Residual risk, stated.**
-
-- A container the job starts through its podman socket runs outside the sandbox's namespace, with the machine's network.
-  Its egress is not limited by this part.
-- A machine with no bubblewrap, or one where bubblewrap cannot make a network namespace (no user namespaces for it), runs the
-  agent routed or as before, with the warning.
-- A lane pod and a client target in a container have no NetworkPolicy or internal network for their agent yet.
-
-**Not built in part 4, stated.** The parts left: a NetworkPolicy for lane pods and the internal network for an agent in a
-container beside the hopper; secrets scoped to the job.
-
-Tests: `test/client/job-sandbox.test.ts` (with bubblewrap: confined, the agent runs in a network namespace other than the
-one of `hopper-egress --socket`, between `--socket` outside and `--from` inside; the setup's egress word for each case; no
-bubblewrap with the route on is `unrouted`; the command fits a terminal line with a long work tree),
-`test/integration/job-egress.test.ts` (real database and HTTP server: the setting and its event, `HOPPER_EGRESS_CONFINE` at
-the job's start, confine kept off with the route off; in a network namespace of its own, a command reaches a listed host
-through `hopper-egress`, gets `ECONNREFUSED` for the same host directly, and reaches the hopper at `HOPPER_URL` as it is).
