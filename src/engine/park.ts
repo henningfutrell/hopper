@@ -17,7 +17,7 @@ import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { releaseLane } from './outcome.ts';
 import { openItemOf } from './reviews.ts';
-import { jobSpend } from './token-budget.ts';
+import { escalateStalled, jobSpend } from './token-budget.ts';
 
 /** What the resumed agent session is told when no answer waits for it: it was parked, and goes on. */
 export const PARKED_RESUME = 'This job was parked and is resumed now, in the same session and work tree. Go on with it where you left off.';
@@ -160,7 +160,8 @@ export function recordUnpark(c: EngineContext, id: string, freshSession = false,
   // Picked up: a move it was parked for ends here (issue #1892), whoever picked it up.
   if (job.parked?.move) { const { move: _ended, ...parked } = job.parked; store.jobs.update(id, { parked }); }
   // Picked up past its token budget (issue #2302): it goes on, its budget counted again from what it had spent.
-  if (job.budgetPaused) store.jobs.update(id, { budgetPaused: undefined, budgetFrom: jobSpend(store, id) });
+  // A cheap one goes on on the strong model (issue #2848, part 2).
+  if (job.budgetPaused) { store.jobs.update(id, { budgetPaused: undefined, budgetFrom: jobSpend(store, id) }); escalateStalled(c, job); }
   if (elsewhere) return recordElsewhere(c, store.jobs.get(id)!, by);
   // Never a fresh start the person did not agree to (issue #530).
   if (startsFresh(job) && !freshSession) {
