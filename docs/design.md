@@ -36418,6 +36418,58 @@ fix issue (`1 fix issue`) only when there is one, so a grade kept before has the
 `fixIssues`, each absent when 0, so the kept rows need no migration. The grade pass makes due the item's newest job at a
 reopen, and the culprit pull request's job at a fix issue, as at a revert. No new setting: the revert window is the window.
 
+## Item grades (issue #2845, part 5, 2026-10-26)
+
+Requirement (issue #2845): the hopper grades every finished job **and saga**, with an automatic grade and a user grade on
+its page, stored in the database and rolled up. The issue's "saga" is the whole work of one issue: in the glossary a
+**saga** is the coordinator's record of steps (`src/sagas/`), which is no finished work to judge, so the thing graded is
+the **work item** — one item of a source, over every job of it (its parts, its runs again). Glossary: **item grade**.
+
+**What is graded** (`src/domain/item-grades.ts`, pure). An item that ended `done` or `failed` (`GRADED_ITEM_STATES`); a
+dropped item was declined or dismissed, and is not graded. Its facts are its jobs' facts summed (`itemFactsOf`), from the
+kept grades of its jobs:
+
+- `outcome`: the item's own end, `done` as finished, `failed` as failed — not its newest job's.
+- `pull_request`: the first pull request of its jobs that was reverted inside the **revert window**, else its newest job's.
+- `fixChecks`, `reworks`, `reruns`, `reopens`, `fixIssues` summed; the retries summed (`attempts` is 1 plus each job's
+  attempts after its first).
+- `costUsd` summed only when every job has one; `queueMs` and `wallMs` summed; the waste signals of every completion
+  review, once each.
+
+The automatic grade is `autoGradeOf` of these facts with the user's grade settings: the same signals, weights and lines as
+a job's. The keys of the item (executor, model, repository, work kind, machine) are its newest job's, and `jobs` lists each
+graded job with its automatic score, oldest first. A job not graded (an end other than done or failed) is not in it; an
+item with no graded job is not graded.
+
+**The grade pass grades the items after the jobs** (`src/engine/item-grades.ts`), in the same transaction. Due: the item
+of each job it graded again; each of the 200 items that ended last with no item grade kept, or a kept one of another end
+(`endedAt` is the item's `stateSince`); and, when the grading part of the settings changed, every item grade of the last
+90 days. Only a grade that changed is written. An item that ended long ago and was never graded stays so. An item that
+is reopened and works again keeps its last item grade until it ends again.
+
+**The user grade of an item.** As a job's: 1 to 5 and a note, kept with who and when (`item_user_grades`), the newest the
+item's, the rest its history, `disagree` at 40 points or more. Only an item that ended done or failed; it changes no job
+or item.
+
+**Storage** (tenant migration 107, `src/store/grades.ts`). `item_grades`: one row per item by its source key, its keys
+as columns, its grade as JSON. `item_user_grades`: every user grade of an item. Tables only: the build before runs on
+them, and never reads them.
+
+**Reads and the grade.** `GET /api/grades/item?key=<source key>` (`ItemGradeView`; 404 for no such work item);
+`GET /api/grades/items` (`ItemGradesView`, the same `by`, `repo` and `since` as `GET /api/grades`; each group's `jobs` is
+its count of items); `POST /ui/api/grades/item` (`{ key, score, note? }`, an operator's; 409 for an item not ended done or
+failed). `hopper grades --items`, `hopper grades --item <issue URL>` and `hopper grades set <issue URL> <1-5>`. The scope
+area is `grades`, as for the jobs' grades.
+
+**In the UI.** The job view's Grade panel, for a job of a work item, shows its item's grade under the job's: the score,
+over how many jobs and its end, the lines, the item's user grade, and an operator's form that grades the item. An item has
+no page of its own: each of its jobs' pages shows it. The Grades tab of Jobs has Jobs and Items: Items rolls up the item
+grades and lists the items, each linked to its issue.
+
+**The model in grade routing** is the other item part 4 left. Issue #2848 part 3 does it in model routing (model tuning from
+the grades, `rule: grades`): the grade keeps the job's model choice, and intake compares the grades of the cheap and the
+strong model for the same work. Grade-aware routing stays on the executor.
+
 ## A job's egress allowlist (issue #2849, part 1, 2026-10-26)
 
 **The problem.** A sandbox template limits the egress and the secrets of its boxes ("A read-only box's egress", "A

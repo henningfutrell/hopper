@@ -1,0 +1,1 @@
+- The hopper now also grades the whole work of an issue, over all of its jobs, once it is done or failed. You can see that grade on each of its jobs' pages and give it your own grade, and see the grades of issues on the Grades tab of Jobs.
