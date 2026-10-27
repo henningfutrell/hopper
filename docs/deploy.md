@@ -1726,6 +1726,21 @@ or an approved template's image. A job names only a template and its command, ne
 Turn it off: `export HOPPER_PODMAN_SOCKET_HOST=/dev/null` and run `podman compose up -d`, or turn `podman.socket` off
 and run the update.
 
+### A contained machine beside the hopper
+
+A machine in a container beside a compose or Podman hopper can be a **contained machine** (design.md "Contained
+machines", issue #2849): its network reaches only the hopper, so the job egress allowlist is its jobs' one way out. The
+hopper starts no such machine itself. To run one:
+
+1. Turn on **Route each job's agent through the hopper** in Settings → Job egress.
+2. Start the container on the internal network `hopper_egress` alone (compose's `egress`, which has no way out), with
+   `HOPPER_EGRESS_CONTAINED=1` in its environment, for example `podman run --network hopper_egress -e
+   HOPPER_EGRESS_CONTAINED=1 …`. It reaches the hopper as `http://hopper:4790` (a LAN name, from a LAN peer).
+3. Join it with the line from Add machine, with that URL.
+
+Its jobs' progress then says `egress: contained`. With no bubblewrap in the container, the agent runs through the bare
+runner: no sandbox, but the route and the environment scope hold.
+
 ### A read-only box's egress
 
 On by default in `compose.yaml` (issue #849). A need box of a read-only template, and the read-only check box, beside
@@ -1941,6 +1956,9 @@ to the pods' join step only.
 | `lanes.size`, `lanes.storageClass` | each pod's volume: its link key and the jobs' work trees (the agent's sign-in only without `CLAUDE_TOKEN`). Default `20Gi` |
 | `lanes.agent`, `lanes.imageTag` | the box image: `box-<agent>` for the `latest` and `stable` channels, `box-<agent>-<channel>` for the others, unless `lanes.imageTag` names another tag |
 | `lanes.resources`, `lanes.nodeSelector`, `lanes.tolerations`, `lanes.affinity` | where the pods run, and with what |
+| `lanes.egress.confine` | `true`: a lane pod reaches only DNS and the hopper (a NetworkPolicy), so the job egress allowlist is its jobs' one way out (design.md "Contained machines"). Turn on **Route each job's agent through the hopper** in Settings → Job egress too, or the agent reaches nothing. Needs a network plugin that enforces NetworkPolicy. Default `false` |
+| `lanes.egress.dnsSelector` | the labels of the cluster's DNS pods, in any namespace. Default `k8s-app: kube-dns` |
+| `lanes.egress.hopperCidrs` | a runner-only release with `lanes.egress.confine`: the addresses of the hopper it joins, as CIDRs (`--set lanes.egress.hopperCidrs={192.0.2.10/32}`), reached on `lanes.hopperUrl`'s port. Needed there |
 
 What to expect:
 

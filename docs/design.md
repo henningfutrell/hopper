@@ -36916,3 +36916,68 @@ keeps the names kept and what the hopper set, and a secret of the machine, a nam
 are absent; off, as before), `test/integration/job-egress.test.ts` (real database and HTTP server: the setting and its event,
 a bad name refused, `HOPPER_ENV_SCOPE` and the scope file at the job's start, and the file run as the runner runs it leaves
 the machine's secrets out).
+
+### Contained machines: the bare runner, and a lane pod's egress (part 6, 2026-10-27)
+
+**The problem.** Parts 2 to 5 hold through the job's sandbox runner, and the runner exists only where bubblewrap runs. A
+lane pod, a box in a container and macOS have no bubblewrap that runs (a box image has none, and a container with every
+capability dropped makes no user namespace). So there a job with the route on went out directly, and a job with the scope on
+kept the machine's whole environment, both with a warning only. And a lane pod's network reached the internet, so nothing
+made the allowlist its one way out.
+
+**The bare runner** (`bareCommand`, `src/client/job-sandbox.ts`). When the sandbox's setup says `none` and the job's
+setting routes or scopes it (`PaneState.egressRouted`, `envScoped`), the pane runs a second step, on a line of its own (the
+sandbox's line is near the terminal's limit, issue #2234). It writes a runner with no sandbox in the sandbox's place
+(`<scratch>/sandbox/run`, and its `claude` first on the shell's PATH), as the sandbox does:
+
+- the job's environment scope first (part 5's file, as the sandbox runner sources it), then the job's runtime from
+  `env.sh`, then the command behind `hopper-egress` when the setup found the job routed or contained, else as it is;
+- the egress outcome: `unrouted` with no `hopper-egress` or no `node`, `contained` on a contained machine (below), else
+  `routed`;
+- under Git for Windows it writes nothing (`none`): herdr does not start a sh script as `claude` there.
+
+A print-mode turn takes the same step when its sandbox says `none` (`isolatedTurn`, `src/executors/print-agent.ts`). A
+runner that cannot be written fails the job before the agent starts (`the job's runner could not be set up`): a scope or a
+route the job was given is not dropped in silence. The progress says
+`sandbox: Claude runs through a runner with no sandbox: …`, then the egress line, then the scope line as `scoped`.
+
+**A contained machine** (`HOPPER_EGRESS_CONTAINED=1` in the machine's environment). The machine's own network reaches only
+the hopper (and DNS), so `hopper-egress`, through the hopper, is the agent's one way out, also for a tool that ignores
+`HTTPS_PROXY`. Whoever runs the machine sets it; the hopper does not check it. The bare runner then says `contained`, and
+the progress `egress: contained: …`. A contained machine needs the **job egress route** on: with it off, the agent's
+connections go out directly and the network refuses them. Where bubblewrap does run, the sandbox decides as before.
+
+- **Lane pods** (`lanes.egress.confine`, default off, `deploy/helm/hopper/templates/networkpolicy.yaml`,
+  `hopper.lanesEgress`). The lane pods' NetworkPolicy gets `Egress`: DNS — the pods `lanes.egress.dnsSelector` selects
+  (`k8s-app: kube-dns`), in any namespace, port 53 — and the hopper alone: its own pod on its port, or in a runner-only
+  release the CIDRs `lanes.egress.hopperCidrs` names, on `lanes.hopperUrl`'s port (a NetworkPolicy matches addresses, not
+  names; the chart refuses a confined runner-only release with none). The lane container gets
+  `HOPPER_EGRESS_CONTAINED=1`. Git and GitHub already go through the hopper (issues #563, #652), so a job needs nothing
+  else.
+- **A box beside a Podman or compose hopper**. No box beside the hopper takes jobs since issue #1349, so the hopper starts
+  none. A person who runs a machine in a container beside it can join it to the internal network `hopper_egress` (compose's
+  `egress`, `internal: true`), where it reaches only the hopper and the egress proxy, and set `HOPPER_EGRESS_CONTAINED=1`
+  (`docs/deploy.md` "A contained machine beside the hopper"). The read-only boxes' egress proxy allows only its own
+  allowlist, so it is no way out for a job.
+
+**Why a machine's word, not a probe.** A probe would need a host that answers when the network is open and a timeout when
+it is closed, at each job's start: a cost on every job, and a false `contained` when that host is down. The operator who
+closed the network knows it; the chart sets it with the policy that closes it.
+
+**Residual risk, stated.**
+
+- The bare runner is no sandbox: the agent sees the machine's processes, its runtime dir and its sockets, as before part 4.
+  The progress says so.
+- Not contained, the bare runner only routes: a tool that ignores `HTTPS_PROXY` goes out directly, with the warning.
+- `HOPPER_EGRESS_CONTAINED` set where the network is open says `contained` and is wrong; the hopper cannot tell.
+- A NetworkPolicy holds only with a network plugin that enforces it. Traffic between a pod and its own node is always
+  allowed (as for sandbox pods, issue #1286).
+- A job pod (the kubernetes executor, issue #1283) gets no egress policy: the hopper's role is pods only, and a policy for
+  them is a change of that role.
+
+Tests: `test/client/job-sandbox.test.ts` (no bubblewrap: the route on runs claude behind `hopper-egress` with no sandbox,
+contained and unrouted said, the scope keeps only the names kept, none written when neither, the command fits a terminal
+line), `test/herdr/executor-sandbox.test.ts` (the step after the sandbox and before Claude, only when routed or scoped; a
+failed one fails the job), `test/executors/print-agent-bare.test.ts` (the turn's step and its failure),
+`test/scripts/helm-chart-lanes-egress.test.ts` (off by default; confined, DNS and the hopper's pod on its port only, and
+`HOPPER_EGRESS_CONTAINED`; another DNS selector and port; a runner-only release's CIDRs on its URL's port, and none refused).
