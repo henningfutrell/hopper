@@ -16,6 +16,7 @@ import type { MachineDrains } from './machines.ts';
 import type { SandboxHost } from './sandbox-host.ts';
 import type { CloudLinkSettings, CloudRegistrationCode } from './cloud-link.ts';
 import type { TelemetrySettings } from './telemetry-settings.ts';
+import type { GradeSettings } from './grades.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { DiskDefaults } from './disk-defaults.ts'; import type { HeaderBadgeSettings } from './header-badges.ts'; import type { PushRequirement } from './push-requirements.ts';
 import type {
   AutoAnswerSettings, PreemptionSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
@@ -54,6 +55,8 @@ export interface UserSettingsRepository {
   setPublicBugReports(on: boolean): void;
   /** The hosts this user's jobs may connect out to (issue #2849); the hopper's defaults only when never set. */
   getJobEgress(): JobEgressSettings; setJobEgress(egress: JobEgressSettings): void;
+  /** The grade settings (issue #2845): the defaults, grade routing off, for what was never set; and the grading part the grade pass last graded with (`gradingPartOf`). */
+  getGradeSettings(): GradeSettings; setGradeSettings(s: GradeSettings): void; getGradedWith(): string | undefined; setGradedWith(part: string): void;
   getMemoryAlert(): MemoryAlert | undefined;
   setMemoryAlert(alert: MemoryAlert | null): void;
   /** The header badges the user chose (issue #1181); absent: never chosen, one Lanes badge. */

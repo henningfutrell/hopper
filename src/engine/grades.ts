@@ -2,9 +2,11 @@
 // after the pass's cursor name the jobs whose grade is due — a job that ended, or one whose pull request, rework or
 // revert came later —, and each such job that ended done or failed is graded again from its record, its own events, its
 // token ledger and the landing batches' reverts. The grades it changed and the new cursor are kept in one transaction, so
-// a pass a stop cut short is done again from the same cursor, on any host.
+// a pass a stop cut short is done again from the same cursor, on any host. The pass grades with the user's grade
+// settings; when their grading part changed since the last pass, every kept grade of the last REGRADE_DAYS is due too.
+import { gradingPartOf } from '../domain/grade-routing.ts';
 import {
-  autoGradeOf, DEFAULT_GRADE_SETTINGS, GRADE_EVENTS, gradedEnd, gradeFactsOf, gradeKeysOf, revertsOf, type GradeRow, type GradeSettings,
+  autoGradeOf, GRADE_EVENTS, gradedEnd, gradeFactsOf, gradeKeysOf, revertsOf, type GradeRow, type GradeSettings,
 } from '../domain/grades.ts';
 import type { UserStore } from '../domain/store.ts';
 import { jobTokenView } from '../domain/token-usage.ts';
@@ -15,6 +17,8 @@ const PAGE = 2000;
 const DAY = 86_400_000;
 /** The first pass grades the jobs that ended in the last this many days. */
 const FIRST_DAYS = 30;
+/** A settings change grades again the kept grades of jobs that ended in the last this many days. */
+const REGRADE_DAYS = 90;
 const JOB_EVENTS = GRADE_EVENTS.filter((t) => !t.startsWith('landing_batch.'));
 const REVERT_EVENTS = ['landing_batch.revert_opened', 'landing_batch.reverted'] as const;
 
@@ -49,7 +53,7 @@ function dueOf(store: UserStore, now: Date): { due: Set<string>; cursor: number 
 }
 
 /** A job's grade now, or undefined when it has not ended done or failed. */
-export function gradeOf(store: UserStore, jobId: string, now: Date, settings: GradeSettings = DEFAULT_GRADE_SETTINGS): GradeRow | undefined {
+export function gradeOf(store: UserStore, jobId: string, now: Date, settings: GradeSettings = store.settings.getGradeSettings()): GradeRow | undefined {
   const job = store.jobs.get(jobId);
   if (!job || !gradedEnd(job.status)) return undefined;
   const events = store.events.recent(1000, [...JOB_EVENTS], jobId).sort((a, b) => a.seq - b.seq);
@@ -63,14 +67,21 @@ export function gradeOf(store: UserStore, jobId: string, now: Date, settings: Gr
 /** One pass at `now`: answers how many grades it wrote. */
 export function keepGrades(store: UserStore, now: Date): number {
   const { due, cursor } = dueOf(store, now);
+  const settings = store.settings.getGradeSettings();
+  const part = gradingPartOf(settings);
+  const regrade = store.settings.getGradedWith() !== part;
+  if (regrade) for (const r of store.grades.list({ since: new Date(now.getTime() - REGRADE_DAYS * DAY).toISOString() })) due.add(r.jobId);
   const changed: GradeRow[] = [];
   for (const jobId of due) {
-    const g = gradeOf(store, jobId, now);
+    const g = gradeOf(store, jobId, now, settings);
     if (!g) continue;
     const kept = store.grades.get(jobId);
     if (kept && JSON.stringify({ ...kept, user: undefined, gradedAt: undefined }) === JSON.stringify({ ...g, gradedAt: undefined })) continue;
     changed.push(g);
   }
-  if (changed.length > 0 || cursor !== store.grades.cursor()) store.grades.save(changed, cursor);
+  store.tx(() => {
+    if (changed.length > 0 || cursor !== store.grades.cursor()) store.grades.save(changed, cursor);
+    if (regrade) store.settings.setGradedWith(part);
+  });
   return changed.length;
 }

@@ -68,6 +68,50 @@
           ],
           "additionalProperties": false
         },
+        "gradeRoute": {
+          "type": "object",
+          "properties": {
+            "executor": {
+              "type": "string"
+            },
+            "from": {
+              "type": "string"
+            },
+            "on": {
+              "type": "string",
+              "enum": [
+                "repo",
+                "kind"
+              ]
+            },
+            "score": {
+              "type": "number"
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "fromScore": {
+              "type": "number"
+            },
+            "fromSamples": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "executor",
+            "from",
+            "on",
+            "score",
+            "samples",
+            "fromScore",
+            "fromSamples"
+          ],
+          "additionalProperties": false
+        },
         "proposal": {
           "type": "boolean",
           "const": true
