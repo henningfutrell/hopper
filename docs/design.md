@@ -36569,7 +36569,8 @@ ways: a job's egress is as open as before. The parts left:
    the hopper. Built in part 2, below.
 2. Confinement on each runtime: bubblewrap's own network namespace for the job's sandbox (the proxy reached through a
    Unix socket bound into it), a NetworkPolicy for lane pods, the internal network for compose and Podman; a visible
-   warning on the job where none holds ("egress not enforced").
+   warning on the job where none holds ("egress not enforced"). The sandbox's namespace and the warning are built in
+   part 4, below.
 3. A denial as a Needs-you item that approves the host for the job's repository, so the retry goes through; the
    allowlist's view in Settings. Built in part 3, below.
 4. Secrets scoped to the job: only what its repository or template names in its environment.
@@ -36788,3 +36789,130 @@ the job's next try goes through and the ask is gone, recorded as `job_egress.ask
 after a later job's refusal; a wildcard is no ask), `test/ui/job-egress-needs-you.test.ts` (the Needs you row and its
 lines; the allowlist's text fields), `test/ui/needs-you.test.ts` and `test/ui/routing-view.test.ts` (the new row and
 section in their places).
+
+### A confined job: the sandbox's own network (part 4, 2026-10-27)
+
+**The problem.** With the route on, the agent and its tools have the proxy in their environment, but a tool that ignores
+`HTTPS_PROXY` — a raw socket, a client that reads no proxy variable — still goes out directly. Part 4 closes that way for
+the job's bubblewrap sandbox, and puts a warning on the job wherever it stays open.
+
+**The setting** (`confine`, `HOPPER_EGRESS_CONFINE`). Off when never set, and only with the route: the hopper keeps it off
+whenever `route` is off (`normalJobEgress`). An admin turns it on in Settings → Job egress (**Confine each routed job's
+agent**) or with `POST /ui/api/job-egress` `confine: true`; `job_egress.changed` records it. Read at each job's start, as
+the route is; the job's environment then holds `HOPPER_EGRESS_CONFINE=1` beside `HOPPER_EGRESS_ROUTE=1` (`egressVars`).
+
+**The setup decides once** (`src/client/job-sandbox.ts`). When the job's sandbox is set up and the route is on, the setup
+writes the job's egress into the sandbox's dir (`sandbox/egress`), and the runner reads it at each run:
+
+- `unrouted`: no `hopper-egress` file, or no `node` to run it. Nothing is written; the agent runs as it did.
+- `routed`: the agent runs behind `hopper-egress`, as in part 2.
+- `confined`: the setting asks it and bubblewrap makes a network namespace here (a trial run, `--unshare-net`).
+
+**Confined, the runner** runs `sh "$HOPPER_EGRESS" --socket <sock> -- bwrap … --unshare-net -- sh "$HOPPER_EGRESS" --from
+<sock> -- <the agent>`, the socket under `TMPDIR` (a short path, as a Unix socket path must be):
+
+- Outside, `hopper-egress --socket` is the same proxy as part 2's, on the Unix socket, not on a port. It runs bubblewrap
+  as it is.
+- Inside, the namespace has only its own loopback: no route out, no name server. `hopper-egress --from` holds a port on its
+  127.0.0.1 and joins each connection to the socket as it is, then runs the agent with the proxy variables set to that
+  port (as part 2's, and `NODE_USE_ENV_PROXY=1`, so Node's own `fetch` and `http` use them too). A Unix socket on the file
+  system is the one way between the namespaces: bubblewrap binds the whole file system in.
+- **The hopper itself** is reached directly, never through the allowlist, as before: a CONNECT to the hopper's host and
+  port goes from the proxy straight to the hopper. When `HOPPER_URL` is on loopback, `--from` also holds the same address
+  and port inside and joins each connection to the hopper through the socket, so `HOPPER_URL`, `hopper-gh` and git through
+  the hopper work with no change. When it is not, `NO_PROXY` leaves the hopper out, and a tool reaches it through the proxy.
+- The agent's tools see the job's podman socket, a Unix socket, as before.
+
+**The warning on the job.** The pane's sandbox step prints the egress before its own outcome (`hopper-egress-<word>`,
+`egressOutcome`), and the start puts it on the job's progress (`EGRESS_PROGRESS`, `src/executors/herdr/start-isolation.ts`):
+`egress: confined: …` when it holds; `egress warning: routed … not confined here …` when the setting is off or no network
+namespace holds; `egress warning: not routed here …` when there is no sandbox or no node. A job whose setting does not route
+it gets no line. A print-mode turn takes the same runner, so the same confinement, but it shows no line: its setup's output
+stays out of the agent's answer.
+
+**Why a setting of its own, and off by default.** Confined, the agent's loopback is its own: a port that a container of
+the job publishes, or that another process on the machine holds, is out of its reach (a job's own Postgres in podman, a
+test daemon on the host). A routed job keeps its machine's loopback. So confinement is a person's choice, made knowing that
+cost, not a change the route made to jobs that already run with it.
+
+**Residual risk, stated.**
+
+- A container the job starts through its podman socket runs outside the sandbox's namespace, with the machine's network.
+  Its egress is not limited by this part.
+- A machine with no bubblewrap, or one where bubblewrap cannot make a network namespace (no user namespaces for it), runs the
+  agent routed or as before, with the warning.
+- A lane pod and a client target in a container have no NetworkPolicy or internal network for their agent yet.
+
+**Not built in part 4, stated.** The parts left: a NetworkPolicy for lane pods and the internal network for an agent in a
+container beside the hopper; secrets scoped to the job (built in part 5, below).
+
+Tests: `test/client/job-sandbox.test.ts` (with bubblewrap: confined, the agent runs in a network namespace other than the
+one of `hopper-egress --socket`, between `--socket` outside and `--from` inside; the setup's egress word for each case; no
+bubblewrap with the route on is `unrouted`; the command fits a terminal line with a long work tree),
+`test/integration/job-egress.test.ts` (real database and HTTP server: the setting and its event, `HOPPER_EGRESS_CONFINE` at
+the job's start, confine kept off with the route off; in a network namespace of its own, a command reaches a listed host
+through `hopper-egress`, gets `ECONNREFUSED` for the same host directly, and reaches the hopper at `HOPPER_URL` as it is).
+
+### A job's environment scope (part 5, 2026-10-27)
+
+**The problem.** A job's pane is a tab of the user's herdr session, and the session starts with the environment of the
+daemon (the admin's jobs, `userProcessEnv`) or of the machine's client. The hopper takes out its master key, the ssh agent
+and Claude Code's child-session markers (`src/executors/env.ts`), but every other variable stays: a database URL with its
+password, a credential the runtime gave the hopper for an outside service (`NAME`, `NAME_FILE`), a cloud key in the
+shell's environment. A job that reads a prompt injection reads them with `env`. The issue asks that only the secrets the
+job's repository names are in its environment, and every other one absent, not hidden.
+
+**The setting** (`scope`, `keep`, `repoKeep` in the job egress setting, `src/domain/job-egress.ts`). Off when never set.
+An admin turns it on in Settings → Job egress (**Scope each job's environment**) or with `POST /ui/api/job-egress`
+`scope: true`, and names the variables jobs keep: `keep` for every job, `repoKeep` for the jobs of one repository
+(`owner/name` → names, kept in lowercase). A name is an upper-case variable name (`jobEnvNameProblem`): a bad one is 400.
+`job_egress.changed` records `scope` and how many names (`keep`, `repoKeep`), never the names. Read at each job's start, as
+the route is (`jobProxy`, `src/users/github-proxy.ts`).
+
+**What a scoped job keeps** (`jobEnvKeep`, `src/sandbox/env-scope.ts`):
+
+- the hopper's own names (`JOB_ENV_KEPT`): the machine's variables (`PATH`, `HOME`, `USER`, `SHELL`, `LANG`, `TERM`, `TZ`,
+  `TMPDIR`, the `XDG_*` dirs and the like), the user's config dirs (`GH_CONFIG_DIR`, `CLAUDE_CONFIG_DIR`) and the agent's
+  sign-in (`CLAUDE_CODE_OAUTH_TOKEN`);
+- what the hopper set for the job: the pane's environment names it, as `HOPPER_ENV_KEEP` (`withEnvKeep`, `openPane`) —
+  its way to the hopper, its tool defaults, its temp dir; a print-mode turn's are set after the scope, so they stay;
+- the names that start with `LC_` or `HERDR_`;
+- the names the setting keeps for every job and for the job's repository.
+
+**How.** The hopper writes the scope into the job's credentials dir at each start, beside `hopper-egress`
+(`hopper/env-scope`, `envScopeScript`): with the scope on, a few lines of sh with the names kept; off, a comment. The job's
+sandbox runner (`src/client/job-sandbox.ts`) sources it first. On, it runs the runner again under `env -i`, with
+`HOPPER_ENV_SCOPED=1` and each kept variable that is exported, its arguments as they were; the runner then goes on as
+before — the job's runtime from `env.sh`, `hopper-egress`, bubblewrap — in that environment. So the agent and every tool it
+starts have no other variable, not even one whose name a shell cannot unset. The pane's shell itself keeps the tab's
+environment: no agent runs in it.
+
+**The warning on the job.** With the scope on, the pane's start puts a line on the job's progress
+(`ENV_SCOPE_PROGRESS`, `src/executors/herdr/start-isolation.ts`): `environment: scoped: …` when the sandbox is on, or
+`environment warning: not scoped here (no sandbox): …` when the machine has no bubblewrap that runs. A print-mode turn takes
+the same runner and shows no line, as for the egress.
+
+**Why the runner, and why off by default.** The runner is the one place both the pane's Claude and a print-mode turn go
+through, and it runs before bubblewrap, so the proxy and the sandbox see the scoped environment too. Its line stays near
+the terminal's limit (issue #2234): the scope's own logic lives in the placed file, and the runner only sources it. Off by
+default because an agent CLI or a tool may read a variable the hopper does not know (a provider's API key, a registry
+token): a person turns the scope on knowing which names the jobs need, and names them.
+
+**Residual risk, stated.**
+
+- A machine with no bubblewrap that runs has no runner, so its agent keeps the machine's whole environment, with the
+  warning.
+- The scope removes variables, not files: a file that a removed `NAME_FILE` named, or a credential in the user's home, is
+  still where it was. The sandbox does not hide them.
+- A container the job starts through its podman socket gets the environment the job gives it, not the machine's.
+- The pane's shell keeps the tab's environment; a person who types in the pane has it.
+
+**Not built in part 5, stated.** The part left: a NetworkPolicy for lane pods and the internal network for an agent in a
+container beside the hopper.
+
+Tests: `test/domain/job-env-scope.test.ts` (a name; the hopper's own names hold no hopper secret; the names of a job of a
+repository; the setting as kept), `test/client/job-sandbox.test.ts` (with bubblewrap: scoped, the agent in the sandbox
+keeps the names kept and what the hopper set, and a secret of the machine, a name no shell unsets and a value over two lines
+are absent; off, as before), `test/integration/job-egress.test.ts` (real database and HTTP server: the setting and its event,
+a bad name refused, `HOPPER_ENV_SCOPE` and the scope file at the job's start, and the file run as the runner runs it leaves
+the machine's secrets out).

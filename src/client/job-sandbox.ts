@@ -15,12 +15,21 @@ export const SANDBOX_SUBDIR = 'sandbox';
 
 /** The trial run: bubblewrap with the namespaces the sandbox uses. */
 const PROBE = 'bwrap --dev-bind / / --proc /proc --unshare-pid --unshare-ipc --die-with-parent true';
+/** The trial run of a network namespace, for a job its user's setting confines (issue #2849 part 4). */
+const NET_PROBE = 'bwrap --dev-bind / / --unshare-net --die-with-parent true';
+/** The file in the sandbox's dir that holds the job's egress as the setup found it: routed or confined. */
+const EGRESS_FILE = 'egress';
 
-// The runner, `<scratch>/sandbox/run <command> [args]`, one line after its `#!/bin/sh`: the job's runtime from env.sh, then
-// the command in bubblewrap. Inside the sandbox already (HOPPER_SANDBOXED), the command as it is. The options are put after
-// the command, then the command rotated behind them, as sh has no arrays. Later mounts go over earlier ones.
+/** The job's environment scope (issue #2849 part 5), in the job's credentials dir: src/sandbox/env-scope.ts `ENV_SCOPE_FILE`. */
+const ENV_SCOPE = 'credentials/hopper/env-scope';
+
+// The runner, `<scratch>/sandbox/run <command> [args]`, one line after its `#!/bin/sh`: the job's environment scope first
+// (issue #2849 part 5: with it on, the file runs the runner again with only the variables kept), the job's runtime from
+// env.sh, then the command in bubblewrap. Inside the sandbox already (HOPPER_SANDBOXED), the command as it is. The options
+// are put after the command, then the command rotated behind them, as sh has no arrays. Later mounts go over earlier ones.
 const RUN = [
-  `s=\${0%/${SANDBOX_SUBDIR}/run}; e=$s/${RUNTIME_SUBDIR}/env.sh; [ -r "$e" ] && . "$e";`,
+  `s=\${0%/${SANDBOX_SUBDIR}/run}; e=$s/${ENV_SCOPE}; [ -z "\${HOPPER_ENV_SCOPED:-}" ] && [ -r "$e" ] && . "$e";`,
+  `e=$s/${RUNTIME_SUBDIR}/env.sh; [ -r "$e" ] && . "$e";`,
   'if [ -n "${HOPPER_SANDBOXED:-}" ]; then exec "$@"; fi;',
   '[ $# -gt 0 ] || { printf "hopper: %s\\n" "sandbox: no command" >&2; exit 125; };',
   'n=$#;',
@@ -43,10 +52,14 @@ const RUN = [
   '[ -S /run/docker.sock ] && set -- "$@" --ro-bind /dev/null /run/docker.sock;',
   '[ -d /run/podman ] && set -- "$@" --tmpfs /run/podman;',
   'for x in "${XDG_CONFIG_HOME:-$HOME/.config}/herdr/sessions" "${HERDR_SOCKET_PATH:+${HERDR_SOCKET_PATH%/*}}"; do [ -n "$x" ] && [ -d "$x" ] && [ ! -L "$x" ] && set -- "$@" --tmpfs "$x"; done;',
-  'set -- "$@" --setenv HOPPER_SANDBOXED 1 --unsetenv DBUS_SESSION_BUS_ADDRESS --;',
+  'set -- "$@" --setenv HOPPER_SANDBOXED 1 --unsetenv DBUS_SESSION_BUS_ADDRESS;',
+  // The job's egress (issue #2849), as the setup found it: routed, bubblewrap runs behind `hopper-egress` (part 2);
+  // confined (part 4), also with a network namespace of its own, whose one way out is the proxy's Unix socket, joined to a
+  // port in it by `hopper-egress --from`, which then runs the command.
+  `e=; [ -z "\${HOPPER_EGRESS_PORT:-}" ] && [ -r "$s/${SANDBOX_SUBDIR}/${EGRESS_FILE}" ] && read -r e < "$s/${SANDBOX_SUBDIR}/${EGRESS_FILE}";`,
+  'case $e in confined) k=${TMPDIR:-/tmp}/hopper-egress-$$.sock; set -- "$@" --unshare-net -- sh "$HOPPER_EGRESS" --from "$k" --;; *) set -- "$@" --;; esac;',
   'i=0; while [ "$i" -lt "$n" ]; do a=$1; shift; set -- "$@" "$a"; i=$((i+1)); done;',
-  // The job's egress (issue #2849 part 2): when its user's setting routes jobs, bubblewrap runs behind `hopper-egress`.
-  '[ -n "${HOPPER_EGRESS_ROUTE:-}" ] && [ -z "${HOPPER_EGRESS_PORT:-}" ] && [ -r "${HOPPER_EGRESS:-}" ] && exec sh "$HOPPER_EGRESS" -- bwrap "$@";',
+  'case $e in confined) exec sh "$HOPPER_EGRESS" --socket "$k" -- bwrap "$@";; routed) exec sh "$HOPPER_EGRESS" -- bwrap "$@";; esac;',
   'exec bwrap "$@"',
 ].map((l) => l.trim()).join(' ');
 
@@ -58,14 +71,19 @@ const CLAUDE = [
 ].map((l) => l.trim()).join(' ');
 
 // $1 the scratch dir, $2 the runner, $3 the sandbox's claude. Prints one word: on, none (no bubblewrap that runs here: the
-// sandbox's scripts removed, so a run again does not find them) or failed.
+// sandbox's scripts removed, so a run again does not find them) or failed; when the job's setting routes it (issue #2849),
+// on and none are followed by its egress outcome.
 const SETUP_SCRIPT = [
   `d=$1/${SANDBOX_SUBDIR};`,
-  `if ! command -v bwrap >/dev/null 2>&1 || ! ${PROBE} >/dev/null 2>&1; then rm -rf "$d"; echo none; exit 0; fi;`,
+  `if ! command -v bwrap >/dev/null 2>&1 || ! ${PROBE} >/dev/null 2>&1; then rm -rf "$d"; echo none \${HOPPER_EGRESS_ROUTE:+unrouted}; exit 0; fi;`,
   'mkdir -p "$d/bin" || { echo failed; exit 0; };',
   '{ printf "#!/bin/sh\\n%s\\n" "$2" > "$d/run" && chmod 755 "$d/run"; } || { echo failed; exit 0; };',
   '{ printf "#!/bin/sh\\n%s\\n" "$3" > "$d/bin/claude" && chmod 755 "$d/bin/claude"; } || { echo failed; exit 0; };',
-  'echo on',
+  // The job's egress (issue #2849), when its user's setting routes it: unrouted with no hopper-egress or no node to run it;
+  // confined when the setting asks it and a network namespace holds here (part 4); else routed.
+  `rm -f "$d/${EGRESS_FILE}"; e=; if [ -n "\${HOPPER_EGRESS_ROUTE:-}" ]; then e=unrouted; if [ -r "\${HOPPER_EGRESS:-}" ] && command -v node >/dev/null 2>&1; then`,
+  `e=routed; [ -n "\${HOPPER_EGRESS_CONFINE:-}" ] && ${NET_PROBE} >/dev/null 2>&1 && e=confined; echo $e > "$d/${EGRESS_FILE}"; fi; fi;`,
+  'echo on $e',
 ].map((l) => l.trim()).join(' ');
 
 /** What the sandbox command prints, followed by its outcome. */
@@ -74,22 +92,39 @@ export const SANDBOX_MARK = 'hopper-sandbox-';
 export type SandboxOutcome = 'on' | 'none' | 'failed';
 const OUTCOMES: readonly SandboxOutcome[] = ['on', 'none', 'failed'];
 
+/** What the sandbox command prints before its outcome when the job's setting routes it (issue #2849), then the egress's. */
+export const EGRESS_MARK = 'hopper-egress-';
+/**
+ * confined: its sandbox has a network namespace of its own, whose one way out is `hopper-egress` (part 4); routed: behind
+ * `hopper-egress`, but a tool that ignores HTTPS_PROXY still goes out directly; unrouted: no sandbox or no node here, so
+ * not even routed.
+ */
+export type EgressOutcome = 'confined' | 'routed' | 'unrouted';
+const EGRESS_OUTCOMES: readonly EgressOutcome[] = ['confined', 'routed', 'unrouted'];
+
 const shq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`;
 
 /**
  * The command that sets the job's sandbox up and, when it is on, puts its `claude` first on the shell's PATH, then prints
- * its outcome as two words, so the command's own echo never reads as it. Run after the job's runtime: the runner reads its
+ * its egress outcome (only when the job's setting routes it, issue #2849) and its outcome, each as two words, so the
+ * command's own echo never reads as them. Run after the job's runtime: the runner reads its
  * env.sh.
  */
 export function sandboxCommand(scratch: string): string {
   const bin = shq(`${scratch}/${SANDBOX_SUBDIR}/bin`);
-  return `o=$(sh -c ${shq(SETUP_SCRIPT)} hopper-sandbox ${shq(scratch)} ${shq(RUN)} ${shq(CLAUDE)}); `
+  return `o=$(sh -c ${shq(SETUP_SCRIPT)} hopper-sandbox ${shq(scratch)} ${shq(RUN)} ${shq(CLAUDE)}); e=\${o#* }; o=\${o%% *}; `
     + `if [ "$o" = on ]; then case :$PATH: in *:${bin}:*) ;; *) PATH=${bin}:$PATH; export PATH;; esac; fi; `
-    + `printf 'hopper-sandbox-%s\\n' "\${o:-failed}"`;
+    + `{ [ "$e" = "$o" ] || printf 'hopper-egress-%s\\n' "$e"; printf 'hopper-sandbox-%s\\n' "\${o:-failed}"; }`;
 }
 
 /** The argv that runs the setup script outside a shell's own environment, for a test. */
 export const sandboxSetupArgv = (scratch: string): string[] => ['sh', '-c', SETUP_SCRIPT, 'hopper-sandbox', scratch, RUN, CLAUDE];
+
+/** The last egress outcome on the screen, if any: none when the job's setting does not route it. */
+export function egressOutcome(screen: string): EgressOutcome | undefined {
+  const last = screen.split('\n').map((l) => l.trim()).filter((l) => l.startsWith(EGRESS_MARK)).at(-1)?.slice(EGRESS_MARK.length);
+  return (EGRESS_OUTCOMES as readonly string[]).includes(last ?? '') ? last as EgressOutcome : undefined;
+}
 
 /** The last sandbox outcome on the screen, if any. */
 export function sandboxOutcome(screen: string): SandboxOutcome | undefined {

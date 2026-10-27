@@ -1,0 +1,1 @@
+- An admin can now scope the environment of jobs, in Settings under Job egress: a job's agent then keeps only the variables named there and what the hopper sets for it, so other secrets of the machine are not in its reach. Where a machine cannot do this, the job shows a warning.

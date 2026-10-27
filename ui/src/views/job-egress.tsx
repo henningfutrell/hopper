@@ -1,8 +1,9 @@
 // Job egress (issue #2849 part 3), in Settings, an admin's: the hosts a running job may connect out to through the hopper.
 // First the hosts the jobs asked for — each host off the allowlist a job was refused in the last week —, each approved for its
 // repository's jobs or for every job, or dismissed; Needs you counts them. Then the allowlist itself: the hopper's default
-// hosts on or off, every job's hosts, each repository's hosts, and the route (a job's agent behind hopper-egress). Kept in the
-// database, never in a file.
+// hosts on or off, every job's hosts, each repository's hosts, the route (a job's agent behind hopper-egress) and the
+// confinement (its sandbox's own network, part 4); last the environment scope (part 5): the variable names a job's agent keeps
+// of its machine's environment, for every job and for each repository's. Kept in the database, never in a file.
 import { Check, Network, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -53,11 +54,18 @@ function Asks({ view, busy, answer }: { view: JobEgressView; busy: boolean; answ
 function Form({ view, onSaved }: { view: JobEgressView; onSaved: (v: JobEgressView) => void }) {
   const [defaults, setDefaults] = useState(view.egress.defaults);
   const [route, setRoute] = useState(view.egress.route);
+  const [confine, setConfine] = useState(view.egress.confine);
   const [hosts, setHosts] = useState(view.egress.hosts.join('\n'));
   const [repos, setRepos] = useState(reposText(view.egress.repos));
+  const [scope, setScope] = useState(view.egress.scope ?? false);
+  const [keep, setKeep] = useState((view.egress.keep ?? []).join('\n'));
+  const [repoKeep, setRepoKeep] = useState(reposText(view.egress.repoKeep ?? {}));
   const [busy, setBusy] = useState(false);
-  const draft = { defaults, route, hosts: hostsOf(hosts), repos: reposOf(repos) };
-  const changed = JSON.stringify(draft) !== JSON.stringify({ defaults: view.egress.defaults, route: view.egress.route, hosts: view.egress.hosts, repos: view.egress.repos });
+  const draft = { defaults, route, confine: route && confine, hosts: hostsOf(hosts), repos: reposOf(repos), scope, keep: hostsOf(keep), repoKeep: reposOf(repoKeep) };
+  const changed = JSON.stringify(draft) !== JSON.stringify({
+    defaults: view.egress.defaults, route: view.egress.route, confine: view.egress.confine, hosts: view.egress.hosts, repos: view.egress.repos,
+    scope: view.egress.scope ?? false, keep: view.egress.keep ?? [], repoKeep: view.egress.repoKeep ?? {},
+  });
   const save = async () => {
     setBusy(true);
     const saved = await act(() => post<{ egress: JobEgressView['egress'] }>('/ui/api/job-egress', draft), 'Job egress saved', 'Only an admin changes the job egress allowlist');
@@ -91,6 +99,10 @@ function Form({ view, onSaved }: { view: JobEgressView; onSaved: (v: JobEgressVi
           <Switch checked={route} disabled={busy} aria-label="Route the job's agent" onCheckedChange={setRoute} />
           <span>Route each job&apos;s agent through the hopper, so its connections go out only to these hosts (read at each job&apos;s start)</span>
         </label>
+        <label className="flex items-center gap-2">
+          <Switch checked={route && confine} disabled={busy || !route} aria-label="Confine the job's agent" onCheckedChange={setConfine} />
+          <span>Confine each routed job&apos;s agent: its sandbox gets a network of its own, so a tool that ignores the proxy reaches nothing. Its containers&apos; published ports are then out of its reach. Where this cannot hold, the job shows a warning</span>
+        </label>
         <label className="block space-y-1">
           <span>Hosts every job may reach, one a line</span>
           <Textarea aria-label="Every job's hosts" rows={3} className="font-mono text-xs" placeholder="dev.example.com:8443" disabled={busy} value={hosts} onChange={(e) => setHosts(e.target.value)} />
@@ -98,6 +110,21 @@ function Form({ view, onSaved }: { view: JobEgressView; onSaved: (v: JobEgressVi
         <label className="block space-y-1">
           <span>Hosts of one repository&apos;s jobs: <code>owner/name host:port host:port</code>, a repository a line</span>
           <Textarea aria-label="Each repository's hosts" rows={3} className="font-mono text-xs" placeholder="octo/tools staging.example.com:443" disabled={busy} value={repos} onChange={(e) => setRepos(e.target.value)} />
+        </label>
+      </section>
+      <section className="space-y-3">
+        <h3 className="font-medium">The environment scope</h3>
+        <label className="flex items-center gap-2">
+          <Switch checked={scope} disabled={busy} aria-label="Scope the job's environment" onCheckedChange={setScope} />
+          <span>Scope each job&apos;s environment: its agent keeps only the variables named here, what the hopper set for the job and the machine&apos;s own ({view.keptNames?.length ?? 0} names). Every other variable, a secret of the machine among them, is absent (read at each job&apos;s start). Where this cannot hold, the job shows a warning</span>
+        </label>
+        <label className="block space-y-1">
+          <span>Variables every job keeps, one a line</span>
+          <Textarea aria-label="Every job's variables" rows={3} className="font-mono text-xs" placeholder="NPM_TOKEN" disabled={busy} value={keep} onChange={(e) => setKeep(e.target.value)} />
+        </label>
+        <label className="block space-y-1">
+          <span>Variables of one repository&apos;s jobs: <code>owner/name NAME NAME</code>, a repository a line</span>
+          <Textarea aria-label="Each repository's variables" rows={3} className="font-mono text-xs" placeholder="octo/tools STAGING_API_KEY" disabled={busy} value={repoKeep} onChange={(e) => setRepoKeep(e.target.value)} />
         </label>
         <Button size="sm" disabled={busy || !changed} onClick={() => void save()}>Save</Button>
       </section>

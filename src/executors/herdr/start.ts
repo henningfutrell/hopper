@@ -26,6 +26,7 @@ import { jobScratchOf, worktreesOf } from '../../domain/job-layout.ts';
 import { awaitOnScreen, shows } from './pane-wait.ts';
 import { seedClaudeConfig, settleStartup } from './startup.ts';
 import { shellQuote } from '../ssh.ts'; import { traceJobStep } from '../../telemetry/job-steps.ts';
+import { ENV_SCOPE_VARIABLE, withEnvKeep } from '../../sandbox/env-scope.ts';
 
 export const WORKSPACE_LABEL = 'hopper';
 const START_TIMEOUT_MS = 60000;
@@ -93,6 +94,8 @@ export interface PaneState {
   jobWorktree?: string;
   /** The checkout of the job's repository its worktree was made of, when `cwd` is not the job's repository (issues #361, #1103). */
   checkout?: string;
+  /** The job's environment is scoped (issue #2849 part 5): its user's setting asked it at the pane's start. */
+  envScoped?: boolean;
   /** The job's own container runtime's dir in its scratch dir (issue #1295), when it got one: its resource ledger names it (issue #2504). */
   containerRuntime?: string;
   /** The systemd user scope the pane's shell runs in (issue #410). Absent: the machine has none; the reap goes by HOPPER_JOB_ID. */
@@ -244,13 +247,16 @@ export async function openPane(d: StartDeps, ctx: ExecutionContext, cwd: string,
     // daemon idles 5 minutes at most (issue #2489); Gradle, Kotlin and Maven get capped build defaults (issue #2622); Node a
     // heap of its scope's memory limit (issue #2721), and it writes a report into the job's temp dir when its heap runs out
     // (issue #2722).
-    env: { ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', ...jobToolEnv(env, scopeLimitsOf(ctx.machine), tmp), ...(d.unattended ? { DISABLE_AUTOUPDATER: '1' } : {}) },
+    // With the job's environment scoped (issue #2849 part 5), the names of all of it in HOPPER_ENV_KEEP: its sandbox
+    // runner keeps them, and of the machine's environment only what the setting keeps.
+    env: withEnvKeep({ ...env, CLAUDE_CODE_TMPDIR: tmp, TMPDIR: tmp, HOPPER_JOB_ID: ctx.job.id, CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT: '1', ...jobToolEnv(env, scopeLimitsOf(ctx.machine), tmp), ...(d.unattended ? { DISABLE_AUTOUPDATER: '1' } : {}) }),
   });
   const state: PaneState = {
     ...(d.herdr.session ? { session: d.herdr.session } : {}),
     ...(ctx.machine.ssh && ctx.machine.herdr ? { ssh: ctx.machine.ssh } : {}),
     ...(ctx.machine.client ? { client: { machine: ctx.machine.id } } : {}),
     workspaceId, tabId, paneId, ...(terminalId ? { terminal: terminalId } : {}), agentName: agentNameFor(ctx.job.id), cwd, laneId: ctx.laneId,
+    ...(env[ENV_SCOPE_VARIABLE] ? { envScoped: true } : {}),
   };
   ctx.saveState({ ...state });
   return state;
