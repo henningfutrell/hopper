@@ -11,6 +11,10 @@
 //   Scenario: with the setting on, a job starts with hopper-egress and the route variable; off, with no route variable
 //   Scenario: a command behind hopper-egress reaches a listed host by CONNECT and by plain HTTP, and gets the hopper's no
 //             for a host off the list
+//
+// Feature: the hosts the jobs ask for (part 3)
+//   Scenario: a refused host is an ask; approved for the repository, the job's next try goes through and the ask is gone
+//   Scenario: a dismissed host asks no more until a job is refused again
 import { spawn } from 'node:child_process';
 import { createServer as createHttpServer, request } from 'node:http';
 import { createServer, type Server, type Socket } from 'node:net';
@@ -197,5 +201,44 @@ describe('the job\'s side, hopper-egress (issue #2849 part 2)', () => {
     expect(lines[3]).toContain(`403 no: example.com:443 is not on the egress allowlist of job ${job.id}`);
     expect(lines.slice(4)).toEqual(['200 GET /a?b=1', '']);
     expect(denials(t, job.id).map((e) => e.data)).toEqual([{ host: 'example.com', port: 443, repo: 'octo/tools', reason: 'not_listed' }]);
+  });
+});
+
+type EgressView = { egress: { hosts: string[]; repos: Record<string, string[]> }; asks: { host: string; repo?: string; jobIds: string[] }[] };
+
+describe('the hosts the jobs ask for (issue #2849 part 3)', () => {
+  it('a refused host is an ask; approved for the repository, the job\'s next try goes through and the ask is gone', async () => {
+    const { t, jobId, url, token } = await atWork();
+    const port = await echoServer();
+    const no = await egress(url, `127.0.0.1:${port}`, token) as { status: number; text: string };
+    expect(no.status).toBe(403);
+    expect(no.text).toContain('A person approves it in Needs you (Settings → Job egress), for octo/tools; then try again.');
+    const session = await t.app.login();
+    const read = await t.app.api<EgressView>('GET', '/api/job-egress', undefined, { 'x-hopper-session': session });
+    expect(read.body.asks).toEqual([{ host: `127.0.0.1:${port}`, repo: 'octo/tools', jobIds: [jobId], at: expect.any(String) }]);
+    const approved = await t.app.ui<EgressView>('/ui/api/job-egress/asks', { host: `127.0.0.1:${port}`, repo: 'octo/tools', answer: 'approve' }, { token: session });
+    expect(approved.status).toBe(200);
+    expect(approved.body.asks).toEqual([]);
+    expect(approved.body.egress.repos).toEqual({ 'octo/tools': [`127.0.0.1:${port}`] });
+    const opened = await egress(url, `127.0.0.1:${port}`, token);
+    if (!('socket' in opened)) throw new Error(`refused: ${opened.status} ${opened.text}`);
+    opened.socket.destroy();
+    const answered = t.app.user(ADMIN_ID).store.events.recent(1000).filter((e) => e.type === 'job_egress.ask_answered');
+    expect(answered.map((e) => e.data)).toEqual([{ by: expect.any(String), host: '127.0.0.1', port, repo: 'octo/tools', answer: 'approved', for: 'repo' }]);
+  });
+
+  it('a dismissed host asks no more until a job is refused again; a wildcard is no ask', async () => {
+    const { t, url, token } = await atWork();
+    await egress(url, 'paste.example.com:443', token);
+    const session = await t.app.login();
+    expect((await t.app.ui('/ui/api/job-egress/asks', { host: '*.example.com:443', answer: 'approve' }, { token: session })).status).toBe(400);
+    const dismissed = await t.app.ui<EgressView>('/ui/api/job-egress/asks', { host: 'paste.example.com:443', repo: 'octo/tools', answer: 'dismiss' }, { token: session });
+    expect(dismissed.body.asks).toEqual([]);
+    expect(dismissed.body.egress.repos).toEqual({});
+    const again = await running(t);
+    const token2 = readFileSync(join(t.root, again.env.HOPPER_TOKEN_FILE!), 'utf8').trim();
+    expect((await egress(again.env.HOPPER_URL!, 'paste.example.com:443', token2) as { status: number }).status).toBe(403);
+    const read = await t.app.api<EgressView>('GET', '/api/job-egress', undefined, { 'x-hopper-session': session });
+    expect(read.body.asks.map((a) => a.jobIds)).toEqual([[again.job.id]]);
   });
 });

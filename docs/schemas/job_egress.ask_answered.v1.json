@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "by": {
+      "type": "string"
+    },
+    "host": {
+      "type": "string"
+    },
+    "port": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "repo": {
+      "type": "string"
+    },
+    "answer": {
+      "type": "string",
+      "enum": [
+        "approved",
+        "dismissed"
+      ]
+    },
+    "for": {
+      "type": "string",
+      "enum": [
+        "repo",
+        "all"
+      ]
+    }
+  },
+  "required": [
+    "by",
+    "host",
+    "port",
+    "answer"
+  ],
+  "additionalProperties": false
+}

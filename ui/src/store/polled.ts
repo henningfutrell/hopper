@@ -1,5 +1,5 @@
 // Reads of the daemon that the nav, Needs you and the header share (issue #897): the pull requests, the infra plans, the
-// out-of-band changes (issue #871), yolo mode, the header badges (issue #1181), and the pending approvals (issue #2088). Each path is read once when first used, again every POLL_MS while anything shows it, and again after an event
+// out-of-band changes (issue #871), yolo mode, the header badges (issue #1181), and the pending approvals (issue #2088), the job egress asks (issue #2849). Each path is read once when first used, again every POLL_MS while anything shows it, and again after an event
 // whose type starts with one of the given prefixes. A failed read keeps the last answer; until one comes, there is none.
 import { useEffect } from 'react';
 import { create } from 'zustand';
@@ -7,6 +7,7 @@ import { get } from '@/lib/api';
 import type { PendingApprovalsView } from '../../../src/domain/types.ts';
 import type { StepSchedulesView } from '../../../src/domain/step-schedules.ts';
 import type { BugReportRecommendation } from '../../../src/domain/review-defects.ts';
+import type { JobEgressView } from '@/model/job-egress';
 import type { HeaderBadgeSettings, LandingBatchesView, OutOfBandView, PlanView, PullRequestsView, ToolAccountsReport, YoloModeView } from '@/model/wire';
 import { useHopper } from './index';
 
@@ -46,6 +47,8 @@ export const useOutOfBand = (): { changes: OutOfBandView[] } | undefined => useP
 export const useYoloMode = (): YoloModeView | undefined => usePolled('/api/yolo-mode', ['yolo_mode.']);
 /** The landing batches (issue #1333): Needs you's stuck landing passes. What is stuck is found by the pass, with no event: polled. */
 export const useLandingBatches = (): LandingBatchesView | undefined => usePolled('/api/landing-batches', ['landing_batch.']);
+/** The job egress allowlist (issue #2849 part 3): Needs you's egress hosts, read again after a denial or a change. */
+export const useJobEgress = (): JobEgressView | undefined => usePolled('/api/job-egress', ['job.egress_denied', 'job_egress.']);
 /** The step schedules (issue #2716): Needs you's failed scheduled runs, read again after each schedule's event. */
 export const useStepSchedules = (): StepSchedulesView | undefined => usePolled('/api/step-schedules', ['step_schedule.']);
 /** The bug-report recommendations that wait (issue #2846 part 2): Needs you's Bug reports row, read again after each one's event. */

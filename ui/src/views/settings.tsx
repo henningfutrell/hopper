@@ -1,11 +1,11 @@
 // Settings (issue #151): the configuration plane, one view with a section per part — the version (issue #165) with this hopper's display name (issue #465)
 // and the version history (issue #246) first (issue #363), then the question gates (escalation levels, standing rules,
-// risk rules), the decider (issue #550; named Decider in issue #661), the token budget (issue #2302), preemption (issue #1525), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the repository memory (issue #2847), the intake's trusted actors (issue #652), yolo mode (issue #579), landing batches (issue #1073), the delivery settings (issue #2554), the host link base (issue #712), the GitHub rate limit (issue #436), the GitHub webhook (issue #1079), remote access (issue #880), the allowed hosts (issue #1024), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
+// risk rules), the decider (issue #550; named Decider in issue #661), the token budget (issue #2302), preemption (issue #1525), the issue thread (issue #435), the TL;DR (issue #569), the job rules (issue #172), the repository memory (issue #2847), the intake's trusted actors (issue #652), yolo mode (issue #579), landing batches (issue #1073), the delivery settings (issue #2554), the host link base (issue #712), the GitHub rate limit (issue #436), the GitHub webhook (issue #1079), remote access (issue #880), the allowed hosts (issue #1024), the job egress allowlist (issue #2849), Contribution (issue #429), GitHub watches (issue #427), artifacts (issue #624), routing, plugins, webhooks, the vault (issue #558), the users (issue #158),
 // sign-in (issue #185), API tokens (issue #718), access and its permission matrix (issue #559) — each routed by hash (#settings/routing), so a link and the back button work. #settings
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one. Settings holds configuration only
 // (issue #897): the question history moved to Questions (#questions/history) and Your reports to its own view (#reports); their old hashes open them.
 // The sections' links are a left sub-nav in six groups that fold (issues #2353, #2373), and a jump list on a narrow screen.
-import { Activity, Award, Brain, Split, CalendarClock, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Cloud, Coins, Container, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Info, KeyRound, Layers, Link, ListChecks, MessagesSquare, MonitorCog, Network, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, type LucideIcon, UserCheck, Webhook, Zap } from 'lucide-react';
+import { Activity, Award, Brain, Split, CalendarClock, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Cloud, Coins, Container, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Info, KeyRound, Layers, Link, ListChecks, MessagesSquare, MonitorCog, Network, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, type LucideIcon, UserCheck, Waypoints, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -13,6 +13,7 @@ import { useGroupOpen } from '@/hooks/use-page-pref';
 import { cn } from '@/lib/utils';
 import { ArtifactSettings } from '@/views/artifact-settings';
 import { AllowedHosts } from '@/views/allowed-hosts';
+import { JobEgress } from '@/views/job-egress';
 import { TelemetrySettings } from '@/views/telemetry-settings';
 import { TokenBudget } from '@/views/token-budget'; import { ModelRouting } from '@/views/model-routing'; import { CompletionReviewSettingsView } from '@/views/completion-review'; import { GradeSettingsView } from '@/views/grade-settings';
 import { Preemption } from '@/views/preemption';
@@ -44,7 +45,7 @@ import { LandingBatches } from '@/views/landing-batches'; import { DeliverySetti
 import { IntakeActors } from '@/views/intake-actors';
 import { CloudLink } from '@/views/cloud-link';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'model-routing', 'preemption', 'completion-review', 'grades', 'thread-ask', 'tldr', 'job-rules', 'repo-memory', 'windows-hosts', 'podman-hosts', 'intake', 'yolo-mode', 'landing-batches', 'delivery', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'push-requirements', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'webhooks', 'clusters', 'sign-in'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'model-routing', 'preemption', 'completion-review', 'grades', 'thread-ask', 'tldr', 'job-rules', 'repo-memory', 'windows-hosts', 'podman-hosts', 'intake', 'yolo-mode', 'landing-batches', 'delivery', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'job-egress', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'push-requirements', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'webhooks', 'clusters', 'sign-in'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -68,6 +69,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'github-webhook': { label: 'GitHub webhook', icon: GitPullRequestArrow, view: GitHubDeliveries },
   'remote-access': { label: 'Remote access', icon: Globe, view: RemoteAccess },
   'allowed-hosts': { label: 'Allowed hosts', icon: Network, view: AllowedHosts },
+  'job-egress': { label: 'Job egress', icon: Waypoints, view: JobEgress },
   telemetry: { label: 'Telemetry', icon: Activity, view: TelemetrySettings },
   'host-link': { label: 'Host link', icon: Link, view: HostLink },
   'cloud-link': { label: 'hopper.io', icon: Cloud, view: CloudLink },
@@ -100,7 +102,7 @@ const GROUPS = [
   { id: 'jobs', label: 'Jobs and agents', sections: ['token-budget', 'model-routing', 'preemption', 'completion-review', 'grades', 'job-rules', 'repo-memory', 'routing', 'windows-hosts', 'podman-hosts', 'clusters', 'artifacts'] },
   { id: 'intake', label: 'Intake', sections: ['intake', 'questions', 'decider', 'thread-ask', 'tldr'] },
   { id: 'github', label: 'GitHub', sections: ['yolo-mode', 'landing-batches', 'delivery', 'github-rate-limit', 'github-webhook', 'contribution', 'shrink-guard', 'push-requirements', 'github-watches', 'component-watchers'] },
-  { id: 'security', label: 'Security and access', sections: ['sign-in', 'allowed-hosts', 'remote-access'] },
+  { id: 'security', label: 'Security and access', sections: ['sign-in', 'allowed-hosts', 'job-egress', 'remote-access'] },
   { id: 'integrations', label: 'Integrations', sections: ['webhooks', 'cloud-link', 'telemetry'] },
   { id: 'system', label: 'System', sections: ['version', 'version-history', 'host-link'] },
 ] as const satisfies readonly { id: string; label: string; sections: readonly [Section, Section, ...Section[]] }[];

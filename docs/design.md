@@ -36483,7 +36483,7 @@ ways: a job's egress is as open as before. The parts left:
    Unix socket bound into it), a NetworkPolicy for lane pods, the internal network for compose and Podman; a visible
    warning on the job where none holds ("egress not enforced").
 3. A denial as a Needs-you item that approves the host for the job's repository, so the retry goes through; the
-   allowlist's view in Settings.
+   allowlist's view in Settings. Built in part 3, below.
 4. Secrets scoped to the job: only what its repository or template names in its environment.
 
 Tests: `test/domain/job-egress.test.ts` (entries, the defaults, the list of a job of a repository, wildcard and port
@@ -36655,3 +36655,48 @@ the setting is on, which `job_egress.changed` records; a command behind `hopper-
 listed host by CONNECT and a listed one by plain HTTP, and gets the hopper's 403 and reason for a host off the list, which
 is on the job's timeline), `test/client/job-sandbox.test.ts` (with bubblewrap: Claude runs in the sandbox behind the
 proxy with the route on, and as before with it off or with no `hopper-egress` file).
+
+### The hosts the jobs ask for, and Settings → Job egress (part 3, 2026-10-26)
+
+**Asks.** A **job egress ask** is a host off the allowlist that the user's jobs were refused (`job.egress_denied`,
+`not_listed`) in the last week (`JOB_EGRESS_ASK_WINDOW_MS`), one per host, port and repository, with the jobs refused and
+the newest refusal (`jobEgressAsks`, `src/domain/job-egress.ts`, pure). The hopper keeps nothing new for it: the asks are
+read from the event log (`store.reads.eventsBetween`, off the event loop) at each `GET /api/job-egress`, which now answers
+`{ egress, defaultHosts, asks }`. An ask ends when:
+
+- the host is on the job's list now — a person approved it, or an admin added it (or a wildcard that holds it) in Settings;
+- a person dismissed it after its newest refusal. A job refused again after that asks again.
+
+A `local_address` refusal makes no ask: listing the name again does not change what it resolves to.
+
+**The answer.** `POST /ui/api/job-egress/asks`, least role admin (the same as the setting), scope area `job-egress`:
+`{ host, repo?, answer: approve | dismiss, for?: repo | all }`. Approve adds `host` (one `host:port`, never a wildcard) to
+the repository's hosts (`for: repo`, the default when `repo` is given) or to every job's hosts (`for: all`)
+(`withJobEgressHost`), in the same transaction as `job_egress.ask_answered` — who, the host and port, the repository, the
+answer and, for an approval, `for`. It answers the new view. A job reads the list at each connection, so its next try goes
+through: nothing wakes the job, it retries as its tool does. The 403's text now says where a person approves the host
+("A person approves it in Needs you (Settings → Job egress), for <repo>; then try again.").
+
+**In the UI.** Needs you has a **Job egress asks** row after Unknown clusters (`egressAskLines`, `ui/src/model/job-egress.ts`),
+one line per ask, that opens Settings → Job egress (`#settings/job-egress`, in the Security and access group,
+`ui/src/views/job-egress.tsx`). That view lists the asks with **Approve for <repo>**, **Approve for every job** and
+**Dismiss**, then the allowlist: the default hosts on or off, the route on or off, every job's hosts (a host a line) and each
+repository's hosts (`owner/name host:port …`, a repository a line), saved as the whole setting through
+`POST /ui/api/job-egress`. The shared read (`useJobEgress`) is read again after a `job.egress_denied` or a `job_egress.*`
+event, so a new refusal shows without a reload.
+
+**Why from the event log.** The refusals are already recorded, once per job, host and port; a table of asks would be a
+second record of the same fact, and a migration. A week bounds the read; an older refusal comes back when a job is refused
+again.
+
+**Not built in part 3, stated.** The parts left are 2 and 4 of the list above: confinement on each runtime and the warning
+where none holds; secrets scoped to the job. An approval is not shown on the job's timeline (it is a setting change, not
+the job's); the job's own 403 tells it to try again.
+
+Tests: `test/domain/job-egress.test.ts` (one ask per host, port and repository with its jobs, newest first; a listed host
+and a dismissed one ask no more until a later refusal; an approval for a repository or every job),
+`test/integration/job-egress.test.ts` (real database and HTTP server: a refused host is an ask, approved for the repository
+the job's next try goes through and the ask is gone, recorded as `job_egress.ask_answered`; a dismissed host asks again only
+after a later job's refusal; a wildcard is no ask), `test/ui/job-egress-needs-you.test.ts` (the Needs you row and its
+lines; the allowlist's text fields), `test/ui/needs-you.test.ts` and `test/ui/routing-view.test.ts` (the new row and
+section in their places).

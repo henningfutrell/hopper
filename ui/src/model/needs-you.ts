@@ -14,13 +14,15 @@
 // Access requests marks the run cards of high-priority jobs (issue #2197), as the nav badge marks a high-priority question.
 // Infra plans names each plan that waits, and marks those a high-priority job recorded (issue #2205): a job that waits on a
 // plan's approval links to it on Infra, where a person approves it.
+// Job egress asks (issue #2849 part 3) counts the hosts off the job egress allowlist that jobs were refused, each with whose jobs:
+// a person approves each for its repository or every job, or dismisses it, in Settings → Job egress.
 // Schedules (issue #2716) counts the step schedules whose newest run failed, each with why: Needs you lists it until a run succeeds.
 // Bug reports (issue #2846 part 2) counts the bug-report recommendations of completion reviews that wait for approval, each by
 // its title: nothing is filed until a person approves it in Your reports.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
-export const NEEDS_YOU_KINDS = ['intake', 'access', 'unknown-assets', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'budgets', 'pull-requests', 'checks', 'landing', 'tagged', 'schedules', 'bug-reports', 'sorting'] as const;
+export const NEEDS_YOU_KINDS = ['intake', 'access', 'unknown-assets', 'egress', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'budgets', 'pull-requests', 'checks', 'landing', 'tagged', 'schedules', 'bug-reports', 'sorting'] as const;
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
@@ -32,6 +34,8 @@ export interface NeedsYouCounts {
   accessHigh?: number;
   /** The templates with an unknown asset (issue #2067), one line each; absent: none. */
   unknownAssets?: readonly string[];
+  /** The hosts the jobs asked for (issue #2849 part 3), one line each; absent: none. */
+  egressAsks?: readonly string[];
   /** Infra plans that wait for a person to approve them. */
   plans: number;
   /** Of those, the ones a high-priority job recorded (issue #2205); absent: none. */
@@ -72,6 +76,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   intake: { label: 'Intake', href: '#intake', what: 'issues from people outside your trusted actors, waiting for your approval, labelled issues not assigned to you: no job starts until you assign them, and jobs held by their trust stamp' },
   access: { label: 'Access requests', href: '#approvals/access-requests', what: 'credentials, vault grants, box templates and sandbox runs that jobs on boxes wait for you to approve' },
   'unknown-assets': { label: 'Unknown clusters', href: '#approvals/access-requests', what: 'templates that name a cluster the vault cannot find, or a short name of several clusters: point each at a cluster, add a cluster override, or remove it' },
+  egress: { label: 'Job egress asks', href: '#settings/job-egress', what: 'hosts off the job egress allowlist that jobs tried to reach: approve each for its repository or for every job, or dismiss it' },
   plans: { label: 'Infra plans', href: '#infra', what: 'plans of infrastructure changes that wait for a person to approve them' },
   questions: { label: 'Questions', href: '#questions', what: 'questions jobs asked you' },
   proposals: { label: 'Proposals', href: '#proposals', what: 'proposals that wait for you to pick a path' },
@@ -98,6 +103,7 @@ export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
       const unknown = c.unknownAssets ?? [];
       return { n: unknown.length, high: 0, ...(unknown.length ? { details: unknown } : {}) };
     }
+    if (k === 'egress') { const asks = c.egressAsks ?? []; return { n: asks.length, high: 0, ...(asks.length ? { details: asks } : {}) }; }
     if (k === 'plans') return { n: c.plans, high: c.plansHigh ?? 0, ...(c.planLines?.length ? { details: c.planLines } : {}) };
     if (k === 'budgets') { const paused = c.budgetPaused ?? []; return { n: paused.length, high: 0, ...(paused.length ? { details: paused } : {}) }; }
     if (k === 'pull-requests') return { n: c.gaveUp.length, high: 0, ...(c.gaveUp.length ? { details: c.gaveUp } : {}) };
