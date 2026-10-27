@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MEMORY_DEFAULTS, memoryEntryProblem, memoryExpired, memoryFor, memoryLinesOf, memoryOffer, memoryRepoOf, memorySettingsOf,
-  memorySettingsProblem, memoryShortId, memoryText, sameMemory, withMemoryLines, type MemoryEntry,
+  memorySettingsProblem, memoryShortId, memoryText, sameMemory, type MemoryEntry,
 } from '../../src/domain/repo-memory.ts';
 
 const NOW = new Date('2026-10-26T12:00:00.000Z');
@@ -95,13 +95,6 @@ describe('a job\'s memory lines', () => {
 
   it('at most 5', () => {
     expect(memoryLinesOf(Array.from({ length: 8 }, (_, i) => `HOPPER_MEMORY fix: ${i}`).join('\n'))).toHaveLength(5);
-  });
-
-  it('a summary cut keeps the memory lines past the cut', () => {
-    const text = `${'x'.repeat(50)}\nHOPPER_MEMORY fix: keep me`;
-    expect(withMemoryLines(text, 20)).toBe(`${'x'.repeat(20)}\nHOPPER_MEMORY fix: keep me`);
-    expect(withMemoryLines('short', 20)).toBe('short');
-    expect(withMemoryLines('x'.repeat(30), 20)).toBe('x'.repeat(20));
   });
 });
 

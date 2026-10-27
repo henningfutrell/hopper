@@ -190,17 +190,6 @@ export function memoryLinesOf(text: string): MemoryLine[] {
   return lines;
 }
 
-/**
- * `text` cut to `chars`, its memory lines kept: an executor cuts a job's final message to a summary, and the lines a
- * job writes at its end must not be cut off with it.
- */
-export function withMemoryLines(text: string, chars: number): string {
-  const cut = text.slice(0, chars);
-  if (cut.length === text.length) return cut;
-  const lost = unwrapped(text.slice(chars)).filter((l) => l.startsWith('HOPPER_MEMORY')).slice(0, MEMORY_LINES_MAX);
-  return lost.length === 0 ? cut : `${cut}\n${lost.join('\n')}`;
-}
-
 /** The same entry: one repository, kind and area, and the same text but for case and spaces. */
 export const sameMemory = (a: Pick<MemoryEntry, 'repo' | 'kind' | 'area' | 'text'>, b: Pick<MemoryEntry, 'repo' | 'kind' | 'area' | 'text'>): boolean =>
   a.repo === b.repo && a.kind === b.kind && (a.area ?? '') === (b.area ?? '') && norm(a.text) === norm(b.text);
@@ -235,7 +224,7 @@ export function memoryText(repo: string, offer: { entries: MemoryEntry[]; left: 
       ...offer.entries.map(lineOf),
       ...(offer.left > 0 ? [`(${offer.left} more ${offer.left === 1 ? 'entry does' : 'entries do'} not fit.)`] : []),
     ].join('\n');
-  return `${head}\nWhen this job found a convention of the repository (a build or test command, its layout, its style, a trap) or made a fix that a later job would otherwise have to find again, write it in your final message before the end marker, one line each: HOPPER_MEMORY convention: <text>, or HOPPER_MEMORY fix: <text>. For one part of the repository, put its path after the kind: HOPPER_MEMORY fix src/store: <text>. When an entry above is wrong now, write HOPPER_MEMORY_WRONG <its id>: <why>. At most ${MEMORY_LINES_MAX} lines; never a secret, a person's name or a machine detail.`;
+  return `${head}\nWhen this job found a convention of the repository (a build or test command, its layout, its style, a trap) or made a fix that a later job would otherwise have to find again, write it first in your final message, one line each, so that it is in the summary the hopper keeps: HOPPER_MEMORY convention: <text>, or HOPPER_MEMORY fix: <text>. For one part of the repository, put its path after the kind: HOPPER_MEMORY fix src/store: <text>. When an entry above is wrong now, write HOPPER_MEMORY_WRONG <its id>: <why>. At most ${MEMORY_LINES_MAX} lines; never a secret, a person's name or a machine detail.`;
 }
 
 /** An entry as the UI and the API show it: `expired` when no job is offered it for its age. */

@@ -7,7 +7,6 @@ import { hideCodes, recogniseDeviceCode } from '../../logins/recognise.ts';
 import { loginSignalIn, type LoginSignal } from '../../logins/signals.ts';
 import { isTaskCountLine, lastTaskCount, sameTaskCount, type TaskCount } from '../../domain/task-count.ts';
 import type { HerdrClient } from './client.ts';
-import { withMemoryLines } from '../../domain/repo-memory.ts';
 import { outsideItsPane, type PaneRestored } from './restored.ts';
 import { exitedError } from './exited.ts';
 import { CTRL_END, FOOTER_ANCHOR, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, turnText, type AuthFields } from './screen.ts';
@@ -226,7 +225,7 @@ async function watch(w: TurnWatch): Promise<Watched> {
       if (!ended) { idleSince = null; waitedOn = undefined; }
       else if (lost) return { lostSend: true };
       else if (turn.lastMarker === 'done') {
-        return { kind: 'finished', result: { summary: withMemoryLines(hideCodes(turn.assistantText, recent), SUMMARY_CHARS), paneId: w.paneId } };
+        return { kind: 'finished', result: { summary: hideCodes(turn.assistantText, recent).slice(0, SUMMARY_CHARS), paneId: w.paneId } };
       } else if (turn.lastMarker === 'failed') {
         return { kind: 'failed', error: hideCodes(turn.failedReason || 'HOPPER_FAILED without a reason', recent), tail: hideCodes(tail(recent, OUTPUT_LINES), recent) };
       } else if (turn.lastMarker === 'question') {

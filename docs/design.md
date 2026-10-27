@@ -14366,7 +14366,7 @@ to its next jobs.
   path of the repository), one line of text (at most 1000 characters), state (`proposed`, `approved`, `disabled`,
   `flagged`), confidence (0 to 1), the job that learned it, who changed it last, and when it was made and last changed. At
   most 200 a repository. Its short id, the first 8 hex digits of its id, is how a job names it.
-- **Learned from a finished job.** A job writes memory lines in its final message, before the end marker:
+- **Learned from a finished job.** A job writes memory lines first in its final message:
   `HOPPER_MEMORY convention: <text>`, `HOPPER_MEMORY fix src/store: <text>` (a path after the kind gives the area), and
   `HOPPER_MEMORY_WRONG <short id>: <why>` for an entry that is wrong now; at most 5. When the job ends finished
   (`recordOutcome`), the hopper reads them from its result (`learnFromJob`), masked first: a new entry is `proposed` while
@@ -14374,9 +14374,9 @@ to its next jobs.
   (`repo_memory.learned`). The same entry again — one repository, kind and area, the same text but for case and spaces —
   is not added twice: it is 0.1 more confident (at most 0.9) and its age is renewed (`again`). A disabled or flagged
   entry is not learned again. A wrong line flags an approved or proposed entry (`repo_memory.flagged`): no job is offered
-  it until a person approves or edits it. An executor cuts a final message to its summary but keeps its memory lines
-  (`withMemoryLines`), and a line the terminal wrapped is joined again up to a blank line, a list item or another
-  `HOPPER_` line. A job of no repository, or of one with memory off, learns nothing.
+  it until a person approves or edits it. The lines go first because an executor keeps only the start of a final message
+  as its summary (2000 characters in print mode, 4000 in a herdr pane). A line the terminal wrapped is joined again up to
+  a blank line, a list item or another `HOPPER_` line. A job of no repository, or of one with memory off, learns nothing.
 - **Offered to the next job.** As each job of the repository starts (`jobRulesOf`), it is told, after the repository job
   rules, a block `[hopper repository memory]`: the approved entries that have not expired, the most confident first, then
   the newest change, each `- <short id> (<kind>[, <area>]) <text>`, as many as fit in `maxBytes`, and how many did not;

@@ -136,7 +136,7 @@ The tab shows only the issues that the hopper read (the issues its sources list,
 
 ### Repository memory
 
-The hopper remembers what jobs learn about a repository, and tells the next jobs of that repository. A job writes a line `HOPPER_MEMORY convention: <text>` or `HOPPER_MEMORY fix: <text>` at the end of its work. That line becomes a **memory entry** of its repository.
+The hopper remembers what jobs learn about a repository, and tells the next jobs of that repository. A job writes a line `HOPPER_MEMORY convention: <text>` or `HOPPER_MEMORY fix: <text>` at the start of its final message. That line becomes a **memory entry** of its repository.
 
 - A new entry waits for a person to approve it. Approve it with `hopper memory approve <id>`. Until then, no job gets it.
 - Each job of the repository gets the approved entries when it starts, after the repository job rules. Jobs of other repositories do not get them.
