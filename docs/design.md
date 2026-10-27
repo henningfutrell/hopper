@@ -36291,6 +36291,29 @@ Only the executor is routed. A grade's `model` is the costliest in the job's tok
 executor takes in its payload; the model choice stays the source's, and model routing (issue #2848) is where grades tune
 it. Left for a later part, with the UI's settings form.
 
+## Grades in the UI (issue #2845, part 3, 2026-10-26)
+
+Requirement (issue #2845): the user grade is given on the job page, shown next to the automatic grade with their
+disagreement visible, and the rollups and the grade settings are in the UI. Glossary: **grade**, **grade rollup**, **grade
+settings**.
+
+- **The job view's Grade panel** (`ui/src/views/job-grade.tsx`), only for a job that ended `finished` or `failed`: `GET
+  /api/jobs/:id/grade`, read again as the job's status changes. The automatic grade (0 to 100, coloured good from 70,
+  middling from 40) with its executor and model, then one line per grade signal — its why, its value on the score's scale
+  and its weight. Before the grade pass graded the job, a line says it is not graded yet. Then the user grade, a line when
+  the two disagree, and the older user grades of its history. An operator's form grades the job: a score of 1 to 5 and an
+  optional note, `POST /ui/api/jobs/:id/grade`; the answer replaces the panel's view, so the new grade shows at once.
+- **The Grades tab of Jobs** (`#jobs/grades`, `ui/src/views/grades.tsx`): `GET /api/grades?by=<group>`, the group picked
+  by its buttons (executor first, then model, repository, work kind, machine). The sum of all, the groups as a table — jobs,
+  mean automatic grade, the jobs a person graded, their mean user grade, the disagreements —, then the graded jobs, newest
+  first, each linked to its job view.
+- **Settings → Grades** (`#settings/grades`, `ui/src/views/grade-settings.tsx`), in the group Jobs and agents, an admin's:
+  the six weights, the revert window, the cost and time scales, grade-aware routing and its minimum graded jobs. A save
+  sends only what changed, each weight on its own (`gradeSettingsPatch`, `ui/src/model/grades.ts`), checked in the same
+  ranges as the daemon; a bad field shows why and saves nothing.
+
+`JobGradeView` and `GradesView` moved to `src/domain/grades.ts`, so the UI takes their types from the domain.
+
 ## A job's egress allowlist (issue #2849, part 1, 2026-10-26)
 
 **The problem.** A sandbox template limits the egress and the secrets of its boxes ("A read-only box's egress", "A
