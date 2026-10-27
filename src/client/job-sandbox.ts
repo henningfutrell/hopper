@@ -45,6 +45,8 @@ const RUN = [
   'for x in "${XDG_CONFIG_HOME:-$HOME/.config}/herdr/sessions" "${HERDR_SOCKET_PATH:+${HERDR_SOCKET_PATH%/*}}"; do [ -n "$x" ] && [ -d "$x" ] && [ ! -L "$x" ] && set -- "$@" --tmpfs "$x"; done;',
   'set -- "$@" --setenv HOPPER_SANDBOXED 1 --unsetenv DBUS_SESSION_BUS_ADDRESS --;',
   'i=0; while [ "$i" -lt "$n" ]; do a=$1; shift; set -- "$@" "$a"; i=$((i+1)); done;',
+  // The job's egress (issue #2849 part 2): when its user's setting routes jobs, bubblewrap runs behind `hopper-egress`.
+  '[ -n "${HOPPER_EGRESS_ROUTE:-}" ] && [ -z "${HOPPER_EGRESS_PORT:-}" ] && [ -r "${HOPPER_EGRESS:-}" ] && exec sh "$HOPPER_EGRESS" -- bwrap "$@";',
   'exec bwrap "$@"',
 ].map((l) => l.trim()).join(' ');
 

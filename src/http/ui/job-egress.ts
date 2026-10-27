@@ -20,9 +20,10 @@ export const jobEgressBody = z.strictObject({
   defaults: z.boolean(),
   hosts: z.array(entry).max(200),
   repos: z.record(z.string().regex(REPO, 'a repository is owner/name'), z.array(entry).max(200)).refine((r) => Object.keys(r).length <= 500, 'at most 500 repositories'),
+  route: z.boolean().default(false),
 });
 
-const VIEW = '`egress`: `defaults` (whether the hopper\'s default hosts are on the allowlist), `hosts` (every job\'s) and `repos` (`owner/name` → the hosts of that repository\'s jobs); `defaultHosts`: the hopper\'s default hosts — the model providers, GitHub and the package registries. An entry is `host:port`, or `*.domain:port` for the names under a domain.';
+const VIEW = '`egress`: `defaults` (whether the hopper\'s default hosts are on the allowlist), `hosts` (every job\'s) and `repos` (`owner/name` → the hosts of that repository\'s jobs) and `route` (whether a job\'s agent runs behind `hopper-egress`, so its connections go out through the hopper to these hosts only; read at each job\'s start, off when not given); `defaultHosts`: the hopper\'s default hosts — the model providers, GitHub and the package registries. An entry is `host:port`, or `*.domain:port` for the names under a domain.';
 
 export const JOB_EGRESS_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/job-egress', tag: 'Vault', summary: 'The job egress allowlist', description: `Issue #2849: the hosts a running job may connect out to through the hopper (\`GET /job/egress\`, with its proxy token). A job of a repository gets the defaults (when on), the user's hosts and that repository's hosts. ${VIEW}`, returns: '`{ egress, defaultHosts }`' },
@@ -38,7 +39,7 @@ export function registerJobEgressRoutes(app: FastifyInstance, o: { admin: Guard;
     const egress: JobEgressSettings = normalJobEgress(parseWith(jobEgressBody, req.body));
     t.store.tx(() => {
       t.store.settings.setJobEgress(egress);
-      t.store.events.append({ type: 'job_egress.changed', data: { by: personOf(s), defaults: egress.defaults, hosts: egress.hosts.length, repos: Object.keys(egress.repos).length } });
+      t.store.events.append({ type: 'job_egress.changed', data: { by: personOf(s), defaults: egress.defaults, route: egress.route, hosts: egress.hosts.length, repos: Object.keys(egress.repos).length } });
     });
     return { egress };
   });

@@ -23,7 +23,7 @@ import { running, start, stopGitProxies, type Started } from '../support/git-pro
 
 const servers: (Server | HttpServer)[] = [];
 afterEach(async () => {
-  for (const s of servers.splice(0)) await new Promise((ok) => s.close(ok));
+  for (const s of servers.splice(0)) await new Promise((ok) => { s.close(ok); if ('closeAllConnections' in s) s.closeAllConnections(); });
   await stopGitProxies();
 });
 
@@ -149,8 +149,11 @@ const proxy = new URL(process.env.HTTPS_PROXY);
 const line = (s) => process.stdout.write(s + '\n');
 const connect = (to) => new Promise((ok) => {
   const req = http.request({ host: proxy.hostname, port: proxy.port, method: 'CONNECT', path: to });
-  req.on('connect', (res, socket) => { socket.once('data', (d) => { line(res.statusCode + ' ' + d.toString().trim()); socket.destroy(); ok(); }); socket.write('hello\n'); });
-  req.on('response', (res) => { let b = ''; res.on('data', (d) => { b += d; }).on('end', () => { line(res.statusCode + ' ' + b.trim()); ok(); }); });
+  req.on('connect', (res, socket, head) => {
+    if (res.statusCode !== 200) { let b = head.toString(); socket.on('data', (d) => { b += d; }).on('end', () => { line(res.statusCode + ' ' + b.trim()); ok(); }); return; }
+    socket.once('data', (d) => { line(res.statusCode + ' ' + d.toString().trim()); socket.destroy(); ok(); });
+    socket.write('hello\n');
+  });
   req.end();
 });
 (async () => {
