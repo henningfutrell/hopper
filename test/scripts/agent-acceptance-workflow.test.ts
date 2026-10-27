@@ -57,9 +57,9 @@ describe('.github/workflows/agent-acceptance.yml, the acceptance tests of the ag
     expect(runs('print-agents')).toMatch(/bin=\$\(mise which "\$cli"\)/);
   });
 
-  it('runs the print-mode CLIs, the drift check and hooks and MCP, but not the TUI', () => {
+  it('runs the print-mode CLIs, the drift check, hooks and MCP and the opencode draft, but not the TUI', () => {
     const test = workflow.jobs['print-agents']!.steps.find((s) => s.run?.startsWith('npx vitest run'));
-    expect(test?.run).toBe('npx vitest run test/acceptance/print-agents.test.ts test/acceptance/fake-drift.test.ts test/acceptance/hooks-mcp.test.ts');
+    expect(test?.run).toBe('npx vitest run test/acceptance/print-agents.test.ts test/acceptance/fake-drift.test.ts test/acceptance/hooks-mcp.test.ts test/acceptance/draft-opencode.test.ts');
     expect(JSON.stringify(workflow.jobs['print-agents'])).not.toContain('HOPPER_ACCEPTANCE_TUI');
   });
 
