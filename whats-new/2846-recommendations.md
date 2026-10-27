@@ -1,0 +1,1 @@
+- When a finished job's review finds that the hopper itself went wrong, it now recommends a bug report. It waits in Needs you: approve it to file it, or dismiss it and say why, so it is not recommended again.

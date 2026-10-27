@@ -4373,6 +4373,43 @@ Version 1 (`docs/schemas/completion_review.settings_changed.v1.json`). An admin 
 }
 ```
 
+## `completion_review.recommended`
+
+Version 1 (`docs/schemas/completion_review.recommended.v1.json`). The completion review of this job found a hopper defect of a signature no review found before (issue #2846 part 2): a bug-report recommendation waits for a person in Needs you and Your reports. `signature`: the defect's (`cause:<cause id>`, or `requeue-loop` with the first cause); `title`: the report's. Nothing is filed until a person approves it.
+
+| field | type | required |
+|---|---|---|
+| `signature` | string | yes |
+| `title` | string | yes |
+
+```json
+{
+  "signature": "cause:swept",
+  "title": "The sweep stopped the processes of a job that was at work"
+}
+```
+
+## `completion_review.recommendation_decided`
+
+Version 1 (`docs/schemas/completion_review.recommendation_decided.v1.json`). A person decided a bug-report recommendation (issue #2846 part 2): `approved` sent it to Report a bug as a report of the job whose review found it (`reportId`: the bug report it made, which `bug_report.filed` or `bug_report.kept` follows), or `dismissed` it with a `reason`. A review that finds the same `signature` later recommends nothing.
+
+| field | type | required |
+|---|---|---|
+| `signature` | string | yes |
+| `state` | `approved` \| `dismissed` | yes |
+| `by` | string | yes |
+| `reason` | string | no |
+| `reportId` | string | no |
+
+```json
+{
+  "signature": "cause:swept",
+  "state": "dismissed",
+  "by": "admin",
+  "reason": "fixed by the sweep change"
+}
+```
+
 ## `library_skill.saved`
 
 Version 1 (`docs/schemas/library_skill.saved.v1.json`). A person kept a new version of a library skill (issue #1911): `name`, its content id `version` and its place `seq` (1, 2, …); `source` says whether a person wrote it (`created`) copied it from another skill's version (`duplicated`, with that `name` and `version`), or imported it from a folder of a GitHub repository (`imported`: `repo`, the folder `path` — empty: the root —, the `ref` it follows, the `commit` read). Never its files: GET /api/skill-library/{name} answers them.
