@@ -36,7 +36,7 @@ import { JobPromotion } from './direct-job-promotion';
 import { JobNotes } from './job-notes';
 import { JobTerminal } from './job-terminal';
 import { JobTranscript } from './job-transcript';
-import { JobTokens } from './job-tokens'; import { JobCompletionReview } from './job-completion-review';
+import { JobTokens } from './job-tokens'; import { JobCompletionReview } from './job-completion-review'; import { JobGrade } from './job-grade';
 import { JobDelivery } from './job-delivery';
 import { JobTrust } from './job-trust';
 import { JobCritical } from './job-critical';
@@ -168,6 +168,7 @@ export function JobView() {
       {read.state === 'found' && <JobTranscript job={read.job} />}
       {read.state === 'found' && <JobTokens job={read.job} />}
       {read.state === 'found' && <JobCompletionReview job={read.job} />}
+      {read.state === 'found' && <JobGrade job={read.job} />}
       {read.state === 'found' && <JobNotes job={read.job} />}
       {bom && <Panel title="Its parts" count={bom.parts.length} bodyClassName="p-3"><BomGraph bom={bom} title={read.state === 'found' ? read.job.spec.goal || id : id} /></Panel>}
       <Panel title="Timeline" count={events.length}>
