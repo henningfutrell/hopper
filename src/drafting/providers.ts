@@ -27,16 +27,27 @@ export interface DraftArgv { argv: string[]; stdin: string }
 export const CLAUDE_DEFAULT_MODEL = 'opus';
 
 /**
- * opencode's run, `"$@"`: its lockdown is in its environment — every tool's permission denied, no project config, no
- * Claude Code prompt or skills read —, set in the script, so it holds on an ssh target too. opencode keeps a session for
- * every run: the script deletes the one its output names (`sessionID`), with the same environment, whether the run went
- * well or not. Its output goes to a file in the run dir first, so the script can read the session from it.
- * Run as `sh -c OPENCODE_RUN sh <bin> run <args…>`.
+ * opencode's lockdown (opencode 2, issue #2862), in its environment: every tool's permission denied
+ * (`OPENCODE_CONFIG_CONTENT`, the config opencode reads last, so it wins over the user's own), no project config, no
+ * Claude Code prompt or skills read, no update check. opencode 2 has no switch that leaves plugins out (1.x's `--pure`).
  */
-export const OPENCODE_RUN = 'export OPENCODE_PERMISSION=\'{"*":"deny"}\' OPENCODE_DISABLE_PROJECT_CONFIG=1 OPENCODE_DISABLE_CLAUDE_CODE=1; '
+export const OPENCODE_LOCKDOWN: Readonly<Record<string, string>> = {
+  OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: { '*': 'deny' } }),
+  OPENCODE_DISABLE_PROJECT_CONFIG: '1',
+  OPENCODE_DISABLE_CLAUDE_CODE: '1',
+  OPENCODE_DISABLE_AUTOUPDATE: '1',
+};
+
+/**
+ * opencode's run, `"$@"`: its lockdown (`OPENCODE_LOCKDOWN`) set in the script, so it holds on an ssh target too.
+ * opencode keeps a session for every run: the script deletes the one its output names (`sessionID`), with the same
+ * environment and `--standalone` (no background service), whether the run went well or not. Its output goes to a file
+ * in the run dir first, so the script can read the session from it. Run as `sh -c OPENCODE_RUN sh <bin> run <args…>`.
+ */
+export const OPENCODE_RUN = `export ${Object.entries(OPENCODE_LOCKDOWN).map(([k, v]) => `${k}='${v}'`).join(' ')}; `
   + '"$@" >.opencode-out; s=$?; cat .opencode-out; '
   + 'id=$(sed -n \'s/.*"sessionID":"\\(ses_[A-Za-z0-9_-]*\\)".*/\\1/p\' .opencode-out | head -n 1); rm -f .opencode-out; '
-  + 'if [ -n "$id" ]; then "$1" session delete "$id" --pure >/dev/null 2>&1; fi; exit $s';
+  + 'if [ -n "$id" ]; then "$1" session delete "$id" --standalone >/dev/null 2>&1; fi; exit $s';
 
 /**
  * Cursor's agent's run, `"$@"`: its project data in the run dir (`CURSOR_DATA_DIR`, which holds no login), so it goes
@@ -73,7 +84,11 @@ export function draftArgv(c: DraftCall): DraftArgv {
       // Ask mode is read-only Q&A; the sandbox on; `--trust` so the fresh run dir asks nothing. No effort flag.
       return { argv: ['sh', '-c', CURSOR_RUN, 'sh', ...turn(['--mode', 'ask', '--sandbox', 'enabled', '--trust'], asked)], stdin: '' };
     case 'opencode':
-      return { argv: ['sh', '-c', OPENCODE_RUN, 'sh', ...turn(['--pure', ...(c.effort ? ['--variant', c.effort] : [])], asked)], stdin: asked };
+      // The text on stdin (the dialect's); an effort is the model's variant, `provider/model#variant`: with no model, none.
+      return {
+        argv: ['sh', '-c', OPENCODE_RUN, 'sh', ...DIALECTS.opencode.argv({ bin, args: [], cwd: '.', ...(c.model ? { model: c.effort ? `${c.model}#${c.effort}` : c.model } : {}), text: asked })],
+        stdin: asked,
+      };
     case 'omp':
       return {
         argv: turn(['--no-tools', '--no-session', '--no-skills', '--no-rules', '--no-extensions', '--no-lsp', ...(c.effort ? [`--thinking=${c.effort}`] : [])], asked),
@@ -193,7 +208,7 @@ export function modelsCall(provider: DraftProvider, bin: string): ProbeCall {
     case 'claude': return { argv: [bin, ...CLAUDE_MODELS_ARGS], stdin: INITIALIZE };
     case 'codex': return { argv: [bin, 'debug', 'models'], stdin: '' };
     case 'cursor-agent': return { argv: [bin, 'models'], stdin: '' };
-    case 'opencode': return { argv: ['env', 'OPENCODE_DISABLE_PROJECT_CONFIG=1', bin, 'models', '--pure'], stdin: '' };
+    case 'opencode': return { argv: ['env', ...Object.entries(OPENCODE_LOCKDOWN).map(([k, v]) => `${k}=${v}`), bin, 'models', '--standalone'], stdin: '' };
     case 'omp': return { argv: [bin, 'models', '--json'], stdin: '' };
   }
 }

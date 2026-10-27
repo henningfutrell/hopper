@@ -29734,8 +29734,16 @@ in on. The hopper holds no model key for it.
   - `codex exec --json --ephemeral --ignore-user-config --ignore-rules --skip-git-repo-check --sandbox read-only`, the
     prompt on stdin (`-`).
   - `cursor-agent -p --mode ask --sandbox enabled --trust`: ask mode is read-only.
-  - `opencode run --format json --pure`, with `OPENCODE_PERMISSION={"*":"deny"}`, no project config and no Claude Code
-    prompt or skills, set in its run script (`OPENCODE_RUN`) so it holds over ssh too.
+  - `opencode run --standalone --format json`, the prompt on stdin (opencode 2, issue #2862). Its lockdown
+    (`OPENCODE_LOCKDOWN`) is in its environment, set in its run script (`OPENCODE_RUN`) so it holds over ssh too: every
+    tool's permission denied in `OPENCODE_CONFIG_CONTENT` (`{"permission":{"*":"deny"}}`, the config opencode reads last,
+    so it wins over the user's own), no project config, no Claude Code prompt or skills, no update check. Denied every
+    tool, opencode offers the model none, and answers a tool call with an error (`No tool named … is currently
+    available`); `test/acceptance/draft-opencode.test.ts` shows it with the real CLI and the fake model server, with the
+    user's own config allowing every tool. `--standalone` runs a private server for the turn, never opencode's background
+    service. opencode 2 has no switch that leaves plugins out (1.x had `--pure`), and takes an effort as the model's
+    variant (`--model provider/model#effort`): with no model named, the effort is left out. opencode 1.x, which has
+    no `--standalone`, cannot draft.
   - `omp -p --no-tools --no-session --no-skills --no-rules --no-extensions --no-lsp`.
   The argv and the reading of the print-mode CLIs are the print-mode executors' dialects (`print-agents.ts`): a dialect's
   `said` reads the answer without a session, which a draft keeps none of; `read`, a job's, still needs one. A CLI with
@@ -29757,7 +29765,7 @@ in on. The hopper holds no model key for it.
 
 - **Nothing of the run kept on the machine.** codex (`--ephemeral`), omp (`--no-session`) and claude keep no session.
   opencode keeps one for every run: its run (`OPENCODE_RUN`) writes the output to a file in the run dir, deletes the
-  session it names (`sessionID`) with `opencode session delete --pure` in the same lockdown environment, whether the run
+  session it names (`sessionID`) with `opencode session delete --standalone` in the same lockdown environment, whether the run
   went well or not, and then prints the output. Cursor's agent keeps its project data under `CURSOR_DATA_DIR`, which holds
   no login: its run (`CURSOR_RUN`) points it into the run dir, so it goes with the dir; and it keeps its chat in its config
   dir (`$CURSOR_CONFIG_DIR`, else `$XDG_CONFIG_HOME/cursor`, else `~/.cursor`) under `chats/<md5 of the run dir's real
@@ -29771,7 +29779,7 @@ in on. The hopper holds no model key for it.
     has free models) and omp has no status call: the draft says it, when it runs;
   - its model list: claude's stream-json initialize handshake (as `claudeModels`), `codex debug models` (the models it
     shows, `visibility: list`), `cursor-agent models` (the lines after `Available models`, `<id> - <name>`),
-    `opencode models` (`provider/model` lines), `omp models --json` (each model's `selector`). A list that fails while the
+    `opencode models --standalone` in the draft's lockdown (`provider/model` lines), `omp models --json` (each model's `selector`). A list that fails while the
     CLI is there and signed in leaves the CLI's own default model: usable, no models.
   Not installed and not signed in are said in the same words as a draft's failure. A client target has no probe call
   (its client runs claude for a level or a usage read only): claude there is usable while the client is dialled in,
@@ -29779,7 +29787,7 @@ in on. The hopper holds no model key for it.
 
 **Not done here.** The UI's machine and provider picker (issue #471), which calls the probe; the run dir on the machine
 when an ssh run is stopped (the kill reaches the local ssh only, as "Run skills" says); whether a draft counts toward
-usage and pacing (issue #470 D11). The prompt of `cursor-agent`, `opencode` and `omp` goes in their argv,
+usage and pacing (issue #470 D11). The prompt of `cursor-agent` and `omp` goes in their argv,
 as their dialects call them: the machine's other users can see it in its process list while the turn runs.
 
 **Verification:** `test/drafting/run.test.ts`, against fake CLIs: each provider locked down, the prompt delivered, the
@@ -29790,6 +29798,9 @@ opencode's session deleted after a run that went well and one that failed, Curso
 data in the run dir, here and over ssh. `test/drafting/probe.test.ts`, against a fake of each CLI's probe calls: each
 provider usable with the models it lists, and their labels; claude's account never in the answer; no models listed;
 over ssh; not signed in, not installed, a refused machine, a timeout; a client target unchecked, or not dialled in.
+`test/acceptance/draft-opencode.test.ts` (issue #2862), with the real opencode 2 CLI against the fake model server: the
+draft comes back, and the tool call the model makes in that turn is refused, with the user's own config allowing every
+tool.
 
 ## A GitLab source (issue #1448, part 2, 2026-10-17)
 
