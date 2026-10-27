@@ -32,7 +32,8 @@ export default {
 } satisfies PluginDefinition<'usage-source'>;
 `;
 
-describe('plugin:check', () => {
+// Each check spawns a type-check of its own: 13-15 s on a loaded CI shard, so the 15 s default is too short.
+describe('plugin:check', { timeout: 60_000 }, () => {
   it('examples/plugins: one minimal plugin per role, every one passes (exit 0)', () => {
     const r = check(EXAMPLES);
     expect(r.out).toMatch(/type-check: ok/);

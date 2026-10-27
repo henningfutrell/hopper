@@ -38,7 +38,7 @@ import { heldPullRequests } from './delivery-holds.ts';
 import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { LOGIN_SCRIPT, LOGIN_SCRIPT_FILE, LOGIN_SCRIPT_VARIABLE } from '../logins/script.ts';
-import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { RELAY_CLIENT, RELAY_CLIENT_FILE, RELAY_SCRIPT, RELAY_SCRIPT_FILE, RELAY_SCRIPT_VARIABLE } from '../sandbox/relay-script.ts'; import { EGRESS_CLIENT, EGRESS_CLIENT_FILE, EGRESS_ROUTE_VARIABLE, EGRESS_SCRIPT, EGRESS_SCRIPT_FILE, EGRESS_SCRIPT_VARIABLE } from '../sandbox/egress-script.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { jobSkillsOf } from '../skill-library/index.ts'; import { conditionalSkillsCredentials } from '../domain/conditional-skills.ts'; import { createSkillSourceGitHub } from '../skill-library/github.ts'; import type { SkillSource } from '../skill-library/import.ts'; import { createScheduleSourceGitHub, type ScheduleSourceGitHub } from '../step-schedules/github.ts';
+import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { RELAY_CLIENT, RELAY_CLIENT_FILE, RELAY_SCRIPT, RELAY_SCRIPT_FILE, RELAY_SCRIPT_VARIABLE } from '../sandbox/relay-script.ts'; import { EGRESS_CLIENT, EGRESS_CLIENT_FILE, EGRESS_SCRIPT, egressVars, EGRESS_SCRIPT_FILE, EGRESS_SCRIPT_VARIABLE } from '../sandbox/egress-script.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { jobSkillsOf } from '../skill-library/index.ts'; import { conditionalSkillsCredentials } from '../domain/conditional-skills.ts'; import { createSkillSourceGitHub } from '../skill-library/github.ts'; import type { SkillSource } from '../skill-library/import.ts'; import { createScheduleSourceGitHub, type ScheduleSourceGitHub } from '../step-schedules/github.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
@@ -246,7 +246,7 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // the vault gives nothing to any other machine (issue #652). It asks with this job's proxy token.
         // git's way to GitHub, through the hopper (issue #652): the job holds no GitHub token.
         vars: {
-          [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault && machine.template ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}), ...(o.store.settings.getJobEgress().route ? { [EGRESS_ROUTE_VARIABLE]: '1' } : {}),
+          [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault && machine.template ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}), ...egressVars(o.store.settings.getJobEgress()),
           // A GitLab job's git (issue #1448 part 3): to its user's GitLab, through the hopper too; the job holds no GitLab token.
           ...jobGitConfig(url, o.accounts.endpoints('github').url, gitlabOf(job), o.traceparent?.(job.id)), // the job's trace parent too (issue #1486 part 6)
         },
