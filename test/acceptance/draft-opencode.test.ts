@@ -19,8 +19,9 @@ let server: FakeModelServer;
 const saved = { ...process.env };
 
 beforeAll(async () => {
-  // Locked down, opencode offers the model no tools: every request but its title call is the conversation's.
-  server = await startFakeModelServer([], { isTurn: (body) => !String(body.instructions ?? '').includes('title generator') });
+  // Locked down, opencode offers the model no tools, so the conversation's requests are told apart by their system
+  // prompt: opencode's title calls have another one, which changes between releases (2.1.2 and 2.1.4 differ).
+  server = await startFakeModelServer([], { isTurn: (body) => String(body.instructions ?? '').includes('running in OpenCode') });
   // The user's own config, in the test's HOME: the fake server as the provider, and every tool allowed.
   const config = JSON.parse(opencode.env(server.url).OPENCODE_CONFIG_CONTENT!) as Record<string, unknown>;
   const dir = join(process.env.XDG_CONFIG_HOME!, 'opencode');
