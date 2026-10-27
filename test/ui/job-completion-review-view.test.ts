@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // A job's completion review on its job view (issue #2846), the panel rendered against a fake of
 // GET /api/jobs/:id/completion-review: its end and length, its stages, what went well, where it stalled, its restarts, waste
-// signals and suggestions. A job with no review shows no panel.
+// signals and suggestions; the model's review beside it (part 3). A job with no review shows no panel.
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -61,6 +61,25 @@ describe('a job\'s completion review on its job view', () => {
     const defect = { signature: 'cause:swept', title: 'The sweep stopped the processes of a job that was at work', description: 'd' };
     await boot({ review: { ...REVIEW, defect }, recommendation: { ...defect, jobId: 'j1', state: 'dismissed', jobs: 2, at: REVIEW.reviewedAt, lastAt: REVIEW.reviewedAt, by: 'admin', reason: 'fixed' } });
     expect(texts('completion-review-defect')[0]).toBe('Bug report recommendedThe sweep stopped the processes of a job that was at work · found in 2 jobsDismissed by admin: fixed. It is not recommended again.');
+  });
+
+  it('shows the model\'s review beside the rules\' one, or why there is none (issue #2846 part 3)', async () => {
+    const modelReview = {
+      summary: 'It lost most of its time in the queue.', went: ['Its tests passed in the end.'], stalls: ['It waited for a lane.'],
+      suggestions: [{ area: 'lane' as const, text: 'Add a lane.' }], hopperDefect: 'The hopper queued it again with no cause.',
+      model: 'claude-haiku-4-5', costUsd: 0.004, at: REVIEW.reviewedAt,
+    };
+    await boot({ review: { ...REVIEW, modelReview } });
+    expect(texts('completion-review-model')[0]).toContain('The model\'s review · By claude-haiku-4-5 · $0.004');
+    expect(texts('completion-review-model-summary')).toEqual(['It lost most of its time in the queue.']);
+    expect(texts('completion-review-model-went')).toEqual(['Its tests passed in the end.']);
+    expect(texts('completion-review-model-stall')).toEqual(['It waited for a lane.']);
+    expect(texts('completion-review-model-suggestion')).toEqual(['Lanes: Add a lane.']);
+    expect(texts('completion-review-model-defect')).toEqual(['The model thinks the run hit a hopper defect: The hopper queued it again with no cause.']);
+    await act(async () => root?.unmount());
+    await boot({ review: { ...REVIEW, modelFailed: { error: 'claude exited 1', at: REVIEW.reviewedAt } } });
+    expect(texts('completion-review-model')).toEqual([]);
+    expect(texts('completion-review-model-failed')).toEqual(['No model review: claude exited 1']);
   });
 
   it('shows nothing for a job with no review', async () => {
