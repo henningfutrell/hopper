@@ -18,6 +18,7 @@ on:
     branches: [main, dev, beta, stable]
     paths:
       - src/executors/**
+      - src/drafting/**
       - test/acceptance/**
       - test/adapters/fake-print-agent.mjs
       - test/support/real-agents.ts
@@ -61,7 +62,7 @@ jobs:
             echo "HOPPER_ACCEPTANCE_${cli^^}_BIN=$bin" >> "$GITHUB_ENV"
           done
       # These tests use no database.
-      - run: npx vitest run test/acceptance/print-agents.test.ts test/acceptance/fake-drift.test.ts test/acceptance/hooks-mcp.test.ts
+      - run: npx vitest run test/acceptance/print-agents.test.ts test/acceptance/fake-drift.test.ts test/acceptance/hooks-mcp.test.ts test/acceptance/draft-opencode.test.ts
         env:
           HOPPER_TEST_POSTGRES_URL: postgres://none:none@127.0.0.1:1/none
 
