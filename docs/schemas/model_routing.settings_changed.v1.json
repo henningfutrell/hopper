@@ -180,6 +180,30 @@
         },
         "escalate": {
           "type": "boolean"
+        },
+        "tune": {
+          "type": "object",
+          "properties": {
+            "on": {
+              "type": "boolean"
+            },
+            "minSamples": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "margin": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "on",
+            "minSamples",
+            "margin"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -371,6 +395,30 @@
         },
         "escalate": {
           "type": "boolean"
+        },
+        "tune": {
+          "type": "object",
+          "properties": {
+            "on": {
+              "type": "boolean"
+            },
+            "minSamples": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "margin": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100
+            }
+          },
+          "required": [
+            "on",
+            "minSamples",
+            "margin"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
