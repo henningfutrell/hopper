@@ -14,12 +14,25 @@
     "confine": {
       "type": "boolean"
     },
+    "scope": {
+      "type": "boolean"
+    },
     "hosts": {
       "type": "integer",
       "minimum": -9007199254740991,
       "maximum": 9007199254740991
     },
     "repos": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "keep": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "repoKeep": {
       "type": "integer",
       "minimum": -9007199254740991,
       "maximum": 9007199254740991

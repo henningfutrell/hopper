@@ -230,10 +230,9 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       const url = o.url(machine);
       if (!url) return undefined;
       // The job's work skill (issue #1911) and its conditional skills (issue #1924): the versions chosen at its first start, their files and the skills the work skill requires beside the scripts.
-      const skills = jobSkillsOf(o.store, job); const work = workSkillCredentials(skills.work.skills);
+      // The job egress setting (issue #2849): its route, confinement and environment scope (part 5), read at each start.
+      const skills = jobSkillsOf(o.store, job); const work = workSkillCredentials(skills.work.skills); const egress = o.store.settings.getJobEgress();
       const more = conditionalSkillsCredentials(skills.conditional.map((c) => c.chosen), Object.fromEntries(skills.conditional.map((c) => [c.chosen.name, c.files]))); const skill = { files: { ...work.files, ...more.files }, paths: { ...work.paths, ...more.paths } };
-      // The job egress setting (issue #2849): its route and confinement, and its environment scope (part 5), read at each start.
-      const egress = o.store.settings.getJobEgress();
       return {
         url,
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
