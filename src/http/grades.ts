@@ -6,7 +6,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { gradeSettingsOf } from '../domain/grade-routing.ts';
-import { disagreesOf, GRADE_GROUPS, GRADE_SIGNALS, gradedEnd, gradeRollup, type GradeRollupRow, type GradeRow, type GradeSettings, type UserGrade } from '../domain/grades.ts';
+import { disagreesOf, GRADE_GROUPS, GRADE_SIGNALS, gradedEnd, gradeRollup, type GradeSettings, type GradesView, type JobGradeView } from '../domain/grades.ts';
 import type { Clock } from '../domain/ports.ts';
 import type { UserStore } from '../domain/store.ts';
 import { HttpError, parseWith } from './errors.ts';
@@ -35,15 +35,6 @@ export const gradeSettingsBody = z.strictObject({
   timeScaleMinutes: z.number().int().min(1).max(10_080).optional(),
   routing: z.strictObject({ on: z.boolean().optional(), minSamples: z.number().int().min(1).max(10_000).optional() }).optional(),
 });
-
-/** One job's grades. `grade`: absent until the grade pass graded it (a minute after its end), or while it has not ended done or failed. */
-export interface JobGradeView { jobId: string; grade?: Omit<GradeRow, 'user'>; user?: UserGrade; history: UserGrade[]; disagree?: boolean }
-
-/** GET /api/grades: every group, the sum of all, and the jobs, newest first, each with its two grades. */
-export interface GradesView {
-  by: string; total: Omit<GradeRollupRow, 'key'>; groups: GradeRollupRow[];
-  jobs: { jobId: string; endedAt: string; executor: string; model?: string; repo?: string; kind: string; machine?: string; auto: number; user?: number; disagree?: boolean }[];
-}
 
 export const GRADE_OPERATIONS: Operation[] = [
   { method: 'get', path: '/api/jobs/:id/grade', tag: 'Jobs', summary: 'A job\'s grades', description: 'Issue #2845: the job\'s automatic grade and its user grade. `grade`: its keys (`executor`; `model`, the costliest in its token ledger; `repo`; `kind`, its work kind; `machine`), its `facts` and `auto` — `score` (0 to 100, the weighted mean of its signals) and `lines`, one per signal it has facts for (`outcome`, `checks`, `pull_request`, `rework`, `cost`, `time`), each with its `value` (0 to 1), `weight` and `why`. The grade pass grades a job a minute after it ended done or failed, and again when its pull request merged or closed, its item needed rework or ran again, or a landing batch reverted its pull request within the revert window (7 days). Absent before that, and for a job that did not end done or failed. `user`: the newest user grade (`score` 1 to 5, `note`, `by`, `at`); `history`: every one, newest first; `disagree`: the two are 40 points or more apart (a user grade of 1 is 0, of 5 is 100). 404: no such job.', returns: '`JobGradeView`', errors: [404] },
