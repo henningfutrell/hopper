@@ -3,9 +3,11 @@
 // job's budget from that choice. The item's next job after a failed cheap job runs on the strong model: escalated once,
 // and the item stays there; so does a cheap job a person picks up after its budget paused it (part 2: a stalled cheap run
 // goes on on the strong model, not on the cheap one again). The budget is enforced by the token budget's pause (issue
-// #2302); a person's **job budget** on one job holds over it. Pure.
+// #2302); a person's **job budget** on one job holds over it. Part 3: grade history (issue #2845) tunes a rule's choice,
+// and a cheap job whose waste signals say it stalled is paused as its budget would pause it. Pure.
 import { z } from 'zod';
 import { glob } from './glob.ts';
+import type { TokenWaste, TokenWasteKind } from './token-waste.ts';
 import type { TokenBudgetSettings } from './token-budget.ts';
 import { MAX_BUDGET_COST_USD, MAX_BUDGET_TOKENS } from './token-budget.ts';
 
@@ -40,7 +42,18 @@ export interface ModelRoutingSettings {
   repos: Record<string, Partial<Record<ModelChoice, Partial<ModelBudget>>>>;
   /** The item's next job after a failed cheap job runs on the strong model. */
   escalate: boolean;
+  /** Part 3: grade history tunes a rule's choice. */
+  tune: ModelTuning;
 }
+
+/**
+ * Tuning from grades (part 3): `minSamples` graded jobs of each choice on the work's repository, else on its kind of work,
+ * and a cheap choice goes strong when the strong model's mean is higher by more than `margin` points (of 100).
+ */
+export interface ModelTuning { on: boolean; minSamples: number; margin: number }
+
+/** A graded job as tuning reads it: its model choice, its work kind and repository, and its points (0 to 100). */
+export interface GradedChoice { choice: ModelChoice; kind: string; repo?: string; points: number }
 
 /** The class of the work, read at intake. */
 export interface WorkClass { size: WorkSize; kind: WorkKind; risk: WorkRisk; repo?: string }
@@ -50,7 +63,7 @@ export interface ModelRoute extends Omit<WorkClass, 'repo'> {
   choice: ModelChoice;
   /** The model the job runs on; '': the agent's own default. */
   model: string;
-  /** The model rule that chose it; `label` (a job label), `escalated` or `default` (no rule matched). */
+  /** The model rule that chose it; `label` (a job label), `escalated`, `grades` (tuned, part 3) or `default` (no rule matched). */
   rule: string;
   why: string;
   budget: ModelBudget;
@@ -75,13 +88,13 @@ export const DEFAULT_MODEL_RULES: ModelRule[] = [
 export const DEFAULT_MODEL_ROUTING: ModelRoutingSettings = {
   on: false, executors: ['herdr-claude', 'claude'],
   cheap: { model: 'sonnet', jobTokens: 0, jobCostUsd: 5 }, strong: { model: '', jobTokens: 0, jobCostUsd: 0 },
-  rules: DEFAULT_MODEL_RULES, repos: {}, escalate: true,
+  rules: DEFAULT_MODEL_RULES, repos: {}, escalate: true, tune: { on: false, minSamples: 5, margin: 10 },
 };
 
 /** The labels that pick the choice over every rule. */
 export const MODEL_LABELS: Record<string, ModelChoice> = { 'hopper:model-cheap': 'cheap', 'hopper:model-strong': 'strong' };
 /** Rule names model routing writes itself: no model rule may take one. */
-const RESERVED = ['label', 'escalated', 'default'];
+const RESERVED = ['label', 'escalated', 'grades', 'default'];
 
 /** The most a small item's text holds: characters, and list items (steps). */
 export const SMALL_WORK = { chars: 1500, steps: 6 } as const;
@@ -122,11 +135,39 @@ function budgetOf(s: ModelRoutingSettings, choice: ModelChoice, repo: string | u
   return { jobTokens: own?.jobTokens ?? s[choice].jobTokens, jobCostUsd: own?.jobCostUsd ?? s[choice].jobCostUsd };
 }
 
+const mean = (xs: number[]): number => Math.round(xs.reduce((n, x) => n + x, 0) / xs.length);
+
+/**
+ * A rule's choice tuned by grade history (part 3): on the work's repository when both choices have `minSamples` graded
+ * jobs of its kind there, else on its kind. A cheap choice goes strong when the strong model's mean is higher by more than
+ * the margin; a low-risk strong choice goes cheap when the cheap model's is as high. Else the rule's choice stands. A tend
+ * job is graded as code work.
+ */
+function tuned(s: ModelRoutingSettings, r: ModelRoute, graded: readonly GradedChoice[], repo: string | undefined): ModelRoute {
+  const kind = r.kind === 'tend' ? 'code' : r.kind;
+  const ofKind = graded.filter((g) => g.kind === kind);
+  const at = repo?.toLowerCase();
+  const scopes: [string, GradedChoice[]][] = [...(at ? [[`in ${repo}`, ofKind.filter((g) => g.repo?.toLowerCase() === at)] as [string, GradedChoice[]]] : []), [`in ${kind} work`, ofKind]];
+  for (const [where, rows] of scopes) {
+    const cheap = rows.filter((g) => g.choice === 'cheap').map((g) => g.points), strong = rows.filter((g) => g.choice === 'strong').map((g) => g.points);
+    if (cheap.length < s.tune.minSamples || strong.length < s.tune.minSamples) continue;
+    const c = mean(cheap), st = mean(strong);
+    const to: ModelChoice | undefined = r.choice === 'cheap' && st - c > s.tune.margin ? 'strong' : r.choice === 'strong' && r.risk === 'low' && c >= st ? 'cheap' : undefined;
+    if (!to) return r;
+    const scored = `the cheap model's ${kind} jobs scored ${c} (${cheap.length} jobs) and the strong model's ${st} (${strong.length} jobs)`;
+    const picked = r.rule === 'default' ? 'no rule matched' : `rule ${r.rule} picked`;
+    return { ...r, choice: to, model: s[to].model, rule: 'grades', budget: budgetOf(s, to, repo),
+      why: `Grades: ${where} ${scored}, so the ${to} model, not the ${r.choice} one ${picked}.` };
+  }
+  return r;
+}
+
 /**
  * The model route of a new job, or undefined: model routing is off, or the job's executor is not one it routes. `earlier`:
  * the item's job before it. A failed cheap job escalates its item to the strong model once; an escalated item stays there.
+ * `graded`: the grade history tuning reads (part 3), read only while tuning is on.
  */
-export function modelRouteOf(s: ModelRoutingSettings, w: WorkItem, executor: string, earlier?: EarlierRoute): ModelRoute | undefined {
+export function modelRouteOf(s: ModelRoutingSettings, w: WorkItem, executor: string, earlier?: EarlierRoute, graded?: () => readonly GradedChoice[]): ModelRoute | undefined {
   if (!s.on || !s.executors.includes(executor)) return undefined;
   const c = classifyWork(w);
   const route = (choice: ModelChoice, rule: string, why: string, escalated?: ModelRoute['escalated']): ModelRoute =>
@@ -139,8 +180,8 @@ export function modelRouteOf(s: ModelRoutingSettings, w: WorkItem, executor: str
   const label = w.labels.map(lower).find((l) => MODEL_LABELS[l] !== undefined);
   if (label) return route(MODEL_LABELS[label]!, 'label', `The job's label ${label} picks the ${MODEL_LABELS[label]} model.`);
   const r = s.rules.find((x) => ruleMatches(x, c, w.labels));
-  if (r) return route(r.choice, r.name, `Rule ${r.name}: ${matchText(r)} goes to the ${r.choice} model.`);
-  return route('strong', 'default', 'No model rule matched: the strong model.');
+  const ruled = r ? route(r.choice, r.name, `Rule ${r.name}: ${matchText(r)} goes to the ${r.choice} model.`) : route('strong', 'default', 'No model rule matched: the strong model.');
+  return s.tune.on && graded ? tuned(s, ruled, graded(), w.repo) : ruled;
 }
 
 /** A person's caps on one job (part 2), over its route's and the user's: each 0 falls back to them. Kept on the job. */
@@ -153,15 +194,27 @@ export function jobBudgetOf(route: ModelRoute | undefined, user: TokenBudgetSett
 }
 
 /**
- * The route a cheap job goes on with when a person picks it up after its budget paused it (part 2): the strong model and
+ * The route a cheap job goes on with when a person picks it up after its budget paused it (part 2), or a stall (part 3): the strong model and
  * its budget, escalated from the job itself; undefined: routing or escalation is off, or the job is not on the cheap model.
  */
-export function escalateOnPickUp(s: ModelRoutingSettings, route: ModelRoute | undefined, jobId: string, repo: string | undefined): ModelRoute | undefined {
+export function escalateOnPickUp(s: ModelRoutingSettings, route: ModelRoute | undefined, jobId: string, repo: string | undefined, stalled = false): ModelRoute | undefined {
   if (!s.on || !s.escalate || route?.choice !== 'cheap') return undefined;
   return { ...route, choice: 'strong', model: s.strong.model, rule: 'escalated', budget: budgetOf(s, 'strong', repo), escalated: { from: 'cheap', jobId },
-    why: `Escalated: the cheap model reached its budget in job ${jobId}, so the job goes on on the strong model.` };
+    why: `Escalated: the cheap model ${stalled ? 'stalled' : 'reached its budget'} in job ${jobId}, so the job goes on on the strong model.` };
 }
 
+/** The waste signals that say a cheap run stalled (part 3): no progress, or tests that fail again and again. */
+export const STALL_SIGNALS: readonly TokenWasteKind[] = ['no_progress', 'failing_tests'];
+
+/**
+ * Why a running cheap job is paused as stalled (part 3), or undefined: routing or escalation is off, the job is not on the
+ * cheap model, or no stall signal. Picked up, it goes on on the strong model (`escalateOnPickUp`).
+ */
+export function cheapStallOf(s: ModelRoutingSettings, route: ModelRoute | undefined, waste: readonly TokenWaste[]): string | undefined {
+  if (!s.on || !s.escalate || route?.choice !== 'cheap') return undefined;
+  const stalled = waste.filter((w) => STALL_SIGNALS.includes(w.kind));
+  return stalled.length > 0 ? `Paused: the cheap model stalled. ${stalled.map((w) => w.why).join(' ')} Picked up, the job goes on on the strong model.` : undefined;
+}
 
 const text = z.string().trim().min(1).max(200);
 const tokens = z.number().int().min(0).max(MAX_BUDGET_TOKENS);
@@ -190,7 +243,10 @@ export const MODEL_ROUTING = z.strictObject({
   }),
   repos: z.record(z.string().regex(/^[\w.-]+\/[\w.-]+$/, 'a repository is owner/name'), z.strictObject({ cheap: repoBudget.optional(), strong: repoBudget.optional() })),
   escalate: z.boolean(),
+  tune: z.strictObject({ on: z.boolean(), minSamples: z.number().int().min(1).max(1000), margin: z.number().min(0).max(100) }),
 });
+/** The setting as an event holds it: one from before part 3 has no `tune`. */
+export const MODEL_ROUTING_RECORDED = MODEL_ROUTING.extend({ tune: MODEL_ROUTING.shape.tune.optional() });
 
 /** Why a setting is refused, or undefined. */
 export function modelRoutingProblem(raw: unknown): string | undefined {

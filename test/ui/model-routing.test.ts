@@ -10,7 +10,7 @@ const totals = { turns: 3, input: 1000, output: 1000, cacheRead: 0, cacheWrite: 
 describe('model routing in Settings (issue #2848, part 2)', () => {
   it('says what is on', () => {
     expect(modelRoutingSummary(S)).toBe('Off: every job runs on the model its job source or its agent gives it.');
-    expect(modelRoutingSummary({ ...S, on: true })).toBe('On for herdr-claude, claude: simple work runs on sonnet (budget: $5.00), other work on the agent\'s default (budget: the token budget\'s job caps). A cheap job that fails or reaches its budget escalates once to the strong model.');
+    expect(modelRoutingSummary({ ...S, on: true })).toBe('On for herdr-claude, claude: simple work runs on sonnet (budget: $5.00), other work on the agent\'s default (budget: the token budget\'s job caps). A cheap job that fails, stalls or reaches its budget escalates once to the strong model.');
     expect(modelRoutingSummary({ ...S, on: true, escalate: false, cheap: { model: 'haiku', jobTokens: 2_000_000, jobCostUsd: 0 } })).toMatch(/haiku \(budget: 2\.0M tokens\).*No escalation\.$/);
   });
 

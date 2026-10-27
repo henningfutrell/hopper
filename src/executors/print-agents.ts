@@ -9,8 +9,11 @@ import { printTurnTokenUse, type SessionTokenUse } from '../domain/token-usage.t
 export const PRINT_AGENTS = ['cursor-agent', 'codex', 'opencode', 'omp', 'claude'] as const;
 export type PrintAgent = (typeof PRINT_AGENTS)[number];
 
-/** One turn's call: the CLI, its own arguments, the model, the session to resume, the text to send. */
-export interface TurnCall { bin: string; args: readonly string[]; cwd: string; model?: string; session?: string; text: string }
+/**
+ * One turn's call: the CLI, its own arguments, the model, the session to resume, the text to send, and the most the turn
+ * may spend in US dollars, for a CLI that takes such a cap (issue #2848 part 3).
+ */
+export interface TurnCall { bin: string; args: readonly string[]; cwd: string; model?: string; session?: string; text: string; maxBudgetUsd?: number }
 
 /**
  * What a turn's output says: the agent's last message and the session to resume; an error the agent
@@ -28,6 +31,8 @@ export interface Dialect {
   textOnStdin?: true;
   /** The token use the turn's output says, by its session (issue #2302, part 6); absent: the CLI says none the hopper reads. */
   usage?(stdout: string, at: { first: string; last: string }): { session: string; use: SessionTokenUse } | undefined;
+  /** Whether the turn takes `maxBudgetUsd`, and what the CLI said when it stopped there; absent: it takes none. */
+  capReached?(stdout: string): string | undefined;
   /** The answer and the session to resume: a job's turn. */
   read(stdout: string): TurnAnswer;
   /** The answer, with its session when it names one. */
@@ -84,9 +89,17 @@ const cursor = dialect(
  */
 const claude: Dialect = {
   ...dialect(
-    (c) => [c.bin, '-p', '--output-format', 'json', ...c.args, ...model(c), ...(c.session ? ['--resume', c.session] : []), '--', c.text],
+    (c) => [c.bin, '-p', '--output-format', 'json', ...c.args, ...model(c), ...(c.maxBudgetUsd !== undefined ? ['--max-budget-usd', String(c.maxBudgetUsd)] : []),
+      ...(c.session ? ['--resume', c.session] : []), '--', c.text],
     readResult, 'chat id',
   ),
+  // `--max-budget-usd` (issue #2848 part 3): over it, claude ends the turn with this subtype, its errors, and exit 1.
+  capReached(stdout) {
+    let r: Json;
+    try { r = obj(JSON.parse(stdout.trim())); } catch { return undefined; }
+    if (r.subtype !== 'error_max_budget_usd') return undefined;
+    return (Array.isArray(r.errors) ? r.errors.map(str).find((e) => e) : undefined) ?? 'it reached its budget';
+  },
   // Its result's `modelUsage`, an error's too: the tokens were spent.
   usage(stdout, at) {
     let r: Json;

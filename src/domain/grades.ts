@@ -64,6 +64,8 @@ export type GradeGroup = (typeof GRADE_GROUPS)[number];
 /** A job's grade as kept: its keys, its facts and automatic grade, and its user grade, when a person gave one. */
 export interface GradeRow {
   jobId: string; endedAt: string; executor: string; model?: string; repo?: string; kind: WorkKind; machine?: string;
+  /** The model choice of its model route (issue #2848 part 3), which tunes model routing; absent: not routed. */
+  choice?: import('./model-routing.ts').ModelChoice;
   facts?: GradeFacts; auto: AutoGrade; gradedAt?: string; user?: UserGrade;
 }
 
@@ -209,14 +211,15 @@ export const gradedEnd = (status: Job['status']): boolean => status === 'finishe
 
 /**
  * An ended job's keys: its executor, model (the costliest in its token ledger, else the one its payload names),
- * machine (its lane's, else the one its token ledger was read on last, else its machine pin).
+ * machine (its lane's, else the one its token ledger was read on last, else its machine pin), model choice.
  */
-export function gradeKeysOf(job: Job, model: string | undefined, machine?: string): Pick<GradeRow, 'jobId' | 'endedAt' | 'executor' | 'model' | 'repo' | 'kind' | 'machine'> {
+export function gradeKeysOf(job: Job, model: string | undefined, machine?: string): Pick<GradeRow, 'jobId' | 'endedAt' | 'executor' | 'model' | 'repo' | 'kind' | 'machine' | 'choice'> {
   const m = model ?? (typeof job.spec.payload.model === 'string' ? job.spec.payload.model : undefined);
   const at = machineOfLane(job.laneId) ?? machine ?? job.spec.machineId;
   return {
     jobId: job.id, endedAt: job.finishedAt ?? job.updatedAt, executor: job.spec.executor, ...(m ? { model: m } : {}),
     ...(job.source?.repo ? { repo: job.source.repo.toLowerCase() } : {}), kind: workKindOf(job.spec), ...(at ? { machine: at } : {}),
+    ...(job.spec.modelRoute ? { choice: job.spec.modelRoute.choice } : {}),
   };
 }
 

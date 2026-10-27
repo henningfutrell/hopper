@@ -201,9 +201,10 @@ export interface Job extends JobPhaseFields, JobMachineLink {
    * resume elsewhere — not pinned to its machine, its claim rebuilds its work tree from its checkpoint where it runs.
    * `checkpointAt` (issue #2335): the checkpoint taken after its agent ended; with it, its re-queue resumes it anywhere.
    * `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did, and the reason they gave.
-   * `parkAsk`: a running job's park, kept until its executor stepped aside and the park is recorded.
+   * `parkAsk`: a running job's park, kept until its executor stepped aside and the park is recorded. `keptChat` (issue
+   * #2848 part 3): its executor keeps its agent's chat to resume, with no agent session the hopper reads (a print-mode turn).
    */
-  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere; checkpointAt?: string; move?: import('./checkpoints.ts').ParkedMove } & import('./park-ask.ts').ParkAsk; parkAsk?: import('./park-ask.ts').ParkAsk;
+  parked?: { at: string; from: 'running' | 'waiting_answer'; auto?: true; why?: string; elsewhere?: ParkedElsewhere; checkpointAt?: string; move?: import('./checkpoints.ts').ParkedMove; keptChat?: true } & import('./park-ask.ts').ParkAsk; parkAsk?: import('./park-ask.ts').ParkAsk;
   /**
    * Set when a person continued this failed job from Needs a person (issue #551): queued again with its failure and
    * their note pending, pinned to its machine. As for a parked job, kept until the resumed run records an outcome:

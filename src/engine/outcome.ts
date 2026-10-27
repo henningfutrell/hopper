@@ -148,6 +148,9 @@ export function recordOutcome(c: EngineContext, job: Job, laneId: LaneId, outcom
       recorded = { kind: 'report', review: r.kind, itemId: r.itemId };
     } else if (outcome.kind === 'wait') {
       recorded = wait(c, job, lane, laneId, outcome.wait, at);
+    } else if (outcome.kind === 'paused') {
+      // The run's end parks a job its agent paused at its budget (job-run.ts, issue #2848 part 3); one that comes here is not parked.
+      fail(c, job, laneId, `paused at its budget, but not parked: ${outcome.why}`, at);
     } else {
       recorded = ask(c, job, lane, laneId, machine, outcome.question, at);
     }
