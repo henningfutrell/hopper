@@ -82,7 +82,7 @@ const LOCKDOWN: Record<DraftProvider, string[]> = {
   claude: ['--no-session-persistence', '--strict-mcp-config', '--tools'],
   codex: ['exec', '--json', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--sandbox', 'read-only'],
   'cursor-agent': ['-p', '--mode', 'ask', '--sandbox', 'enabled'],
-  opencode: ['run', '--format', 'json', '--pure'],
+  opencode: ['run', '--standalone', '--format', 'json', '--pure'],
   omp: ['-p', '--no-tools', '--no-session', '--no-skills', '--no-rules', '--no-extensions'],
 };
 
@@ -93,7 +93,7 @@ describe('draftOn: each provider, locked down', () => {
       expect(r).toMatchObject({ draft: DRAFT, findings: [], skill: { name: 'file-issue', id: loadRunSkill('file-issue').id } });
       const call = lastCall(provider);
       expect(call.argv).toEqual(expect.arrayContaining(LOCKDOWN[provider]));
-      const prompt = provider === 'claude' || provider === 'codex' ? call.stdin! : call.argv.at(-1)!;
+      const prompt = provider === 'claude' || provider === 'codex' || provider === 'opencode' ? call.stdin! : call.argv.at(-1)!;
       expect(prompt).toContain('The export button does nothing.');
       expect(prompt).toContain(loadRunSkill('file-issue').id);
       expect(call.cwd).not.toBe(dir);

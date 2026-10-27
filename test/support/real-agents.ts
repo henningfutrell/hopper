@@ -60,9 +60,10 @@ export const REAL_AGENTS: readonly RealAgent[] = [
         permission: { edit: 'allow', bash: 'allow' },
       }),
     }),
-    // opencode 1.19 retries a 5xx and a cut stream with a growing backoff and no limit.
-    retriesPastTimeout: ['overloaded', 'server-error', 'cut'],
-    write: (file, text) => ({ tool: { name: 'bash', input: { command: `printf %s '${text}' > ${file}`, description: `Write ${file}` } } }),
+    // opencode 2.1 retries a 429, a 5xx and a cut stream with a growing backoff and no limit.
+    retriesPastTimeout: ['rate-limited', 'overloaded', 'server-error', 'cut'],
+    // opencode 2 names its shell tool `shell` (1.x: `bash`).
+    write: (file, text) => ({ tool: { name: 'shell', input: { command: `printf %s '${text}' > ${file}`, description: `Write ${file}` } } }),
   },
   {
     agent: 'omp', model: 'fake/fake-1',
