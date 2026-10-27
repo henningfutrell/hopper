@@ -12,7 +12,8 @@ export type GradeSignal = (typeof GRADE_SIGNALS)[number];
 
 /**
  * How the automatic grade weighs its signals: a weight of 0 leaves a signal out. `revertWindowDays`: a revert of a job's
- * pull request this long after its merge or sooner lowers its grade. `costScaleUsd` and `timeScaleMinutes`: the estimated
+ * pull request, or a fix issue for it, this long after its merge or sooner, and a reopen of its issue this long after its
+ * end or sooner, lowers its grade. `costScaleUsd` and `timeScaleMinutes`: the estimated
  * cost and the wall time that give half the cost and time signal. `routing`: grade-aware routing (`grade-routing.ts`), off
  * by default; `minSamples`, the graded jobs of matching work each executor needs before intake compares them.
  */
@@ -26,19 +27,27 @@ export const DEFAULT_GRADE_SETTINGS: GradeSettings = {
   routing: { on: false, minSamples: 10 },
 };
 
-/** The revert of a job's merged pull request: when it merged, and its own pull request. */
+/** The revert of a job's merged pull request, or the fix issue a landing batch filed for it: when, and its URL. */
 export interface GradeRevert { at: string; url: string }
 
 /**
+ * What came after a job's end that its grade reads: the reverts of pull requests and the fix issues for them, each by the
+ * pull request's URL (`revertsOf`, `fixIssuesOf`), and when its item's issue reopened before its item's next job.
+ */
+export interface GradeLater { reverts: ReadonlyMap<string, GradeRevert>; fixes?: ReadonlyMap<string, GradeRevert>; reopens?: readonly string[] }
+
+/**
  * What a job's grade is made from. `fixChecks`: the times tending ran its item again to fix failing checks; `reworks`: a
- * person sent its pull request back; `reruns`: its item ran again after it; `attempts`: its claims. `costUsd`: the token
+ * person sent its pull request back; `reruns`: its item ran again after it; `attempts`: its claims; `reopens`: its item's
+ * issue reopened after its end with no new job; `fixIssues`: a landing batch filed a fix issue for its merged pull request
+ * (absent when none: a grade kept before they were read). `costUsd`: the token
  * ledger's estimated cost, when every model in it has a price. `queueMs`: from its queue to its start; `wallMs`: from its
  * start to its end. `waste`: the waste signals of its completion review (issue #2846 part 3), when it has one.
  */
 export interface GradeFacts {
   status: 'finished' | 'failed'; partlyDone?: true;
   pullRequest?: { url: string; state: 'open' | 'merged' | 'closed'; mergedAt?: string; reverted?: GradeRevert };
-  fixChecks: number; reworks: number; reruns: number; attempts: number;
+  fixChecks: number; reworks: number; reruns: number; attempts: number; reopens?: number; fixIssues?: number;
   costUsd?: number; queueMs?: number; wallMs?: number; waste?: string[];
 }
 
@@ -71,12 +80,13 @@ export interface GradeRepository {
 }
 
 /**
- * The events a grade is folded from: a job's end, its pull request and the rework it needed, its completion review, and a
- * landing batch's revert.
+ * The events a grade is folded from: a job's end, its pull request and the rework it needed, its completion review, a
+ * landing batch's revert and fix issue, and a reopen of its item's issue.
  */
 export const GRADE_EVENTS = [
   'job.finished', 'job.failed', 'job.pull_request_followed', 'job.pull_request_merged', 'job.pull_request_closed',
   'job.pull_request_tended', 'job.rework_requested', 'job.rerun', 'completion_review.kept', 'landing_batch.revert_opened', 'landing_batch.reverted',
+  'landing_batch.culprit', 'landing_batch.fix_filed', 'work_item.issue_reopened',
 ] as const;
 
 /** A user grade's place on the automatic grade's scale: 1 is 0, 5 is 100. */
@@ -103,8 +113,10 @@ function signalOf(signal: GradeSignal, f: GradeFacts, s: GradeSettings): { value
       if (pr?.state === 'merged') return pr.reverted ? { value: 0, why: `merged, then reverted by ${pr.reverted.url}` } : { value: 1, why: 'merged' };
       return pr?.state === 'closed' ? { value: 0, why: 'closed with no merge' } : undefined;
     case 'rework': {
-      const n = f.reworks + f.reruns + Math.max(0, f.attempts - 1);
-      return { value: 1 / (1 + n), why: n === 0 ? 'none' : `${f.reworks} rework, ${f.reruns} run again, ${Math.max(0, f.attempts - 1)} retry` };
+      const reopens = f.reopens ?? 0, fixes = f.fixIssues ?? 0;
+      const n = f.reworks + f.reruns + Math.max(0, f.attempts - 1) + reopens + fixes;
+      const why = `${f.reworks} rework, ${f.reruns} run again, ${Math.max(0, f.attempts - 1)} retry${reopens ? `, ${reopens} reopened` : ''}${fixes ? `, ${fixes} fix issue` : ''}`;
+      return { value: 1 / (1 + n), why: n === 0 ? 'none' : why };
     }
     case 'cost':
       return f.costUsd === undefined ? undefined : { value: halfAt(f.costUsd, s.costScaleUsd), why: `$${f.costUsd.toFixed(2)} estimated` };
@@ -129,29 +141,41 @@ export function autoGradeOf(f: GradeFacts, s: GradeSettings): AutoGrade {
 
 const DAY = 86_400_000;
 
-/** Each reverted pull request (its URL) and its revert, from the landing batches' `revert_opened` and `reverted` events. */
-export function revertsOf(events: readonly DomainEvent[]): Map<string, GradeRevert> {
+/**
+ * Each culprit's pull request (its URL) and the first `then` event for that culprit after the event that names its pull
+ * request (`named`, its field `field`), by the culprit's repository and commit.
+ */
+function culpritsThen(events: readonly DomainEvent[], named: string, field: 'culpritPullRequest' | 'pullRequest', then: string): Map<string, GradeRevert> {
   const culprits = new Map<string, string>();
-  const reverts = new Map<string, GradeRevert>();
+  const out = new Map<string, GradeRevert>();
   for (const e of events) {
-    const d = e.data as { repo: string; sha: string; culpritPullRequest?: number; url: string };
-    const key = `${d.repo}@${d.sha}`;
-    if (e.type === 'landing_batch.revert_opened' && d.culpritPullRequest !== undefined) culprits.set(key, `https://github.com/${d.repo}/pull/${d.culpritPullRequest}`);
-    if (e.type === 'landing_batch.reverted' && culprits.has(key) && !reverts.has(culprits.get(key)!)) reverts.set(culprits.get(key)!, { at: e.at, url: d.url });
+    const d = e.data as { repo: string; sha: string; url: string } & Partial<Record<typeof field, number>>;
+    const key = `${d.repo}@${d.sha}`, pr = d[field];
+    if (e.type === named && pr !== undefined) culprits.set(key, `https://github.com/${d.repo}/pull/${pr}`);
+    if (e.type === then && culprits.has(key) && !out.has(culprits.get(key)!)) out.set(culprits.get(key)!, { at: e.at, url: d.url });
   }
-  return reverts;
+  return out;
 }
+
+/** Each reverted pull request (its URL) and its revert, from the landing batches' `revert_opened` and `reverted` events. */
+export const revertsOf = (events: readonly DomainEvent[]): Map<string, GradeRevert> =>
+  culpritsThen(events, 'landing_batch.revert_opened', 'culpritPullRequest', 'landing_batch.reverted');
+
+/** Each culprit pull request (its URL) and the fix issue filed for it, from the landing batches' `culprit` and `fix_filed` events. */
+export const fixIssuesOf = (events: readonly DomainEvent[]): Map<string, GradeRevert> =>
+  culpritsThen(events, 'landing_batch.culprit', 'pullRequest', 'landing_batch.fix_filed');
 
 const msBetween = (from: string | undefined, to: string | undefined): number | undefined =>
   (from && to ? Math.max(0, Date.parse(to) - Date.parse(from)) : undefined);
 
 /**
- * An ended job's facts, from its record, its own events (`GRADE_EVENTS`), its token cost, the reverts — a revert counts
- * only within `windowDays` of its pull request's merge — and the waste signals of its completion review.
+ * An ended job's facts, from its record, its own events (`GRADE_EVENTS`), its token cost, what came later — a revert or a
+ * fix issue counts only within `windowDays` of its pull request's merge, a reopen only within `windowDays` after its end —
+ * and the waste signals of its completion review.
  */
 export function gradeFactsOf(
   job: Job, events: readonly DomainEvent[], cost: { costUsd: number; costKnown: boolean } | undefined,
-  reverts: ReadonlyMap<string, GradeRevert>, windowDays = DEFAULT_GRADE_SETTINGS.revertWindowDays, waste?: readonly string[],
+  later: GradeLater, windowDays = DEFAULT_GRADE_SETTINGS.revertWindowDays, waste?: readonly string[],
 ): GradeFacts {
   let pr: GradeFacts['pullRequest'];
   let fixChecks = 0, reworks = 0, reruns = 0;
@@ -164,12 +188,17 @@ export function gradeFactsOf(
     if (e.type === 'job.rework_requested') reworks += 1;
     if (e.type === 'job.rerun') reruns += 1;
   }
-  const revert = pr?.state === 'merged' ? reverts.get(pr.url) : undefined;
-  if (pr && revert && Date.parse(revert.at) - Date.parse(pr.mergedAt!) <= windowDays * DAY) pr = { ...pr, reverted: revert };
+  const inWindow = (at: string, from: string | undefined): boolean => from !== undefined && Date.parse(at) >= Date.parse(from) && Date.parse(at) - Date.parse(from) <= windowDays * DAY;
+  const revert = pr?.state === 'merged' ? later.reverts.get(pr.url) : undefined;
+  if (pr && revert && inWindow(revert.at, pr.mergedAt)) pr = { ...pr, reverted: revert };
+  const fix = pr?.state === 'merged' ? later.fixes?.get(pr.url) : undefined;
+  const fixIssues = fix && inWindow(fix.at, pr!.mergedAt) ? 1 : 0;
+  const reopens = (later.reopens ?? []).filter((at) => inWindow(at, job.finishedAt)).length;
   const queueMs = msBetween(job.createdAt, job.startedAt), wallMs = msBetween(job.startedAt, job.finishedAt);
   return {
     status: job.status === 'failed' ? 'failed' : 'finished', ...(job.partlyDone ? { partlyDone: true as const } : {}),
     ...(pr ? { pullRequest: pr } : {}), fixChecks, reworks, reruns, attempts: job.attempts,
+    ...(reopens > 0 ? { reopens } : {}), ...(fixIssues > 0 ? { fixIssues } : {}),
     ...(cost?.costKnown ? { costUsd: cost.costUsd } : {}), ...(queueMs !== undefined ? { queueMs } : {}), ...(wallMs !== undefined ? { wallMs } : {}),
     ...(waste ? { waste: [...waste] } : {}),
   };
