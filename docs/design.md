@@ -36276,3 +36276,43 @@ Tests: `test/domain/job-egress.test.ts` (entries, the defaults, the list of a jo
 matching), `test/integration/job-egress.test.ts` (real database and HTTP server: a host off the list refused and recorded
 once, a listed host reached as a byte pipe and a port off it refused, a listed name that resolves to loopback refused, a
 token that is no job's, the setting read and set through the UI session with a bad entry refused and the change recorded).
+## Completion reviews (issue #2846, 2026-10-26)
+
+Owner request: when a job ends, the hopper looks back at its run — where it stalled, what it repeated, what would have
+helped — and keeps that with the job, so improvements and hopper defects are not lost with the session.
+
+- **What a review is.** A `CompletionReview` (`src/domain/completion-review.ts`, pure): the job's end (`finished`, `failed`,
+  `cancelled`) and length, from its creation to its end; its **stages**, longest first — `queued` (waiting for a lane, held
+  too), `running`, `person` (a question, or its own wait on an approval, a grant or an infra plan), `waiting` (its own wait on
+  anything else; a wait on its own command counts as running), `parked` —, read from its events (`stageTimes`); the jobs of
+  its work item (`idsOfItem`; with no item, 2 for a rerun, else 1); its questions; **what went well** and **where it stalled**
+  (a stage other than running of 10 minutes and a fifth of the run or more, each restart, more than one job), in plain words;
+  its **restarts** (`requeued`, `preempted`, an auto park, `link_lost`, `oom_killed`, `heap_retry`), each with its count and
+  first three causes (the park that follows a preemption is the preemption's, a person's park is no restart); its **waste
+  signals** (`tokenWaste` on its token ledger, as `GET /api/jobs/:id/tokens`, its pushes counted from its own events); and
+  **suggestions**, each with an `area` — `config`, `routing`, `lane`, `template`, `prompt` — by fixed rules: a long queue →
+  lanes; two preemptions → routing; three questions → prompt (write the answers in the issue or the job rules); a long wait
+  on a person → config (approve ahead); failing tests → template; no progress or cache churn → prompt (smaller parts); a lost
+  link or a resume loop → config (the machines); memory → config (the job memory limit, the heavy-step gate). Rules only: no
+  model reads the run, and no text of the session is read.
+- **Which jobs.** The user's `CompletionReviewSettings`: `on` (default on), `outcomes` (default `failed`), `multiJob` (default
+  on: a job of a work item with more than one job is reviewed whatever its end) and `minRunMinutes` (default 5: a first run
+  shorter than this is trivial and skipped; a second attempt never is). An admin sets them in Settings → Completion reviews
+  (`POST /ui/api/completion-review`, `completion_review.settings_changed`); `GET /api/completion-review` reads them.
+  `rejected` is no end a review follows: such a job never ran.
+- **When.** The **completion review pass** (`src/engine/completion-reviews.ts`), every minute on the host that holds its
+  lease (`completion-reviews`): each job whose `job.finished`, `job.failed` or `job.cancelled` is from the last two days and at
+  least a minute old — so the run's last token read is in — and that has no review yet is judged by the settings, and reviewed
+  when they say so. The review is kept in `completion_reviews` (tenant migration 103, one row per job, the review as JSON), so
+  a stop loses none: the next pass, on any host, reviews what it left. A job the settings skip is not judged again by that
+  host; a change of the settings applies from the next pass to jobs not judged yet, and a kept review stays.
+- **Reads.** `GET /api/jobs/:id/completion-review` answers `{ review }`, or `{}` while there is none. The job view's
+  **Completion review** panel (`ui/src/views/job-completion-review.tsx`, `ui/src/model/completion-review.ts`) shows it.
+- **Not yet** (later parts of issue #2846): a bug-report recommendation from a review, through the bug-report pipeline's
+  scrub and dedupe, approved or dismissed in Needs you, a dismissal kept by its signature; a review by a model (its harness,
+  model and cost cap in the settings); and review outcomes for grading (issue #2845).
+
+Tests: `test/domain/completion-review.test.ts` (the defaults and which jobs, the stages, the restarts, a clean run, a
+stalled one with its suggestions, a push as progress), `test/integration/completion-reviews.test.ts` (real database and HTTP:
+the settings and their event, a failed job reviewed once after it settled, a finished one skipped, none while off, 404),
+`test/ui/completion-review.test.ts` and `test/ui/job-completion-review-view.test.ts`.
