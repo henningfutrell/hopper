@@ -298,6 +298,28 @@ Version 1 (`docs/schemas/job.respecified.v1.json`). A sync worked out a job that
 }
 ```
 
+## `job.model_escalated`
+
+Version 1 (`docs/schemas/job.model_escalated.v1.json`). Model routing (issue #2848) put a new job on a stronger model than its rules give it: its item's earlier job (`after`) ran on the `from` model choice and failed. `to` is the choice, `model` its model ('': the agent's own default), `why` its words. Once per item: its later jobs stay on the strong model with no new event.
+
+| field | type | required |
+|---|---|---|
+| `from` | `cheap` \| `strong` | yes |
+| `to` | `cheap` \| `strong` | yes |
+| `model` | string | yes |
+| `after` | string | yes |
+| `why` | string | yes |
+
+```json
+{
+  "from": "cheap",
+  "to": "strong",
+  "model": "opus",
+  "after": "j-0001",
+  "why": "Escalated: the cheap model's job j-0001 failed, so this job runs on the strong model."
+}
+```
+
 ## `lane.opened`
 
 Version 1 (`docs/schemas/lane.opened.v1.json`). A Decision opened a lane.
@@ -4155,6 +4177,140 @@ Version 1 (`docs/schemas/token_budget.settings_changed.v1.json`). An admin chang
     "dayCostUsd": 40,
     "repoDayTokens": 0,
     "repoDayCostUsd": 0
+  },
+  "by": "admin"
+}
+```
+
+## `model_routing.settings_changed`
+
+Version 1 (`docs/schemas/model_routing.settings_changed.v1.json`). An admin changed model routing (issue #2848): on or off, the executors it routes, each model choice's model and budget (`cheap`, `strong`), the model rules, the repositories' budgets and whether a failed cheap job escalates. `from` and `to`, each whole.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "on": false,
+    "executors": [
+      "herdr-claude",
+      "claude"
+    ],
+    "cheap": {
+      "model": "sonnet",
+      "jobTokens": 0,
+      "jobCostUsd": 5
+    },
+    "strong": {
+      "model": "",
+      "jobTokens": 0,
+      "jobCostUsd": 0
+    },
+    "rules": [
+      {
+        "name": "risky-work",
+        "match": {
+          "risk": "high"
+        },
+        "choice": "strong"
+      },
+      {
+        "name": "research",
+        "match": {
+          "kind": "research"
+        },
+        "choice": "strong"
+      },
+      {
+        "name": "proposal",
+        "match": {
+          "kind": "proposal"
+        },
+        "choice": "strong"
+      },
+      {
+        "name": "tend",
+        "match": {
+          "kind": "tend"
+        },
+        "choice": "cheap"
+      },
+      {
+        "name": "small-work",
+        "match": {
+          "size": "small"
+        },
+        "choice": "cheap"
+      }
+    ],
+    "repos": {},
+    "escalate": true
+  },
+  "to": {
+    "on": true,
+    "executors": [
+      "herdr-claude",
+      "claude"
+    ],
+    "cheap": {
+      "model": "sonnet",
+      "jobTokens": 0,
+      "jobCostUsd": 5
+    },
+    "strong": {
+      "model": "",
+      "jobTokens": 0,
+      "jobCostUsd": 0
+    },
+    "rules": [
+      {
+        "name": "risky-work",
+        "match": {
+          "risk": "high"
+        },
+        "choice": "strong"
+      },
+      {
+        "name": "research",
+        "match": {
+          "kind": "research"
+        },
+        "choice": "strong"
+      },
+      {
+        "name": "proposal",
+        "match": {
+          "kind": "proposal"
+        },
+        "choice": "strong"
+      },
+      {
+        "name": "tend",
+        "match": {
+          "kind": "tend"
+        },
+        "choice": "cheap"
+      },
+      {
+        "name": "small-work",
+        "match": {
+          "size": "small"
+        },
+        "choice": "cheap"
+      }
+    ],
+    "repos": {
+      "acme/app": {
+        "cheap": {
+          "jobCostUsd": 2
+        }
+      }
+    },
+    "escalate": true
   },
   "by": "admin"
 }
