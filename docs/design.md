@@ -14364,7 +14364,7 @@ job rules are one text for every job of a user; what is true for one repository,
 **Verification.** `test/job-rules/repo-job-rules.test.ts`, `test/integration/job-rules.test.ts` (a job of the repository
 gets them, a job of another does not), `test/cli.test.ts`, `test/ui/job-rules-panel.test.ts`.
 
-## Repository memory (issue #2847 part 1, 2026-10-26)
+## Repository memory (issue #2847, 2026-10-26)
 
 Owner requirement: jobs stop finding the same things again. The hopper keeps, for each repository, what earlier jobs
 learned — its conventions (build and test commands, layout, style, traps) and its past fixes — and gives the relevant ones
@@ -14392,7 +14392,7 @@ to its next jobs.
   then how to write memory lines. A repository with no entry yet gets only that last part. The entries it got are
   recorded on its timeline, `job.memory_offered` (their ids and how many were left out), again at a later start only when
   they changed. A running job keeps what it started with; an edit, an approval, a disable or a removal reaches the next
-  job. Post-completion reviews (issue #2846) and grading (issue #2845) can add entries through the same service later.
+  job. Grading (issue #2845) can add entries through the same service later.
 - **Stale entries.** An entry expires `expireDays` (default 180) after its last change: no job is offered it, the view
   marks it `expired`, and a person's approval, an edit or a job learning it again renews it. A later job that finds it
   wrong flags it, as above.
@@ -14407,12 +14407,22 @@ to its next jobs.
   `POST /ui/api/repo-memory/settings` against the version read; least role admin, as the repository job rules
   (`src/http/ui/repo-memory.ts`). `hopper memory list|add|edit|approve|disable|enable|remove` posts there;
   `hopper config set repo-memory` sets the settings.
-- **Left of part 1.** The UI: a view of each repository's entries with edit, delete, approve and disable, and the
-  settings. The API and the CLI do every act meanwhile.
+- **In the UI (part 2).** Settings → Repository memory (`#settings/repo-memory`, `ui/src/views/repo-memory.tsx`, the pure
+  parts `ui/src/model/repo-memory.ts`): the summary of the settings and their form (on, approval, the size cap, the expiry
+  and a row per repository or owner), saved whole against the version read; then the entries, filtered by repository,
+  each with its kind, state, `expired`, area, confidence, and the job that learned it or a person, and a flag's job and
+  reason. An admin approves one no job is offered for its state or age, disables one in use, enables a disabled one,
+  edits its kind, area and text (only what differs is sent; an emptied area is taken away), removes it after a confirm,
+  and adds an entry to the repository the filter names. Each act reads the entries again; the next job of the repository
+  gets it. A reader sees the same with no act.
+- **Not learned from completion reviews.** A completion review's suggestions (issue #2846) are about the hopper's own
+  settings (routing, lanes, templates, prompts), not a convention of the repository; so it adds no entry. A later signal
+  that is about the repository can call the same service.
 
 **Verification.** `test/domain/repo-memory.test.ts`, `test/integration/repo-memory.test.ts` (an entry a job learned and a
 person approved is offered to the next job of the same repository and not of another; an edit, a flag, a disable and a
-removal reach the next job; the settings), `test/cli-operator-memory.test.ts`.
+removal reach the next job; the settings), `test/cli-operator-memory.test.ts`; the UI: `test/ui/repo-memory.test.ts` (the model) and `test/ui/repo-memory-view.test.ts`
+(the view in the whole app: each act posts and the entries are read again; the filter; the settings; a reader).
 
 ## Decide and proceed (issue #1059, 2026-10-13)
 

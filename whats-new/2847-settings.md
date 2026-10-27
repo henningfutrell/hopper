@@ -1,0 +1,1 @@
+- In Settings, Repository memory shows what jobs learned about each repository. You can approve, edit, turn off or remove an entry, and add your own. The next job of that repository gets the change.

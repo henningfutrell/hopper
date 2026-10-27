@@ -138,12 +138,12 @@ The tab shows only the issues that the hopper read (the issues its sources list,
 
 The hopper remembers what jobs learn about a repository, and tells the next jobs of that repository. A job writes a line `HOPPER_MEMORY convention: <text>` or `HOPPER_MEMORY fix: <text>` at the start of its final message. That line becomes a **memory entry** of its repository.
 
-- A new entry waits for a person to approve it. Approve it with `hopper memory approve <id>`. Until then, no job gets it.
+- A new entry waits for a person to approve it. Approve it in **Settings → Repository memory**, or with `hopper memory approve <id>`. Until then, no job gets it.
 - Each job of the repository gets the approved entries when it starts, after the repository job rules. Jobs of other repositories do not get them.
 - An entry that a later job says is wrong is **flagged**: no job gets it until you approve it again or edit it.
 - An entry expires 180 days after its last change. Approve it again to use it again.
-- To see, add, edit, disable or remove entries, use `hopper memory list`, `add`, `edit`, `disable`, `enable` and `remove`, or `GET /api/repo-memory` and `POST /ui/api/repo-memory`. A change reaches the next job.
-- To turn memory off, or to approve new entries without a person, for all repositories or one: `hopper config set repo-memory` with `on` and `approval`, and `repos` for one repository.
+- To see, add, edit, disable or remove entries, open **Settings → Repository memory** and pick the repository. You can also use `hopper memory list`, `add`, `edit`, `disable`, `enable` and `remove`, or `GET /api/repo-memory` and `POST /ui/api/repo-memory`. A change reaches the next job.
+- To turn memory off, or to approve new entries without a person, for all repositories or one: use the settings at the top of **Settings → Repository memory**, or `hopper config set repo-memory` with `on` and `approval`, and `repos` for one repository.
 
 ## How to use it
 
