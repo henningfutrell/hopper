@@ -1,7 +1,7 @@
 // How each print-mode agent CLI is called and how its answer is read (design.md "Print-mode agent
 // executors", issues #142, #307 and #533): Cursor's agent and Claude Code print one JSON result; codex, opencode
 // and omp print JSON events, one per line. The shapes are the real CLIs' (cursor-agent 2026.10, codex-cli 0.160,
-// opencode 1.18, omp 18.7, claude 2.1.292). Only the call and the reading differ; the turn is print-agent.ts's.
+// opencode 2.1, omp 18.7, claude 2.1.292). Only the call and the reading differ; the turn is print-agent.ts's.
 
 import { printTurnTokenUse, type SessionTokenUse } from '../domain/token-usage.ts';
 
@@ -22,7 +22,10 @@ export type TurnAnswer = { text: string; session: string } | { error: string } |
 export type TurnSaid = { text: string; session?: string } | { error: string } | { unreadable: string };
 
 export interface Dialect {
+  /** The call; with `textOnStdin`, the text is not in it. */
   argv(c: TurnCall): string[];
+  /** The CLI reads the text on stdin: an argument would reach the model changed (issue #2856). */
+  textOnStdin?: true;
   /** The token use the turn's output says, by its session (issue #2302, part 6); absent: the CLI says none the hopper reads. */
   usage?(stdout: string, at: { first: string; last: string }): { session: string; use: SessionTokenUse } | undefined;
   /** The answer and the session to resume: a job's turn. */
@@ -112,29 +115,37 @@ const codex = dialect(
   'thread',
 );
 
-/** `opencode run --format json`: every event names the session; the text parts of the last message are the answer. */
-const opencode = dialect(
-  (c) => [c.bin, 'run', '--format', 'json', ...c.args, ...model(c), ...(c.session ? ['--session', c.session] : []), '--', c.text],
-  (stdout) => {
-    let session: string | undefined;
-    let message: string | undefined;
-    let text = '';
-    for (const e of events(stdout)) {
-      session ??= str(e.sessionID);
-      if (e.type === 'error') {
-        const err = obj(e.error);
-        const why = str(obj(err.data).message);
-        return { error: [str(err.name), why].filter(Boolean).join(': ') || 'error without a message' };
+/**
+ * `opencode run --format json`: every event names the session; the text parts of the last message are the answer.
+ * opencode 2 (issue #2856): `--standalone` runs a private server for the run, never the background service, which
+ * outlives the turn and keeps the environment and config of the run that started it. The text goes on stdin: opencode 2
+ * quotes a text argument with a space again, and after `--` sends it twice.
+ */
+const opencode: Dialect = {
+  ...dialect(
+    (c) => [c.bin, 'run', '--standalone', '--format', 'json', ...c.args, ...model(c), ...(c.session ? ['--session', c.session] : [])],
+    (stdout) => {
+      let session: string | undefined;
+      let message: string | undefined;
+      let text = '';
+      for (const e of events(stdout)) {
+        session ??= str(e.sessionID);
+        if (e.type === 'error') {
+          const err = obj(e.error);
+          const why = str(obj(err.data).message);
+          return { error: [str(err.name), why].filter(Boolean).join(': ') || 'error without a message' };
+        }
+        const part = obj(e.part);
+        if (e.type !== 'text' || part.type !== 'text') continue;
+        if (part.messageID !== message) { message = str(part.messageID); text = ''; }
+        text += str(part.text) ?? '';
       }
-      const part = obj(e.part);
-      if (e.type !== 'text' || part.type !== 'text') continue;
-      if (part.messageID !== message) { message = str(part.messageID); text = ''; }
-      text += str(part.text) ?? '';
-    }
-    return message === undefined ? { unreadable: 'answered no message' } : { text, ...(session ? { session } : {}) };
-  },
-  'session',
-);
+      return message === undefined ? { unreadable: 'answered no message' } : { text, ...(session ? { session } : {}) };
+    },
+    'session',
+  ),
+  textOnStdin: true,
+};
 
 /** `omp -p --mode json`: the `session` line names it; `agent_end` carries the messages, the last the answer. */
 const omp = dialect(

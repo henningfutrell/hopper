@@ -398,7 +398,8 @@ answered in the same Claude session. It has no pane to watch and cannot pick up 
 
 The `codex`, `opencode` and `omp` executors run a job in that agent's CLI, as `cursor-agent` runs Cursor's agent
 (steps above): one print-mode run per turn, on this host, an ssh target or a computer that joined with its line.
-Install the CLI on each machine that runs it and sign it in once there; opencode needs no sign-in.
+Install the CLI on each machine that runs it and sign it in once there; opencode needs no sign-in. The `opencode`
+executor needs opencode 2 (`npm install -g @opencode/cli`); the `opencode-ai` package is the older 1.x line.
 
 The hopper publishes a box image of each agent: `ghcr.io/henningfutrell/hopper:box-<agent>`, for `claude`, `codex`,
 `cursor`, `omp` and `opencode`. The sandbox playground starts a box of the agent you pick, and the Helm chart's lane
