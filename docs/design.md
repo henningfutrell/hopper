@@ -14361,7 +14361,7 @@ Owner requirement: jobs stop finding the same things again. The hopper keeps, fo
 learned — its conventions (build and test commands, layout, style, traps) and its past fixes — and gives the relevant ones
 to its next jobs.
 
-- **Memory entries.** One row each in the user's database (tenant migration 103, `memory_entries`,
+- **Memory entries.** One row each in the user's database (tenant migration 104, `memory_entries`,
   `src/store/repo-memories.ts`): its repository (`owner/name`, lowercase), kind (`convention`, `fix`), an optional area (a
   path of the repository), one line of text (at most 1000 characters), state (`proposed`, `approved`, `disabled`,
   `flagged`), confidence (0 to 1), the job that learned it, who changed it last, and when it was made and last changed. At

@@ -1,4 +1,4 @@
-// The memory entries of each repository (issue #2847, tenant migration 103, design.md "Repository memory"): one row each,
+// The memory entries of each repository (issue #2847, tenant migration 104, design.md "Repository memory"): one row each,
 // its fields as JSON, with the columns read by — its repository and when it changed last.
 import type { MemoryEntry, MemoryEntryRepository } from '../domain/repo-memory.ts';
 import { parse, type StoreContext } from './context.ts';
