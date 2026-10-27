@@ -9,11 +9,14 @@
 //   Scenario: an operator grades a job: Save posts the score and the note, and the panel shows the answer
 //   Scenario: a viewer reads the grades and gets no form; a running job shows no panel
 //   Scenario: the Grades tab rolls up by the group picked and lists the graded jobs
+//   Scenario: the Grade panel shows the grade of the job's item, and an operator grades the item (part 5)
+//   Scenario: the Grades tab rolls up the items when Items is picked (part 5)
 //   Scenario: the grade settings save only what changed
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_GRADE_SETTINGS, type GradesView, type JobGradeView } from '../../src/domain/grades.ts';
+import type { ItemGradesView, ItemGradeView } from '../../src/domain/item-grades.ts';
 import type { Job } from '../../src/domain/types.ts';
 
 const T = '2026-10-26T12:30:00.000Z';
@@ -34,6 +37,23 @@ const ROLLUP: GradesView = {
   by: 'executor', total: { jobs: 3, auto: 70, userGraded: 1, user: 4, disagreements: 0 },
   groups: [{ key: 'herdr-claude', jobs: 2, auto: 80, userGraded: 1, user: 4, disagreements: 0 }, { key: 'opencode', jobs: 1, auto: 50, userGraded: 0, disagreements: 0 }],
   jobs: [{ jobId: 'j1', endedAt: T, executor: 'herdr-claude', repo: 'o/r', kind: 'code', auto: 82, user: 4 }],
+};
+
+const KEY = 'https://github.com/o/r/issues/7';
+const ITEM: ItemGradeView = {
+  key: KEY,
+  grade: {
+    key: KEY, endedAt: T, state: 'done', executor: 'herdr-claude', repo: 'o/r', kind: 'code', gradedAt: T,
+    jobs: [{ jobId: 'j0', score: 20 }, { jobId: 'j1', score: 82 }],
+    facts: { status: 'finished', fixChecks: 0, reworks: 0, reruns: 1, attempts: 1 },
+    auto: { score: 64, lines: [{ signal: 'rework', value: 0.5, weight: 2, why: '0 rework, 1 run again, 0 retry' }] },
+  },
+  user: { score: 3, by: 'someone', at: T }, history: [{ score: 3, by: 'someone', at: T }], disagree: false,
+};
+const ITEMS: ItemGradesView = {
+  by: 'executor', total: { jobs: 1, auto: 64, userGraded: 1, user: 3, disagreements: 0 },
+  groups: [{ key: 'herdr-claude', jobs: 1, auto: 64, userGraded: 1, user: 3, disagreements: 0 }],
+  items: [{ key: KEY, endedAt: T, state: 'done', executor: 'herdr-claude', repo: 'o/r', kind: 'code', jobs: 2, auto: 64, user: 3 }],
 };
 
 let calls: { method: string; path: string; body?: unknown }[] = [];
@@ -124,7 +144,48 @@ describe('a job\'s Grade panel on its job view', () => {
   });
 });
 
+describe('the grade of a job\'s item in its Grade panel (part 5)', () => {
+  const withItem = { ...finished, source: { key: KEY } } as Job;
+
+  it('shows the item\'s automatic grade over its jobs, its user grade, and an operator grades the item', async () => {
+    await render(JOB_GRADE, 'JobGrade', { job: withItem }, {
+      'GET /api/jobs/j1/grade': GRADED, 'GET /api/grades/item': ITEM,
+      'POST /ui/api/grades/item': { ...ITEM, user: { score: 5, by: 'someone', at: T }, history: [{ score: 5, by: 'someone', at: T }, ...ITEM.history] },
+    });
+    expect(calls.map((c) => c.path)).toContain(`/api/grades/item?key=${encodeURIComponent(KEY)}`);
+    expect(texts('item-grade-score')).toEqual(['64']);
+    expect(texts('item-grade-jobs')).toEqual(['its item, over 2 jobs, ended done']);
+    expect(texts('item-grade-line')).toEqual(['Rework: 0 rework, 1 run again, 0 retry (50 of 100, weight 2)']);
+    expect(texts('item-grade-user')).toEqual(['3 of 5 by someone, 2026-10-26 12:30 UTC']);
+    const item = document.querySelector('[data-slot="item-grade"]')!;
+    const five = [...item.querySelectorAll('button')].find((b) => b.textContent === '5')!;
+    await act(async () => { five.click(); });
+    await act(async () => { [...item.querySelectorAll('button')].find((b) => b.textContent === 'Save')!.click(); });
+    await vi.waitFor(() => expect(calls.filter((c) => c.method === 'POST')).toEqual([{ method: 'POST', path: '/ui/api/grades/item', body: { key: KEY, score: 5 } }]));
+    await vi.waitFor(() => expect(texts('item-grade-user')).toEqual(['5 of 5 by someone, 2026-10-26 12:30 UTC']));
+  });
+
+  it('shows no item part for a job with no item, or an item not graded', async () => {
+    await render(JOB_GRADE, 'JobGrade', { job: withItem }, { 'GET /api/jobs/j1/grade': GRADED, 'GET /api/grades/item': { key: KEY, history: [] } }, 'viewer');
+    expect(texts('item-grade-none')).toEqual(['Its item is not graded: the hopper grades an item once it ended done or failed.']);
+    await render(JOB_GRADE, 'JobGrade', { job: finished }, { 'GET /api/jobs/j1/grade': GRADED });
+    expect(calls.map((c) => c.path).filter((p) => p.startsWith('/api/grades/item'))).toEqual([]);
+    expect(document.querySelector('[data-slot="item-grade"]')).toBeNull();
+  });
+});
+
 describe('the Grades tab of Jobs', () => {
+  it('rolls up the items when Items is picked, each linked to its issue (part 5)', async () => {
+    await render('../../ui/src/views/grades.tsx', 'Grades', {}, { 'GET /api/grades': ROLLUP, 'GET /api/grades/items': ITEMS });
+    await act(async () => { button(/^Items$/)!.click(); });
+    await vi.waitFor(() => expect(calls.map((c) => c.path)).toContain('/api/grades/items?by=executor'));
+    await vi.waitFor(() => expect(texts('grades-total')).toEqual(['1 graded item, mean automatic grade 64, 1 graded by a person (mean 3 of 5), 0 disagree']));
+    expect(texts('grades-group')).toEqual(['herdr-claude1 item6413 of 50']);
+    const item = document.querySelector<HTMLAnchorElement>('[data-slot="grades-item"] a')!;
+    expect(item.getAttribute('href')).toBe(KEY);
+    expect(texts('grades-item')[0]).toContain('2 jobs');
+  });
+
   it('rolls up by the group picked and lists the graded jobs, each linked to its job view', async () => {
     await render('../../ui/src/views/grades.tsx', 'Grades', {}, { 'GET /api/grades': ROLLUP });
     expect(calls.filter((c) => c.path.startsWith('/api/grades')).map((c) => c.path)).toEqual(['/api/grades?by=executor']);

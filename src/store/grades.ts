@@ -1,8 +1,10 @@
 // Grades (issue #2845, tenant migration 102, design.md "Grades"): one row per ended job's automatic grade — its keys as
 // columns a rollup filters on, its facts and grade as JSON —, and every user grade a person gave a job, kept as its
 // history: the newest is the job's user grade. The grade pass's cursor is its row in `event_cursors` (consumer
-// `grade-pass`), which a fold of two users resets as it does every consumer's.
+// `grade-pass`), which a fold of two users resets as it does every consumer's. Part 5 (tenant migration 107): one row per
+// ended work item's grade, by its source key, and every user grade a person gave an item.
 import type { GradeRepository, GradeRow, UserGrade } from '../domain/grades.ts';
+import type { ItemGradeRow } from '../domain/item-grades.ts';
 import { parse, type StoreContext } from './context.ts';
 import type { Row } from './db.ts';
 
@@ -12,11 +14,34 @@ export const GRADE_TABLES = `CREATE TABLE IF NOT EXISTS job_grades (
   CREATE INDEX IF NOT EXISTS job_grades_ended ON job_grades (ended_at);
   CREATE TABLE IF NOT EXISTS job_user_grades (job_id TEXT NOT NULL, at TEXT NOT NULL, by_person TEXT NOT NULL, score INTEGER NOT NULL, note TEXT, PRIMARY KEY (job_id, at))`;
 
+export const ITEM_GRADE_TABLES = `CREATE TABLE IF NOT EXISTS item_grades (
+    item_key TEXT PRIMARY KEY, ended_at TEXT NOT NULL, state TEXT NOT NULL, executor TEXT NOT NULL, model TEXT, repo TEXT, kind TEXT NOT NULL,
+    machine_id TEXT, score INTEGER NOT NULL, graded_at TEXT NOT NULL, body TEXT NOT NULL);
+  CREATE INDEX IF NOT EXISTS item_grades_ended ON item_grades (ended_at);
+  CREATE TABLE IF NOT EXISTS item_user_grades (item_key TEXT NOT NULL, at TEXT NOT NULL, by_person TEXT NOT NULL, score INTEGER NOT NULL, note TEXT, PRIMARY KEY (item_key, at))`;
+
 const CURSOR = 'grade-pass';
 
 const userOf = (r: Row): UserGrade => ({ score: Number(r.score), ...(r.note !== null ? { note: String(r.note) } : {}), by: String(r.by_person), at: String(r.at) });
 
 export function createGradeRepository(c: StoreContext): GradeRepository {
+  const itemHistory = (key: string): UserGrade[] =>
+    c.db.all('SELECT * FROM item_user_grades WHERE item_key = ? ORDER BY at DESC', key).map(userOf);
+  /** The item rows with each item's newest user grade. */
+  const itemsWithUser = (rows: Row[]): ItemGradeRow[] => {
+    const keys = rows.map((r) => String(r.item_key));
+    const users = new Map<string, UserGrade>();
+    if (keys.length > 0) {
+      for (const r of c.db.all(`SELECT DISTINCT ON (item_key) * FROM item_user_grades WHERE item_key IN (${keys.map(() => '?').join(',')}) ORDER BY item_key, at DESC`, ...keys)) {
+        users.set(String(r.item_key), userOf(r));
+      }
+    }
+    return rows.map((r) => {
+      const g = parse<ItemGradeRow>(r.body);
+      const u = users.get(g.key);
+      return u ? { ...g, user: u } : g;
+    });
+  };
   const history = (jobId: string): UserGrade[] =>
     c.db.all('SELECT * FROM job_user_grades WHERE job_id = ? ORDER BY at DESC', jobId).map(userOf);
   /** The rows with each job's newest user grade. */
@@ -69,5 +94,33 @@ export function createGradeRepository(c: StoreContext): GradeRepository {
         ON CONFLICT (job_id, at) DO UPDATE SET by_person = excluded.by_person, score = excluded.score, note = excluded.note`, jobId, g.at, g.by, g.score, g.note ?? null);
     },
     history,
+    saveItems(rows) {
+      c.tx(() => {
+        for (const { user: _, ...g } of rows) {
+          c.db.run(`INSERT INTO item_grades (item_key, ended_at, state, executor, model, repo, kind, machine_id, score, graded_at, body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (item_key) DO UPDATE SET ended_at = excluded.ended_at, state = excluded.state, executor = excluded.executor, model = excluded.model,
+            repo = excluded.repo, kind = excluded.kind, machine_id = excluded.machine_id, score = excluded.score, graded_at = excluded.graded_at, body = excluded.body`,
+          g.key, g.endedAt, g.state, g.executor, g.model ?? null, g.repo ?? null, g.kind, g.machine ?? null, g.auto.score, g.gradedAt ?? g.endedAt, JSON.stringify(g));
+        }
+      });
+    },
+    getItem(key) {
+      const r = c.db.get('SELECT body, item_key FROM item_grades WHERE item_key = ?', key);
+      return r ? itemsWithUser([r])[0] : undefined;
+    },
+    listItems(q = {}) {
+      if (q.keys !== undefined && q.keys.length === 0) return [];
+      const where: string[] = [];
+      const p: (string | number)[] = [];
+      if (q.since !== undefined) { where.push('ended_at >= ?'); p.push(q.since); }
+      if (q.repo !== undefined) { where.push('repo = ?'); p.push(q.repo.toLowerCase()); }
+      if (q.keys !== undefined) { where.push(`item_key IN (${q.keys.map(() => '?').join(',')})`); p.push(...q.keys); }
+      return itemsWithUser(c.db.all(`SELECT item_key, body FROM item_grades ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ended_at DESC, item_key LIMIT ?`, ...p, q.limit ?? 5000));
+    },
+    gradeItem(key, g) {
+      c.db.run(`INSERT INTO item_user_grades (item_key, at, by_person, score, note) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (item_key, at) DO UPDATE SET by_person = excluded.by_person, score = excluded.score, note = excluded.note`, key, g.at, g.by, g.score, g.note ?? null);
+    },
+    itemHistory,
   };
 }
