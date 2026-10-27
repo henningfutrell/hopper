@@ -11,7 +11,8 @@
 // have and exits 1; `huge` puts $FAKE_AGENT_HUGE_MB of tool output before the answer; `non-utf8` puts a byte that is not
 // UTF-8 in the answer's word "greeting"; `no-final` prints the events before the answer only, and exits 0. Like the real
 // CLIs, it reads stdin to its end first, and logs it. `opencode session delete <id>` (a draft's cleanup, issue #474) only
-// appends the id and the opencode variables it ran with to opencode-deleted.jsonl.
+// appends the id, its argv and the opencode variables it ran with to opencode-deleted.jsonl. As opencode 2 does
+// (issue #2862), opencode refuses `--pure` and `--variant`: it prints its help and exits 1.
 import { spawn } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,9 +22,13 @@ import { join } from 'node:path';
 const stdin = process.stdin.isTTY ? '' : readFileSync(0, 'utf8');
 
 const argv = process.argv.slice(2);
+if (process.env.FAKE_AGENT_KIND === 'opencode' && argv.some((a) => a === '--pure' || a === '--variant')) {
+  process.stdout.write('DESCRIPTION\n  Run OpenCode with a message\n');
+  process.exit(1);
+}
 if (process.env.FAKE_AGENT_KIND === 'opencode' && argv[0] === 'session' && argv[1] === 'delete') {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('OPENCODE_')));
-  appendFileSync(join(process.env.FAKE_AGENT_DIR, 'opencode-deleted.jsonl'), `${JSON.stringify({ id: argv[2], env })}\n`);
+  appendFileSync(join(process.env.FAKE_AGENT_DIR, 'opencode-deleted.jsonl'), `${JSON.stringify({ id: argv[2], argv, env })}\n`);
   process.exit(0);
 }
 const log = join(process.env.FAKE_AGENT_DIR, 'agent-calls.jsonl');

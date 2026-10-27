@@ -2,9 +2,9 @@
 /* global process, setInterval */
 // A stand-in for the calls a draft probe makes (issue #474): each draft provider's sign-in status and its model list,
 // chosen by $FAKE_PROBE_KIND (claude, codex, cursor-agent, opencode, omp), in the shapes the real CLIs print (taken
-// from claude 2.1, codex-cli 0.160, cursor-agent 2026.10, opencode 1.19, omp 18.7 on 2026-10-17). Appends its argv and
+// from claude 2.1, codex-cli 0.160, cursor-agent 2026.10, omp 18.7 on 2026-10-17, opencode 2.1 on 2026-10-26). Appends its argv and
 // stdin to probe-calls.jsonl in $FAKE_PROBE_DIR. $FAKE_PROBE_MODE `signed-out` answers as a CLI with no login does,
-// `hang` never answers, `no-models` lists none.
+// `hang` never answers, `no-models` lists none. As opencode 2 does, opencode refuses `--pure`: it prints its help and exits 1.
 import { appendFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -42,6 +42,9 @@ else if (kind === 'claude' && call === 'auth status') {
 } else if (kind === 'cursor-agent' && call === 'models') {
   if (signedOut) { process.stderr.write('Error: Authentication required. Please run \'agent login\' first.\n'); process.exit(1); }
   out(none ? 'Available models\n\n' : 'Loading models…\nAvailable models\n\nauto - Auto\ngpt-x - GPT-X  (current, default)\nsonnet-x-thinking - Sonnet X Thinking\n\nTip: use --model <id> to switch.\n');
+} else if (kind === 'opencode' && argv.includes('--pure')) {
+  out('DESCRIPTION\n  List all available models\n');
+  process.exit(1);
 } else if (kind === 'opencode' && call === 'models') {
   out(none ? '' : 'opencode/big-pickle\nopencode/glm-flash-free\nanthropic/claude-x\n');
 } else if (kind === 'omp' && call === 'models') {

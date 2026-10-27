@@ -82,7 +82,7 @@ const LOCKDOWN: Record<DraftProvider, string[]> = {
   claude: ['--no-session-persistence', '--strict-mcp-config', '--tools'],
   codex: ['exec', '--json', '--ephemeral', '--ignore-user-config', '--ignore-rules', '--sandbox', 'read-only'],
   'cursor-agent': ['-p', '--mode', 'ask', '--sandbox', 'enabled'],
-  opencode: ['run', '--standalone', '--format', 'json', '--pure'],
+  opencode: ['run', '--standalone', '--format', 'json'],
   omp: ['-p', '--no-tools', '--no-session', '--no-skills', '--no-rules', '--no-extensions'],
 };
 
@@ -112,6 +112,11 @@ describe('draftOn: each provider, locked down', () => {
   it('a model and an effort go to the CLI in its own flags', async () => {
     await draftOn(host([HERE]), pick('codex', 'local', { model: 'gpt-x', effort: 'max' }), input, scope, signal());
     expect(lastCall('codex').argv).toEqual(expect.arrayContaining(['--model', 'gpt-x', '-c', 'model_reasoning_effort="xhigh"']));
+    // opencode 2 takes an effort as the model's variant (issue #2862); with no model, none.
+    await draftOn(host([HERE]), pick('opencode', 'local', { model: 'openai/gpt-x', effort: 'high' }), input, scope, signal());
+    expect(lastCall('opencode').argv).toEqual(expect.arrayContaining(['--model', 'openai/gpt-x#high']));
+    expect(await draftOn(host([HERE]), pick('opencode', 'local', { effort: 'high' }), input, scope, signal())).toMatchObject({ draft: DRAFT });
+    expect(lastCall('opencode').argv).not.toContain('--model');
     await draftOn(host([HERE]), pick('omp', 'local', { effort: 'high' }), input, scope, signal());
     expect(lastCall('omp').argv).toContain('--thinking=high');
     await draftOn(host([HERE]), pick('claude', 'local', { model: 'fable', effort: 'low' }), input, scope, signal());
@@ -122,8 +127,12 @@ describe('draftOn: each provider, locked down', () => {
 describe('draftOn: nothing of the run kept on the machine', () => {
   it('opencode: the session the run kept is deleted after it, with the same lockdown', async () => {
     expect(await draftOn(host([HERE]), pick('opencode'), input, scope, signal())).toMatchObject({ draft: DRAFT });
-    const deleted = readFileSync(join(dir, 'opencode-deleted.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { id: string; env: Record<string, string> });
-    expect(deleted).toEqual([{ id: 'ses_1', env: expect.objectContaining({ OPENCODE_PERMISSION: '{"*":"deny"}', OPENCODE_DISABLE_PROJECT_CONFIG: '1' }) }]);
+    const deleted = readFileSync(join(dir, 'opencode-deleted.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { id: string; argv: string[]; env: Record<string, string> });
+    // opencode 2's lockdown (issue #2862): every tool denied in the config it reads last; no background service.
+    expect(deleted).toEqual([{
+      id: 'ses_1', argv: ['session', 'delete', 'ses_1', '--standalone'],
+      env: expect.objectContaining({ OPENCODE_CONFIG_CONTENT: '{"permission":{"*":"deny"}}', OPENCODE_DISABLE_PROJECT_CONFIG: '1', OPENCODE_DISABLE_CLAUDE_CODE: '1' }),
+    }]);
   });
 
   it('opencode: a failed run\'s session is deleted too', async () => {
