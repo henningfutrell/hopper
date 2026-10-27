@@ -4340,6 +4340,39 @@ Version 1 (`docs/schemas/preemption.settings_changed.v1.json`). An admin changed
 }
 ```
 
+## `completion_review.settings_changed`
+
+Version 1 (`docs/schemas/completion_review.settings_changed.v1.json`). An admin changed which ended jobs get a completion review (issue #2846): on or off (`on`), the ends reviewed (`outcomes`), whether a job of a work item with more than one job is reviewed whatever its end (`multiJob`), and the run time below which a first run is trivial (`minRunMinutes`). `from` and `to`.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "on": true,
+    "outcomes": [
+      "failed"
+    ],
+    "multiJob": true,
+    "minRunMinutes": 5
+  },
+  "to": {
+    "on": true,
+    "outcomes": [
+      "failed",
+      "cancelled"
+    ],
+    "multiJob": true,
+    "minRunMinutes": 10
+  },
+  "by": "admin"
+}
+```
+
 ## `library_skill.saved`
 
 Version 1 (`docs/schemas/library_skill.saved.v1.json`). A person kept a new version of a library skill (issue #1911): `name`, its content id `version` and its place `seq` (1, 2, …); `source` says whether a person wrote it (`created`) copied it from another skill's version (`duplicated`, with that `name` and `version`), or imported it from a folder of a GitHub repository (`imported`: `repo`, the folder `path` — empty: the root —, the `ref` it follows, the `commit` read). Never its files: GET /api/skill-library/{name} answers them.
