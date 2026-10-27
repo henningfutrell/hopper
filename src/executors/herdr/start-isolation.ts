@@ -4,7 +4,7 @@
 import type { ExecutionContext, ExecutionOutcome } from '../../domain/ports.ts';
 import { tail } from './monitor.ts';
 import { GUARDS_MARK, RUNTIME_MARK, RUNTIME_SUBDIR, guardsCommand, guardsOutcome, runtimeOutcome, setupCommand } from '../../client/job-runtime.ts';
-import { SANDBOX_MARK, egressOutcome, sandboxCommand, sandboxOutcome, type EgressOutcome } from '../../client/job-sandbox.ts';
+import { SANDBOX_MARK, sandboxCommand, sandboxOutcome } from '../../client/job-sandbox.ts';
 import { jobScratchOf } from '../../domain/job-layout.ts';
 import { HEAVY_SHIMS } from '../../domain/heavy-steps.ts';
 import { awaitOnScreen } from './pane-wait.ts';
@@ -62,17 +62,5 @@ export async function enterSandbox(d: StartDeps, ctx: ExecutionContext, s: PaneS
   else if (found === 'none') ctx.progress('sandbox: none here (no bubblewrap that runs); Claude runs as the user does');
   else if (found === 'failed') return { kind: 'failed', error: `the job's sandbox could not be set up on ${ctx.machine.id}: ${tail(screen, 10)}` };
   else return { startTimedOut: `pane ${s.paneId} never set up the job's sandbox within ${SANDBOX_WAIT_MS} ms: ${tail(screen, 10)}` };
-  const egress = egressOutcome(screen);
-  if (egress) ctx.progress(EGRESS_PROGRESS[egress]);
   return null;
 }
-
-/**
- * The job's egress as its sandbox's setup found it (issue #2849), when its user's setting routes it: a warning on the job
- * wherever a tool can still go out directly (part 4).
- */
-export const EGRESS_PROGRESS: Record<EgressOutcome, string> = {
-  confined: 'egress: confined: the sandbox has a network of its own, whose one way out is the job egress allowlist',
-  routed: 'egress warning: routed through the job egress allowlist, but not confined here (the setting is off, or no network namespace of its own holds): a tool that ignores HTTPS_PROXY goes out directly',
-  unrouted: 'egress warning: not routed here (no sandbox, or no node to run hopper-egress): the job\'s connections go out directly, off the job egress allowlist',
-};

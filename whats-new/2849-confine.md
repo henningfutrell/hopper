@@ -1,1 +1,0 @@
-- An admin can now confine the jobs routed through the job egress list, in Settings under Job egress: a job's agent then reaches nothing but the hosts on the list, even with tools that skip the proxy. Where a machine cannot do this, the job shows a warning.
