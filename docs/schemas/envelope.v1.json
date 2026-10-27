@@ -36,6 +36,7 @@
         "job.reprioritized",
         "job.respecified",
         "job.model_escalated",
+        "job.budget_set",
         "lane.opened",
         "lane.closed",
         "lane.unhealthy",
