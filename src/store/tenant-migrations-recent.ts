@@ -39,7 +39,7 @@ import { DISK_MEASURE_TABLE } from './disk-measures.ts';
 import { DELIVERY_LEDGER_TABLE } from './delivery-ledger.ts';
 import { STEP_SCHEDULE_TABLES } from './step-schedules.ts';
 import { KEPT_TRACK_TABLES } from './kept-tracks.ts';
-import { GRADE_TABLES } from './grades.ts';
+import { GRADE_TABLES } from './grades.ts'; import { COMPLETION_REVIEW_TABLE } from './completion-reviews.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -212,4 +212,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 102: The grades (issue #2845): each ended job's automatic grade, and every user grade a person gave a job. Tables only:
   // the build before runs on them, and never reads them.
   GRADE_TABLES,
+  // 103: The completion reviews (issue #2846): one per ended job, the review as JSON. A table only: the build before runs on
+  // it, and never reads it.
+  COMPLETION_REVIEW_TABLE,
 ];
