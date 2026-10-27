@@ -9739,6 +9739,30 @@ Version 1 (`docs/schemas/job.egress_denied.v1.json`). The hopper refused a runni
 }
 ```
 
+## `job_egress.ask_answered`
+
+Version 1 (`docs/schemas/job_egress.ask_answered.v1.json`). A person answered a host the user's jobs asked for (issue #2849 part 3, `POST /ui/api/job-egress/asks`): a host off the allowlist that `job.egress_denied` refused (`not_listed`), shown in Needs you and in Settings → Job egress. `host` and `port`, `repo` the jobs' repository. `answer`: `approved`, the host is now on the allowlist — `for` `repo`, for that repository's jobs, or `all`, for every job —, so a job's next try goes through; `dismissed`, it stays off, and asks again only when a job is refused after this. `by` is who.
+
+| field | type | required |
+|---|---|---|
+| `by` | string | yes |
+| `host` | string | yes |
+| `port` | integer | yes |
+| `repo` | string | no |
+| `answer` | `approved` \| `dismissed` | yes |
+| `for` | `repo` \| `all` | no |
+
+```json
+{
+  "by": "Pat",
+  "host": "paste.example.com",
+  "port": 443,
+  "repo": "octo/tools",
+  "answer": "approved",
+  "for": "repo"
+}
+```
+
 ## `job_egress.changed`
 
 Version 1 (`docs/schemas/job_egress.changed.v1.json`). An admin set the user's job egress allowlist (issue #2849, `POST /ui/api/job-egress`): `defaults`, whether the hopper's default hosts are on it; `route`, whether a job's agent runs behind `hopper-egress` from its next start (part 2; absent before it); `hosts`, how many hosts every job may reach; `repos`, how many repositories have hosts of their own. `by` is who. Never the hosts themselves: GET /api/job-egress reads them.

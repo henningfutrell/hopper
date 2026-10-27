@@ -72,3 +72,64 @@ export function jobEgressAllows(list: readonly string[], host: string, port: num
     return name.startsWith('*.') ? h.endsWith(name.slice(1)) : h === name;
   });
 }
+
+/** A host off the allowlist that the user's jobs asked for (issue #2849 part 3): a Needs you line until a person answers it. */
+export interface JobEgressAsk {
+  /** `host:port`, as the jobs named it, in lowercase. */
+  host: string;
+  /** The jobs' repository, `owner/name` in lowercase; absent for a job with no repository. */
+  repo?: string;
+  /** The jobs refused, oldest first. */
+  jobIds: string[];
+  /** The newest refusal. */
+  at: string;
+}
+
+/** How far back the refusals make asks: a refusal older than a week asks for nothing. */
+export const JOB_EGRESS_ASK_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The event of a denial and of a person's answer, as the asks read them. */
+export interface JobEgressAskEvent {
+  type: string;
+  at: string;
+  jobId?: string;
+  data: unknown;
+}
+
+const askKey = (host: string, port: number, repo: string | undefined): string => `${repo?.toLowerCase() ?? ''} ${host.toLowerCase()}:${port}`;
+
+/**
+ * The asks: the `not_listed` refusals (`job.egress_denied`), one per host, port and repository, that the allowlist still
+ * refuses and that came after the newest answer to the same host (`job_egress.ask_answered`), newest first. A host a person
+ * approved is on the list, so it asks no more; a host a person dismissed asks again only when a job is refused after that.
+ */
+export function jobEgressAsks(s: JobEgressSettings, events: readonly JobEgressAskEvent[]): JobEgressAsk[] {
+  const answered = new Map<string, string>();
+  for (const e of events) {
+    if (e.type !== 'job_egress.ask_answered') continue;
+    const d = e.data as { host: string; port: number; repo?: string };
+    const k = askKey(d.host, d.port, d.repo);
+    if ((answered.get(k) ?? '') < e.at) answered.set(k, e.at);
+  }
+  const asks = new Map<string, JobEgressAsk>();
+  for (const e of events) {
+    if (e.type !== 'job.egress_denied') continue;
+    const d = e.data as { host: string; port: number; repo?: string; reason: string };
+    const k = askKey(d.host, d.port, d.repo);
+    if (d.reason !== 'not_listed' || e.at <= (answered.get(k) ?? '')) continue;
+    if (jobEgressAllows(jobEgressList(s, d.repo), d.host, d.port)) continue;
+    const ask = asks.get(k) ?? { host: `${d.host.toLowerCase()}:${d.port}`, ...(d.repo ? { repo: d.repo.toLowerCase() } : {}), jobIds: [], at: e.at };
+    if (e.jobId && !ask.jobIds.includes(e.jobId)) ask.jobIds.push(e.jobId);
+    if (ask.at < e.at) ask.at = e.at;
+    asks.set(k, ask);
+  }
+  return [...asks.values()].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+
+/** The setting with `host` (`host:port`) added for `repo`'s jobs, or for every job when `repo` is absent. */
+export function withJobEgressHost(s: JobEgressSettings, host: string, repo: string | undefined): JobEgressSettings {
+  const h = host.toLowerCase();
+  if (!repo) return normalJobEgress({ ...s, hosts: [...s.hosts, h] });
+  const r = repo.toLowerCase();
+  return normalJobEgress({ ...s, repos: { ...s.repos, [r]: [...(s.repos[r] ?? []), h] } });
+}

@@ -47,7 +47,7 @@ export const EVENT_TYPES = [
   'landing_batch.bisect_started', 'landing_batch.bisect_run', 'landing_batch.bisect_tested', 'landing_batch.culprit', 'landing_batch.revert_opened', 'landing_batch.reverted', 'landing_batch.revert_failed', 'landing_batch.fix_filed',
   'landing_batch.pending', 'landing_batch.back_merge_opened', 'landing_batch.back_merged', 'landing_batch.back_merge_failed', 'landing_batch.back_merge_issue_filed',
   'landing_batch.canary_started', 'landing_batch.canary_held', 'landing_batch.canary_issue_filed', 'landing_batch.canary_promoted', 'landing_batch.beta_moved', 'landing_batch.stuck', 'landing_batch.restarted',
-  'hopper.event_loop_stalled', 'job.egress_denied', 'job_egress.changed',
+  'hopper.event_loop_stalled', 'job.egress_denied', 'job_egress.ask_answered', 'job_egress.changed',
   'push_requirements.evaluated', 'delivery_settings.changed', 'push_requirements.defaults_changed', 'delivery_expedite.changed', 'delivery_gate.cleared', 'delivery_track.no_deploy_marked', 'delivery_track.deploy_expected', 'delivery_track.held', 'delivery_track.released', 'push_requirements.summarized', 'push_requirements.ci_missed',
 ] as const;
 export type EventType = typeof EVENT_TYPES[number];
@@ -104,6 +104,6 @@ export const EVENT_SCHEMA_VERSIONS: Readonly<Record<EventType, number>> = {
   'landing_batch.bisect_started': 1, 'landing_batch.bisect_run': 1, 'landing_batch.bisect_tested': 1, 'landing_batch.culprit': 1, 'landing_batch.revert_opened': 1, 'landing_batch.reverted': 1, 'landing_batch.revert_failed': 1, 'landing_batch.fix_filed': 1, 'landing_batch.pending': 1,
   'landing_batch.back_merge_opened': 1, 'landing_batch.back_merged': 1, 'landing_batch.back_merge_failed': 1, 'landing_batch.back_merge_issue_filed': 1,
   'landing_batch.canary_started': 1, 'landing_batch.canary_held': 1, 'landing_batch.canary_issue_filed': 1, 'landing_batch.canary_promoted': 1, 'landing_batch.beta_moved': 1, 'landing_batch.stuck': 1, 'landing_batch.restarted': 1,
-  'hopper.event_loop_stalled': 1, 'job.egress_denied': 1, 'job_egress.changed': 1,
+  'hopper.event_loop_stalled': 1, 'job.egress_denied': 1, 'job_egress.ask_answered': 1, 'job_egress.changed': 1,
   'push_requirements.evaluated': 1, 'delivery_settings.changed': 1, 'push_requirements.defaults_changed': 1, 'delivery_expedite.changed': 1, 'delivery_gate.cleared': 1, 'delivery_track.no_deploy_marked': 1, 'delivery_track.deploy_expected': 1, 'delivery_track.held': 1, 'delivery_track.released': 1, 'push_requirements.summarized': 1, 'push_requirements.ci_missed': 1,
 };

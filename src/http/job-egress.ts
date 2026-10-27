@@ -101,7 +101,7 @@ export function jobEgressRoutes(app: FastifyInstance, o: { tenants: Tenants; por
       refuse(socket, 403, no);
     };
     if (!jobEgressAllows(jobEgressList(t.store.settings.getJobEgress(), repo), host, port)) {
-      return deny('not_listed', `${host}:${port} is not on the egress allowlist of job ${job.id}. An admin adds it to the job egress allowlist (POST /ui/api/job-egress), for every job or for ${repo ?? 'its repository'}.`);
+      return deny('not_listed', `${host}:${port} is not on the egress allowlist of job ${job.id}. A person approves it in Needs you (Settings → Job egress), for ${repo ?? 'every job'}; then try again.`);
     }
     socket.pause();
     void addressOf(host).then(async (at) => {
