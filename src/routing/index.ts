@@ -3,6 +3,7 @@
 // and executor are configured, routes it; a rule naming one that is not is skipped, never failing
 // intake. No I/O.
 import { z } from 'zod';
+import { glob } from '../domain/glob.ts';
 import type { RoutedBy, RoutingItem, RoutingRule, SkippedRule } from '../domain/types.ts';
 
 const text = z.string().trim().min(1);
@@ -47,12 +48,6 @@ export function parseRoutingRules(raw: unknown): { ok: true; rules: RoutingRule[
 }
 
 const lower = (s: string) => s.toLowerCase();
-const escape = (s: string) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-
-/** `*` matches any run of characters (the slash too); everything else literally, any case. */
-function glob(pattern: string, value: string): boolean {
-  return new RegExp(`^${pattern.split('*').map(escape).join('.*')}$`, 'i').test(value);
-}
 
 /** Whether every field the rule matches on matches the item. */
 export function ruleMatches(r: RoutingRule, item: RoutingItem): boolean {

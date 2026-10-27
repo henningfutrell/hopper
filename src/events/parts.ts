@@ -5,6 +5,7 @@ import { CLOUD_OUTGOING, CLOUD_REFUSALS } from '../domain/cloud-link.ts';
 import { ACTION_VIAS } from '../domain/failures.ts';
 import { JOB_ORIGINS, ORIGIN_ROLES } from '../domain/intake-origin.ts';
 import { REPO_VISIBILITIES } from '../domain/linked-pulls.ts';
+import { MODEL_CHOICES, WORK_KINDS, WORK_RISKS, WORK_SIZES } from '../domain/model-routing.ts';
 import { POINTED_JOB_STATUSES, POINTER_KINDS } from '../domain/pointed-jobs.ts';
 import { TELEMETRY_SIGNALS } from '../domain/telemetry-settings.ts';
 import { CONFIDENCES, RISK_CATEGORIES, RISK_LEVELS } from '../domain/types.ts';
@@ -53,6 +54,13 @@ export const jobSpec = strict({
   specialty: z.literal(true).optional(),
   // A tend job: it elbows in as a specialty job does (issue #967; additive).
   tend: z.literal(true).optional(),
+  // What model routing chose at intake (issue #2848; additive).
+  modelRoute: strict({
+    choice: z.enum(MODEL_CHOICES), model: z.string(), rule: z.string(), why: z.string(),
+    size: z.enum(WORK_SIZES), kind: z.enum(WORK_KINDS), risk: z.enum(WORK_RISKS),
+    budget: strict({ jobTokens: z.number(), jobCostUsd: z.number() }),
+    escalated: strict({ from: z.enum(MODEL_CHOICES), jobId: z.string() }).optional(),
+  }).optional(),
 });
 
 // What a job's source and routing rules give its spec (issue #375). `defaultCwd` only in events recorded before issue #361.

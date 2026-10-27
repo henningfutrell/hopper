@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "from": {
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "boolean"
+        },
+        "executors": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "cheap": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._:[\\]-]{0,99}$"
+            },
+            "jobTokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            },
+            "jobCostUsd": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "model",
+            "jobTokens",
+            "jobCostUsd"
+          ],
+          "additionalProperties": false
+        },
+        "strong": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._:[\\]-]{0,99}$"
+            },
+            "jobTokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            },
+            "jobCostUsd": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "model",
+            "jobTokens",
+            "jobCostUsd"
+          ],
+          "additionalProperties": false
+        },
+        "rules": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "match": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "code",
+                      "research",
+                      "proposal",
+                      "tend"
+                    ]
+                  },
+                  "size": {
+                    "type": "string",
+                    "enum": [
+                      "small",
+                      "large"
+                    ]
+                  },
+                  "risk": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "high"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "choice": {
+                "type": "string",
+                "enum": [
+                  "cheap",
+                  "strong"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "match",
+              "choice"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "repos": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[\\w.-]+\\/[\\w.-]+$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "cheap": {
+                "type": "object",
+                "properties": {
+                  "jobTokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000000000
+                  },
+                  "jobCostUsd": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  }
+                },
+                "additionalProperties": false
+              },
+              "strong": {
+                "type": "object",
+                "properties": {
+                  "jobTokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000000000
+                  },
+                  "jobCostUsd": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "escalate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "on",
+        "executors",
+        "cheap",
+        "strong",
+        "rules",
+        "repos",
+        "escalate"
+      ],
+      "additionalProperties": false
+    },
+    "to": {
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "boolean"
+        },
+        "executors": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "cheap": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._:[\\]-]{0,99}$"
+            },
+            "jobTokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            },
+            "jobCostUsd": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "model",
+            "jobTokens",
+            "jobCostUsd"
+          ],
+          "additionalProperties": false
+        },
+        "strong": {
+          "type": "object",
+          "properties": {
+            "model": {
+              "type": "string",
+              "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._:[\\]-]{0,99}$"
+            },
+            "jobTokens": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000000000
+            },
+            "jobCostUsd": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "model",
+            "jobTokens",
+            "jobCostUsd"
+          ],
+          "additionalProperties": false
+        },
+        "rules": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "match": {
+                "type": "object",
+                "properties": {
+                  "repo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "code",
+                      "research",
+                      "proposal",
+                      "tend"
+                    ]
+                  },
+                  "size": {
+                    "type": "string",
+                    "enum": [
+                      "small",
+                      "large"
+                    ]
+                  },
+                  "risk": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "high"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "choice": {
+                "type": "string",
+                "enum": [
+                  "cheap",
+                  "strong"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "match",
+              "choice"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "repos": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[\\w.-]+\\/[\\w.-]+$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "cheap": {
+                "type": "object",
+                "properties": {
+                  "jobTokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000000000
+                  },
+                  "jobCostUsd": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  }
+                },
+                "additionalProperties": false
+              },
+              "strong": {
+                "type": "object",
+                "properties": {
+                  "jobTokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000000000
+                  },
+                  "jobCostUsd": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1000000
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "escalate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "on",
+        "executors",
+        "cheap",
+        "strong",
+        "rules",
+        "repos",
+        "escalate"
+      ],
+      "additionalProperties": false
+    },
+    "by": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "from",
+    "to",
+    "by"
+  ],
+  "additionalProperties": false
+}

@@ -6,7 +6,7 @@ import type { IntakeMigration } from '../domain/intake.ts';
 import type { InstanceSettingsRepository, UserSettingsRepository } from '../domain/ports.ts';
 import type { InfraPlanSettings } from '../domain/infra-plans.ts'; import type { DeliverySettings } from '../domain/delivery-settings.ts';
 import type { AutoAnswerSettings, BlastRadiusSettings, ComponentWatcherSettings, ConnectedAccountKey, ContributionSettings, ShrinkGuardSettings, DiscoveryRecord, FailureSettings, GitHubWatchSettings, LaneDismissals, LaneTuningSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateChannel, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, LandingBatchSettings } from '../domain/types.ts';
-import type { TokenBudgetSettings } from '../domain/token-budget.ts';
+import type { TokenBudgetSettings } from '../domain/token-budget.ts'; import type { ModelRoutingSettings } from '../domain/model-routing.ts';
 import { graphStepFor, LOGIN_EXPIRY_ACTIONS, PRESET_MS, UPDATE_CHANNELS } from '../domain/types.ts';
 import type { StoreContext } from './context.ts';
 import type { MasterKeyRotation } from '../domain/settings-store.ts'; import { sandboxSettings } from './sandbox-settings.ts'; import { memoryAlertSettings } from './memory-alert-settings.ts'; import { machineDrainSettings } from './machine-drain-settings.ts'; import { diskBudgetSettings } from './disk-budget-settings.ts'; import { diskDefaultsSettings } from './disk-defaults-settings.ts'; import { pushRequirementSettings } from './push-requirement-settings.ts'; import { headerBadgeSettings } from './header-badges-settings.ts'; import { taggedSettings } from './tagged-settings.ts'; import { gitlabAccountSettings } from './gitlab-account-settings.ts'; import { preemptionSettings } from './preemption-settings.ts'; import { cloudLinkSettings } from './cloud-link-settings.ts'; import { telemetrySettings } from './telemetry-settings.ts'; import { newRepositorySettings } from './new-repository-settings.ts'; import { publicBugReportSettings } from './public-bug-report-settings.ts'; import { jobEgressSettings } from './job-egress-settings.ts';
@@ -198,10 +198,10 @@ export function createUserSettingsRepository(c: StoreContext): UserSettingsRepos
     getTokenBudget: () => { const text = read('tokenBudget'); return text === undefined ? undefined : JSON.parse(text) as Partial<TokenBudgetSettings>; },
     setTokenBudget: (s) => write('tokenBudget', JSON.stringify({
       jobTokens: s.jobTokens, jobCostUsd: s.jobCostUsd, dayTokens: s.dayTokens, dayCostUsd: s.dayCostUsd, repoDayTokens: s.repoDayTokens, repoDayCostUsd: s.repoDayCostUsd })),
+    getModelRouting: () => { const t = read('modelRouting'); return t === undefined ? undefined : JSON.parse(t) as Partial<ModelRoutingSettings>; }, setModelRouting: (s) => write('modelRouting', JSON.stringify({ on: s.on, executors: s.executors, cheap: s.cheap, strong: s.strong, rules: s.rules, repos: s.repos, escalate: s.escalate })),
     getThreadAsk: () => { const text = read('threadAsk'); return text === undefined ? undefined : JSON.parse(text) as ThreadAskSettings; },
     setThreadAsk: (s) => write('threadAsk', JSON.stringify({ ownRepos: s.ownRepos, otherRepos: s.otherRepos })),
-    getTldr() { const text = read('tldr'); return text === undefined ? undefined : JSON.parse(text) as TldrSettings; },
-    setTldr(settings) { write('tldr', JSON.stringify({ enabled: settings.enabled })); },
+    getTldr() { const text = read('tldr'); return text === undefined ? undefined : JSON.parse(text) as TldrSettings; }, setTldr(settings) { write('tldr', JSON.stringify({ enabled: settings.enabled })); },
     getGitHubWatch: () => { const t = read('githubWatch'); return t === undefined ? undefined : JSON.parse(t) as GitHubWatchSettings; },
     setGitHubWatch: (s) => write('githubWatch', JSON.stringify({ intervalSeconds: s.intervalSeconds })),
     getComponentWatchers: () => { const t = read('componentWatchers'); return t === undefined ? undefined : JSON.parse(t) as ComponentWatcherSettings; }, setComponentWatchers: (s) => write('componentWatchers', JSON.stringify({ fileIssues: s.fileIssues })),

@@ -137,6 +137,9 @@ export interface UserSettingsRepository {
   /** The token budget (issue #2302, part 3): the most one job may spend before it is paused; absent: never set (no cap). */
   getTokenBudget(): Partial<import('./token-budget.ts').TokenBudgetSettings> | undefined;
   setTokenBudget(settings: import('./token-budget.ts').TokenBudgetSettings): void;
+  /** Model routing (issue #2848); undefined: never saved. */
+  getModelRouting(): Partial<import('./model-routing.ts').ModelRoutingSettings> | undefined;
+  setModelRouting(settings: import('./model-routing.ts').ModelRoutingSettings): void;
   /** Preemption (issue #1525): whether a higher-priority job takes a running job's lane, and its minimum run time; absent: never set (on, 10 min). */
   getPreemption(): PreemptionSettings | undefined;
   setPreemption(settings: PreemptionSettings): void;

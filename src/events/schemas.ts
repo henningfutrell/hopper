@@ -10,7 +10,7 @@ import { ARTIFACT_EVENT_SCHEMAS } from './artifact-schemas.ts'; import { JOB_EGR
 import { PROXY_OPS } from '../github-proxy/policy.ts';
 import { ITEM_EVENT_SCHEMAS, TLDR_EVENT_SCHEMAS } from './card-text.ts';
 import { INTAKE_EVENT_SCHEMAS } from './intake-schemas.ts'; import { WORK_ITEM_EVENT_SCHEMAS } from './work-item-schemas.ts';
-import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts';
+import { LANE_TUNING_EVENT_SCHEMAS } from './lane-tuning-schemas.ts'; import { MODEL_CHOICES, MODEL_ROUTING } from '../domain/model-routing.ts';
 import { THREAD_ASK_EVENT_SCHEMAS } from './thread-ask-schemas.ts'; import { GITLAB_EVENT_SCHEMAS } from './gitlab-schemas.ts'; import { NOTE_EVENT_SCHEMAS } from './note-schemas.ts'; import { TRUST_EVENT_SCHEMAS } from './trust-schemas.ts'; import { ISSUE_DRAFT_EVENT_SCHEMAS } from './issue-draft-schemas.ts'; import { TERMINAL_EVENT_SCHEMAS } from './terminal-schemas.ts'; import { CHANGE_KIND_EVENT_SCHEMAS, changeKinds } from './change-kind-schemas.ts';
 import { advice, adviceAction, answerHold, bugReportEvents, contributionEvents, pointedJobEvents, githubWatchEvents, driftEvents, holdPlan, infraPlanEvents, apiGrantEvents, issueLineageEvents, waitOn, waitPlan, jobSourceRef, jobSpec, jobStatus, specFromConfig, lanePlan, rateLimiterEvents, repoChecksEvents, startPlan, stateBackend, taskCount, vaultGrantEvents, windowsStepEvents, sandboxRequestEvents, landingBatchEvents } from './parts.ts';
 
@@ -149,7 +149,7 @@ export const EVENT_SCHEMAS = {
   'job.waiting': strict({ for: z.string(), until: z.string().optional(), on: waitOn.optional(), ownCommand: z.literal(true).optional() }), 'job.own_command_nudged': strict({ delivered: z.boolean() }),
   'job.wait_ended': strict({ by: z.enum(['person', 'hopper']), note: z.string().optional(), check: z.string().optional(), comment: z.string().optional(), conflicting: z.string().optional() }), 'job.wait_overdue': strict({ deadline: z.string(), result: z.string() }), 'job.own_command_stuck': strict({}), 'job.wait_polled': strict({ on: waitOn }), 'job.waited_pull_request_ended': strict({ pullRequest: z.string(), state: z.enum(['merged', 'closed']) }), 'job.waited_items_ended': strict({ items: z.array(strict({ url: z.string(), state: z.string() })).min(1) }),
   'job.reprioritized': strict({ from: z.number(), to: z.number(), reason: z.string() }),
-  'job.respecified': strict({ from: specFromConfig, to: specFromConfig }),
+  'job.respecified': strict({ from: specFromConfig, to: specFromConfig }), 'job.model_escalated': strict({ from: z.enum(MODEL_CHOICES), to: z.enum(MODEL_CHOICES), model: z.string(), after: z.string(), why: z.string() }),
   'lane.opened': strict({}),
   'lane.closed': strict({ reason: z.string() }), 'lane.unhealthy': strict({ failures: z.number().int().positive(), error: z.string(), since: z.string(), until: z.string() }),
   'decision.made': strict({
@@ -322,7 +322,7 @@ export const EVENT_SCHEMAS = {
   'job.fork_resolved': strict({ forkId: z.string(), kind: reviewKind, questionId: z.string(), decision: z.enum(['accept', 'reject']), delivered: z.boolean(), question: z.enum(['open', 'answered', 'closed', 'dismissed', 'expired', 'lapsed', 'cancelled', 'missing']).optional() }),
   'phase_shifts.settings_changed': strict({ from: phaseShiftSettings, to: phaseShiftSettings }),
   'auto_answer.settings_changed': strict({ from: autoAnswerSettings, to: autoAnswerSettings, by: z.string() }),
-  'auto_park.settings_changed': strict({ from: autoParkSettings, to: autoParkSettings, by: z.string() }), 'token_budget.settings_changed': strict({ from: tokenBudgetSettings, to: tokenBudgetSettings, by: z.string() }),
+  'auto_park.settings_changed': strict({ from: autoParkSettings, to: autoParkSettings, by: z.string() }), 'token_budget.settings_changed': strict({ from: tokenBudgetSettings, to: tokenBudgetSettings, by: z.string() }), 'model_routing.settings_changed': strict({ from: MODEL_ROUTING, to: MODEL_ROUTING, by: z.string() }),
   ...TLDR_EVENT_SCHEMAS,
   // The vault (issue #558): names and people; never a value.
   // After done (issue #579): the job's pull request, followed after its end, merged or closed without a merge.
