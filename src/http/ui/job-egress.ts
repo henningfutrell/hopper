@@ -1,4 +1,4 @@
-// Settings → Job egress (issue #2849, design.md "A job's egress allowlist"): the hosts the user's running jobs may connect
+// The job egress allowlist (issue #2849, design.md "A job's egress allowlist"): the hosts the user's running jobs may connect
 // out to through the hopper (`GET /job/egress`): the hopper's default hosts, unless turned off, the user's own hosts, and
 // each repository's. Kept in the database, never in a file. Least role to change: admin.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';

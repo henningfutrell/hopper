@@ -36143,3 +36143,76 @@ Jobs section's `jobs` scopes.
 settings (weights, revert window, scales) as an admin's setting; grades of sagas; follow-up fix issues and reopened issues
 as rework; grade-aware routing — off by default, with a minimum sample size — that prefers the executor and model that do
 best on similar work.
+
+## A job's egress allowlist (issue #2849, part 1, 2026-10-26)
+
+**The problem.** A sandbox template limits the egress and the secrets of its boxes ("A read-only box's egress", "A
+template's egress hosts", issues #849, #1875). The job's own agent and the tools it runs have no such limit: a job that
+reads a prompt injection can send what it reads to any host, and reach what the machine reaches. The issue asks for an
+egress allowlist on each job, on each runtime, with each denial on the job and a person's approval of a new host, and for
+secrets scoped to the job. It is too large for one change. Part 1 builds the decision and the one way out; the parts after
+it make the job use that way and close the others.
+
+**The allowlist** (`src/domain/job-egress.ts`, pure). A user's setting, kept in the database (the settings key `jobEgress`,
+`src/store/job-egress-settings.ts`), never in a file:
+
+- `defaults`: whether the hopper's default hosts are on it (`JOB_EGRESS_DEFAULTS`): the model providers and their agent
+  CLIs (`api.anthropic.com`, `*.anthropic.com`, `claude.ai`, `api.openai.com`, `chatgpt.com`), GitHub (`github.com`,
+  `*.github.com`, `*.githubusercontent.com`, `ghcr.io`) and the package registries (npm, PyPI, Go, crates.io, Maven,
+  Gradle, RubyGems, Docker Hub), each on port 443. On when never set.
+- `hosts`: hosts every job of the user may reach.
+- `repos`: hosts the jobs of one repository may reach, by `owner/name`.
+
+An entry is `host:port` — a DNS name or an IPv4 address — or `*.domain:port`, which allows each name under the domain, not
+the domain itself; a port from 1 to 65535, no scheme (`jobEgressHostProblem`). A template's **egress host** takes no
+wildcard; a job's allowlist does, as GitHub and the registries serve from many names under one domain. Entries and
+repositories are kept in lowercase. A job's list is the defaults (when on), then the user's hosts, then its repository's
+(`jobEgressList`). The hopper itself is never on it: a job reaches the hopper at `HOPPER_URL`, not through its egress.
+
+**The setting's routes** (`src/http/ui/job-egress.ts`). `GET /api/job-egress` answers `{ egress, defaultHosts }`.
+`POST /ui/api/job-egress`, least role admin, takes the whole setting, refuses (400) an entry that is not one, and records
+`job_egress.changed` with who and the counts — never the hosts. Its scope area is `job-egress`, in the Vault and
+credentials section, so an API token reaches it as it reaches the other sandbox settings.
+
+**The way out** (`src/http/job-egress.ts`). `GET /job/egress?to=<host>:<port>`, an HTTP/1.1 upgrade to `hopper-egress/1`
+with the job's proxy token, only while the job is at work, behind the Host guard (applied in the handler, as for the relay).
+The hopper looks up the job's list for its repository at each connection, so a change applies to the next connection:
+
+- On the list, the hopper looks the name up and connects; once connected it answers 101, and the connection is a byte pipe
+  to the host — TLS and all, as an HTTP CONNECT proxy's is. A host that does not take the connection in 10 s is 502.
+- Off the list: 403, `no: <host>:<port> is not on the egress allowlist of job <id>`, with how an admin adds it.
+- A listed **name** that resolves to a loopback, link-local or unspecified address: 403. A name can change what it resolves
+  to (DNS rebinding), and these addresses are the hopper's own machine and the cloud metadata service. An **address** an
+  admin listed as such (`127.0.0.1:5000`) is reached as listed: a person named it.
+
+Each 403 is recorded as `job.egress_denied` on the job's timeline — `host`, `port`, `repo` and `reason`
+(`not_listed`, `local_address`) —, once per job, host and port while the hopper runs (kept in memory), so a tool that
+retries in a loop does not fill the timeline. The route changes no job, question, webhook or setting.
+
+The machine dial-in's handler (`src/http/client-link.ts`) answers 404 to an upgrade it does not know; it now leaves
+`/job/egress` to its own handler, as it leaves `/job/relay`.
+
+**Why the hopper makes the connection.** The decision is the hopper's, never the job's machine's: a job can change what
+runs on its machine, not what the hopper answers. And the hopper is then the one source of a job's traffic out, so each
+runtime can close every other way with a rule it already has: a NetworkPolicy that lets a lane pod reach only the
+hopper's pods (issue #1286 has one for sandbox pods), an internal network for a container beside the hopper (issue #849),
+a network namespace with no route out for the job's bubblewrap sandbox (issue #1295). The cost: a job's downloads and model
+traffic pass through the hopper.
+
+**Not built in part 1, stated.** Nothing sends a job's traffic through `/job/egress` yet, and no runtime closes the other
+ways: a job's egress is as open as before. The parts left:
+
+1. The job's side: a local HTTP CONNECT proxy on 127.0.0.1 where the job runs (a client like `hopper-relay`), that turns
+   each CONNECT into a `/job/egress` connection, and `HTTPS_PROXY`/`HTTP_PROXY` in the job's environment, `NO_PROXY` for
+   the hopper.
+2. Confinement on each runtime: bubblewrap's own network namespace for the job's sandbox (the proxy reached through a
+   Unix socket bound into it), a NetworkPolicy for lane pods, the internal network for compose and Podman; a visible
+   warning on the job where none holds ("egress not enforced").
+3. A denial as a Needs-you item that approves the host for the job's repository, so the retry goes through; the
+   allowlist's view in Settings.
+4. Secrets scoped to the job: only what its repository or template names in its environment.
+
+Tests: `test/domain/job-egress.test.ts` (entries, the defaults, the list of a job of a repository, wildcard and port
+matching), `test/integration/job-egress.test.ts` (real database and HTTP server: a host off the list refused and recorded
+once, a listed host reached as a byte pipe and a port off it refused, a listed name that resolves to loopback refused, a
+token that is no job's, the setting read and set through the UI session with a bad entry refused and the change recorded).
