@@ -15,10 +15,12 @@
 // Infra plans names each plan that waits, and marks those a high-priority job recorded (issue #2205): a job that waits on a
 // plan's approval links to it on Infra, where a person approves it.
 // Schedules (issue #2716) counts the step schedules whose newest run failed, each with why: Needs you lists it until a run succeeds.
+// Bug reports (issue #2846 part 2) counts the bug-report recommendations of completion reviews that wait for approval, each by
+// its title: nothing is filed until a person approves it in Your reports.
 // A machine's join takes no approval (a join code joins it at once); a machine whose box template waits counts in Access requests.
 import type { SectionKind } from './wire.ts';
 
-export const NEEDS_YOU_KINDS = ['intake', 'access', 'unknown-assets', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'budgets', 'pull-requests', 'checks', 'landing', 'tagged', 'schedules', 'sorting'] as const;
+export const NEEDS_YOU_KINDS = ['intake', 'access', 'unknown-assets', 'plans', 'questions', 'proposals', 'research', 'logins', 'accounts', 'machines', 'failures', 'budgets', 'pull-requests', 'checks', 'landing', 'tagged', 'schedules', 'bug-reports', 'sorting'] as const;
 export type NeedsYouKind = (typeof NEEDS_YOU_KINDS)[number];
 
 export interface NeedsYouCounts {
@@ -52,6 +54,8 @@ export interface NeedsYouCounts {
   tagged: number;
   /** The step schedules whose newest run did not succeed (issue #2716), one line each; absent: none. */
   failedSchedules?: readonly string[];
+  /** The bug-report recommendations that wait for approval (issue #2846 part 2), one line each; absent: none. */
+  recommended?: readonly string[];
   /** Jobs that wait on the pre-sort. */
   sorting: number;
   sections: Readonly<Record<SectionKind, { n: number; high: number }>>;
@@ -82,6 +86,7 @@ const ROW: Record<NeedsYouKind, { label: string; href: string; what: string }> =
   landing: { label: 'Landing', href: '#settings/landing-batches', what: 'landing passes that failed the same way several times in a row: nothing moves to the tested branch until you restart the batch or fix the cause' },
   tagged: { label: 'Tagged', href: '#tagged', what: 'issues and pull requests that ask for your review, mention you, or are assigned to you' },
   schedules: { label: 'Schedules', href: '#vault', what: 'step schedules whose last run failed, or that the hopper could not start: read its output, fix the cause, and run it again' },
+  'bug-reports': { label: 'Bug reports', href: '#reports', what: 'bug reports the completion reviews recommend, from runs that hit a hopper defect: approve one to file it, or dismiss it with why' },
   sorting: { label: 'Waiting to be ordered', href: '#jobs/queue', what: 'jobs waiting to be ordered before a lane takes them' },
 };
 
@@ -102,6 +107,7 @@ export function needsYouRows(c: NeedsYouCounts): NeedsYouRow[] {
     if (k === 'landing') return { n: c.stuckLanding.length, high: 0, ...(c.stuckLanding.length ? { details: c.stuckLanding } : {}) };
     if (k === 'tagged') return { n: c.tagged, high: 0 };
     if (k === 'schedules') { const failed = c.failedSchedules ?? []; return { n: failed.length, high: 0, ...(failed.length ? { details: failed } : {}) }; }
+    if (k === 'bug-reports') { const r = c.recommended ?? []; return { n: r.length, high: 0, ...(r.length ? { details: r } : {}) }; }
     if (k === 'sorting') return { n: c.sorting, high: 0 };
     return c.sections[k];
   };

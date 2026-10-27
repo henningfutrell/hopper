@@ -36291,6 +36291,29 @@ Only the executor is routed. A grade's `model` is the costliest in the job's tok
 executor takes in its payload; the model choice stays the source's, and model routing (issue #2848) is where grades tune
 it. Left for a later part, with the UI's settings form.
 
+## Grades in the UI (issue #2845, part 3, 2026-10-26)
+
+Requirement (issue #2845): the user grade is given on the job page, shown next to the automatic grade with their
+disagreement visible, and the rollups and the grade settings are in the UI. Glossary: **grade**, **grade rollup**, **grade
+settings**.
+
+- **The job view's Grade panel** (`ui/src/views/job-grade.tsx`), only for a job that ended `finished` or `failed`: `GET
+  /api/jobs/:id/grade`, read again as the job's status changes. The automatic grade (0 to 100, coloured good from 70,
+  middling from 40) with its executor and model, then one line per grade signal — its why, its value on the score's scale
+  and its weight. Before the grade pass graded the job, a line says it is not graded yet. Then the user grade, a line when
+  the two disagree, and the older user grades of its history. An operator's form grades the job: a score of 1 to 5 and an
+  optional note, `POST /ui/api/jobs/:id/grade`; the answer replaces the panel's view, so the new grade shows at once.
+- **The Grades tab of Jobs** (`#jobs/grades`, `ui/src/views/grades.tsx`): `GET /api/grades?by=<group>`, the group picked
+  by its buttons (executor first, then model, repository, work kind, machine). The sum of all, the groups as a table — jobs,
+  mean automatic grade, the jobs a person graded, their mean user grade, the disagreements —, then the graded jobs, newest
+  first, each linked to its job view.
+- **Settings → Grades** (`#settings/grades`, `ui/src/views/grade-settings.tsx`), in the group Jobs and agents, an admin's:
+  the six weights, the revert window, the cost and time scales, grade-aware routing and its minimum graded jobs. A save
+  sends only what changed, each weight on its own (`gradeSettingsPatch`, `ui/src/model/grades.ts`), checked in the same
+  ranges as the daemon; a bad field shows why and saves nothing.
+
+`JobGradeView` and `GradesView` moved to `src/domain/grades.ts`, so the UI takes their types from the domain.
+
 ## A job's egress allowlist (issue #2849, part 1, 2026-10-26)
 
 **The problem.** A sandbox template limits the egress and the secrets of its boxes ("A read-only box's egress", "A
@@ -36395,14 +36418,51 @@ helped — and keeps that with the job, so improvements and hopper defects are n
   host; a change of the settings applies from the next pass to jobs not judged yet, and a kept review stays.
 - **Reads.** `GET /api/jobs/:id/completion-review` answers `{ review }`, or `{}` while there is none. The job view's
   **Completion review** panel (`ui/src/views/job-completion-review.tsx`, `ui/src/model/completion-review.ts`) shows it.
-- **Not yet** (later parts of issue #2846): a bug-report recommendation from a review, through the bug-report pipeline's
-  scrub and dedupe, approved or dismissed in Needs you, a dismissal kept by its signature; a review by a model (its harness,
-  model and cost cap in the settings); and review outcomes for grading (issue #2845).
+- **Bug-report recommendations** (part 2): see "Bug-report recommendations" below.
+- **Not yet** (later parts of issue #2846): a review by a model (its harness, model and cost cap in the settings); and review
+  outcomes for grading (issue #2845).
 
 Tests: `test/domain/completion-review.test.ts` (the defaults and which jobs, the stages, the restarts, a clean run, a
 stalled one with its suggestions, a push as progress), `test/integration/completion-reviews.test.ts` (real database and HTTP:
 the settings and their event, a failed job reviewed once after it settled, a finished one skipped, none while off, 404),
 `test/ui/completion-review.test.ts` and `test/ui/job-completion-review-view.test.ts`.
+
+### Bug-report recommendations (issue #2846 part 2, 2026-10-27)
+
+A run that hit a hopper defect, not only a hard task, is worth a bug report on the hopper; but nothing is filed without a
+person, and the same defect is not recommended twice.
+
+- **What is a defect.** `defectOf` (`src/domain/review-defects.ts`, pure), by fixed rules, the first that holds: the job's
+  newest failure record names a cause that is the hopper's own act or fault — `swept` (the sweep stopped a job at work) or
+  `no-way-to-hopper` (its session lost its way to the hopper) —, signature `cause:<cause id>`; or the hopper queued the job
+  again 3 times or more (`REQUEUE_LOOP`), signature `requeue-loop:<its first cause, lower case, its numbers and ids out>`.
+  Any other failure is the job's own, or an outside one (a login, a machine, a disk): no defect. The review keeps it as
+  `defect` — its `signature`, and the report's `title` and `description`, fixed text that names no job, person, machine or
+  path.
+- **One per signature.** The completion review pass keeps the review and, in the same transaction, the recommendation in
+  `review_recommendations` (tenant migration 105, one row per signature): a new signature is `open`
+  (`completion_review.recommended`); a known one — `open`, `approved` or `dismissed` — counts the job (`jobs`, `lastAt`) and
+  is not recommended again.
+- **Where a person sees it.** Needs you's **Bug reports** row (`ui/src/model/needs-you.ts`) names each that waits and links
+  to Your reports, whose **Recommended by completion reviews** section (`ui/src/views/recommended-reports.tsx`) shows its
+  report with Approve and Dismiss. The job view's Completion review panel names it and what became of it.
+  `GET /api/completion-review/recommendations` (`state` to filter) lists them; `GET /api/jobs/:id/completion-review` answers
+  the job's with its review.
+- **Approve** (`POST /ui/api/completion-review/recommendations/approve`, operator) takes the bug-report pipeline as a job's
+  own report (`fileForJob`, issues #2812, #2818): the job's private work removed, the identifiers scrubbed, the text masked,
+  the context added, with the resend key `review-<signature>` (issue #2813), so a second Approve files nothing; then sends
+  it at once, as Approve on a job's report does: a new `user-report` issue on the hopper's repository through the person's
+  own connection, or kept to send later. Refused (409) while public bug reports are off (issue #2818): it stays open. 502:
+  GitHub refused it, and it stays open. The row is `approved` with its `reportId`, and
+  `completion_review.recommendation_decided` says so.
+- **Dismiss** (`POST /ui/api/completion-review/recommendations/dismiss`, operator) needs a `reason`, kept on the row
+  (`dismissed`, `completion_review.recommendation_decided`); the signature stays, so a later review of the same defect
+  recommends nothing.
+
+Tests: `test/domain/review-defects.test.ts` (the rules and the signature), `test/integration/completion-review-recommendations.test.ts`
+(real database and HTTP, GitHub a fake: nothing filed before Approve, Approve files once through the pipeline, a later
+review of the same signature recommends nothing, Dismiss keeps the reason, off refuses, a job's own failure recommends
+nothing), `test/ui/recommendations-needs-you.test.ts`, `test/ui/bug-reports-view.test.ts`, `test/ui/job-completion-review-view.test.ts`.
 
 ### The job's side: hopper-egress (part 2, 2026-10-26)
 

@@ -10,10 +10,9 @@
 //   Scenario: the rollup by executor counts the jobs, the mean of each grade and the disagreements
 //   Scenario: a bad score, an unknown job and a job that has not ended are refused
 import { afterEach, describe, expect, it } from 'vitest';
-import type { GradeLine } from '../../src/domain/grades.ts';
+import type { GradeLine, GradesView, JobGradeView } from '../../src/domain/grades.ts';
 import type { EventType } from '../../src/domain/types.ts';
 import { keepGrades } from '../../src/engine/grades.ts';
-import type { GradesView, JobGradeView } from '../../src/http/grades.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 const apps: TestApp[] = [];

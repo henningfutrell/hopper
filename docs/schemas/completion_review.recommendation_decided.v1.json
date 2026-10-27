@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "signature": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "approved",
+        "dismissed"
+      ]
+    },
+    "by": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "reportId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "signature",
+    "state",
+    "by"
+  ],
+  "additionalProperties": false
+}

@@ -5,7 +5,7 @@
 // alone opens the version. A moved section's old hash (#settings/minor-decisions) is replaced by its new one. Settings holds configuration only
 // (issue #897): the question history moved to Questions (#questions/history) and Your reports to its own view (#reports); their old hashes open them.
 // The sections' links are a left sub-nav in six groups that fold (issues #2353, #2373), and a jump list on a narrow screen.
-import { Activity, CalendarClock, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Cloud, Coins, Container, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Info, KeyRound, Layers, Link, ListChecks, MessagesSquare, MonitorCog, Network, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, type LucideIcon, UserCheck, Webhook, Zap } from 'lucide-react';
+import { Activity, Award, CalendarClock, ArrowUpFromLine, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Cloud, Coins, Container, Eye, FileWarning, FolderOpen, Gauge, GitFork, GitPullRequestArrow, Globe, Info, KeyRound, Layers, Link, ListChecks, MessagesSquare, MonitorCog, Network, Radar, Route, Scale, ScrollText, ShieldCheck, TextQuote, type LucideIcon, UserCheck, Webhook, Zap } from 'lucide-react';
 import { useEffect } from 'react';
 import { useSection } from '@/app/nav';
 import { VersionDetails } from '@/app/update';
@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 import { ArtifactSettings } from '@/views/artifact-settings';
 import { AllowedHosts } from '@/views/allowed-hosts';
 import { TelemetrySettings } from '@/views/telemetry-settings';
-import { TokenBudget } from '@/views/token-budget'; import { CompletionReviewSettingsView } from '@/views/completion-review';
+import { TokenBudget } from '@/views/token-budget'; import { CompletionReviewSettingsView } from '@/views/completion-review'; import { GradeSettingsView } from '@/views/grade-settings';
 import { Preemption } from '@/views/preemption';
 import { GitHubRateLimiter } from '@/views/github-rate-limiter';
 import { GitHubDeliveries } from '@/views/github-deliveries';
@@ -43,7 +43,7 @@ import { LandingBatches } from '@/views/landing-batches'; import { DeliverySetti
 import { IntakeActors } from '@/views/intake-actors';
 import { CloudLink } from '@/views/cloud-link';
 
-const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'preemption', 'completion-review', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'podman-hosts', 'intake', 'yolo-mode', 'landing-batches', 'delivery', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'push-requirements', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'webhooks', 'clusters', 'sign-in'] as const;
+const SECTIONS = ['version', 'version-history', 'questions', 'decider', 'token-budget', 'preemption', 'completion-review', 'grades', 'thread-ask', 'tldr', 'job-rules', 'windows-hosts', 'podman-hosts', 'intake', 'yolo-mode', 'landing-batches', 'delivery', 'github-rate-limit', 'github-webhook', 'remote-access', 'allowed-hosts', 'telemetry', 'host-link', 'cloud-link', 'contribution', 'shrink-guard', 'push-requirements', 'github-watches', 'component-watchers', 'artifacts', 'routing', 'webhooks', 'clusters', 'sign-in'] as const;
 type Section = (typeof SECTIONS)[number];
 const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => React.ReactNode }> = {
   version: { label: 'Version', icon: Info, view: Version },
@@ -53,6 +53,7 @@ const ITEMS: Record<Section, { label: string; icon: LucideIcon; view: () => Reac
   'token-budget': { label: 'Token budget', icon: Coins, view: TokenBudget },
   preemption: { label: 'Preemption', icon: ArrowUpFromLine, view: Preemption },
   'completion-review': { label: 'Completion reviews', icon: ClipboardCheck, view: CompletionReviewSettingsView },
+  grades: { label: 'Grades', icon: Award, view: GradeSettingsView },
   'thread-ask': { label: 'Issue thread', icon: MessagesSquare, view: ThreadAsk },
   tldr: { label: 'TL;DR', icon: TextQuote, view: TldrSettings },
   'job-rules': { label: 'Job rules', icon: ListChecks, view: JobRules },
@@ -94,7 +95,7 @@ function Version() {
 /** The sections' links in groups (issues #2353, #2373): each group folds by its title, kept per browser; a folded group still
  * shows the link of the section open now. Every section is in one group, and no group holds one section only. */
 const GROUPS = [
-  { id: 'jobs', label: 'Jobs and agents', sections: ['token-budget', 'preemption', 'completion-review', 'job-rules', 'routing', 'windows-hosts', 'podman-hosts', 'clusters', 'artifacts'] },
+  { id: 'jobs', label: 'Jobs and agents', sections: ['token-budget', 'preemption', 'completion-review', 'grades', 'job-rules', 'routing', 'windows-hosts', 'podman-hosts', 'clusters', 'artifacts'] },
   { id: 'intake', label: 'Intake', sections: ['intake', 'questions', 'decider', 'thread-ask', 'tldr'] },
   { id: 'github', label: 'GitHub', sections: ['yolo-mode', 'landing-batches', 'delivery', 'github-rate-limit', 'github-webhook', 'contribution', 'shrink-guard', 'push-requirements', 'github-watches', 'component-watchers'] },
   { id: 'security', label: 'Security and access', sections: ['sign-in', 'allowed-hosts', 'remote-access'] },

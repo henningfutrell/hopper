@@ -1,6 +1,7 @@
 // Completion reviews in the UI (issue #2846), pure: the words of a review on the job view — its stages, restarts and
-// suggestion areas —, the summary of the setting in Settings, and the change a save sends.
-import type { CompletionReviewSettings, Restart, RestartKind, ReviewOutcome, ReviewStage, SuggestionArea } from './wire.ts';
+// suggestion areas —, the summary of the setting in Settings, and the change a save sends. The bug-report recommendations
+// (issue #2846 part 2): what became of one, and Needs you's line of each that waits.
+import type { BugReportRecommendation, CompletionReviewSettings, Restart, RestartKind, ReviewOutcome, ReviewStage, SuggestionArea } from './wire.ts';
 
 /** The ends a review may follow, in the daemon's order. */
 export const OUTCOMES: readonly ReviewOutcome[] = ['finished', 'failed', 'cancelled'];
@@ -58,3 +59,17 @@ export function completionReviewPatch(s: CompletionReviewSettings, d: Completion
   };
   return { ok: true, patch: Object.keys(patch).length > 0 ? patch : undefined };
 }
+
+/** What became of a recommendation, in one sentence. */
+export function recommendationState(r: BugReportRecommendation): string {
+  if (r.state === 'approved') return `Approved${r.by ? ` by ${r.by}` : ''}: it went to Your reports.`;
+  if (r.state === 'dismissed') return `Dismissed${r.by ? ` by ${r.by}` : ''}${r.reason ? `: ${r.reason}` : ''}. It is not recommended again.`;
+  return 'Waits for your approval in Your reports. Nothing is filed before you approve it.';
+}
+
+/** How many reviewed jobs found it, when more than one. */
+export const recommendationJobs = (r: BugReportRecommendation): string => (r.jobs > 1 ? ` · found in ${r.jobs} jobs` : '');
+
+/** Needs you's line of each recommendation that waits: its title, and how many jobs found it. */
+export const openRecommendationLines = (v: { recommendations?: readonly BugReportRecommendation[] } | undefined): string[] =>
+  (Array.isArray(v?.recommendations) ? v.recommendations : []).filter((r) => r.state === 'open').map((r) => `${r.title}${recommendationJobs(r)}`);

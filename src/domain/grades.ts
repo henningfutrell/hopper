@@ -205,3 +205,12 @@ export function gradeRollup(rows: readonly GradeRow[], by: GradeGroup): GradeRol
     };
   }).sort((a, b) => b.auto - a.auto || a.key.localeCompare(b.key));
 }
+
+/** One job's grades. `grade`: absent until the grade pass graded it (a minute after its end), or while it has not ended done or failed. */
+export interface JobGradeView { jobId: string; grade?: Omit<GradeRow, 'user'>; user?: UserGrade; history: UserGrade[]; disagree?: boolean }
+
+/** GET /api/grades: every group, the sum of all, and the jobs, newest first, each with its two grades. */
+export interface GradesView {
+  by: string; total: Omit<GradeRollupRow, 'key'>; groups: GradeRollupRow[];
+  jobs: { jobId: string; endedAt: string; executor: string; model?: string; repo?: string; kind: string; machine?: string; auto: number; user?: number; disagree?: boolean }[];
+}

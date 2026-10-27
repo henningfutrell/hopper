@@ -11,9 +11,8 @@
 //   Scenario: the settings are kept across a restart, and a bad one is refused
 //   Scenario: a weight change grades the kept grades again at the next pass
 import { afterEach, describe, expect, it } from 'vitest';
-import type { GradeRow, GradeSettings } from '../../src/domain/grades.ts';
+import type { GradeRow, GradeSettings, JobGradeView } from '../../src/domain/grades.ts';
 import { keepGrades } from '../../src/engine/grades.ts';
-import type { JobGradeView } from '../../src/http/grades.ts';
 import { startTestApp, tempDbPath, type TestApp } from '../support/app.ts';
 
 const apps: TestApp[] = [];
