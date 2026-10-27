@@ -9,7 +9,7 @@ import type { IntakeMigration } from './intake.ts';
 import type { TaggedRecord } from './tagged.ts';
 import type { GitLabAccountRecord } from './gitlab-account.ts'; import type { NewRepositoryRecord } from './new-repositories.ts';
 import type { ReadPolicy } from './read-policy.ts'; import type { DeliverySettings } from './delivery-settings.ts';
-import type { SandboxApprovals } from './sandbox-approvals.ts';
+import type { SandboxApprovals } from './sandbox-approvals.ts'; import type { JobEgressSettings } from './job-egress.ts';
 import type { RememberedWrite } from './remembered-writes.ts';
 import type { RemoteAccessSettings } from './remote-access.ts';
 import type { MachineDrains } from './machines.ts';
@@ -52,6 +52,8 @@ export interface UserSettingsRepository {
   /** Whether this user's bug reports may be posted on the hopper's public tracker (issue #2818); off when never set. */
   getPublicBugReports(): boolean;
   setPublicBugReports(on: boolean): void;
+  /** The hosts this user's jobs may connect out to (issue #2849); the hopper's defaults only when never set. */
+  getJobEgress(): JobEgressSettings; setJobEgress(egress: JobEgressSettings): void;
   getMemoryAlert(): MemoryAlert | undefined;
   setMemoryAlert(alert: MemoryAlert | null): void;
   /** The header badges the user chose (issue #1181); absent: never chosen, one Lanes badge. */
@@ -135,6 +137,9 @@ export interface UserSettingsRepository {
   /** The token budget (issue #2302, part 3): the most one job may spend before it is paused; absent: never set (no cap). */
   getTokenBudget(): Partial<import('./token-budget.ts').TokenBudgetSettings> | undefined;
   setTokenBudget(settings: import('./token-budget.ts').TokenBudgetSettings): void;
+  /** Model routing (issue #2848); undefined: never saved. */
+  getModelRouting(): Partial<import('./model-routing.ts').ModelRoutingSettings> | undefined;
+  setModelRouting(settings: import('./model-routing.ts').ModelRoutingSettings): void;
   /** Preemption (issue #1525): whether a higher-priority job takes a running job's lane, and its minimum run time; absent: never set (on, 10 min). */
   getPreemption(): PreemptionSettings | undefined;
   setPreemption(settings: PreemptionSettings): void;

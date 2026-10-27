@@ -99,8 +99,9 @@ export interface JobSpec {
   /**
    * A tend job (issue #967): tending ran its item again (`job.rerun`, `by: "tending"`) to rebase its pull request or fix its
    * checks. It elbows in as a specialty job does, so a pull request's conflict never waits behind feature work for a lane.
+   * `modelRoute`: what model routing chose at intake (issue #2848): the cheap or the strong model, why, and the job's budget. Absent: not routed.
    */
-  tend?: true;
+  tend?: true; modelRoute?: import('./model-routing.ts').ModelRoute;
 }
 
 /** What a job's source and routing rules give its spec (issue #375); `cwd`, `model`: the payload's. */

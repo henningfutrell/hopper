@@ -1,9 +1,10 @@
 // The budget pause (issue #2302, part 3, design.md "The token ledger"): after a checkpoint keeps a running job's token use,
-// a job whose spend reached the user's token budget is parked as the Park button parks it — its lane freed, its pane and
+// a job whose spend reached its budget — the user's token budget, or its model route's (issue #2848) — is parked as the Park button parks it — its lane freed, its pane and
 // agent ended, its work tree and agent session kept —, marked `budgetPaused` with why, so Needs you lists it. Not killed:
 // a person's pick up lets it go on, and its budget then counts from what it had spent (`budgetFrom`, set by the unpark).
 import { budgetReached, dayBudgetHold, dayBudgetOn, daySpendOf, spendOf, tokenBudgetOf, type JobBudgetPaused, type TokenSpend } from '../domain/token-budget.ts';
 import { sumTokenUse } from '../domain/token-usage.ts';
+import { jobBudgetOf } from '../domain/model-routing.ts';
 import type { UserStore } from '../domain/ports.ts';
 import type { Job, JobId } from '../domain/types.ts';
 import { nowIso, type EngineContext } from './context.ts';
@@ -16,7 +17,8 @@ export function budgetPauseOf(c: Pick<EngineContext, 'store' | 'clock'>, jobId: 
   const { store } = c;
   const job = store.jobs.get(jobId);
   if (job?.status !== 'running' || job.budgetPaused) return undefined;
-  const budget = tokenBudgetOf(store.settings.getTokenBudget());
+  // Its model route's budget (issue #2848) over the user's job caps.
+  const budget = jobBudgetOf(job.spec.modelRoute, tokenBudgetOf(store.settings.getTokenBudget()));
   if (budget.jobTokens <= 0 && budget.jobCostUsd <= 0) return undefined;
   const spend = jobSpend(store, jobId);
   const why = budgetReached(spend, job.budgetFrom, budget);

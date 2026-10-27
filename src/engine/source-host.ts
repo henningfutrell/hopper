@@ -7,6 +7,7 @@ import { asksOf, isRerunnable, machineRanOn, PUSHABLE_ENDS, reworkBrief, REVIEW_
 import type { Job, JobSourceRef, JobSpec, RoutedBy, SpecFromConfig } from '../domain/types.ts';
 import { settleLiveAgain } from '../failures/continued.ts';
 import { routeItem } from '../routing/index.ts';
+import { modelRouteOf, modelRoutingOf, type ModelRoute } from '../domain/model-routing.ts';
 import type { Commands } from './commands.ts';
 import { nowIso, priorityTagOf, type EngineContext } from './context.ts';
 import { awaitsOrigin } from '../domain/trust-stamp.ts';
@@ -44,9 +45,9 @@ const originFrom = (item: SourceItem, job: Job): SourceItem => (item.origin || !
  * What the item and the routing rule give a job's spec (issue #375). The job's own work tree is a routing
  * rule's, which pins the job to its machine (issues #324, #361); anything else runs in its machine's.
  */
-function fromConfigFor(item: SourceItem, routedBy: RoutedBy | undefined): SpecFromConfig {
+function fromConfigFor(item: SourceItem, routedBy: RoutedBy | undefined, routed?: ModelRoute): SpecFromConfig {
   return specFromConfig({
-    executor: routedBy?.set.executor ?? item.executor, model: item.model || undefined, cwd: routedBy?.set.workTree,
+    executor: routedBy?.set.executor ?? item.executor, model: item.model || routed?.model || undefined, cwd: routedBy?.set.workTree,
     machineId: routedBy?.set.machine, rule: routedBy?.rule,
   });
 }
@@ -127,6 +128,17 @@ function route(c: EngineContext, item: SourceItem, source: { name: string }): Ro
 }
 
 /**
+ * What model routing chooses for the item's new job (issue #2848, design.md "Model routing"), from its spec and the item's
+ * job before it; undefined: off, not an executor it routes, or the item's source names its model (that model wins).
+ */
+function modelRouteFor(c: EngineContext, item: SourceItem, spec: JobSpec, earlier: Job | undefined): ModelRoute | undefined {
+  if (item.model) return undefined;
+  const work = { title: item.title, ...(item.body !== undefined ? { body: item.body } : {}), labels: item.labels, ...(item.repo !== undefined ? { repo: item.repo } : {}),
+    research: spec.research === true, proposal: spec.proposal === true, tend: spec.tend === true };
+  return modelRouteOf(modelRoutingOf(c.store.settings.getModelRouting()), work, spec.executor, earlier && { jobId: earlier.id, status: earlier.status, ...(earlier.spec.modelRoute ? { route: earlier.spec.modelRoute } : {}) });
+}
+
+/**
  * Why the item cannot run, or undefined: the source's own verdict first, then the executor's. A
  * configured executor that cannot run accepts the item unvalidated: its job is held until a
  * restart brings the executor up (design.md "Failure").
@@ -152,9 +164,12 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
     const routedBy = route(c, item, source);
     const priority = clamp(routedBy?.set.priority ?? item.priority);
     const ref = refFor(item, source);
-    const fromConfig = fromConfigFor(item, routedBy);
     // Tending's job (issue #967): it may elbow in past a lane cap, so a pull request's conflict never waits for a lane.
-    const spec = { ...specFor(item, source, priority, routedBy, fromConfig), ...(tend ? { tend: true as const } : {}) };
+    const asked = { ...specFor(item, source, priority, routedBy, fromConfigFor(item, routedBy)), ...(tend ? { tend: true as const } : {}) };
+    // Model routing (issue #2848): the model and budget from the work's class, escalated after the item's failed cheap job.
+    const modelRoute = modelRouteFor(c, item, asked, store.jobs.getBySourceKey(item.key));
+    const fromConfig = fromConfigFor(item, routedBy, modelRoute);
+    const spec = modelRoute ? { ...withParts(asked, fromConfig, routedBy), modelRoute } : asked;
     const invalid = problemWith(c, item, spec);
     return store.tx((): Job | null => {
       // Two hoppers that run one item again at once (issue #1892): the second waits here, then reads the first's new job.
@@ -165,6 +180,8 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       if (seen && known?.id !== seen.jobId) return null;
       const job = store.jobs.create(spec, priority, ref);
       store.events.append({ type: 'job.queued', jobId: job.id, data: { spec, priority, source: ref } }); appendStamped(store, job);
+      const up = modelRoute?.escalated;
+      if (up && known && up.jobId === known.id) store.events.append({ type: 'job.model_escalated', jobId: job.id, data: { from: up.from, to: modelRoute.choice, model: modelRoute.model, after: known.id, why: modelRoute.why } });
       // A job that cannot run ran nothing: its item's snapshot waits for a job that can.
       if (gate.record && invalid === undefined) recordSnapshot(c, job, item.key, gate.record, 'intake');
       if (change && invalid === undefined) holdForChange(c, job.id, item.key, change);
@@ -218,10 +235,11 @@ export function createSourceHost(c: EngineContext, commands: Pick<Commands, 'can
       const routedBy = route(c, item, source);
       const priority = clamp(routedBy?.set.priority ?? item.priority);
       const reason = routedBy?.set.priority !== undefined ? `rule:${routedBy.rule}` : item.priorityReason;
-      const to = fromConfigFor(item, routedBy);
       return store.tx(() => {
         const job = store.jobs.get(jobId);
         if (!job || TERMINAL_STATUSES.includes(job.status)) return false;
+        // Its model route is the job's own from intake (issue #2848): a sync keeps its model.
+        const to = fromConfigFor(item, routedBy, job.spec.modelRoute);
         let changed = false;
         // A job queued before origins were judged (issue #652, the backfill): its issue is offered once it is of a trusted
         // origin or a person approved it; the job takes that origin, and its hold goes.

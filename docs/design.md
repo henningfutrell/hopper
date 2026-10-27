@@ -21588,6 +21588,66 @@ them out when they do not fit), `test/engine/checkpoint-scrub.test.ts` (counted 
 them), `test/integration/token-ledger-print.test.ts` (the real daemon and the `claude` executor: a question and its
 answer count both turns in one session).
 
+## Model routing (issue #2848, 2026-10-26)
+
+Owner request: the token ledger and the token budget (issue #2302) say what a job spent and cap it, but every job ran on
+one model. Send simple work to a cheaper model and complex or risky work to a stronger one, each with a budget of its own;
+escalate on failure instead of retrying on the same model; keep the rules in the database, editable; show the choice on the
+job page.
+
+- **The work class** (`classifyWork`, `src/domain/model-routing.ts`, pure). At intake the hopper reads the item: its
+  **size** — a label (`size:small`, `size:s`, `size:xs`, `good first issue`; `size:large`, `size:l`, `size:xl`, `epic`)
+  first, else `small` for a text of at most 1,500 characters and at most 6 list items (`SMALL_WORK`), else `large` —; its
+  **kind** — `research`, `proposal` (asked for one, issues #537, #543), `tend` (issue #967), else `code` —; its **risk** —
+  `high` for a label `security`, `risk:high`, `breaking`, `breaking-change` or `migration`, or a risky word in its title
+  (security, vulnerability, migration, auth, credential, secret, encryption, permission), else `low` —; and its repository.
+  Rules on text, not a model call: the class is cheap, the same each time, and a person can read why.
+- **The choice** (`modelRouteOf`). Two **model choices**, `cheap` and `strong`, each a `model` (an alias or id the agent
+  CLI takes; `''`: the agent's own default, no `--model`) and a job budget (`jobTokens`, `jobCostUsd`). A job label
+  `hopper:model-cheap` or `hopper:model-strong` picks the choice; else the first **model rule** whose every field matches
+  the class (`repo` a glob as the routing rules', `label`, `kind`, `size`, `risk`); else the strong model, so work no rule
+  calls simple never goes cheap by accident. Default rules: `risky-work` (risk high) → strong, `research` and `proposal` →
+  strong, `tend` → cheap, `small-work` (size small) → cheap. Default models: cheap `sonnet` with a $5 job budget; strong
+  `''` (what jobs ran on before) with no budget of its own. The rule names `label`, `escalated` and `default` are model
+  routing's own and refused in a rule.
+- **The model route** (`spec.modelRoute`, in `job.queued`'s spec): the choice, the model, the rule, why in words, the class
+  and the budget. The model goes to the job's payload (`payload.model`), which the executors already pass (`--model`). An
+  item whose source names a model (a job source's `model` option) keeps it and gets no route: a model a person set wins. A
+  later sync keeps the job's routed model (`fromConfigFor` with the job's route), so a job that has not started is never
+  respecified back to no model. Only the executor instances the setting names (`executors`, default `herdr-claude` and
+  `claude`): their agent takes Claude's model names; another framework's would not.
+- **Escalation** (`escalate`, on by default). When an item's job ran on the cheap model and failed, the item's next job —
+  a person's Run again, the failure assessor's run again, tending's — runs on the strong model, with `escalated: { from,
+  jobId }`, and `job.model_escalated` (`from`, `to`, `model`, `after`, `why`) on the new job. Once: the item's later jobs
+  stay on the strong model, and record no new escalation. Escalation does not wait for a retry on the same model.
+- **The budget** (`jobBudgetOf`). A repository's budget per choice (`repos`) over the choice's own; a cap of 0 falls back
+  to the token budget's job cap. The token budget's pause (`budgetPauseOf`, `src/engine/token-budget.ts`) reads the job's
+  caps this way at each checkpoint: over them, the job is parked with why, its agent session kept, and Needs you lists it —
+  never killed. Checked end to end in `test/integration/model-routing.test.ts`: a cheap job over its choice's token cap,
+  with no token budget set, is paused.
+- **The setting** (`ModelRoutingSettings`, the user's setting `modelRouting`): `on` (off by default: turning it on changes
+  the model of new jobs), `executors`, `cheap`, `strong`, `rules`, `repos`, `escalate`. A setting stored before a field
+  reads that field's default (`modelRoutingOf`). `GET /api/model-routing` reads it; an admin's `POST /ui/api/model-routing`
+  replaces any field whole (`model_routing.settings_changed`, `from` and `to`), checked by the same schema (`MODEL_ROUTING`):
+  a rule named twice, a reserved name or a model name with a space is refused (400). It applies at the next intake, with no
+  restart; a job routed already keeps its model and budget.
+- **The job page.** The job view's Tokens panel (`ui/src/views/job-tokens.tsx`, `modelRouteLines` in
+  `ui/src/model/token-ledger.ts`) shows the choice and model, the escalation, why, and each cap of its budget against what
+  the job spent.
+
+What the #2302 caps still do not cover, found here: a print-mode job (the `claude` executor) is never paused — it has no
+park — so its model budget, as its token budget, is not enforced while it runs; its spend still counts in the day budgets.
+The pause runs at checkpoints only (every 10 minutes), so a job may go over its budget by what it spends between two.
+
+Not in this part: a stalled cheap run (a waste signal, a budget pause) escalating while it runs; editing the setting in
+the UI and the CLI; per-job budget overrides by a person; tuning the rules from grade history (issue #2845).
+
+Verification: `test/domain/model-routing.test.ts` (the class, the rules in order, the labels, a repository's budget, one
+escalation and the item kept on the strong model, the budget fallback, the setting's schema),
+`test/integration/model-routing.test.ts` (the real daemon: the setting and its event, nothing routed while it is off, a
+simple job on the cheap model and a complex one on the strong, a failed cheap job's Run again escalated once with its
+event, a cheap job paused by its choice's budget), `test/ui/job-tokens-view.test.ts` (the job view's model lines).
+
 ## Stack resources (issue #947, 2026-10-12)
 
 Owner request: the hopper showed resource use per machine (issue #560), but nothing of its own database or the other
@@ -36143,3 +36203,76 @@ Jobs section's `jobs` scopes.
 settings (weights, revert window, scales) as an admin's setting; grades of sagas; follow-up fix issues and reopened issues
 as rework; grade-aware routing — off by default, with a minimum sample size — that prefers the executor and model that do
 best on similar work.
+
+## A job's egress allowlist (issue #2849, part 1, 2026-10-26)
+
+**The problem.** A sandbox template limits the egress and the secrets of its boxes ("A read-only box's egress", "A
+template's egress hosts", issues #849, #1875). The job's own agent and the tools it runs have no such limit: a job that
+reads a prompt injection can send what it reads to any host, and reach what the machine reaches. The issue asks for an
+egress allowlist on each job, on each runtime, with each denial on the job and a person's approval of a new host, and for
+secrets scoped to the job. It is too large for one change. Part 1 builds the decision and the one way out; the parts after
+it make the job use that way and close the others.
+
+**The allowlist** (`src/domain/job-egress.ts`, pure). A user's setting, kept in the database (the settings key `jobEgress`,
+`src/store/job-egress-settings.ts`), never in a file:
+
+- `defaults`: whether the hopper's default hosts are on it (`JOB_EGRESS_DEFAULTS`): the model providers and their agent
+  CLIs (`api.anthropic.com`, `*.anthropic.com`, `claude.ai`, `api.openai.com`, `chatgpt.com`), GitHub (`github.com`,
+  `*.github.com`, `*.githubusercontent.com`, `ghcr.io`) and the package registries (npm, PyPI, Go, crates.io, Maven,
+  Gradle, RubyGems, Docker Hub), each on port 443. On when never set.
+- `hosts`: hosts every job of the user may reach.
+- `repos`: hosts the jobs of one repository may reach, by `owner/name`.
+
+An entry is `host:port` — a DNS name or an IPv4 address — or `*.domain:port`, which allows each name under the domain, not
+the domain itself; a port from 1 to 65535, no scheme (`jobEgressHostProblem`). A template's **egress host** takes no
+wildcard; a job's allowlist does, as GitHub and the registries serve from many names under one domain. Entries and
+repositories are kept in lowercase. A job's list is the defaults (when on), then the user's hosts, then its repository's
+(`jobEgressList`). The hopper itself is never on it: a job reaches the hopper at `HOPPER_URL`, not through its egress.
+
+**The setting's routes** (`src/http/ui/job-egress.ts`). `GET /api/job-egress` answers `{ egress, defaultHosts }`.
+`POST /ui/api/job-egress`, least role admin, takes the whole setting, refuses (400) an entry that is not one, and records
+`job_egress.changed` with who and the counts — never the hosts. Its scope area is `job-egress`, in the Vault and
+credentials section, so an API token reaches it as it reaches the other sandbox settings.
+
+**The way out** (`src/http/job-egress.ts`). `GET /job/egress?to=<host>:<port>`, an HTTP/1.1 upgrade to `hopper-egress/1`
+with the job's proxy token, only while the job is at work, behind the Host guard (applied in the handler, as for the relay).
+The hopper looks up the job's list for its repository at each connection, so a change applies to the next connection:
+
+- On the list, the hopper looks the name up and connects; once connected it answers 101, and the connection is a byte pipe
+  to the host — TLS and all, as an HTTP CONNECT proxy's is. A host that does not take the connection in 10 s is 502.
+- Off the list: 403, `no: <host>:<port> is not on the egress allowlist of job <id>`, with how an admin adds it.
+- A listed **name** that resolves to a loopback, link-local or unspecified address: 403. A name can change what it resolves
+  to (DNS rebinding), and these addresses are the hopper's own machine and the cloud metadata service. An **address** an
+  admin listed as such (`127.0.0.1:5000`) is reached as listed: a person named it.
+
+Each 403 is recorded as `job.egress_denied` on the job's timeline — `host`, `port`, `repo` and `reason`
+(`not_listed`, `local_address`) —, once per job, host and port while the hopper runs (kept in memory), so a tool that
+retries in a loop does not fill the timeline. The route changes no job, question, webhook or setting.
+
+The machine dial-in's handler (`src/http/client-link.ts`) answers 404 to an upgrade it does not know; it now leaves
+`/job/egress` to its own handler, as it leaves `/job/relay`.
+
+**Why the hopper makes the connection.** The decision is the hopper's, never the job's machine's: a job can change what
+runs on its machine, not what the hopper answers. And the hopper is then the one source of a job's traffic out, so each
+runtime can close every other way with a rule it already has: a NetworkPolicy that lets a lane pod reach only the
+hopper's pods (issue #1286 has one for sandbox pods), an internal network for a container beside the hopper (issue #849),
+a network namespace with no route out for the job's bubblewrap sandbox (issue #1295). The cost: a job's downloads and model
+traffic pass through the hopper.
+
+**Not built in part 1, stated.** Nothing sends a job's traffic through `/job/egress` yet, and no runtime closes the other
+ways: a job's egress is as open as before. The parts left:
+
+1. The job's side: a local HTTP CONNECT proxy on 127.0.0.1 where the job runs (a client like `hopper-relay`), that turns
+   each CONNECT into a `/job/egress` connection, and `HTTPS_PROXY`/`HTTP_PROXY` in the job's environment, `NO_PROXY` for
+   the hopper.
+2. Confinement on each runtime: bubblewrap's own network namespace for the job's sandbox (the proxy reached through a
+   Unix socket bound into it), a NetworkPolicy for lane pods, the internal network for compose and Podman; a visible
+   warning on the job where none holds ("egress not enforced").
+3. A denial as a Needs-you item that approves the host for the job's repository, so the retry goes through; the
+   allowlist's view in Settings.
+4. Secrets scoped to the job: only what its repository or template names in its environment.
+
+Tests: `test/domain/job-egress.test.ts` (entries, the defaults, the list of a job of a repository, wildcard and port
+matching), `test/integration/job-egress.test.ts` (real database and HTTP server: a host off the list refused and recorded
+once, a listed host reached as a byte pipe and a port off it refused, a listed name that resolves to loopback refused, a
+token that is no job's, the setting read and set through the UI session with a bad entry refused and the change recorded).

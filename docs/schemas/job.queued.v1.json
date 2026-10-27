@@ -83,6 +83,97 @@
         "tend": {
           "type": "boolean",
           "const": true
+        },
+        "modelRoute": {
+          "type": "object",
+          "properties": {
+            "choice": {
+              "type": "string",
+              "enum": [
+                "cheap",
+                "strong"
+              ]
+            },
+            "model": {
+              "type": "string"
+            },
+            "rule": {
+              "type": "string"
+            },
+            "why": {
+              "type": "string"
+            },
+            "size": {
+              "type": "string",
+              "enum": [
+                "small",
+                "large"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "code",
+                "research",
+                "proposal",
+                "tend"
+              ]
+            },
+            "risk": {
+              "type": "string",
+              "enum": [
+                "low",
+                "high"
+              ]
+            },
+            "budget": {
+              "type": "object",
+              "properties": {
+                "jobTokens": {
+                  "type": "number"
+                },
+                "jobCostUsd": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "jobTokens",
+                "jobCostUsd"
+              ],
+              "additionalProperties": false
+            },
+            "escalated": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "enum": [
+                    "cheap",
+                    "strong"
+                  ]
+                },
+                "jobId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "jobId"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "choice",
+            "model",
+            "rule",
+            "why",
+            "size",
+            "kind",
+            "risk",
+            "budget"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
