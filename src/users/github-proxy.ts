@@ -38,7 +38,7 @@ import { heldPullRequests } from './delivery-holds.ts';
 import { createLedgerFallbackRead, type LedgerFallbackRead } from '../work-items/fallback-read.ts';
 import { SECRET_HELPER_VARIABLE } from '../client/vault.ts';
 import { LOGIN_SCRIPT, LOGIN_SCRIPT_FILE, LOGIN_SCRIPT_VARIABLE } from '../logins/script.ts';
-import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { RELAY_CLIENT, RELAY_CLIENT_FILE, RELAY_SCRIPT, RELAY_SCRIPT_FILE, RELAY_SCRIPT_VARIABLE } from '../sandbox/relay-script.ts'; import { EGRESS_CLIENT, EGRESS_CLIENT_FILE, EGRESS_SCRIPT, egressVars, EGRESS_SCRIPT_FILE, EGRESS_SCRIPT_VARIABLE } from '../sandbox/egress-script.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { jobSkillsOf } from '../skill-library/index.ts'; import { conditionalSkillsCredentials } from '../domain/conditional-skills.ts'; import { createSkillSourceGitHub } from '../skill-library/github.ts'; import type { SkillSource } from '../skill-library/import.ts'; import { createScheduleSourceGitHub, type ScheduleSourceGitHub } from '../step-schedules/github.ts';
+import { SKILL_SCRIPT, SKILL_SCRIPT_FILE, SKILL_SCRIPT_VARIABLE } from '../skills/script.ts'; import { RELAY_CLIENT, RELAY_CLIENT_FILE, RELAY_SCRIPT, RELAY_SCRIPT_FILE, RELAY_SCRIPT_VARIABLE } from '../sandbox/relay-script.ts'; import { EGRESS_CLIENT, EGRESS_CLIENT_FILE, EGRESS_SCRIPT, egressVars, EGRESS_SCRIPT_FILE, EGRESS_SCRIPT_VARIABLE } from '../sandbox/egress-script.ts'; import { ENV_SCOPE_FILE, envScopeScript, envScopeVars } from '../sandbox/env-scope.ts'; import { jobEnvKeep } from '../domain/job-egress.ts'; import { workSkillCredentials } from '../domain/skill-library.ts'; import { jobSkillsOf } from '../skill-library/index.ts'; import { conditionalSkillsCredentials } from '../domain/conditional-skills.ts'; import { createSkillSourceGitHub } from '../skill-library/github.ts'; import type { SkillSource } from '../skill-library/import.ts'; import { createScheduleSourceGitHub, type ScheduleSourceGitHub } from '../step-schedules/github.ts';
 import { ARTIFACT_SCRIPT, ARTIFACT_SCRIPT_FILE, ARTIFACT_SCRIPT_VARIABLE } from '../artifacts/script.ts';
 import { STEP_SCRIPT, STEP_SCRIPT_FILE, STEP_SCRIPT_VARIABLE } from '../windows-steps/script.ts';
 import {
@@ -232,6 +232,8 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
       // The job's work skill (issue #1911) and its conditional skills (issue #1924): the versions chosen at its first start, their files and the skills the work skill requires beside the scripts.
       const skills = jobSkillsOf(o.store, job); const work = workSkillCredentials(skills.work.skills);
       const more = conditionalSkillsCredentials(skills.conditional.map((c) => c.chosen), Object.fromEntries(skills.conditional.map((c) => [c.chosen.name, c.files]))); const skill = { files: { ...work.files, ...more.files }, paths: { ...work.paths, ...more.paths } };
+      // The job egress setting (issue #2849): its route and confinement, and its environment scope (part 5), read at each start.
+      const egress = o.store.settings.getJobEgress();
       return {
         url,
         // `hopper-skill` (issue #582) asks with the same token: what the hopper can set up for this box; `hopper-artifact`
@@ -240,13 +242,14 @@ export function createUserGitHubProxy(o: UserGitHubProxyOptions): { githubProxy:
         // local port to a target of the job's bastion; `hopper-requirements` (issue #2555) checks a push's requirements;
         // `hopper-heavy` (issue #2622) runs a heavy step when its host's memory holds it; `hopper-egress` (issue #2849) is
         // the job's proxy out through its egress allowlist, which its sandbox runner starts when the setting routes jobs.
-        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id, job.movedAway ?? 0), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT, [STEP_SCRIPT_FILE]: STEP_SCRIPT, [LOGIN_SCRIPT_FILE]: LOGIN_SCRIPT, [RELAY_SCRIPT_FILE]: RELAY_SCRIPT, [RELAY_CLIENT_FILE]: RELAY_CLIENT, [REQUIREMENTS_SCRIPT_FILE]: REQUIREMENTS_SCRIPT, [REQUIREMENTS_CLIENT_FILE]: REQUIREMENTS_CLIENT, [HEAVY_SCRIPT_FILE]: HEAVY_SCRIPT, [HEAVY_CLIENT_FILE]: HEAVY_CLIENT, [EGRESS_SCRIPT_FILE]: EGRESS_SCRIPT, [EGRESS_CLIENT_FILE]: EGRESS_CLIENT, ...skill.files },
+        // `hopper/env-scope` (part 5) is the job's environment scope, which its sandbox runner reads first: a comment when off.
+        files: { [PROXY_TOKEN_FILE]: proxyToken(o.linkPrivateKey, o.user.id, job.id, job.movedAway ?? 0), [PROXY_SCRIPT_FILE]: PROXY_SCRIPT, [SKILL_SCRIPT_FILE]: SKILL_SCRIPT, [ARTIFACT_SCRIPT_FILE]: ARTIFACT_SCRIPT, [STEP_SCRIPT_FILE]: STEP_SCRIPT, [LOGIN_SCRIPT_FILE]: LOGIN_SCRIPT, [RELAY_SCRIPT_FILE]: RELAY_SCRIPT, [RELAY_CLIENT_FILE]: RELAY_CLIENT, [REQUIREMENTS_SCRIPT_FILE]: REQUIREMENTS_SCRIPT, [REQUIREMENTS_CLIENT_FILE]: REQUIREMENTS_CLIENT, [HEAVY_SCRIPT_FILE]: HEAVY_SCRIPT, [HEAVY_CLIENT_FILE]: HEAVY_CLIENT, [EGRESS_SCRIPT_FILE]: EGRESS_SCRIPT, [EGRESS_CLIENT_FILE]: EGRESS_CLIENT, [ENV_SCOPE_FILE]: envScopeScript(egress.scope ? jobEnvKeep(egress, job.source?.repo) : undefined), ...skill.files },
         paths: { [PROXY_TOKEN_VARIABLE]: PROXY_TOKEN_FILE, [PROXY_SCRIPT_VARIABLE]: PROXY_SCRIPT_FILE, [SKILL_SCRIPT_VARIABLE]: SKILL_SCRIPT_FILE, [ARTIFACT_SCRIPT_VARIABLE]: ARTIFACT_SCRIPT_FILE, [STEP_SCRIPT_VARIABLE]: STEP_SCRIPT_FILE, [LOGIN_SCRIPT_VARIABLE]: LOGIN_SCRIPT_FILE, [RELAY_SCRIPT_VARIABLE]: RELAY_SCRIPT_FILE, [REQUIREMENTS_SCRIPT_VARIABLE]: REQUIREMENTS_SCRIPT_FILE, [HEAVY_SCRIPT_VARIABLE]: HEAVY_SCRIPT_FILE, [EGRESS_SCRIPT_VARIABLE]: EGRESS_SCRIPT_FILE, ...skill.paths },
         // The vault's helper (issue #558), where the machine's client serves one and the machine is a box of a template:
         // the vault gives nothing to any other machine (issue #652). It asks with this job's proxy token.
         // git's way to GitHub, through the hopper (issue #652): the job holds no GitHub token.
         vars: {
-          [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault && machine.template ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}), ...egressVars(o.store.settings.getJobEgress()),
+          [PROXY_URL_VARIABLE]: url, ...(machine.client?.vault && machine.template ? { [SECRET_HELPER_VARIABLE]: machine.client.vault } : {}), ...egressVars(egress), ...envScopeVars(egress),
           // A GitLab job's git (issue #1448 part 3): to its user's GitLab, through the hopper too; the job holds no GitLab token.
           ...jobGitConfig(url, o.accounts.endpoints('github').url, gitlabOf(job), o.traceparent?.(job.id)), // the job's trace parent too (issue #1486 part 6)
         },

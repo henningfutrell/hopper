@@ -11,6 +11,6 @@ export function jobEgressSettings(read: (key: string) => string | undefined, wri
       const text = read('jobEgress');
       return text === undefined ? NO_JOB_EGRESS : { ...NO_JOB_EGRESS, ...(JSON.parse(text) as Partial<JobEgressSettings>) };
     },
-    setJobEgress: ({ defaults, hosts, repos, route, confine }) => write('jobEgress', JSON.stringify({ defaults, hosts, repos, route, confine })),
+    setJobEgress: ({ defaults, hosts, repos, route, confine, scope, keep, repoKeep }) => write('jobEgress', JSON.stringify({ defaults, hosts, repos, route, confine, scope, keep, repoKeep })),
   };
 }
