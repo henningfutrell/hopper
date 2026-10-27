@@ -1,10 +1,12 @@
-// Issue #2840: planned work — a work plan's tree of plan pieces and plan tasks, read from GitHub's sub-issues (and the
-// required children jobs filed), each plan task's status rolled up from the job graph's jobs of its issue, and each plan
-// piece and the work plan rolled up from what is under them. Pure.
+// Issues #2840, #2861: planned work — a work plan's tree of plan pieces and plan tasks, imported from GitHub's sub-issues
+// (and the required children jobs filed) into a kept plan, each plan task's status rolled up from the job graph's jobs of
+// its issues and the jobs linked to it, each plan piece and the work plan rolled up from what is under them, and the plan
+// artifacts the store keeps. Pure.
 import { describe, expect, it } from 'vitest';
 import { jobGraph, type JobGraphLink } from '../../src/domain/job-graph.ts';
 import { placeGraph, type IssueGraph, type ItemRef } from '../../src/domain/issue-graph.ts';
-import { pieceArtifactOf, plannedWork, rollUpStatuses, type PlanStatus } from '../../src/domain/planned-work.ts';
+import { plannedWork, rollUpStatuses, type PlanStatus } from '../../src/domain/planned-work.ts';
+import { planFromIssueGraph, type KeptPlan, type PlanArtifact, type PlanJobLink } from '../../src/domain/work-plans.ts';
 import type { Job, JobStatus } from '../../src/domain/types.ts';
 import type { WorkItem } from '../../src/domain/work-items.ts';
 
@@ -35,8 +37,12 @@ const merged = (...reads: IssueGraph[]): IssueGraph => {
   return { nodes: [...nodes.values()], edges: [...edges.values()] };
 };
 
-const planOf = (root: number, issueGraph: IssueGraph, jobs: Job[], links: JobGraphLink[] = []) =>
-  plannedWork({ root: { repo: 'acme/app', number: root }, issueGraph, links, graph: jobGraph({ jobs, links, issueGraph }) });
+/** The kept plan a plan sync makes of the issue graph. */
+const keptOf = (root: { repo: string; number: number }, issueGraph: IssueGraph, links: JobGraphLink[] = [], jobLinks: PlanJobLink[] = []): KeptPlan => ({
+  ...planFromIssueGraph(root, issueGraph, links)!, sync: 'github', createdAt: '2026-10-02T00:00:00Z', updatedAt: '2026-10-02T00:00:00Z', jobLinks,
+});
+const planOf = (root: number, issueGraph: IssueGraph, jobs: Job[], links: JobGraphLink[] = [], o: { jobLinks?: PlanJobLink[]; artifacts?: PlanArtifact[] } = {}) =>
+  plannedWork({ plan: keptOf({ repo: 'acme/app', number: root }, issueGraph, links, o.jobLinks), artifacts: o.artifacts ?? [], graph: jobGraph({ jobs, links, issueGraph }) });
 
 describe('the roll-up of statuses (issue #2840)', () => {
   it.each<[PlanStatus[], PlanStatus]>([
@@ -84,7 +90,7 @@ describe('planned work (issue #2840)', () => {
   it('a failure a later job of its issue took the place of blocks nothing: the work-item ledger says so', () => {
     const jobs = [job('a', 'failed', 4), job('b', 'finished', 4, { rerunOf: 'a' })];
     const item = { key: url(4), state: 'done', stateSince: '2026-10-02T00:00:00Z', eventState: 'done', eventAt: '2026-10-02T00:00:00Z', jobId: 'b' } as WorkItem;
-    const p = plannedWork({ root: { repo: 'acme/app', number: 1 }, issueGraph: tree(), links: [], graph: jobGraph({ jobs, issueGraph: tree(), items: new Map([[url(4), item]]) }) });
+    const p = plannedWork({ plan: keptOf({ repo: 'acme/app', number: 1 }, tree()), artifacts: [], graph: jobGraph({ jobs, issueGraph: tree(), items: new Map([[url(4), item]]) }) });
     expect(p.pieces[0]!.tasks[0]!.status).toBe('done');
     expect(p.pieces[0]!.tasks[0]!.jobs.map((j) => [j.id, j.stage, j.planStatus])).toEqual([['a', 'superseded', undefined], ['b', 'done', 'done']]);
   });
@@ -126,17 +132,32 @@ describe('planned work (issue #2840)', () => {
   });
 
   it('an issue with no sub-issues is a plan of one piece and one task; the case of the repository does not matter', () => {
-    const p = plannedWork({ root: { repo: 'Acme/App', number: 9 }, issueGraph: read(9), links: [], graph: jobGraph({ jobs: [job('a', 'finished', 9)] }) });
+    const p = plannedWork({ plan: keptOf({ repo: 'Acme/App', number: 9 }, read(9)), artifacts: [], graph: jobGraph({ jobs: [job('a', 'finished', 9)] }) });
     expect(p).toMatchObject({ id: 'acme/app#9', status: 'done', counts: { planned: 0, running: 0, done: 1, blocked: 0 } });
     expect(p.pieces).toHaveLength(1);
     expect(p.pieces[0]!.tasks[0]!.jobs.map((j) => j.id)).toEqual(['a']);
   });
 
-  it('a piece\'s artifact is the Artifact line of its issue, as the issue graph keeps it; a line taken away leaves none', () => {
-    const p = planOf(1, merged(tree(), read(2, [4, 5], { artifact: 'a screenshot of the result' }), read(3, [6], { artifact: 'https://github.com/acme/app/pull/9' })), []);
-    expect(p.pieces.map((x) => x.artifact)).toEqual(['a screenshot of the result', 'https://github.com/acme/app/pull/9']);
-    const after = planOf(1, merged(tree(), read(2, [4, 5], { artifact: 'old' }), read(2, [4, 5], { artifact: '' })), []);
-    expect(after.pieces[0]!.artifact).toBeUndefined();
+  it('shows the artifacts the store keeps: a piece\'s own on the piece, a task\'s on its task', () => {
+    const at = '2026-10-03T00:00:00Z';
+    const artifact = (id: string, pieceId: string, taskId?: string): PlanArtifact => ({
+      id, planId: 'acme/app#1', pieceId, ...(taskId ? { taskId } : {}), type: 'link', ref: `https://example.org/${id}`, source: 'person', by: 'someone', createdAt: at, updatedAt: at,
+    });
+    const p = planOf(1, tree(), [], [], { artifacts: [artifact('x', 'acme/app#2'), artifact('y', 'acme/app#2', 'acme/app#5'), artifact('z', 'acme/app#3', 'acme/app#6')] });
+    expect(p.pieces.map((x) => x.artifacts.map((a) => a.id))).toEqual([['x'], []]);
+    expect(p.pieces.flatMap((x) => x.tasks.map((t) => t.artifacts.map((a) => a.id)))).toEqual([[], ['y'], ['z']]);
+    expect(p.pieces[0]!.artifacts[0]).toEqual({ id: 'x', type: 'link', ref: 'https://example.org/x', source: 'person', by: 'someone', createdAt: at, updatedAt: at });
+  });
+
+  it('a job linked to a task in the store counts for it, though no source key ties it to the task\'s issue', () => {
+    const loose = job('a', 'failed', 4, { source: undefined });
+    const p = planOf(1, tree(), [loose], [], { jobLinks: [{ level: 'task', item: 'acme/app#6', jobId: 'a' }] });
+    expect(p.pieces[1]!.tasks[0]!).toMatchObject({ id: 'acme/app#6', status: 'blocked' });
+    expect(p.pieces[1]!.tasks[0]!.jobs.map((j) => j.id)).toEqual(['a']);
+  });
+
+  it('the issue graph not knowing the root imports nothing', () => {
+    expect(planFromIssueGraph({ repo: 'acme/app', number: 99 }, tree(), [])).toBeUndefined();
   });
 
   it('a task\'s updatedAt is the newest of its issue\'s update and its jobs\' stage changes', () => {
@@ -145,16 +166,4 @@ describe('planned work (issue #2840)', () => {
     expect(five!.updatedAt).toBe('2026-10-05T00:00:00Z');
     expect(Date.parse(four!.updatedAt!)).toBe(Date.parse('2026-10-09T00:00:00Z'));
   });
-});
-
-describe('a piece\'s artifact line (issue #2840)', () => {
-  it.each<[string, string]>([
-    ['Some text\n\nArtifact: a screenshot of the result\nMore', 'a screenshot of the result'],
-    ['**Artifact:** https://github.com/acme/app/pull/9', 'https://github.com/acme/app/pull/9'],
-    ['- artifact: the report  ', 'the report'],
-    ['No line here', ''],
-    ['Artifact:', ''],
-  ])('%j gives %j', (body, artifact) => { expect(pieceArtifactOf(body)).toBe(artifact); });
-
-  it('keeps at most 300 characters', () => { expect(pieceArtifactOf(`Artifact: ${'x'.repeat(400)}`)).toHaveLength(300); });
 });
