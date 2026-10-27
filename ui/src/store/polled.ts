@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import { get } from '@/lib/api';
 import type { PendingApprovalsView } from '../../../src/domain/types.ts';
 import type { StepSchedulesView } from '../../../src/domain/step-schedules.ts';
+import type { BugReportRecommendation } from '../../../src/domain/review-defects.ts';
 import type { HeaderBadgeSettings, LandingBatchesView, OutOfBandView, PlanView, PullRequestsView, ToolAccountsReport, YoloModeView } from '@/model/wire';
 import { useHopper } from './index';
 
@@ -47,6 +48,9 @@ export const useYoloMode = (): YoloModeView | undefined => usePolled('/api/yolo-
 export const useLandingBatches = (): LandingBatchesView | undefined => usePolled('/api/landing-batches', ['landing_batch.']);
 /** The step schedules (issue #2716): Needs you's failed scheduled runs, read again after each schedule's event. */
 export const useStepSchedules = (): StepSchedulesView | undefined => usePolled('/api/step-schedules', ['step_schedule.']);
+/** The bug-report recommendations that wait (issue #2846 part 2): Needs you's Bug reports row, read again after each one's event. */
+export const RECOMMENDATIONS_PATH = '/api/completion-review/recommendations?state=open';
+export const useRecommendations = (): { recommendations: BugReportRecommendation[] } | undefined => usePolled(RECOMMENDATIONS_PATH, ['completion_review.recommend']);
 /** Pending approvals (issue #2088): the page and its nav count. The daemon reads GitHub on its own schedule, with no event: polled only. */
 export const usePendingApprovals = (): PendingApprovalsView | undefined => usePolled('/api/pending-approvals');
 /** The tool accounts (issue #1128): the Accounts view and its badge. A usage source reads with no event: polled only. */

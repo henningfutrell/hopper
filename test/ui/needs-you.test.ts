@@ -22,15 +22,15 @@ describe('Needs you rows (issue #897)', () => {
   it('one row per kind, in order, each linked to its one home, with what it counts', () => {
     const rows = needsYouRows(counts());
     expect(rows.map((r) => r.kind)).toEqual(NEEDS_YOU_KINDS);
-    expect(rows.map((r) => r.href)).toEqual(['#intake', '#approvals/access-requests', '#approvals/access-requests', '#infra', '#questions', '#proposals', '#research', '#machines/logins', '#machines/accounts', '#machines', '#failures', '#parked', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#vault', '#jobs/queue']);
+    expect(rows.map((r) => r.href)).toEqual(['#intake', '#approvals/access-requests', '#approvals/access-requests', '#infra', '#questions', '#proposals', '#research', '#machines/logins', '#machines/accounts', '#machines', '#failures', '#parked', '#pull-requests', '#pull-requests', '#settings/landing-batches', '#tagged', '#vault', '#reports', '#jobs/queue']);
     expect(rows.every((r) => r.n === 0 && r.what.length > 0)).toBe(true);
   });
 
   it('counts each kind, and the total adds them with the high-priority ones', () => {
-    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notReady: ['WSL: not ready — its job user holds .kube'], gaveUp: ['o/a#7: why'], checksUnread: ['o/b: why'], stuckLanding: ['o/c: why'], budgetPaused: ['Shed: why'], tagged: 2, failedSchedules: ['nightly-backup: failed'], sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
+    const rows = needsYouRows(counts({ intake: 2, access: 1, plans: 2, signedOut: ['Claude on Server: signed in as nobody — sign it in from Accounts'], notReady: ['WSL: not ready — its job user holds .kube'], gaveUp: ['o/a#7: why'], checksUnread: ['o/b: why'], stuckLanding: ['o/c: why'], budgetPaused: ['Shed: why'], tagged: 2, failedSchedules: ['nightly-backup: failed'], recommended: ['The hopper queued one job again and again'], sorting: 3, sections: { questions: { n: 1, high: 1 }, proposals: none, research: none, logins: none, failures: { n: 4, high: 2 }, parked: none } }));
     const n = Object.fromEntries(rows.map((r) => [r.kind, r.n]));
-    expect(n).toEqual({ intake: 2, access: 1, 'unknown-assets': 0, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, failures: 4, budgets: 1, 'pull-requests': 1, checks: 1, landing: 1, tagged: 2, schedules: 1, sorting: 3 });
-    expect(needsYouTotal(rows)).toEqual({ n: 22, high: 3 });
+    expect(n).toEqual({ intake: 2, access: 1, 'unknown-assets': 0, plans: 2, questions: 1, proposals: 0, research: 0, logins: 0, accounts: 1, machines: 1, failures: 4, budgets: 1, 'pull-requests': 1, checks: 1, landing: 1, tagged: 2, schedules: 1, 'bug-reports': 1, sorting: 3 });
+    expect(needsYouTotal(rows)).toEqual({ n: 23, high: 3 });
   });
 
   it('a landing pass stuck on the same failure waits on a person (issue #1333): the Landing row names each repository with its error', () => {

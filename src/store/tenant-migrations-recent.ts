@@ -39,7 +39,7 @@ import { DISK_MEASURE_TABLE } from './disk-measures.ts';
 import { DELIVERY_LEDGER_TABLE } from './delivery-ledger.ts';
 import { STEP_SCHEDULE_TABLES } from './step-schedules.ts';
 import { KEPT_TRACK_TABLES } from './kept-tracks.ts';
-import { GRADE_TABLES } from './grades.ts'; import { COMPLETION_REVIEW_TABLE } from './completion-reviews.ts';
+import { GRADE_TABLES } from './grades.ts'; import { COMPLETION_REVIEW_TABLE } from './completion-reviews.ts'; import { RECOMMENDATION_TABLE } from './review-recommendations.ts';
 import { MEMORY_ENTRY_TABLE } from './repo-memories.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
@@ -218,4 +218,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   COMPLETION_REVIEW_TABLE,
   // 104: The memory entries of each repository (issue #2847). A table only: the build before runs on it, and never reads it.
   MEMORY_ENTRY_TABLE,
+  // 105: The bug-report recommendations of the completion reviews (issue #2846 part 2): one per signature. A table only: the
+  // build before runs on it, and never reads it.
+  RECOMMENDATION_TABLE,
 ];

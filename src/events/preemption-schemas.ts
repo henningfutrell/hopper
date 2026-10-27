@@ -2,6 +2,7 @@
 // A memory pause (issue #2291, design.md "The memory floor"): a Decision paused a running job, its machine's memory below the floor.
 // A wait release (issue #2303): a Decision ended the agent of a job on its own wait, a job waiting for memory on its machine.
 // A completion review setting (issue #2846, design.md "Completion reviews"): an admin changed which ended jobs are reviewed.
+// A bug-report recommendation (issue #2846 part 2, design.md "Bug-report recommendations"): a review made one, a person decided it.
 // Part of EVENT_SCHEMAS (schemas.ts), with its docs (docs.ts) and examples (examples.ts).
 import { z } from 'zod';
 import { REVIEW_OUTCOMES } from '../domain/completion-review.ts';
@@ -15,6 +16,8 @@ export const PREEMPTION_EVENT_SCHEMAS = {
   'job.wait_released': z.strictObject({ reason: z.string() }),
   'preemption.settings_changed': z.strictObject({ from: settings, to: settings, by: z.string() }),
   'completion_review.settings_changed': z.strictObject({ from: reviews, to: reviews, by: z.string() }),
+  'completion_review.recommended': z.strictObject({ signature: z.string(), title: z.string() }),
+  'completion_review.recommendation_decided': z.strictObject({ signature: z.string(), state: z.enum(['approved', 'dismissed']), by: z.string(), reason: z.string().optional(), reportId: z.string().optional() }),
 } as const;
 
 /** Its part of the event reference (docs.ts). */
@@ -24,6 +27,8 @@ export const PREEMPTION_EVENT_DOCS = {
   'job.wait_released': 'A Decision ended the agent of this job on its own wait (issues #2303, #2326), on its machine (`machineId`): the hopper ends this wait by itself, with no pane, and a waiting job holds no agent. Its pane and agent end next and its checkpoint is taken; it stays on its wait, its work tree and agent session kept (`waitReleased` on the job). When its wait ends, it resumes its session from that checkpoint on any machine with room, else in a new pane on its machine. `reason`: the Decision\'s.',
   'preemption.settings_changed': 'An admin changed the preemption settings (issue #1525): whether a job of higher priority takes the lane of a running job of lower priority (`enabled`), and how many minutes a job runs before it may be preempted (`minRunMinutes`). `from` and `to`.',
   'completion_review.settings_changed': 'An admin changed which ended jobs get a completion review (issue #2846): on or off (`on`), the ends reviewed (`outcomes`), whether a job of a work item with more than one job is reviewed whatever its end (`multiJob`), and the run time below which a first run is trivial (`minRunMinutes`). `from` and `to`.',
+  'completion_review.recommended': 'The completion review of this job found a hopper defect of a signature no review found before (issue #2846 part 2): a bug-report recommendation waits for a person in Needs you and Your reports. `signature`: the defect\'s (`cause:<cause id>`, or `requeue-loop` with the first cause); `title`: the report\'s. Nothing is filed until a person approves it.',
+  'completion_review.recommendation_decided': 'A person decided a bug-report recommendation (issue #2846 part 2): `approved` sent it to Report a bug as a report of the job whose review found it (`reportId`: the bug report it made, which `bug_report.filed` or `bug_report.kept` follows), or `dismissed` it with a `reason`. A review that finds the same `signature` later recommends nothing.',
 } as const;
 
 /** Its examples (examples.ts). */
@@ -33,4 +38,6 @@ export const PREEMPTION_EVENT_EXAMPLES = {
   'job.wait_released': { reason: 'releases the agent of j-wait on laptop: it waits on its own since 42 min ago, and a waiting job holds no agent; it resumes its session when its wait ends, on any machine with room' },
   'preemption.settings_changed': { from: { enabled: true, minRunMinutes: 10 }, to: { enabled: true, minRunMinutes: 20 }, by: 'admin' },
   'completion_review.settings_changed': { from: { on: true, outcomes: ['failed'], multiJob: true, minRunMinutes: 5 }, to: { on: true, outcomes: ['failed', 'cancelled'], multiJob: true, minRunMinutes: 10 }, by: 'admin' },
+  'completion_review.recommended': { signature: 'cause:swept', title: 'The sweep stopped the processes of a job that was at work' },
+  'completion_review.recommendation_decided': { signature: 'cause:swept', state: 'dismissed', by: 'admin', reason: 'fixed by the sweep change' },
 } as const;

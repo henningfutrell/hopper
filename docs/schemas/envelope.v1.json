@@ -209,6 +209,8 @@
         "model_routing.settings_changed",
         "preemption.settings_changed",
         "completion_review.settings_changed",
+        "completion_review.recommended",
+        "completion_review.recommendation_decided",
         "library_skill.saved",
         "library_skill.removed",
         "library_skill.refreshed",

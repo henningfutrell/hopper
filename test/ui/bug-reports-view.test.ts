@@ -2,7 +2,8 @@
 // Your reports (issue #694), its own view (issue #897), rendered against a fake of the daemon's HTTP: each report with its state —
 // waiting with why, open or closed with its link —, newest first; Refresh sends the kept ones and reads the states. The
 // public warning, the admin's switch for public bug reports, and a job's report waiting for approval, with its text,
-// Approve and Discard (issue #2818).
+// Approve and Discard (issue #2818). The bug reports the completion reviews recommend, with Approve and Dismiss with why
+// (issue #2846 part 2).
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +19,9 @@ const REPORTS = [
 
 const APPROVAL = { id: 'r3', createdAt: '2026-10-11T12:00:00.000Z', by: 'job j8', jobId: 'j8', fromJob: true, title: 'Lane stalls', state: 'approval', kind: 'issue', body: '### Description\n\nThe lane stalls.', removed: ['host name'], tries: 0 };
 
-async function render(after: unknown[], list: unknown[] = REPORTS, o: { role?: string; publicReports?: boolean } = {}) {
+const RECOMMENDED = { signature: 'cause:swept', title: 'The sweep stopped a job at work', description: 'The sweep stopped it.', jobId: 'j9', state: 'open', jobs: 2, at: '2026-10-11T12:00:00.000Z', lastAt: '2026-10-11T12:00:00.000Z' };
+
+async function render(after: unknown[], list: unknown[] = REPORTS, o: { role?: string; publicReports?: boolean; recommended?: unknown[] } = {}) {
   calls = [];
   localStorage.setItem('jh_session', 'a'.repeat(64));
   const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -27,6 +30,9 @@ async function render(after: unknown[], list: unknown[] = REPORTS, o: { role?: s
     if (path === '/ui/api/bug-reports/settings') return json({ publicReports: (JSON.parse(String(init.body)) as { on: boolean }).on });
     if (path === '/ui/api/bug-reports/approve') return json({ kind: 'filed', number: 14, url: 'https://github.com/henningfutrell/hopper/issues/14' });
     if (path === '/ui/api/bug-reports/discard') return json({ ok: true });
+    if (path === '/api/completion-review/recommendations?state=open') return json({ recommendations: o.recommended ?? [] });
+    if (path === '/ui/api/completion-review/recommendations/approve') return json({ kind: 'filed', number: 15, url: 'https://github.com/henningfutrell/hopper/issues/15' });
+    if (path === '/ui/api/completion-review/recommendations/dismiss') return json({ ...RECOMMENDED, state: 'dismissed' });
     return json({ reports: path === '/ui/api/bug-reports/refresh' ? after : list, publicReports: o.publicReports ?? true });
   }));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -51,7 +57,8 @@ afterEach(async () => {
 describe('Your reports', () => {
   it('lists each report, newest first, with its state; a waiting one says why, a filed one links its issue', async () => {
     await render([]);
-    expect(calls[0]).toEqual({ method: 'GET', path: '/api/bug-reports' });
+    expect(calls).toContainEqual({ method: 'GET', path: '/api/bug-reports' });
+    expect(document.querySelector('[data-slot="recommended-reports"]')).toBeNull();
     expect(rows()).toHaveLength(2);
     expect(rows()[0]).toContain('Queue stalls');
     expect(rows()[0]).toContain('Waiting to send');
@@ -107,6 +114,32 @@ describe('Your reports', () => {
     expect(calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/ui/api/bug-reports/approve', body: { id: 'r3' } }));
     await press(/Discard/);
     expect(calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/ui/api/bug-reports/discard', body: { id: 'r3' } }));
+  });
+
+  it('shows the reports the completion reviews recommend; Approve files one, Dismiss asks why (issue #2846 part 2)', async () => {
+    await render([], [], { recommended: [RECOMMENDED] });
+    const item = () => document.querySelector('[data-slot="recommended-report"]')!;
+    expect(item().textContent).toContain('The sweep stopped a job at work');
+    expect(item().textContent).toContain('found in 2 jobs');
+    expect(item().querySelector('a')?.getAttribute('href')).toBe('#jobs/j9');
+    const press = async (text: RegExp) => {
+      const b = [...item().querySelectorAll('button')].find((x) => text.test(x.textContent ?? ''))!;
+      await act(async () => { b.click(); });
+      for (let i = 0; i < 3; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    };
+    await press(/Approve/);
+    expect(calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/ui/api/completion-review/recommendations/approve', body: { signature: 'cause:swept' } }));
+    await press(/Dismiss…/);
+    const dismiss = [...item().querySelectorAll('button')].find((x) => x.textContent === 'Dismiss')!;
+    expect(dismiss.disabled).toBe(true); // no reason yet
+    const input = item().querySelector<HTMLInputElement>('input[aria-label="Why dismiss it"]')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, 'fixed already');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => { item().querySelector('form')!.requestSubmit(); });
+    for (let i = 0; i < 3; i++) await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    expect(calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/ui/api/completion-review/recommendations/dismiss', body: { signature: 'cause:swept', reason: 'fixed already' } }));
   });
 
   it('says so when there are no reports', async () => {

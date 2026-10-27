@@ -7,6 +7,7 @@
 import type { WaitOnKind } from './wait-on.ts';
 import { tokenWaste, type TokenWaste } from './token-waste.ts';
 import type { TokenTotals } from './token-usage.ts';
+import { defectOf, type ReviewDefect, type ReviewFailure } from './review-defects.ts';
 
 /** The ends of a job a completion review may follow: `finished` (done, or partly done), `failed` and `cancelled`. */
 export const REVIEW_OUTCOMES = ['finished', 'failed', 'cancelled'] as const;
@@ -64,6 +65,8 @@ export interface CompletionReview {
   restarts: Restart[];
   waste: TokenWaste[];
   suggestions: Suggestion[];
+  /** A hopper defect the run hit (issue #2846 part 2, `review-defects.ts`): a bug-report recommendation. */
+  defect?: ReviewDefect;
 }
 
 /** One event of the job, as the review reads it. */
@@ -77,6 +80,8 @@ export interface CompletionReviewInput {
   tokens?: TokenTotals;
   /** The jobs of its work item, itself too. */
   jobs: number;
+  /** Its newest failure record, when it has one: its known cause. */
+  failure?: ReviewFailure;
   at: string;
 }
 
@@ -213,9 +218,10 @@ export function completionReviewOf(i: CompletionReviewInput): CompletionReview {
     .map((s) => `${STAGE_WORDS[s.stage as Exclude<ReviewStage, 'running'>]} ${durationText(s.ms)}${s.stage === 'person' && questions > 0 ? ` (${questions} question${questions === 1 ? '' : 's'})` : ''}.`);
   for (const r of restarts) stalls.push(`${restartWords(r)}${r.causes.length ? `: ${r.causes.join('; ')}` : ''}.`);
   if (i.jobs > 1) stalls.push(`Its work item took ${i.jobs} jobs.`);
+  const defect = defectOf({ ...(i.failure ? { failure: i.failure } : {}), restarts });
   return {
     jobId: i.job.id, outcome, reviewedAt: i.at, durationMs, stages, jobs: i.jobs, questions, went, stalls, restarts, waste,
-    suggestions: suggestionsOf(stages, durationMs, restarts, waste, questions),
+    suggestions: suggestionsOf(stages, durationMs, restarts, waste, questions), ...(defect ? { defect } : {}),
   };
 }
 
