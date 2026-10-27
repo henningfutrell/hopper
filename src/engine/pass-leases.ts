@@ -27,6 +27,8 @@ export const PASS_LEASES = {
   deliveryLedger: 'delivery-ledger',
   /** The kept-track pass (issue #2775). */
   keptTracks: 'kept-tracks',
+  /** The grade pass (issue #2845). */
+  grades: 'grades',
   /** The wakes a stop lost (issue #1571). */
   missedWakes: 'missed-wakes',
 } as const;
