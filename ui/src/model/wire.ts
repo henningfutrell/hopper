@@ -149,6 +149,7 @@ export type { SearchAnswer, SearchFacet, SearchState, SearchStatus, SuggestAnswe
 export type { JobTranscript, TranscriptPart, TranscriptTurn } from '../../../src/domain/transcript.ts';
 export type { JobTokenView, TokenRollupRow, TokenTotals } from '../../../src/domain/token-usage.ts';
 export type { TokenBudgetSettings } from '../../../src/domain/token-budget.ts';
+export type { CompletionReview, CompletionReviewSettings, Restart, RestartKind, ReviewOutcome, ReviewStage, StageTime, Suggestion, SuggestionArea } from '../../../src/domain/completion-review.ts';
 export type { PerMergedPullRequest, TokenWaste, TokenWasteKind, TokenWasteLine } from '../../../src/domain/token-waste.ts';
 export type { Promotion, PromotionArtifact, PromotionDraft, PromotionRequest, PromotionTarget, PromotionView, ScanFinding } from '../../../src/domain/promotions.ts';
 export type { JobNote, JobNoteState, NoteDelivery } from '../../../src/domain/job-notes.ts';
