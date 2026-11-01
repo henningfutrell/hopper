@@ -49,7 +49,7 @@ export const OPERATOR_USAGE = `  hopper job show <id>                           
   hopper job accept <id>                             let a waiting job through the queue gate: it joins the end of the user order
   hopper job reject <id> [--reason <text>]           a waiting job ends rejected, the reason kept on it
   hopper job cancel <id> [--reason <text>]           any job that has not ended ends cancelled, the reason kept on it
-  hopper job park <id> [--reason <text>]             park a running job, or one on a question, a proposal or a research report: it leaves its lane, and keeps its work
+  hopper job park <id> [--reason <text>] [--until <condition>]  park a running job, or one on a question, a proposal or a research report: it leaves its lane, and keeps its work; --until owner/name#N, #N, job <id> or an ISO time: the hopper picks it up once that issue or pull request ends, that job ends, or that time passes
   hopper job pick-up <id>                            pick a parked job up: it waits again where it was parked, or resumes its session
   hopper job rerun <id>                              run a failed, finished, rejected or cancelled job again; it runs its item's approved text
   hopper job cleaned-up <id>                         an ended job whose cleanup cannot reach its machine: its pane is closed, or its machine is gone for good; its item's jobs may run
@@ -133,7 +133,7 @@ function jobCall(args: string[]): Call {
   const direct = directCall(args[0], args.slice(1));
   if (direct) return direct;
   if (args[0] === 'dismiss') return dismissCall(args.slice(1));
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' }, note: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { reason: { type: 'string' }, notes: { type: 'string' }, note: { type: 'string' }, until: { type: 'string' } } });
   const [verb, id, ...extra] = positionals;
   if (!id || extra.length > 0) throw usage('job show|stamp|accept|reject|cancel|park|pick-up|rerun|cleaned-up|rework|keep-original|accept-new-text|quarantine|unquarantine|approve-trust|end-wait <id>');
   const at = `/ui/api/jobs/${encodeURIComponent(id)}`, notes = values.notes, note = values.note;
@@ -146,7 +146,8 @@ function jobCall(args: string[]): Call {
   if (verb === 'stamp' && notes === undefined && values.reason === undefined) return { role: 'viewer', path: `/api/jobs/${encodeURIComponent(id)}/stamp` };
   if (verb === 'rework' && notes !== undefined && values.reason === undefined) return { role: 'operator', path: `${at}/rework`, body: async () => ({ notes }) };
   if (verb === 'rework' || notes !== undefined) throw usage('job rework <id> --notes <text>');
-  if (verb === 'reject' || verb === 'cancel' || verb === 'park') return { role: 'operator', path: `${at}/${verb}`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
+  if (verb === 'park') return { role: 'operator', path: `${at}/park`, body: async () => ({ ...(values.reason === undefined ? {} : { reason: values.reason }), ...(values.until === undefined ? {} : { until: values.until }) }) }; if (values.until !== undefined) throw usage('job park <id> [--reason <text>] [--until <condition>]'); // a park condition (issue #2890)
+  if (verb === 'reject' || verb === 'cancel') return { role: 'operator', path: `${at}/${verb}`, body: async () => (values.reason === undefined ? {} : { reason: values.reason }) };
   if (values.reason !== undefined) throw usage('job reject|cancel|park <id> --reason <text>');
   // Pick up (issue #2167), as the Parked view's: the re-queue route.
   if (verb === 'pick-up') return { role: 'operator', path: `${at}/requeue`, body: async () => ({}) };

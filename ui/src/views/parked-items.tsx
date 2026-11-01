@@ -8,19 +8,40 @@ import { JobTitle, Since } from '@/components/job';
 import { InlineMarkdown } from '@/components/markdown';
 import { firstLine } from '@/model/questions';
 import { REVIEW_UI } from '@/model/reviews';
-import type { ReviewItemView, ReviewKind } from '@/model/wire';
+import type { Job, ReviewItemView, ReviewKind } from '@/model/wire';
 import { useHopper } from '@/store';
 import { useJobIndex } from '@/store/selectors';
 import { PickUpButton } from '@/views/dashboard/lanes';
 
-/** Who parked it and why (issue #2167): `by` and `reason`, when a person parked it; auto-park and the moves say `why` instead. */
-export function ParkedBy({ parked, className }: { parked: { by?: string; reason?: string } | undefined; className?: string }) {
-  if (!parked?.by && !parked?.reason) return null;
+type ParkedOf = Pick<NonNullable<Job['parked']>, 'by' | 'reason' | 'until' | 'untilRefused'>;
+
+/** A park condition as a person reads it (issue #2890), after "until". */
+export function untilLabel(u: NonNullable<ParkedOf['until']>): string {
+  switch (u.kind) {
+    case 'item': return `${u.repo}#${u.number} closes or merges`;
+    case 'job': return `job ${u.jobId} ends`;
+    case 'time': return new Date(u.at).toLocaleString();
+  }
+}
+
+/**
+ * Who parked it and why (issue #2167): `by` and `reason`, when a person parked it; auto-park and the moves say `why` instead.
+ * Its park condition (issue #2890): the hopper picks it up once it holds, or it held and the pick up was refused, and why.
+ */
+export function ParkedBy({ parked, className }: { parked: ParkedOf | undefined; className?: string }) {
+  if (!parked?.by && !parked?.reason && !parked?.until) return null;
   return (
     <div data-slot="parked-by" className={className ?? 'text-xs text-muted-foreground'}>
       {parked.by && <span>parked by {parked.by}</span>}
       {parked.by && parked.reason && <span>: </span>}
       {parked.reason && <span data-slot="parked-reason" className="italic">{parked.reason}</span>}
+      {parked.until && (
+        <div data-slot="parked-until">
+          {parked.untilRefused
+            ? <>until {untilLabel(parked.until)}: it held, but the hopper could not pick it up ({parked.untilRefused}). Pick it up yourself.</>
+            : <>picked up by the hopper once {untilLabel(parked.until)}</>}
+        </div>
+      )}
     </div>
   );
 }

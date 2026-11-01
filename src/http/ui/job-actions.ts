@@ -6,6 +6,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { HttpError, parseWith } from '../errors.ts';
 import { EngineError } from '../../engine/errors.ts';
+import { parkUntilOf } from '../../domain/park-until.ts';
 import type { TenantParts } from '../tenants.ts';
 import { cancelBody, criticalBody, dismissManyBody, endWaitBody, noteBody, parkBody, rejectBody, requeueBody, reworkBody } from './job-bodies.ts';
 import type { Access } from '../../authz/service.ts';
@@ -51,11 +52,15 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
   };
   app.post('/ui/api/jobs/:id/rerun', o.operator, async (req, reply) => giveBack(req, reply, { kind: 'rerun' }));
   app.post('/ui/api/jobs/:id/rework', o.operator, async (req, reply) => giveBack(req, reply, { kind: 'rework', notes: parseWith(reworkBody, req.body ?? {}).notes }));
-  // Who parked it, and the reason they gave (issue #2167), are kept on the job.
+  // Who parked it, and the reason they gave (issue #2167), are kept on the job; so is its park condition (issue #2890).
   app.post('/ui/api/jobs/:id/park', o.operator, async (req) => {
-    const { reason } = parseWith(parkBody, req.body ?? {});
+    const { reason, until: text } = parseWith(parkBody, req.body ?? {});
+    const id = parseWith(idParams, req.params).id;
+    const t = o.tenant(req);
+    const until = text === undefined ? undefined : parkUntilOf(text, t.store.jobs.get(id)?.source?.repo);
+    if (typeof until === 'string') throw new HttpError(400, `until: ${until}`);
     const s = signedInOf(req), acting = s ? actingOf(s) : undefined;
-    return o.tenant(req).engine.park(parseWith(idParams, req.params).id, { ...(acting ? { by: acting.person, via: acting.via } : {}), ...(reason ? { reason } : {}) });
+    return t.engine.park(id, { ...(acting ? { by: acting.person, via: acting.via } : {}), ...(reason ? { reason } : {}), ...(until ? { until } : {}) });
   });
   app.post('/ui/api/jobs/:id/requeue', o.operator, async (req) => {
     const s = signedInOf(req), acting = s ? actingOf(s) : undefined;
