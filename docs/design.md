@@ -13197,6 +13197,36 @@ of its section, and keeps the review from moving on while it is parked.
   `test/integration/job-park.test.ts` (a job lists, parks and picks up; a person's park it cannot pick up; a running job
   it cannot park; bad tokens and calls refused).
 
+### Park conditions (issue #2890, 2026-10-31)
+
+A person who parks a job can name what it waits for, and the hopper picks it up by itself once that holds. Before, only
+the hopper's own parks (the moves, preemption, the memory pause) and a job's own wait came back by themselves: a person's
+park stayed until a person picked it up, also when the pull request it waited for had merged.
+
+- **The condition** (`ParkUntil`, `src/domain/park-until.ts`). One of: an issue or a pull request ends (closed, merged, or
+  closed without a merge), written `owner/name#N`, `name#N` (the job's owner), `#N` (the job's own repository) or a link; a
+  job ends (`job <id>`: finished, failed, cancelled or rejected, or gone); a time passes (an ISO time). One condition per
+  park. Text that names none, or more than one, is refused (400) with why, and nothing is parked.
+- **Where it is named.** `POST /ui/api/jobs/:id/park { reason?, until? }` (`parkBody`, at most 200 characters), `hopper job
+  park <id> --until <condition>`, and the Park dialog's "Pick up when" field. It is kept with who parked it (`ParkAsk`,
+  `parked.until`) and on `job.parked` as a person reads it (`until`: `octo/x#6 closes or merges`).
+- **The pass** (`src/engine/park-until.ts`, sweep lease `park-until`). Every 5 seconds, on one hopper of those on the
+  database, each parked job with a condition is tested: an item is read as a wait check reads it
+  (`WaitReads.endedWatched`, through the job's source and its cache), a job from the store, a time from the clock. An item
+  that does not exist, or that the hopper cannot read, never holds: the condition stays, and a person picks the job up.
+  Once it holds, in one transaction and only while the job is still on the same park, the job is picked up as a person's
+  Pick up does (`recordUnpark`): `job.unparked { by: hopper, until, fired }`. A job parked mid-turn is told why it resumes
+  (`untilBrief`); one parked on its question, proposal or research report waits on it again.
+- **A refused pick up.** A job with no agent session to resume starts fresh only once a person confirms it (issue #530), so
+  the hopper does not pick it up: the refusal is kept on the park (`parked.untilRefused`), the pass tries it no more, and
+  the Parked row says so. A person picks it up.
+- **A person goes first.** Pick up works at any time; the condition ends with the park. A new park replaces it.
+- **Persisted state.** No schema change: `until` and `untilRefused` are fields of the job's JSON body. A build before this
+  one ignores them, and the job stays parked until a person picks it up.
+- **Verification.** `test/domain/park-until.test.ts` (the text), `test/engine/park-until.test.ts` (each condition, with
+  fakes at the reads), `test/integration/park-until.test.ts` (a job parked until another job ends is picked up by the
+  hopper and told why; bad text refused), `test/ui/parked-view.test.ts` and `test/ui/park-review-item.test.ts`.
+
 ## Preemption (issue #1525, 2026-10-16)
 
 When a job of higher priority waits and no lane it may use is free, the hopper parks a running job of lower priority and
