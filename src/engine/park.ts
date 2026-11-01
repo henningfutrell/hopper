@@ -13,6 +13,7 @@ import { REVIEW_SECTIONS, type Job, type LaneId } from '../domain/types.ts';
 import { HUMAN } from '../questions/service.ts';
 import type { JobCheckpoint, ParkedMove } from '../domain/checkpoints.ts';
 import { parkAskOf, type ParkAsk } from '../domain/park-ask.ts';
+import { parkUntilLabel } from '../domain/park-until.ts';
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { releaseLane } from './outcome.ts';
@@ -77,7 +78,9 @@ export function recordPark(c: EngineContext, job: Job, from: 'running' | 'waitin
     status: 'parked', laneId: undefined, parked: { at, from, ...(why ? { auto: true as const, why } : {}), ...by, ...(move ? { move } : {}) }, ...(machineId ? { resumeOn: machineId } : {}),
     holdReason: undefined, waitReason: undefined, parkAsk: undefined,
   });
-  store.events.append({ type: 'job.parked', jobId: job.id, ...(laneId ? { laneId } : {}), data: { from, ...(machineId ? { machineId } : {}), ...(why ? { auto: true, why } : {}), ...by, ...(move ? { move: move.kind } : {}) } });
+  // The park condition (issue #2890) as a person reads it.
+  const { until, ...who } = by;
+  store.events.append({ type: 'job.parked', jobId: job.id, ...(laneId ? { laneId } : {}), data: { from, ...(machineId ? { machineId } : {}), ...(why ? { auto: true, why } : {}), ...who, ...(until ? { until: parkUntilLabel(until) } : {}), ...(move ? { move: move.kind } : {}) } });
   releaseLane(c, lane, at);
   return parked;
 }
@@ -154,15 +157,19 @@ export function elsewhereBrief(job: Job, answer: string): string {
   return lines.join('\n');
 }
 
+/** Who picked a parked job up, on its `job.unparked`: the park condition as a person reads it, and what fired it (issue #2890). */
+type UnparkedBy = Pick<ParkAsk, 'by' | 'via'> & { until?: string; fired?: string };
+
 /**
  * Re-queue a parked job: back to the queue pinned to its machine, an answer pending; or, with its question still
  * open, back to waiting on it (the caller re-arms the question after the commit). One with no agent session only with
  * `freshSession`, the person's confirmation that it starts a fresh one (issue #530).
  */
-export function recordUnpark(c: EngineContext, id: string, freshSession = false, elsewhere = false, who?: ParkAsk): Job {
+export function recordUnpark(c: EngineContext, id: string, freshSession = false, elsewhere = false, who?: ParkAsk & { fired?: string }): Job {
   const { store } = c;
-  // Who picked it up (issue #2167), on its `job.unparked`: a person, or a running job through the park skill.
-  const by = parkAskOf({ ...(who?.by ? { by: who.by } : {}), ...(who?.via ? { via: who.via } : {}) });
+  // Who picked it up (issue #2167), on its `job.unparked`: a person, or a running job through the park skill; or the hopper,
+  // when the park condition held (issue #2890), with the condition and what fired it.
+  const by: UnparkedBy = { ...(who?.by ? { by: who.by } : {}), ...(who?.via ? { via: who.via } : {}), ...(who?.until ? { until: parkUntilLabel(who.until) } : {}), ...(who?.fired ? { fired: who.fired } : {}) };
   const job = store.jobs.get(id);
   if (!job) throw new EngineError('not_found', `job ${id} not found`);
   if (job.status !== 'parked') throw new EngineError('conflict', `job ${id} is ${job.status}: only a parked job can be re-queued`);
@@ -198,12 +205,19 @@ export function recordUnpark(c: EngineContext, id: string, freshSession = false,
   return next;
 }
 
+/** After the commit of a pick up: its question is armed again, and a reviewer level the park stopped goes on (issue #2167). */
+export function resumeUnparked(c: EngineContext, next: Job): void {
+  if (next.status === 'waiting_answer' && next.questionId) c.questions.unparked(next.questionId);
+  const item = next.status === 'waiting_answer' ? openItemOf(c, next) : undefined;
+  if (item) c.reviews[item.kind].resume(item.id);
+}
+
 /**
  * Pick a parked job up to resume elsewhere (issue #921): queued, its pin to its machine gone (a pin of its spec stays),
  * an answer pending. Its question, or its proposal or research report, must be answered first: the claim resumes the
  * agent with the answer, never to wait on it again on another machine.
  */
-function recordElsewhere(c: EngineContext, job: Job, by: ParkAsk): Job {
+function recordElsewhere(c: EngineContext, job: Job, by: UnparkedBy): Job {
   const { store } = c;
   const refused = elsewhereRefusal(job);
   if (refused) throw new EngineError('conflict', refused);

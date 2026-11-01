@@ -1287,7 +1287,7 @@ Version 1 (`docs/schemas/job.cleanup_leftover.v1.json`). The job ended at `ended
 
 ## `job.parked`
 
-Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issues #650, #2335: `auto`, its question waited on a person a few seconds, or its proposal or research report reached the human stage; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question, a proposal or a research report (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did (`ui`, `cli`, `api`), and the reason they gave; a running job that parked it through the `park` skill (`POST /job/park`) is `by` `job <its id>`, `via` `job`. `move` (issue #1892): the hopper parked it to move it off its machine with no person — `signed_out` (issue #1211), `busy_machine` (issue #1977) or `lost_machine` (issue #1569; also a run whose session had no way to the hopper, issue #2427, its `why` says so) — and picks it up elsewhere (`job.unparked`); its work item goes back to queued, not to needs you, and a stop before the pick up leaves the move to its next pass. A parked job never runs, its question never expires, and its proposal or research report is neither reviewed nor decided, until it is re-queued or cancelled.
+Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issues #650, #2335: `auto`, its question waited on a person a few seconds, or its proposal or research report reached the human stage; `why` says so), or the busy-machine move (issue #1977: `auto`, a job queued to resume on a full machine while another had room; `why` says so) parked a running job or one on a question, a proposal or a research report (issue #501): its lane is free, its pane and agent ended, and its work tree, branch, agent session and open question are kept. `machineId`: the machine it returns to when re-queued. `by`, `via`, `reason` (issue #2167): the person who parked it, the way they did (`ui`, `cli`, `api`), and the reason they gave; a running job that parked it through the `park` skill (`POST /job/park`) is `by` `job <its id>`, `via` `job`. `until` (issue #2890): the park condition the person named, as a person reads it (`owner/name#N closes or merges`, `job <id> ends`, or a time); once it holds, the hopper picks the job up (`job.unparked` `by` `hopper`). `move` (issue #1892): the hopper parked it to move it off its machine with no person — `signed_out` (issue #1211), `busy_machine` (issue #1977) or `lost_machine` (issue #1569; also a run whose session had no way to the hopper, issue #2427, its `why` says so) — and picks it up elsewhere (`job.unparked`); its work item goes back to queued, not to needs you, and a stop before the pick up leaves the move to its next pass. A parked job never runs, its question never expires, and its proposal or research report is neither reviewed nor decided, until it is re-queued or cancelled.
 
 | field | type | required |
 |---|---|---|
@@ -1298,6 +1298,7 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issues #650,
 | `by` | string | no |
 | `via` | `ui` \| `cli` \| `api` \| `job` | no |
 | `reason` | string | no |
+| `until` | string | no |
 | `move` | `signed_out` \| `busy_machine` \| `lost_machine` | no |
 
 ```json
@@ -1311,7 +1312,7 @@ Version 1 (`docs/schemas/job.parked.v1.json`). A person, auto-park (issues #650,
 
 ## `job.unparked`
 
-Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `by`, `via` (issue #2167): the person who picked it up and the way (`ui`, `cli`, `api`), or `job <its id>` and `job` for a running job that picked up a proposal or research report it parked through the `park` skill. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move and the busy-machine move (issue #1977) re-queue with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
+Version 1 (`docs/schemas/job.unparked.v1.json`). A person, the hopper on a park condition (issue #2890), or the signed-out move (issue #1211), re-queued a parked job (issue #501). `to` `queued`: it waits, pinned to its machine, and its claim resumes its agent session there (`claude --resume`), with the answer kept while it was parked, if any. `to` `waiting_answer`: its question is still open; the answer resumes it, and the human timeout starts again. `by`, `via` (issue #2167): the person who picked it up and the way (`ui`, `cli`, `api`), or `job <its id>` and `job` for a running job that picked up a proposal or research report it parked through the `park` skill. `by` `hopper`, `until`, `fired` (issue #2890): the park condition the person named held — the issue or pull request ended, the job ended, or the time passed —, read on a tick as a wait check reads its items; `until` is the condition, `fired` what the hopper found. `elsewhere` (issue #921): picked up to resume on another machine from its checkpoint: it is not pinned to its machine, and its claim rebuilds its work tree from the checkpoint on the machine it gets and resumes its agent session there. The signed-out move and the busy-machine move (issue #1977) re-queue with `elsewhere` too: from the checkpoint, or as a new start when the agent never got its task.
 
 | field | type | required |
 |---|---|---|
@@ -1319,6 +1320,8 @@ Version 1 (`docs/schemas/job.unparked.v1.json`). A person, or the signed-out mov
 | `elsewhere` | boolean | no |
 | `by` | string | no |
 | `via` | `ui` \| `cli` \| `api` \| `job` | no |
+| `until` | string | no |
+| `fired` | string | no |
 
 ```json
 {

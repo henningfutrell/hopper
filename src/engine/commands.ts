@@ -7,8 +7,7 @@ import type { ActingPerson, Job, JobNote, UsageReading } from '../domain/types.t
 import { nowIso, type EngineContext } from './context.ts';
 import { EngineError } from './errors.ts';
 import { cleanupDue, type Cleanups } from './cleanup.ts';
-import { parkRefusal, recordPark, recordUnpark, releaseParked } from './park.ts';
-import { openItemOf } from './reviews.ts';
+import { parkRefusal, recordPark, recordUnpark, releaseParked, resumeUnparked } from './park.ts';
 import { parkAskOf, type ParkAsk } from '../domain/park-ask.ts';
 import type { Runner } from './runner.ts';
 import { recordEndWait, recordPollSeen, type WaitEnder } from './wait.ts';
@@ -187,10 +186,7 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
 
     requeue(id, o = {}) {
       const next = store.tx(() => recordUnpark(c, id, o.freshSession === true, o.elsewhere === true, o.who));
-      if (next.status === 'waiting_answer' && next.questionId) c.questions.unparked(next.questionId);
-      // Its proposal or research report (issue #2167): a reviewer level the park stopped goes on.
-      const item = next.status === 'waiting_answer' ? openItemOf(c, next) : undefined;
-      if (item) c.reviews[item.kind].resume(item.id);
+      resumeUnparked(c, next);
       return next;
     },
 

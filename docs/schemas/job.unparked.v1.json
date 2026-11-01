@@ -24,6 +24,12 @@
         "api",
         "job"
       ]
+    },
+    "until": {
+      "type": "string"
+    },
+    "fired": {
+      "type": "string"
     }
   },
   "required": [
