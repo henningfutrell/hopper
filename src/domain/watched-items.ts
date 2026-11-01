@@ -39,7 +39,7 @@ const NOT_A_REPO = new Set(['a', 'an', 'the', 'on', 'of', 'for', 'its', 'this', 
 export const watchKey = (r: WatchedRef): string => `${r.kind}:${r.repo.toLowerCase()}#${r.kind === 'issue' ? r.number : r.runId}`;
 
 /** The items `text` names, in the order it names them; `ownRepo` for a name with no owner, or none at all. */
-function refsIn(text: string, ownRepo: string | undefined): WatchedRef[] {
+export function refsIn(text: string, ownRepo: string | undefined): WatchedRef[] {
   const owner = ownRepo?.split('/')[0];
   // `guessed`: a name with no owner, put in the job's owner; dropped when the text names that item with its owner too.
   const found: { at: number; ref: WatchedRef; guessed?: boolean }[] = [];

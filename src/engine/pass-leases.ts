@@ -33,6 +33,8 @@ export const PASS_LEASES = {
   completionReviews: 'completion-reviews',
   /** The plan sync (issue #2861). */
   planSync: 'plan-sync',
+  /** The park-condition pass (issue #2890). */
+  parkUntil: 'park-until',
   /** The wakes a stop lost (issue #1571). */
   missedWakes: 'missed-wakes',
 } as const;

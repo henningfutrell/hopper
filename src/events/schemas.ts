@@ -137,10 +137,10 @@ export const EVENT_SCHEMAS = {
   'job.failed': strict({ error: z.string(), ...priority }),
   'job.cancelled': strict({ reason: z.string(), note: z.string().optional() }),
   'job.requeued': strict({ from: z.string(), reason: z.string() }),
-  'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional(), by: z.string().optional(), via: z.enum(PARK_VIAS).optional(), reason: z.string().optional(), move: z.enum(JOB_MOVES).optional() }),
+  'job.parked': strict({ from: z.enum(['running', 'waiting_answer']), machineId: z.string().optional(), auto: z.literal(true).optional(), why: z.string().optional(), by: z.string().optional(), via: z.enum(PARK_VIAS).optional(), reason: z.string().optional(), until: z.string().optional(), move: z.enum(JOB_MOVES).optional() }),
   // `elsewhere` (issue #921, additive): picked up to resume on another machine from its checkpoint. `job.checkpointed`
   // (issue #921): a checkpoint taken on `machineId`; `bytes` compressed, whether it holds the agent session, the commits not pushed.
-  'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']), elsewhere: z.literal(true).optional(), by: z.string().optional(), via: z.enum(PARK_VIAS).optional() }), 'job.checkpointed': strict({ machineId: z.string(), bytes: z.number().int(), session: z.boolean(), commits: z.number().int() }),
+  'job.unparked': strict({ to: z.enum(['queued', 'waiting_answer']), elsewhere: z.literal(true).optional(), by: z.string().optional(), via: z.enum(PARK_VIAS).optional(), until: z.string().optional(), fired: z.string().optional() }), 'job.checkpointed': strict({ machineId: z.string(), bytes: z.number().int(), session: z.boolean(), commits: z.number().int() }),
   // A person's Continue names its hand-off (issue #551); the assessor's, its failure record (issue #630).
   'job.continued': strict({ handoffId: z.string().optional(), recordId: z.string().optional(), keptWork: z.literal(true).optional(), auto: z.literal(true).optional() }),
   'job.reattached': strict({ reason: z.string() }),

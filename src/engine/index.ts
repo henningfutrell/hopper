@@ -6,7 +6,7 @@ import { keptTreeOf, keptWorkOf, REVIEW_KINDS, REVIEW_SECTIONS, WORK_EVENTS, typ
 import { createAnswerHandlers, type AnswerHandlers } from './answers.ts';
 import { autoPark } from './auto-park.ts';
 import { createSignedOutMove } from './signed-out-move.ts';
-import { BUSY_MOVE_EVERY_MS, createBusyMove } from './busy-move.ts'; import { DELIVERY_LEDGER_EVERY_MS, recordDeliveryLedger } from './delivery-ledger.ts'; import { KEPT_TRACKS_EVERY_MS, keepDeliveryTracks } from './kept-tracks.ts'; import { COMPLETION_REVIEWS_EVERY_MS, createCompletionReviews } from './completion-reviews.ts'; import { GRADES_EVERY_MS, keepGrades } from './grades.ts'; import { PLAN_SYNC_EVERY_MS, syncWorkPlans } from './plan-sync.ts';
+import { BUSY_MOVE_EVERY_MS, createBusyMove } from './busy-move.ts'; import { DELIVERY_LEDGER_EVERY_MS, recordDeliveryLedger } from './delivery-ledger.ts'; import { KEPT_TRACKS_EVERY_MS, keepDeliveryTracks } from './kept-tracks.ts'; import { COMPLETION_REVIEWS_EVERY_MS, createCompletionReviews } from './completion-reviews.ts'; import { GRADES_EVERY_MS, keepGrades } from './grades.ts'; import { PLAN_SYNC_EVERY_MS, syncWorkPlans } from './plan-sync.ts'; import { PARK_UNTIL_EVERY_MS, runParkUntil } from './park-until.ts';
 import { preemptRunning } from './preemption.ts';
 import { createClassifier } from './classifier.ts';
 import { createCleanups } from './cleanup.ts';
@@ -189,6 +189,7 @@ export function createEngine(o: EngineOptions): Engine {
   // The completion review pass (issue #2846): its first pass at the first tick.
   let reviewsAt = 0; const completionReviews = createCompletionReviews(store);
   let planSyncAt = c.clock.now().getTime(); // the plan sync (issue #2861): its first pass one interval after the start
+  let parkUntilAt = 0, parkUntilRunning = false; // the park-condition pass (issue #2890): its first pass at the first tick
   const priorityLanes = createPriorityLanes(c);
   const blastRadius = createBlastRadius(c);
   const phaseShifts = createPhaseShifts(c);
@@ -334,6 +335,10 @@ export function createEngine(o: EngineOptions): Engine {
         if (c.clock.now().getTime() - ledgerAt >= DELIVERY_LEDGER_EVERY_MS && passes.held('deliveryLedger')) {
           ledgerAt = c.clock.now().getTime();
           try { recordDeliveryLedger(store, c.clock.now()); } catch (e) { console.error('hopper: the delivery ledger pass failed', e); }
+        }
+        if (!parkUntilRunning && c.clock.now().getTime() - parkUntilAt >= PARK_UNTIL_EVERY_MS && passes.held('parkUntil')) {
+          parkUntilAt = c.clock.now().getTime(); parkUntilRunning = true;
+          void runParkUntil(c).then((picked) => { if (picked) c.trigger('job.unparked'); }, (e: unknown) => console.error('hopper: the park-condition pass failed', e)).finally(() => { parkUntilRunning = false; });
         }
         if (c.clock.now().getTime() - keptTracksAt >= KEPT_TRACKS_EVERY_MS && passes.held('keptTracks')) {
           keptTracksAt = c.clock.now().getTime();

@@ -36,12 +36,14 @@ export function CancelButton({ job }: { job: Job }) {
  * Park a running job or one on a question (issues #501, #530), or on a proposal or a research report (issue #2167): it
  * leaves its lane now, its pane and agent end, and its work tree, session (when it has one), machine, question and review
  * item are kept, in Parked, until it is picked up. The person may say why; the reason is kept on the job, with who parked
- * it. Offered where the daemon takes it; on a running job or one on a question it cannot park, it says why instead.
+ * it. A park condition (issue #2890) — a pull request or an issue, a job, a time — has the hopper pick it up once it holds.
+ * Offered where the daemon takes it; on a running job or one on a question it cannot park, it says why instead.
  */
 export function ParkButton({ job }: { job: Job }) {
   const authed = useCanOperate();
   const parking = useHopper((s) => s.health?.parkingExecutors);
   const [reason, setReason] = useState('');
+  const [until, setUntil] = useState('');
   if (!authed || !parking || (job.status !== 'running' && job.status !== 'waiting_answer')) return null;
   const refused = parkRefusal(job, parking);
   if (refused) return <span data-slot="park-refusal" className="text-xs text-muted-foreground" title={`Park does not apply: ${refused}`}>cannot park: {refused}</span>;
@@ -49,7 +51,7 @@ export function ParkButton({ job }: { job: Job }) {
   const item = job.status === 'waiting_answer' && !job.questionId ? reviewKindOfJob(job) : undefined;
   const waitsOn = item ? `, and its ${REVIEW_UI[item].noun} leaves ${REVIEW_UI[item].label}: no reviewer reviews it and no one decides on it` : job.status === 'waiting_answer' ? ', and its question stays open and never expires' : '';
   return (
-    <AlertDialog onOpenChange={(open) => { if (!open) setReason(''); }}>
+    <AlertDialog onOpenChange={(open) => { if (!open) { setReason(''); setUntil(''); } }}>
       <AlertDialogTrigger asChild>
         <Button size="xs" variant="outline" aria-label={`Park ${goalOf(job)}`} title="Park: free its lane and its machine, keep its work for later"><Pause />Park</Button>
       </AlertDialogTrigger>
@@ -64,9 +66,13 @@ export function ParkButton({ job }: { job: Job }) {
           <span>Reason <span className="text-muted-foreground">(optional, shown in Parked and the job&apos;s timeline)</span></span>
           <Input data-park-reason value={reason} maxLength={500} onChange={(e) => setReason(e.target.value)} placeholder="why it waits" />
         </label>
+        <label className="space-y-1 text-sm">
+          <span>Pick up when <span className="text-muted-foreground">(optional: the hopper picks it up by itself once this holds)</span></span>
+          <Input data-park-until value={until} maxLength={200} onChange={(e) => setUntil(e.target.value)} placeholder="owner/name#6, #6, job <id> or 2026-11-02T08:00:00Z" />
+        </label>
         <AlertDialogFooter>
           <AlertDialogCancel>Keep it</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" onClick={() => act(`/ui/api/jobs/${job.id}/park`, rejectBody(reason), 'Job parked')}>Park job</AlertDialogAction>
+          <AlertDialogAction variant="destructive" onClick={() => act(`/ui/api/jobs/${job.id}/park`, { ...rejectBody(reason), ...(until.trim() ? { until: until.trim() } : {}) }, 'Job parked')}>Park job</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

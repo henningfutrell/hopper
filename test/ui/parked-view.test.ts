@@ -179,6 +179,20 @@ describe('the Parked section', () => {
     expect(daemon.posts).toEqual([{ path: '/ui/api/questions/q-night/answer', body: { answer: 'Blue.' } }]);
   });
 
+  it('a park condition (issue #2890) says what picks the job up; one the hopper could not act on says why, and Pick up stays', async () => {
+    const at = '2026-10-09T10:00:00.000Z';
+    await boot('admin', '#parked', {
+      parked: [
+        job('night', 4, 50, 'Paint the shed', parked(at, { agentSession: '22222222-2222-2222-2222-222222222222', parked: { at, from: 'running', by: 'login code', until: { kind: 'item', repo: 'octo/supersearch', number: 6 } } })),
+        job('stale', 5, 40, 'Fix the fence', parked(at, { parked: { at, from: 'running', until: { kind: 'job', jobId: 'j9' }, untilRefused: 'no agent session to resume' } })),
+      ],
+    });
+    expect(row('night').querySelector('[data-slot="parked-until"]')!.textContent).toBe('picked up by the hopper once octo/supersearch#6 closes or merges');
+    expect(row('stale').querySelector('[data-slot="parked-until"]')!.textContent)
+      .toBe('until job j9 ends: it held, but the hopper could not pick it up (no agent session to resume). Pick it up yourself.');
+    expect(buttonIn(row('night'), 'Pick up')).toBeDefined();
+  });
+
   it('shows the last checkpoint; Resume elsewhere, confirmed, picks the job up on any machine (issue #921)', async () => {
     const checkpoint = { at: '2026-10-09T11:50:00.000Z', machineId: 'desk', branch: 'hopper/9', base: 'b'.repeat(40), head: 'c'.repeat(40), commits: ['ccccccc Patch it'], bytes: 2048, session: true };
     await boot('admin', '#parked', {

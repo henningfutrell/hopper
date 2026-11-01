@@ -98,9 +98,12 @@ describe('Park on a proposal (issue #2167)', () => {
     const input = d.querySelector<HTMLInputElement>('[data-park-reason]')!;
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
     await act(async () => { setter.call(input, '  Wait for the spring.  '); input.dispatchEvent(new Event('input', { bubbles: true })); });
+    // A park condition (issue #2890): the hopper picks the job up once it holds.
+    const until = d.querySelector<HTMLInputElement>('[data-park-until]')!;
+    await act(async () => { setter.call(until, ' octo/tools#6 '); until.dispatchEvent(new Event('input', { bubbles: true })); });
     expect(daemon.posts.some((x) => x.path.endsWith('/park'))).toBe(false);
     await click(button(d, 'Park job'));
-    await vi.waitFor(() => expect(daemon.posts).toContainEqual({ path: '/ui/api/jobs/j1/park', body: { reason: 'Wait for the spring.' } }));
+    await vi.waitFor(() => expect(daemon.posts).toContainEqual({ path: '/ui/api/jobs/j1/park', body: { reason: 'Wait for the spring.', until: 'octo/tools#6' } }));
   });
 
   it('a parked proposal is out of the list, in the folded Parked group with who parked it and why, and Pick up', async () => {
