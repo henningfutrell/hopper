@@ -26,6 +26,24 @@ describe('open problems', () => {
     expect(d.hold).toEqual([{ jobId: 'j', reason: 'held by problem: Disk full on a' }]);
   });
 
+  // Issue #2897: an account at its limit is skipped; with every account at its limit the hold says so.
+  const limitOn = (m: string) => ({ id: `l-${m}`, title: `Usage or access limit on ${m}`, machineId: m, executor: 'test', limit: true as const });
+  it('an account at its limit: a new job goes to a machine on another account', () => {
+    const d = decide(inputs({ machines: [machine({ id: 'a' }), machine({ id: 'b', maxLanes: 1 })], waiting: [job('j')], problems: [limitOn('a')] }), 'd1');
+    expect(d.start.map((s) => s.machineId)).toEqual(['b']);
+  });
+
+  it('every account at its limit: held, saying so', () => {
+    const d = decide(inputs({ machines: [machine({ id: 'a' }), machine({ id: 'b' })], waiting: [job('j')], problems: [limitOn('a'), limitOn('b')] }), 'd1');
+    expect(d.start).toEqual([]);
+    expect(d.hold).toEqual([{ jobId: 'j', reason: 'held by problem: Usage or access limit on a: every account is at its usage limit' }]);
+  });
+
+  it('a job pinned to the machine at its limit is held for that problem alone', () => {
+    const d = decide(inputs({ machines: [machine({ id: 'a' }), machine({ id: 'b' })], waiting: [job('j', { machineId: 'a' })], problems: [limitOn('a')] }), 'd1');
+    expect(d.hold).toEqual([{ jobId: 'j', reason: 'held by problem: Usage or access limit on a' }]);
+  });
+
   it('a problem of one executor leaves the machine to the others', () => {
     const login = { id: 'p2', title: 'Login expired on a', machineId: 'a', executor: 'codex' };
     const d = decide(inputs({

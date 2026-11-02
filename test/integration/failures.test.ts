@@ -335,3 +335,48 @@ describe('every failed job is processed', () => {
     expect((await failuresOf(a)).counts).toEqual({ failed: 0, needsPerson: 0 });
   });
 });
+
+// Issue #2897: an account's limit, end to end. Every hit folds into one problem whatever the prompt says; the job does not
+// wait for its timeout; a new job is held saying every account is at its limit; at the reset time the problem resolves
+// by itself and the jobs go on.
+describe('a limit prompt', () => {
+  const limit = (prompt: string) => fail(`usage or access limit (usage): the agent stopped at: ${prompt}`);
+
+  it('one problem for its account, the job held with the limit reason, and released at the reset time', async () => {
+    const a = await boot();
+    const resets = new Date(Date.now() + 6000).toISOString();
+    const first = await a.pull(limit(`You've hit your limit · resets at ${resets}`));
+    const second = await a.pull(limit(`Weekly limit reached · resets at ${resets}`));
+    for (const j of [first, second]) await a.waitForStatus(j.id, 'failed');
+    const problem = await waitFor(async () => {
+      const open = (await failuresOf(a)).problems.filter((p) => p.status === 'open');
+      return open.length === 1 && open[0]!.jobIds.length === 2 ? open[0] : undefined;
+    }, { what: 'one open problem with both jobs' });
+    expect(problem).toMatchObject({ title: expect.stringMatching(/^Usage or access limit on /), causeId: 'agent-limit', limit: { family: 'usage', resetsAt: resets, resetNamed: true } });
+    expect(problem.limit!.laneId).toBeDefined();
+    expect(problem.limit!.prompt).toMatch(/limit/);
+    expect((await assessedOf(a, first.id)).data).toMatchObject({ causeId: 'agent-limit', class: 'shared', decision: 'redirect' });
+    expect((await a.job(first.id)).error).toMatch(/^usage or access limit \(usage\)/);
+
+    const queued = await a.pull({ op: 'echo', message: 'hi' });
+    expect((await a.waitForStatus(queued.id, 'held')).holdReason).toBe(`held by problem: ${problem.title}: every account is at its usage limit`);
+    const view = (await failuresOf(a)).problems[0]!;
+    expect(view.limitDid).toHaveLength(2);
+
+    await a.waitForStatus(queued.id, 'finished');
+    const resolved = (await failuresOf(a)).problems.find((p) => p.id === problem.id)!;
+    expect(resolved).toMatchObject({ status: 'resolved', resolvedBy: 'check' });
+    expect(Date.now()).toBeGreaterThanOrEqual(Date.parse(resets));
+  }, 30_000);
+
+  it('a prompt that names no time: the account is skipped for a while, and a person may resolve it', async () => {
+    const a = await boot();
+    const token = await a.login();
+    const job = await a.pull(fail('usage or access limit (access): the agent stopped at: Ask your admin to enable access'));
+    await a.waitForStatus(job.id, 'failed');
+    const problem = await waitFor(async () => (await failuresOf(a)).problems.find((p) => p.status === 'open'));
+    expect(problem.limit).toMatchObject({ family: 'access', resetNamed: false });
+    expect(Date.parse(problem.limit!.resetsAt)).toBeGreaterThan(Date.now() + 3_000_000);
+    expect((await a.ui(`/ui/api/failures/problems/${problem.id}/resolve`, {}, { token })).status).toBe(200);
+  });
+});
