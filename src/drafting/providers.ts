@@ -30,6 +30,7 @@ export const CLAUDE_DEFAULT_MODEL = 'opus';
  * opencode's lockdown (opencode 2, issue #2862), in its environment: every tool's permission denied
  * (`OPENCODE_CONFIG_CONTENT`, the config opencode reads last, so it wins over the user's own), no project config, no
  * Claude Code prompt or skills read, no update check. opencode 2 has no switch that leaves plugins out (1.x's `--pure`).
+ * opencode 2.2 offers its `skill` tool even so; its call is refused (`Permission denied: skill`, test/acceptance/draft-opencode.test.ts).
  */
 export const OPENCODE_LOCKDOWN: Readonly<Record<string, string>> = {
   OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: { '*': 'deny' } }),

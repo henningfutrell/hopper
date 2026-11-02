@@ -6,6 +6,7 @@
 // says so (src/failures/causes.ts `resource-limit`), and the job runs again.
 import type { ExecutionContext } from '../../domain/ports.ts';
 import { scopeUnitOf } from '../../client/reap.ts';
+import { limitFailure, limitPromptIn } from '../../domain/limit-prompts.ts';
 import { awaitOnScreen, type PaneWaitDeps } from './pane-wait.ts';
 
 /** What the exit code command prints, followed by the code. */
@@ -66,6 +67,9 @@ export async function exitedError(d: PaneWaitDeps, ctx: ExecutionContext, paneId
     kills = (await awaitOnScreen(d, ctx, paneId, OOM_KILLS_MARK, oomKillsOf, EXIT_CODE_WAIT_MS)).found;
   } catch { /* the pane is gone: no code */ }
   const said = screen === undefined ? '(the pane could not be read)' : claudeSaid(screen) || '(it printed nothing)';
+  // It exited at a limit of its account (issue #2897): that is the failure, not the exit.
+  const atLimit = limitPromptIn(said.split('\n'));
+  if (atLimit) return limitFailure(atLimit);
   const when = atStart === 'startup' ? ' at startup' : atStart === 'new-session' ? ' at the start of a new session, before any output' : '';
   const limit = kills ? ` at a resource limit: the kernel's OOM killer stopped ${kills} process${kills === 1 ? '' : 'es'} in the job's scope` : '';
   return `claude exited${when} (${codeText(code)})${limit}: ${said}`;

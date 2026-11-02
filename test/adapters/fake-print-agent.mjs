@@ -136,6 +136,10 @@ else if (kind === 'codex') {
   process.exit(2);
 }
 
+if (mode === 'limit-prompt') { // Issue #2897.
+  process.stderr.write("You've hit your limit · resets 3pm (UTC)\n");
+  process.exit(1);
+}
 if (mode === 'permission-prompt') {
   // The prompt waits on a terminal; stdin is no terminal and is already at its end, so the CLI gives up.
   process.stdout.write(`${PROMPT} `);

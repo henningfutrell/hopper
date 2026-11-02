@@ -12,6 +12,7 @@ import { REAL_AGENTS, realBin } from '../support/real-agents.ts';
 const HERE: MachineSnapshot = { id: 'local', label: 'local', maxLanes: 1, online: true, executors: [] };
 const DRAFT = { title: 'Export button does nothing', body: '## Summary\n\nThe export button does nothing.', notes: 'rephrased' };
 const TURN_MS = 90_000;
+const CANARY = 'skill-text-the-draft-must-not-read';
 const bin = realBin('opencode');
 const opencode = REAL_AGENTS.find((a) => a.agent === 'opencode')!;
 
@@ -27,6 +28,11 @@ beforeAll(async () => {
   const dir = join(process.env.XDG_CONFIG_HOME!, 'opencode');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'opencode.json'), JSON.stringify({ ...config, permission: { '*': 'allow' } }));
+  // A skill of the user's: its text must not reach the draft's turn, though opencode 2.2 offers its skill tool even when denied.
+  for (const skills of ['skill', 'skills']) {
+    mkdirSync(join(dir, skills, 'canary'), { recursive: true });
+    writeFileSync(join(dir, skills, 'canary', 'SKILL.md'), `---\nname: canary\ndescription: a test skill\n---\n${CANARY}\n`);
+  }
   const { OPENCODE_CONFIG_CONTENT: _content, ...env } = opencode.env(server.url);
   Object.assign(process.env, env);
 });
@@ -40,18 +46,23 @@ const host: DraftHost = { machine: async (id) => (id === HERE.id ? HERE : undefi
 describe('a draft on the real opencode CLI', () => {
   it.skipIf(!bin)('returns the draft, and a tool call in its turn is refused', async () => {
     const file = join(process.env.HOME!, 'pwned.txt');
-    server.script([opencode.write(file, 'pwned'), { text: JSON.stringify(DRAFT) }]);
+    server.script([opencode.write(file, 'pwned'), { tool: { name: 'skill', input: { id: 'canary' } } }, { text: JSON.stringify(DRAFT) }]);
     const from = server.requests.length;
     const r = await draftOn(host, { provider: 'opencode', machine: 'local', bin: bin!, model: opencode.model, timeoutMs: TURN_MS },
       { repo: 'acme/widgets', text: 'The export button does nothing.' }, { repos: ['acme/widgets'] }, new AbortController().signal);
     expect(r).toMatchObject({ draft: DRAFT });
     expect(existsSync(file)).toBe(false);
-    // The model was told the tool call was refused: its result, an error, came back in the next request. Locked down,
-    // opencode offers no tool at all, so the call names one it does not have.
+    // The model was told each tool call was refused: its result, an error, came back in the next request. Locked down,
+    // opencode offers no tool that acts, so the shell call names one it does not have. opencode 2.2.5 offers its skill tool
+    // whatever the config says: its call is refused too, and the skill's text never comes back.
     const outputs = server.requests.slice(from).flatMap((q) => (Array.isArray(q.body.input) ? q.body.input as Record<string, unknown>[] : []))
       .filter((i) => i.type === 'function_call_output').map((i) => String(i.output));
-    expect(outputs).toEqual([expect.stringMatching(/"error".*No tool named \\"shell\\" is currently available/)]);
-    expect(server.requests.filter((q) => q.step).every((q) => !Array.isArray(q.body.tools) || q.body.tools.length === 0)).toBe(true);
+    expect(outputs.find((o) => o.includes('shell'))).toMatch(/"error".*No tool named \\"shell\\" is currently available/);
+    expect(outputs.length).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(server.requests.slice(from).map((q) => q.body))).not.toContain(CANARY);
+    const offered = server.requests.filter((q) => q.step).flatMap((q) => (Array.isArray(q.body.tools) ? q.body.tools as { name?: string }[] : [])).map((t) => t.name);
+    expect(offered.filter((t) => t !== 'skill')).toEqual([]);
+    if (offered.includes('skill')) expect(outputs.at(-1)).toMatch(/Permission denied: skill/);
     expect(server.left()).toBe(0);
   }, TURN_MS * 2);
 });

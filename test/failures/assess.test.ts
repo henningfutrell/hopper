@@ -24,6 +24,27 @@ describe('backoffMs', () => {
 });
 
 describe('assess', () => {
+  // Issue #2897: an account at its limit, at the first job it stops: its machine's agent, redirected.
+  const LIMIT = 'usage or access limit (usage): the agent stopped at: You\'ve hit your limit · resets 3pm (UTC)';
+  it('a limit prompt opens one problem on the agent of the machine, and the job goes elsewhere', () => {
+    const a = assess(input(LIMIT));
+    expect(a).toMatchObject({ cls: 'shared', decision: 'redirect', auto: true });
+    expect(a.problem).toEqual({ kind: 'open', title: 'Usage or access limit on desk', scope: { machineId: 'desk', executor: 'herdr-claude' }, general: false, decision: 'redirect', causeId: 'agent-limit' });
+  });
+
+  it('a limit prompt beats the words it quotes, and a job pinned to the machine is held', () => {
+    expect(matchCause('usage or access limit (rate): the agent stopped at: API Error: Rate limit reached', '', [])?.id).toBe('agent-limit');
+    expect(assess(input(LIMIT, { job: { executor: 'herdr-claude', machineId: 'desk', pinned: true } })).decision).toBe('hold');
+  });
+
+  it('a limit prompt again on the same item is not "the same failure twice": its problem holds it', () => {
+    expect(assess(input(LIMIT, { repeated: true }))).toMatchObject({ decision: 'redirect' });
+  });
+
+  it('a job quoting the prompt in its own failure is no limit', () => {
+    expect(matchCause("HOPPER_FAILED usage or access limit: You've hit your limit", '', [])?.id).not.toBe('agent-limit');
+  });
+
   it('transient: retried with backoff while under the limit', () => {
     const a = assess(input('interrupted by daemon restart', { attempt: 2 }, { backoffSec: 10, backoffFactor: 3, maxAttempts: 3 }));
     expect(a).toMatchObject({ cls: 'transient', decision: 'retry', auto: true, retryInMs: 30_000 });

@@ -63,8 +63,8 @@ const SPINNER_VARIANT = /^\s*[·*•∗]\s+\S.*…\s*\(\d+[hms]\b/;
 const BACKGROUND_HINT = /^\s*\(ctrl\+b to run in background\)\s*$/;
 /** The elapsed timer under a running Bash call: "(12s)", "(1m 5s)". */
 const ELAPSED_TIMER = /^\s*\((\d+[hms]\s*)+\)\s*$/;
-const SEPARATOR = /^\s*─{3,}/;
-const USER_ECHO = /^\s*❯/;
+export const SEPARATOR = /^\s*─{3,}/;
+export const USER_ECHO = /^\s*❯/;
 const ASSISTANT_START = /^\s*●/;
 
 const compact = (s: string): string => s.replace(/\s+/g, '');
@@ -135,7 +135,7 @@ function inUserEcho(lines: string[], index: number): boolean {
 }
 
 /** Index of the line holding the end of the anchor's last echoed occurrence, or -1. */
-function anchorLine(lines: string[], anchor: string): number {
+export function anchorLine(lines: string[], anchor: string): number {
   const needle = compact(anchor);
   if (!needle) return -1;
   let text = '';
@@ -197,7 +197,7 @@ export function isScrolledUp(text: string): boolean {
   return NEW_MESSAGES_LINE.test(text);
 }
 
-function isChrome(line: string): boolean {
+export function isChrome(line: string): boolean {
   return STATUS_LINE.test(line) || USER_ECHO.test(line) || /^\s*⏵/.test(line) || EFFORT_LINE.test(line) || TIP_LINE.test(line) || NEW_MESSAGES_LINE.test(line)
     || SPINNER_VARIANT.test(line) || BACKGROUND_HINT.test(line) || ELAPSED_TIMER.test(line) || UPDATE_NOTICE.test(line);
 }
@@ -209,7 +209,7 @@ const isSpinner = (line: string): boolean => STATUS_LINE.test(line) || SPINNER_V
  * rule (a dialog's top), else the end. A rule inside the agent's own words — a Markdown rule or table drawn with ─ — is
  * part of the transcript, so a marker after it is still read.
  */
-function transcriptEnd(lines: string[]): number {
+export function transcriptEnd(lines: string[]): number {
   const last = lines.findLastIndex((l) => SEPARATOR.test(l));
   if (last < 0) return lines.length;
   const above = lines.findLastIndex((l, i) => i < last && SEPARATOR.test(l));
