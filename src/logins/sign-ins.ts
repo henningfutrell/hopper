@@ -1,8 +1,9 @@
 // Tool sign-ins (issue #1128, design.md "Tool sign-in"): a person signs a machine's agent tool in again from the hopper, with no
 // terminal there. The usage source that reads the tool on that machine starts its sign-in (`UsageSource.signIn`); the sign-in is
 // a login of kind `paste_code` on that machine, with no job: the person opens its URL, signs in, and pastes the code the page
-// shows, which goes to the tool. The tool's end completes or fails the login. One sign-in per machine and tool: a new one cancels
-// the one before. What runs on the machine is held in this process only: after a restart its login fails, and is started again.
+// shows, which goes to the tool. The tool's end completes or fails the login. One sign-in per machine and tool (issue #2898): asked
+// again while one waits, the answer is that one; one that cannot go on (expired or about to, another account, on another host) is
+// superseded by the new one; a unique index in the database holds it across hosts. What runs on the machine is held in this process only: after a restart its login fails, and is started again.
 // On two hosts on one database (issue #1627) the login names the host that runs it: another host leaves it alone while that
 // host lives, and fails it once that host stopped.
 // The hopper's Claude sign-in for pods (issue #1287, design.md "The hopper's Claude sign-in for pods") is one more: `claude
@@ -35,8 +36,11 @@ export interface SignIns {
 
 const OPEN = new Set(['pending', 'expired']);
 
-/** A sign-in that runs: a tool's on a machine, or the hopper's setup token, on none. */
-type Run = Omit<ToolSignIn, 'machineId'> & { machineId?: string };
+/** A sign-in with less time than this to go is not worth a person's start: a new one supersedes it. */
+const REUSE_MIN_LEFT_MS = 2 * 60_000;
+
+/** A sign-in that runs: a tool's on a machine, or the hopper's setup token, on none; `account`: the account it was asked for. */
+type Run = Omit<ToolSignIn, 'machineId'> & { machineId?: string; account?: string };
 
 export function createSignIns(o: {
   logins: Logins; sources: () => readonly UsageSource[]; clock: Clock; sweepMs?: number;
@@ -55,26 +59,54 @@ export function createSignIns(o: {
   const runs = new Map<string, Run>();
   /** The sign-ins given their code, until the tool ends. */
   const pasting = new Set<string>();
-  const isOpen = (l: Login | undefined): l is Login => l !== undefined && OPEN.has(l.status);
 
-  /** Its login, the sign-in before on its machine and tool cancelled (one per machine and tool). */
-  const open = (run: Run, account?: string): SignInStart => {
-    for (const [id, had] of runs) {
-      if (had.machineId !== run.machineId || had.tool !== run.tool) continue;
-      runs.delete(id);
-      had.cancel();
-      if (isOpen(logins.get(id))) logins.cancel(id);
+  /** The sign-ins being started now, by machine and tool: two asks at one moment are one start. */
+  const starting = new Map<string, Promise<SignInStart>>();
+  const startOnce = (key: string, go: () => Promise<SignInStart>): Promise<SignInStart> => {
+    const had = starting.get(key);
+    if (had) return had;
+    const start = go().finally(() => starting.delete(key));
+    starting.set(key, start);
+    return start;
+  };
+
+  /** The open sign-in logins of a machine and tool. */
+  const openOn = (machineId: string | undefined, tool: string): Login[] =>
+    logins.list({ status: ['pending', 'expired'] }).filter((l) => l.run === SIGN_IN_RUN && !l.jobId && !l.questionId && l.tool === tool && l.machineId === machineId);
+
+  /** The sign-in that waits there and that this host can go on with, for `account` when it names one. */
+  const reusable = (machineId: string | undefined, tool: string, account: string | undefined): Login | undefined => {
+    const l = openOn(machineId, tool).find((x) => x.status === 'pending');
+    if (!l) return undefined;
+    if (pasting.has(l.id)) return l;
+    const run = runs.get(l.id);
+    if (!run || Date.parse(l.expiresAt) - o.clock.now().getTime() < REUSE_MIN_LEFT_MS) return undefined;
+    return account === undefined || run.account === account ? l : undefined;
+  };
+
+  /** The login of a run that started: the one that waits if there is one (the run stopped), else a new one that supersedes the ones before. */
+  const open = (run: Run, shownAccount?: string): SignInStart => {
+    const waiting = reusable(run.machineId, run.tool, run.account);
+    if (waiting) {
+      run.cancel();
+      return { ok: true, login: waiting };
     }
+    const replaced = openOn(run.machineId, run.tool);
     const expiresAt = new Date(o.clock.now().getTime() + SIGN_IN_LIFE_MS).toISOString();
-    let login: Login;
+    let opened: { login: Login; opened: boolean };
     try {
-      login = logins.report({ kind: 'paste_code', tool: run.tool, verificationUrl: run.url, expiresAt, ...(account ? { account } : {}) }, { ...(run.machineId ? { machineId: run.machineId } : {}), run: SIGN_IN_RUN, renewable: false, ...(o.hosts ? { hostOwner: o.hosts.owner } : {}) });
+      opened = logins.openSignIn({ kind: 'paste_code', tool: run.tool, verificationUrl: run.url, expiresAt, ...(shownAccount ? { account: shownAccount } : {}) }, { ...(run.machineId ? { machineId: run.machineId } : {}), run: SIGN_IN_RUN, renewable: false, ...(o.hosts ? { hostOwner: o.hosts.owner } : {}) }, replaced);
     } catch (e) {
       run.cancel();
       return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
     }
-    runs.set(login.id, run);
-    return { ok: true, login };
+    for (const l of replaced) {
+      runs.get(l.id)?.cancel();
+      runs.delete(l.id);
+    }
+    if (opened.opened) runs.set(opened.login.id, run);
+    else run.cancel();
+    return { ok: true, login: opened.login };
   };
 
   const signIns: SignIns = {
@@ -82,38 +114,61 @@ export function createSignIns(o: {
       const source = o.sources().find((s) => s.name === name);
       if (!source) return { ok: false, reason: 'not_found', message: `usage source ${name} not found` };
       if (!source.signIn) return { ok: false, reason: 'no_sign_in', message: `usage source ${name} cannot start its tool's sign-in` };
-      let run: ToolSignIn;
+      const signIn = source.signIn.bind(source);
+      let key = `source ${name}`;
       try {
-        run = await source.signIn(x.email ? { email: x.email } : {});
+        const target = await source.signInTarget?.();
+        if (target) {
+          const waiting = reusable(target.machineId, target.tool, x.email);
+          if (waiting) return { ok: true, login: waiting };
+          key = `${target.machineId} ${target.tool}`;
+        }
       } catch (e) {
         return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
       }
-      return open(run);
+      return startOnce(key, async () => {
+        let run: ToolSignIn;
+        try {
+          run = await signIn(x.email ? { email: x.email } : {});
+        } catch (e) {
+          return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
+        }
+        return open(x.email ? { ...run, account: x.email } : run);
+      });
     },
 
     async startSetupToken({ account, by }) {
       const setup = o.setupToken;
       if (!setup) return { ok: false, reason: 'no_sign_in', message: 'this hopper cannot run claude setup-token' };
-      let started: SetupTokenRun;
-      try {
-        started = await setup.start({ account, by });
-      } catch (e) {
-        return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
-      }
-      return open({
-        tool: SETUP_TOKEN_TOOL, url: started.url, cancel: () => started.cancel(),
-        async paste(code) {
-          const end = await started.paste(code);
-          return end.ok ? { ok: true } : end;
-        },
-      }, account);
+      const waiting = reusable(undefined, SETUP_TOKEN_TOOL, account);
+      if (waiting) return { ok: true, login: waiting };
+      return startOnce(` ${SETUP_TOKEN_TOOL}`, async () => {
+        let started: SetupTokenRun;
+        try {
+          started = await setup.start({ account, by });
+        } catch (e) {
+          return { ok: false, reason: 'not_started', message: `the sign-in did not start: ${e instanceof Error ? e.message : String(e)}` };
+        }
+        return open({
+          tool: SETUP_TOKEN_TOOL, url: started.url, account, cancel: () => started.cancel(),
+          async paste(code) {
+            const end = await started.paste(code);
+            return end.ok ? { ok: true } : end;
+          },
+        }, account);
+      });
     },
 
     async paste(id, code) {
       const login = logins.get(id);
       if (!login) return { ok: false, reason: 'not_found', message: `login ${id} not found` };
+      const ended = (message: string): SignInPaste => ({ ok: false, reason: 'ended', message });
+      if (login.kind !== 'paste_code' || login.run !== SIGN_IN_RUN) return ended('this login takes no code here');
+      if (login.supersededBy) return ended('this sign-in was replaced; use the current card');
+      if (pasting.has(id)) return ended('this sign-in has its code already: wait for its answer');
+      if (!OPEN.has(login.status)) return ended(`this sign-in is ${login.status}: start it again`);
       const run = runs.get(id);
-      if (!run || !isOpen(login)) return { ok: false, reason: 'ended', message: `login ${id} is not a sign-in that waits for its code` };
+      if (!run) return ended('this hopper does not hold this sign-in (another host runs it, or it restarted): start it again');
       const problem = codeProblem(code);
       if (problem) return { ok: false, reason: 'bad_code', message: problem };
       runs.delete(id);

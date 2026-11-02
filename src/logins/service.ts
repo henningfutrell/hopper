@@ -30,6 +30,11 @@ export interface Logins {
    * updates it —, never a duplicate. Throws on a report its kind refuses.
    */
   report(report: LoginReport, blocks: LoginBlocks, restore?: boolean): Login;
+  /**
+   * Open a tool sign-in's login (issue #2898), in one transaction: each of `replaced` ends superseded by it, and the database lets
+   * one wait per machine and tool. `opened: false`: another host's opened first, and `login` is that one. Throws as `report` does.
+   */
+  openSignIn(report: LoginReport, blocks: LoginBlocks, replaced: readonly Login[]): { login: Login; opened: boolean };
   /** What the run waiting on login `id` does next; a new-code request or a cancel is answered once, then `ended` once it is. */
   check(id: string): LoginCheck;
   /** The login went through: a login signal, or a print-mode run that succeeded (issue #567). */
@@ -176,6 +181,27 @@ export function createLogins(o: LoginsOptions): Logins {
         secrets.set(l.id, secret);
         emit('auth.pending', l, { host, expiresAt: l.expiresAt, ...(l.intervalSec ? { intervalSec: l.intervalSec } : {}), run: l.run, ...(l.questionId ? { questionId: l.questionId } : {}), ...tagOf(l) });
         return l;
+      });
+    },
+
+    openSignIn(r, blocks, replaced) {
+      const problem = LOGIN_KIND_HANDLERS[r.kind].problem(r);
+      if (problem) throw new Error(problem);
+      return store.tx(() => {
+        // Out of the index first: the new one's row goes in beside it, and each names the new one after.
+        for (const l of replaced) store.logins.update(l.id, { status: 'cancelled', endedAt: now(), newCodeAskedAt: undefined });
+        const made = store.logins.createSignIn({ ...blocks, kind: r.kind, tool: r.tool, expiresAt: r.expiresAt });
+        const login = made ?? store.logins.list({ status: ['pending'] }).find((l) => l.run === blocks.run && !l.jobId && !l.questionId && l.tool === r.tool && l.machineId === blocks.machineId);
+        if (!login) throw new Error(`no ${r.tool} sign-in could open`);
+        for (const l of replaced) {
+          secrets.delete(l.id);
+          emit('auth.cancelled', store.logins.update(l.id, { supersededBy: login.id }), { by: 'superseded', supersededBy: login.id });
+        }
+        if (made) {
+          secrets.set(made.id, { verificationUrl: r.verificationUrl, ...(r.account ? { account: r.account } : {}) });
+          emit('auth.pending', made, { host: hostOf(r.verificationUrl), expiresAt: made.expiresAt, run: made.run, ...tagOf(made) });
+        }
+        return { login, opened: made !== undefined };
       });
     },
 

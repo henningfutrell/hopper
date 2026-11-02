@@ -241,7 +241,7 @@ export const EVENT_SCHEMAS = {
   'auth.completed': strict({ ...login, by: z.enum(['requester']).optional() }),
   // `renewing` (issue #1016): the job was asked for a new code by itself (`onExpiry: renew`).
   'auth.expired': strict({ ...login, expiresAt: z.iso.datetime(), renewing: z.boolean().optional() }),
-  'auth.cancelled': strict({ ...login, by: z.enum(['user']) }), 'auth.failed': strict({ ...login, reason: z.string().min(1), by: z.enum(['requester']).optional() }),
+  'auth.cancelled': strict({ ...login, by: z.enum(['user', 'superseded']), supersededBy: z.string().optional() }), 'auth.failed': strict({ ...login, reason: z.string().min(1), by: z.enum(['requester']).optional() }),
   // Issue #1110: `by: requester`, the job that asked said so; reopened, a completed login it says does not work; dismissed, put away.
   'auth.reopened': strict({ ...login, reason: z.string().min(1) }), 'auth.dismissed': strict({ ...login, by: z.enum(['user']) }),
   // The failure assessor (issue #509): its judgement of a failed job, and the problems it groups shared causes into.

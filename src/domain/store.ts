@@ -171,7 +171,8 @@ export interface ReviewItemRepository {
 
 /** Logins (issue #476): what the hopper keeps of each, never its URL or code. */
 export interface LoginRepository {
-  create(input: Omit<Login, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Login;
+  /** `createSignIn`: a tool sign-in's; undefined when one of its machine and tool already waits (issue #2898: a unique index). */
+  create(input: Omit<Login, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Login; createSignIn(input: Omit<Login, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Login | undefined;
   get(id: string): Login | undefined;
   /** Newest first. */
   list(filter?: { status?: LoginStatus[]; jobId?: JobId; questionId?: string; limit?: number }): Login[];
