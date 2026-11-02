@@ -5845,8 +5845,8 @@ naming the account.
   a box action, `run a command`). The hopper runs `claude setup-token` (`setupTokenSignIn`, `src/logins/setup-token.ts`) and
   opens a `paste_code` **login** on no machine, `tool` `claude setup-token`, `run` `sign-in`, which names the account
   (`account`, in memory with the URL, answered only to a UI session of the user, as any login's). The CLI cannot be told the
-  account (`setup-token` takes no `--email`): the person signs in as the account the card names. A new one cancels the one
-  before (one per machine and tool; this one is on none).
+  account (`setup-token` takes no `--email`): the person signs in as the account the card names. Asked again for that account while one waits, it is that one;
+  another account supersedes it (issue #2898: one per machine and tool; this one is on none).
 - **In a pseudo-terminal.** `setup-token` prints nothing without a terminal and waits. The hopper runs it under util-linux
   `script` (`script -qfec`, in the image as Debian's essential `bsdutils`), 500 columns wide so the token is on one line.
   The URL is the target of the terminal link it prints (OSC 8), whose visible text the terminal's width cuts; the code is
