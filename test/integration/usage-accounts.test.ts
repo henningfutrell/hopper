@@ -219,7 +219,7 @@ describe('tool sign-in (issue #1128)', () => {
     await a.waitForStatus(job.id, 'finished');
   });
 
-  it('a wrong code fails the login with the tool\'s reason; a new sign-in cancels the one before; a code to an ended one is 409', async () => {
+  it('a wrong code fails the login with the tool\'s reason; a sign-in asked again is the one that waits; a code to an ended one is 409', async () => {
     writeFileSync(join(control, 'mode'), 'logged-out');
     const a = await boot({ plugins: { usageSources: [{ name: 'claude', plugin: 'claude-plan', options: { machine: 'local', bin: FAKE_CLAUDE } }] } });
     const token = await a.login();
@@ -230,7 +230,8 @@ describe('tool sign-in (issue #1128)', () => {
 
     const second = await pendingSignIn(a, token);
     const third = await pendingSignIn(a, token);
-    expect(a.user().store.logins.get(second.id)!.status).toBe('cancelled');
+    expect(third.id).toBe(second.id);
+    expect(a.user().store.logins.get(second.id)!.status).toBe('pending');
     expect((await a.ui(`/ui/api/logins/${third.id}/code`, { code: 'a b' }, { token })).status).toBe(400);
     expect((await a.ui('/ui/api/tool-accounts/sign-in', { source: 'nope' }, { token })).status).toBe(404);
     expect((await a.ui('/ui/api/tool-accounts/sign-in', { source: 'claude', email: 'not an email' }, { token })).status).toBe(400);
