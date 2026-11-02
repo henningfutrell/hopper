@@ -111,14 +111,17 @@ describe('the hopper\'s Claude sign-in for pods (issue #1287)', () => {
     expect(await b.user().vault.podCredential({ name: 'CLAUDE_TOKEN', pod: 'hopper-job-1' })).toEqual({ name: 'CLAUDE_TOKEN', value: TOKEN });
   });
 
-  it('the account must be an email; a new sign-in cancels the one before; only an admin starts one', async () => {
+  it('the account must be an email; asked again for the account it is the one that waits, for another it is superseded (issue #2898); only an admin starts one', async () => {
     const a = await boot();
     const token = await a.login();
     expect((await a.ui(START, {}, { token })).status).toBe(400);
     expect((await a.ui(START, { account: '--help' }, { token })).status).toBe(400);
     const first = (await a.ui<LoginView>(START, { account: 'one@example.com' }, { token })).body;
-    await a.ui<LoginView>(START, { account: 'one@example.com' }, { token });
-    expect((await read(a, first.id, token)).status).toBe('cancelled');
+    expect((await a.ui<LoginView>(START, { account: 'one@example.com' }, { token })).body.id).toBe(first.id);
+    expect((await read(a, first.id, token)).status).toBe('pending');
+    const other = (await a.ui<LoginView>(START, { account: 'two@example.com' }, { token })).body;
+    expect(other.id).not.toBe(first.id);
+    expect(await read(a, first.id, token)).toMatchObject({ status: 'cancelled', supersededBy: other.id });
     expect((await a.ui(START, { account: 'one@example.com' })).status).toBe(403);
   });
 });

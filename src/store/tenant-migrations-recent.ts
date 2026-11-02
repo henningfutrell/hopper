@@ -228,4 +228,14 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 107: The item grades (issue #2845 part 5): each ended work item's automatic grade, and every user grade a person gave an
   // item. Tables only: the build before runs on them, and never reads them.
   ITEM_GRADE_TABLES,
+  // 108: One waiting tool sign-in per machine and tool (issue #2898): the older of any that wait now are cancelled, each naming
+  // the newest, and a unique index keeps it so across hosts. The build before runs on it: its own start cancels the sign-in it
+  // runs first, and one the index refuses it answers as a sign-in that did not start.
+  `UPDATE logins AS l SET status = 'cancelled', body = (l.body::jsonb || jsonb_build_object('status', 'cancelled', 'endedAt', l.created_at, 'supersededBy', n.id))::text
+    FROM (SELECT seq, FIRST_VALUE(id) OVER w AS id, ROW_NUMBER() OVER w AS nth FROM logins
+      WHERE status = 'pending' AND body::jsonb->>'run' = 'sign-in'
+      WINDOW w AS (PARTITION BY COALESCE(body::jsonb->>'machineId', ''), body::jsonb->>'tool' ORDER BY seq DESC)) AS n
+    WHERE l.seq = n.seq AND n.nth > 1;
+  CREATE UNIQUE INDEX logins_one_waiting_sign_in ON logins (COALESCE((body::jsonb->>'machineId'), ''), (body::jsonb->>'tool'))
+    WHERE status = 'pending' AND (body::jsonb->>'run') = 'sign-in'`,
 ];

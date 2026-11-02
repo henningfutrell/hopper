@@ -27,6 +27,7 @@ export function LoginHistory({ logins }: { logins: LoginView[] }) {
               <span className="font-mono">{l.tool}</span>
               <RaisedOn raisedBy={l.machineId ? { machineId: l.machineId, ...(name ? { name } : {}) } : undefined} className="text-xs text-muted-foreground" />
               <StatusBadge status={l.status} tone={TONE[l.status] ?? toneOf(l.status)} />
+              {l.supersededBy && <span className="min-w-0 truncate text-xs text-muted-foreground">Replaced by a new sign-in</span>}
               {l.reason && <span className="min-w-0 truncate text-xs text-muted-foreground" title={l.reason}>{l.reason}</span>}
               <span className="num ml-auto text-xs text-muted-foreground">{clock(l.endedAt ?? l.expiresAt)}</span>
             </li>

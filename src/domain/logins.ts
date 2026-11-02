@@ -85,6 +85,8 @@ export interface Login extends LoginBlocks {
   reason?: string;
   /** When the user last asked for a new code, while it is answered. */
   newCodeAskedAt?: string;
+  /** The tool sign-in that replaced this one (issue #2898): this one ended `cancelled`, and its card is gone. */
+  supersededBy?: string;
   createdAt: string;
   updatedAt: string;
   endedAt?: string;

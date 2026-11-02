@@ -68,11 +68,12 @@ export function sortByTimeLeft(logins: LoginView[], now: number, settings: Login
 /**
  * On a card: every login the server still has pending (a reopened one too, issue #1110), an expired one waiting for a
  * new code (`onExpiry` renew or hold, a run that can ask), and any other but a resolved one — completed or dismissed,
- * which goes at once (issue #1110) — for `ENDED_ON_CARD_MS` after it ended or expired. The rest are the history.
+ * which goes at once (issue #1110) — for `ENDED_ON_CARD_MS` after it ended or expired. The rest are the history. A superseded
+ * sign-in goes at once too (issue #2898): one card per machine.
  */
 export function onCard(l: LoginView, now: number, settings: LoginSettings): boolean {
   if (l.status === 'pending') return true;
-  if (l.status === 'completed' || l.status === 'dismissed') return false;
+  if (l.status === 'completed' || l.status === 'dismissed' || l.supersededBy) return false;
   if (l.status === 'expired' && settings.onExpiry !== 'fail' && l.renewable) return true;
   return now - Date.parse(l.endedAt ?? l.expiresAt) < ENDED_ON_CARD_MS;
 }

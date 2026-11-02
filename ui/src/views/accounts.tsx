@@ -25,7 +25,7 @@ function SignIn({ m }: { m: ToolAccountMachine }) {
   const [busy, setBusy] = useState(false);
   const start = async () => {
     setBusy(true);
-    const r = await actFor('/ui/api/tool-accounts/sign-in', { source: m.source }, `Sign-in started on ${m.label}: open it in Logins`);
+    const r = await actFor('/ui/api/tool-accounts/sign-in', { source: m.source }, `Sign-in waits on ${m.label}: open it in Logins`);
     setBusy(false);
     if (!r.ok) return;
     await refreshLogins().catch(() => {});

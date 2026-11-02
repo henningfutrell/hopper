@@ -91,6 +91,7 @@ describe('the logins together', () => {
   it('an ended login stays on a card a short while, then goes to the history; an expired one held for a new code stays', () => {
     const done = login({ status: 'failed', endedAt: at(10) });
     expect(onCard(done, T0 + 10_000, SETTINGS)).toBe(true);
+    expect(onCard({ ...done, supersededBy: 'l2' }, T0 + 10_000, SETTINGS)).toBe(false); // issue #2898: one card per machine
     expect(onCard(done, T0 + 10_000 + ENDED_ON_CARD_MS, SETTINGS)).toBe(false);
     const expired = login({ status: 'expired' }, 60);
     expect(onCard(expired, T0 + 60_000 + ENDED_ON_CARD_MS - 1, SETTINGS)).toBe(true);

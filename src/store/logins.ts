@@ -7,14 +7,16 @@ export function createLoginRepository(c: StoreContext): LoginRepository {
     const r = c.db.get('SELECT body FROM logins WHERE id = ?', id);
     return r ? parse<Login>(r.body) : undefined;
   };
+  const insert = (input: Parameters<LoginRepository['create']>[0], onConflict: string): Login | undefined => {
+    const at = c.clock.now().toISOString();
+    const l: Login = { id: c.idGen(), ...input, status: 'pending', createdAt: at, updatedAt: at };
+    const { changes } = c.db.run(`INSERT INTO logins (id, job_id, question_id, status, created_at, body) VALUES (?, ?, ?, ?, ?, ?)${onConflict}`,
+      l.id, l.jobId ?? null, l.questionId ?? null, l.status, at, JSON.stringify(l));
+    return changes > 0 ? l : undefined;
+  };
   return {
-    create(input) {
-      const at = c.clock.now().toISOString();
-      const l: Login = { id: c.idGen(), ...input, status: 'pending', createdAt: at, updatedAt: at };
-      c.db.run('INSERT INTO logins (id, job_id, question_id, status, created_at, body) VALUES (?, ?, ?, ?, ?, ?)',
-        l.id, l.jobId ?? null, l.questionId ?? null, l.status, at, JSON.stringify(l));
-      return l;
-    },
+    create: (input) => insert(input, '')!,
+    createSignIn: (input) => insert(input, ' ON CONFLICT DO NOTHING'),
     get,
     list(filter) {
       const conds: string[] = [];
