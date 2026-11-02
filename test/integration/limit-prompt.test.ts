@@ -27,14 +27,13 @@ const fail = (message: string, ms = 0) => ({ op: 'fail', message, ms });
 
 describe('a limit prompt', () => {
   // Both at work when the first hits the limit: after it, the account takes no new job.
-  const limit = (prompt: string) => fail(`usage or access limit (usage): the agent stopped at: ${prompt}`, 800);
+  const limit = (prompt: string) => fail(`usage or access limit (usage): the agent stopped at: ${prompt}`, 2500);
 
   it('one problem for its account, the job held with the limit reason, and released at the reset time', async () => {
     const a = await boot();
-    const resets = new Date(Date.now() + 8000).toISOString();
-    const first = await a.pull(limit(`You've hit your limit · resets at ${resets}`));
-    const second = await a.pull(limit(`Weekly limit reached · resets at ${resets}`));
-    for (const j of [first, second]) await a.waitForStatus(j.id, 'failed');
+    const resets = new Date(Date.now() + 15_000).toISOString();
+    const [first, second] = await Promise.all([a.pull(limit(`You've hit your limit · resets at ${resets}`)), a.pull(limit(`Weekly limit reached · resets at ${resets}`))]);
+    await waitFor(async () => (await a.job(first.id)).status === 'failed' && (await a.job(second.id)).status === 'failed', { timeoutMs: 12_000, what: 'both jobs at the limit' });
     const problem = await waitFor(async () => {
       const open = (await failuresOf(a)).problems.filter((p) => p.status === 'open');
       return open.length === 1 && open[0]!.jobIds.length === 2 ? open[0] : undefined;
@@ -50,11 +49,11 @@ describe('a limit prompt', () => {
     const view = (await failuresOf(a)).problems[0]!;
     expect(view.limitDid).toHaveLength(2);
 
-    await waitFor(async () => (await a.job(queued.id)).status === 'finished', { timeoutMs: 20_000, what: 'the held job run at the reset time' });
+    await waitFor(async () => (await a.job(queued.id)).status === 'finished', { timeoutMs: 30_000, what: 'the held job run at the reset time' });
     const resolved = await waitFor(async () => (await failuresOf(a)).problems.find((p) => p.id === problem.id));
     expect(resolved).toMatchObject({ status: 'resolved', resolvedBy: 'check' });
     expect(Date.now()).toBeGreaterThanOrEqual(Date.parse(resets));
-  }, 30_000);
+  }, 60_000);
 
   it('a prompt that names no time: the account is skipped for a while, and a person may resolve it', async () => {
     const a = await boot();
