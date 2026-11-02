@@ -10,7 +10,7 @@
 # tmpfs, its home the volume hopper-sandbox-<agent>-home — where its link key, the agent's sign-in and the
 # jobs' work trees live, so a rebuilt or recreated box is the same machine.
 # Node pinned to a patched version (issue #2479: 24.22.1 or later on line 24); Dependabot bumps it in its line.
-FROM node:24.22.1-bookworm-slim
+FROM node:24.22.2-bookworm-slim
 
 ARG AGENT=claude
 

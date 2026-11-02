@@ -7,7 +7,7 @@
 # release); Dependabot bumps it (.github/dependabot.yml), and the image workflow refuses an image below the floor
 # (scripts/check-node-floor.ts).
 # ---- the UI bundle (the one built part) --------------------------------------------------------
-FROM node:26.12.1-bookworm-slim AS ui
+FROM node:26.13.0-bookworm-slim AS ui
 WORKDIR /build
 COPY src/client/node-floor.ts ./node-floor.ts
 RUN node node-floor.ts
@@ -21,7 +21,7 @@ COPY scripts/copy-artifact-libs.ts ./scripts/copy-artifact-libs.ts
 RUN npm run build:ui && test -s ui/dist/index.html
 
 # ---- the daemon --------------------------------------------------------------------------------
-FROM node:26.12.1-bookworm-slim
+FROM node:26.13.0-bookworm-slim
 # What an update prunes when this image is replaced (docs/deploy.md "Update"); the published image carries it too.
 LABEL org.opencontainers.image.title=hopper
 # git: self-update's mirror and Jev; openssh-client: attached machines; python3 + PyYAML: the Jev
