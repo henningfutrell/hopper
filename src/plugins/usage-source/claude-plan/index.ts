@@ -104,10 +104,13 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
      * The sign-in on the machine the source reads (issue #1128). A client target's client runs its own claude; elsewhere the
      * hopper runs it as a read does, with stdin open, so the code reaches it. Never on a container target.
      */
-    const signIn = async ({ email }: { email?: string }): Promise<ToolSignIn> => {
+    const signInTarget = async (): Promise<{ machineId: string; tool: string }> => {
       const picked = o.machine ? { machine: o.machine } : pickMachine({ reach: 'any', machines: await ctx.machines() });
       if ('none' in picked) throw new Error(picked.none);
-      const id = picked.machine;
+      return { machineId: picked.machine, tool: 'claude' };
+    };
+    const signIn = async ({ email }: { email?: string }): Promise<ToolSignIn> => {
+      const { machineId: id } = await signInTarget();
       const m = await ctx.machine(id);
       if (!m) throw new Error(`machine ${id} is not configured`);
       if (!m.online) throw new Error(`machine ${id} is offline`);
@@ -134,7 +137,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
     const notReady = (r: CliRun): boolean => 'error' in r && r.error.startsWith('machine ');
     const failure = (what: string, r: CliRun): string => (notReady(r) && 'error' in r ? r.error : failed(what, r));
     return createPolledUsageSource(ctx, {
-      signIn, intervalSeconds: o.intervalSeconds, executors: o.executors, ...(o.machine ? { machineId: o.machine } : {}),
+      signIn, signInTarget, intervalSeconds: o.intervalSeconds, executors: o.executors, ...(o.machine ? { machineId: o.machine } : {}),
       async read(signal) {
         // None named: the only machine there is now; none, or several: said, and tried again soon (a machine is probed online after start).
         const picked = o.machine ? { machine: o.machine } : pickMachine({ reach: 'any', machines: await ctx.machines() });

@@ -19,8 +19,12 @@
     "by": {
       "type": "string",
       "enum": [
-        "user"
+        "user",
+        "superseded"
       ]
+    },
+    "supersededBy": {
+      "type": "string"
     }
   },
   "required": [

@@ -32,6 +32,7 @@ export function createPolledUsageSource(
     intervalSeconds: number; machineId?: string; executors?: string[]; read(signal: AbortSignal): Promise<Read>;
     /** Its tool's sign-in on its machine (issue #1128): once one goes through, the account is read again at once. */
     signIn?(o: { email?: string }): Promise<ToolSignIn>;
+    signInTarget?(): Promise<{ machineId: string; tool: string }>;
   },
 ): UsageSource {
   const staleMs = STALE_INTERVALS * o.intervalSeconds * 1000;
@@ -111,6 +112,7 @@ export function createPolledUsageSource(
         ...(o.signIn ? { signIn: true as const } : {}),
       };
     },
+    ...(o.signInTarget ? { signInTarget: o.signInTarget } : {}),
     ...(o.signIn ? {
       async signIn(x: { email?: string }): Promise<ToolSignIn> {
         const s = await o.signIn!(x);

@@ -2311,14 +2311,15 @@ Version 1 (`docs/schemas/auth.expired.v1.json`). The login's code ran out (`expi
 
 ## `auth.cancelled`
 
-Version 1 (`docs/schemas/auth.cancelled.v1.json`). The user cancelled the login. A herdr job is told to stop waiting for it and to go on without it, or to fail.
+Version 1 (`docs/schemas/auth.cancelled.v1.json`). The user cancelled the login. A herdr job is told to stop waiting for it and to go on without it, or to fail. `by: superseded` (issue #2898): a new tool sign-in on its machine replaced it, as `supersededBy` names.
 
 | field | type | required |
 |---|---|---|
 | `loginId` | string | yes |
 | `kind` | `device_code` \| `paste_code` | yes |
 | `tool` | string | yes |
-| `by` | `user` | yes |
+| `by` | `user` \| `superseded` | yes |
+| `supersededBy` | string | no |
 
 ```json
 {

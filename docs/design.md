@@ -25691,7 +25691,21 @@ terminal there. Now a person signs it in again from the hopper — the UI, a pho
 - **The login.** A login kind of its own, `paste_code` (`LOGIN_KINDS`): open the URL, sign in, paste the code the page shows.
   The sign-in service (`src/logins/sign-ins.ts`, per user) reports it on the machine with no job (`run` `sign-in`, not
   renewable, `expiresAt` the 15 minutes), so it shows in Logins and counts as a Needs-you item as any login. A job never reports
-  a `paste_code` login: `loginReportOf` takes `device_code` only. A new sign-in on the same machine and tool cancels the one before.
+  a `paste_code` login: `loginReportOf` takes `device_code` only.
+- **One live sign-in per machine and tool** (issue #2898). Before it, a new sign-in cancelled the one before, and on two hosts, or
+  while a code was with the tool, the two both waited: two cards for one machine, and a code pasted into the older one was refused
+  with an internal error. A sign-in asked while one waits for its code **reuses** it: the answer is that login, and nothing runs
+  (the source names its machine and tool first, `signInTarget`, because a client's new sign-in stops the one it holds; a source that
+  does not name them has its new run stopped). A new one **supersedes** the one before only when that one cannot go on: it expired,
+  has less than two minutes left, was asked for another account (`email`), or another host runs it (this host cannot show its page
+  or take its code; that host's sweep stops its run). The one before ends `cancelled` with `supersededBy` (`auth.cancelled`, `by:
+  superseded`), and its card goes at once to Earlier logins, where it reads *Replaced by a new sign-in*. A code is never routed to the
+  live sign-in: it belongs to the page that showed it, so the tool would refuse it, or a person would sign in as they did not mean to.
+  It is refused with `this sign-in was replaced; use the current card`. **Atomic:** two asks at one moment on one host are one start
+  (`starting`, by machine and tool); across hosts, a partial unique index on the waiting sign-ins of a machine and tool
+  (tenant migration 108, which first cancels the older of any that wait, naming the newest) lets one row in, and the other host stops
+  its run and answers that login. A tool that ended by itself before its code is not seen: its login waits until a pasted code
+  fails with the tool's reason, or until it expires, and the next start opens a new one.
 - **The code.** `POST /ui/api/logins/:id/code {code}` (operator, a box action): one line of printable characters, written to the
   tool's stdin, never kept, logged or in an event; the tool's reason has the code taken out. The tool's end completes the login
   (`auth.completed`) and the source reads the account again at once, or fails it with the tool's last line (`auth.failed`).

@@ -228,6 +228,11 @@ export interface ToolSignIn {
 
 /** What can start a tool's sign-in (issue #1128): a usage source, on the machine it reads. */
 export interface ToolSignInStart {
+  /**
+   * The machine and tool `signIn` would sign in, before it runs anything (issue #2898): a client's new sign-in stops the one it
+   * holds, so one that waits there must be found first. Rejects with why it cannot start. Absent: known only once it started.
+   */
+  signInTarget?(): Promise<{ machineId: string; tool: string }>;
   /** Start its tool's sign-in on its machine; `email`: the account to pre-fill. Rejects with why it cannot start. Absent: it cannot. */
   signIn?(o: { email?: string }): Promise<ToolSignIn>;
 }

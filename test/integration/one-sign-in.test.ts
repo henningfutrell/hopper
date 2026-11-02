@@ -10,7 +10,7 @@
 //   Scenario: two asks at one moment
 //     Given no sign-in on a machine
 //     When two sign-ins are asked at the same moment, on one host or on two
-//     Then one login waits, and the code given to it signs the machine in
+//     Then one login waits, and one run goes on
 //   Scenario: the sign-in before cannot go on
 //     Given a sign-in that expired, is about to, names another account, or runs on another host
 //     When a sign-in is asked for the same machine
@@ -107,8 +107,21 @@ describe('one live sign-in per machine and tool', () => {
     const live = waiting(a);
     expect(live).toHaveLength(1);
     expect(ids.has(live[0]!.id)).toBe(true);
+    a.signIns.sweep();
+    b.signIns.sweep();
     const runs = [...onA.runs, ...onB.runs];
     expect(runs.filter((r) => !r.cancelled)).toHaveLength(1);
+  });
+
+  it('answers the other host\'s login when the database refuses this one: nothing is replaced, nothing else waits', async () => {
+    const url = installFromBefore(testDatabaseUrl());
+    const onA = sourceOn('box', 'claude');
+    const a = host(url, [onA.source], 'host-a', () => true), b = host(url, [], 'host-b', () => true);
+    const first = started(await a.signIns.start('claude'));
+    const report = { kind: 'paste_code' as const, tool: 'claude', verificationUrl: 'https://claude.ai/oauth/authorize?run=b', expiresAt: first.expiresAt };
+    const answer = b.logins.openSignIn(report, { machineId: 'box', run: 'sign-in', renewable: false }, []);
+    expect(answer).toMatchObject({ opened: false, login: { id: first.id } });
+    expect(waiting(a).map((l) => l.id)).toEqual([first.id]);
   });
 
   it('refuses a second waiting sign-in in the database itself', async () => {
@@ -202,6 +215,23 @@ describe('one live sign-in per machine and tool', () => {
     h.signIns.sweep();
     const r = await h.signIns.paste(first.id, 'good-code');
     expect(r).toEqual({ ok: false, reason: 'ended', message: 'this sign-in is cancelled: start it again' });
+  });
+
+  it('holds for the Claude sign-in for pods: the same account is the one that waits, another supersedes it', async () => {
+    const instance = openInstanceStore({ url: installFromBefore(testDatabaseUrl()), clock });
+    const store = instance.userStore(instance.users.get(ADMIN_ID)!);
+    const logins = createLogins({ store, clock });
+    let starts = 0;
+    const setupToken = { start: async () => { starts += 1; return { url: `https://claude.ai/oauth/authorize?run=${starts}`, paste: async () => ({ ok: true as const }), cancel: () => {} }; } };
+    const signIns = createSignIns({ logins, sources: () => [], clock, sweepMs: 3_600_000, setupToken });
+    cleanups.push(() => { signIns.stop(); store.close(); instance.close(); });
+    const first = started(await signIns.startSetupToken({ account: 'a@example.com', by: 'admin' }));
+    expect(started(await signIns.startSetupToken({ account: 'a@example.com', by: 'admin' })).id).toBe(first.id);
+    expect(starts).toBe(1);
+    const other = started(await signIns.startSetupToken({ account: 'b@example.com', by: 'admin' }));
+    expect(other.id).not.toBe(first.id);
+    expect(store.logins.get(first.id)).toMatchObject({ status: 'cancelled', supersededBy: other.id });
+    expect(logins.view(other, true).account).toBe('b@example.com');
   });
 
   it('keeps the sign-ins of two machines apart', async () => {
