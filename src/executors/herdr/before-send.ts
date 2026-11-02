@@ -12,12 +12,16 @@ import { selectKeys, selectOf } from './select-dialog.ts';
 import type { PaneState, StartDeps } from './start.ts';
 import { MAX_STARTUP_SCREENS, policyOf } from './startup.ts';
 import { NOT_SIGNED_IN } from '../../domain/types.ts';
+import { limitFailure, limitPromptIn } from '../../domain/limit-prompts.ts';
 import { cursorPick, isLoginScreen, notSignedIn, promptShown, standsBeforePrompt, startupStep } from './startup-screens.ts';
 
 /** Looks at a dialog of the turn in flight after esc, before it counts as one esc did not close. */
 const UNBLOCK_POLLS = 10;
 /** Looks at a blocked Claude before its dialog counts as held: a key just typed may not have closed the last one yet. */
 const POLLS = 10;
+
+/** How many lines of a dialog are read for a limit prompt. */
+const DIALOG_LINES = 12;
 
 /** Claude ready for the text, gone from its pane, or held at a dialog the hopper may not answer (at `seq`). */
 export type PastDialog = { ready: true } | { gone: true } | { held: number };
@@ -57,6 +61,9 @@ export async function askAtDialog(d: StartDeps, ctx: ExecutionContext, s: PaneSt
   const asked = await blockedQuestion({ herdr: d.herdr, paneId: s.paneId, clock: d.clock }, recent);
   // No credential (issue #533): the login screen, or a prompt that says so; the answer comes once Claude is signed in.
   const visible = await d.herdr.read(s.paneId, { source: 'visible', lines: 60 });
+  // A limit of its account (issue #2897): a person's answer would not get it past that.
+  const limit = limitPromptIn(visible.split('\n'), DIALOG_LINES);
+  if (limit) return { kind: 'failed', error: limitFailure(limit) };
   if (notSignedIn(visible) || isLoginScreen(visible)) asked.question.text = `${NOT_SIGNED_IN}.\n\n${asked.question.text}`;
   const { lapsesAt } = asked.question;
   ctx.saveState({ ...s, turn: { seq, anchor, blockedAtSend: true, text, unsent: true }, parkedSeq: seq, lapsesAt });

@@ -15,6 +15,7 @@
 // job (issue #694), for an operator or admin. Work not pushed (issue #1010, kept-work.tsx) after Needs a person.
 // A long page (issue #2353): the counts stay in view with Cards or Rows — in Rows a failure is one line —; Needs a
 // person, Recent failures and Ended each fold and page, with no scroll box of their own; the mode and folds are kept.
+import { ProblemLimit } from '../components/problem-limit';
 import { LogBlock } from '@/components/log-block';
 import { Archive, History, LayoutList, List, OctagonAlert, Play, RotateCcw, CircleCheck, UserRound } from 'lucide-react';
 import { useState } from 'react';
@@ -94,6 +95,7 @@ function ProblemCard({ p }: { p: ProblemView }) {
       <Panel title={p.title} icon={OctagonAlert} className={open ? 'border-bad/40' : ''} bodyClassName="space-y-2"
         action={<StatusBadge status={p.status} tone={open ? 'bad' : 'ok'} label={open ? (p.general ? 'open · recurring' : 'open') : 'resolved'} />}>
         <div className="text-sm text-muted-foreground">{effect}</div>
+        {p.limit && <ProblemLimit p={p} limit={p.limit} />}
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <span className="num">{plural(p.jobIds.length, 'job')}</span>
           <span className="num">{p.held.length} held</span>

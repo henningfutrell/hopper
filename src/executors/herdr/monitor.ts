@@ -9,6 +9,8 @@ import { isTaskCountLine, lastTaskCount, sameTaskCount, type TaskCount } from '.
 import type { HerdrClient } from './client.ts';
 import { outsideItsPane, type PaneRestored } from './restored.ts';
 import { exitedError } from './exited.ts';
+import { limitFailure } from '../../domain/limit-prompts.ts';
+import { limitPromptOnTurn } from './limit-screen.ts';
 import { CTRL_END, FOOTER_ANCHOR, afterLoginReport, autoDenyMs, backgroundWork, dialogText, inputBoxText, isScrolledUp, readTurn, turnText, type AuthFields } from './screen.ts';
 
 export const RECENT_LINES = 200;
@@ -216,6 +218,9 @@ async function watch(w: TurnWatch): Promise<Watched> {
       else waitingSince = null;
       const stalled = !moved && waitingSince !== null && now - waitingSince >= w.stallMs;
       const asked = (o: ExecutionOutcome): ExecutionOutcome => { w.onQuestion?.(agent.stateChangeSeq, o.kind === 'question' ? o.question.lapsesAt : undefined); return o; };
+      // At a limit of its account (issue #2897): nothing it can do, and no one to nudge. Never over the job's own marker.
+      const limit = (ready || agent.status === 'blocked') && !turn.lastMarker ? limitPromptOnTurn(recent, w.anchor) : undefined;
+      if (limit) return { kind: 'failed', error: limitFailure(limit), tail: hideCodes(tail(recent, OUTPUT_LINES), recent) };
       if (agent.status === 'blocked' && (moved || !w.blockedAtSend || stalled)) return asked(await blockedQuestion(w, recent));
       const ended = worked && ready && (moved || stalled);
       const lost = ended && !moved && (!turn.anchorFound || inputBoxText(recent) !== '');

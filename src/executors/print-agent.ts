@@ -7,6 +7,7 @@
 // never runs the agent twice. As a herdr-claude job (issue #410): its own scratch dir, each turn in the
 // job's systemd user scope where the machine has one (the turn before stopped first), and the reap when
 // the job ends, through the machine's connection. How each CLI is called and read is print-agents.ts's.
+import { limitFailure, limitPromptIn } from '../domain/limit-prompts.ts';
 import { mkdirSync } from 'node:fs';
 import type { ExecutionContext, ExecutionOutcome, Executor, MachineShell } from '../domain/ports.ts';
 import { REVIEW_KINDS, REVIEW_SECTIONS, type MachineSnapshot } from '../domain/types.ts';
@@ -205,6 +206,8 @@ export function createPrintAgentExecutor(o: PrintAgentExecutorOptions): Executor
       const answer = dialect.read(r.stdout);
       if (r.exitCode !== 0) {
         const said = 'error' in answer ? answer.error : r.stderr.trim() || r.stdout.trim();
+        const limit = limitPromptIn(said.split('\n')); // A limit of its account (issue #2897): that is the failure.
+        if (limit) return { kind: 'failed', error: limitFailure(limit) };
         return { kind: 'failed', error: `${label} exited ${r.exitCode} on ${where}: ${hidden(tail(said))}` };
       }
       if ('error' in answer) return { kind: 'failed', error: `${label} on ${where}: ${hidden(tail(answer.error))}` };

@@ -37011,3 +37011,49 @@ line), `test/herdr/executor-sandbox.test.ts` (the step after the sandbox and bef
 failed one fails the job), `test/executors/print-agent-bare.test.ts` (the turn's step and its failure),
 `test/scripts/helm-chart-lanes-egress.test.ts` (off by default; confined, DNS and the hopper's pod on its port only, and
 `HOPPER_EGRESS_CONTAINED`; another DNS selector and port; a runner-only release's CIDRs on its URL's port, and none refused).
+
+## Limit prompts (issue #2897, 2026-11-02)
+
+An agent sometimes stops at a prompt that says its account is at a limit, for example a line that ends "… or ask your admin
+to enable access". The pane looks idle and alive. On 2026-10-30 three jobs each held a lane for the whole 60-minute job
+timeout at such a prompt, and did no work.
+
+- **One table.** `LIMIT_PROMPTS` (`src/domain/limit-prompts.ts`) has one line for each wording, in three families: `usage`,
+  `rate` and `access`. A new wording is one line. Each pattern reads a whole line, with the CLI's gutter removed, so a job's
+  own sentence about a limit does not match, nor "You don't have access to this repository", nor the CLI's warnings before a
+  limit ("Approaching usage limit", "You've used 91% of …").
+- **Where it is read.** Only among the last 4 lines of the turn or in the dialog that stops it (`limitPromptOnTurn`,
+  `src/executors/herdr/limit-screen.ts`), with Claude idle, done or blocked, and only when the turn has no marker of the job's
+  own. The input box and its footer are never read. So the monitor sees it at its next poll, with no nudge and no question.
+  A job still working is not read: its tool output may print the same words. Also at a dialog before the send
+  (`askAtDialog`), in what Claude printed when it exited (`exitedError`), and in a print-mode agent's non-zero exit.
+- **The failure.** `usage or access limit (<family>): the agent stopped at: <the line>`, so `job.failed` says the limit and
+  not a timeout. It is the known cause `agent-limit` (Usage or access limit), first in `BUILTIN_CAUSES` because the line can
+  hold another cause's words. It is no lane fault: the account is at its limit, not the lane.
+- **The account is the problem.** The cause is `shared`, `redirect`, scope `executor`: one **problem** for that agent on that
+  machine, opened at the first hit (`Problem.limit`: the family, the prompt, the lane, the account as the machine's usage
+  source reads it, `resetsAt`). Every later hit on that machine and agent joins it, whatever its wording (`limitOpenFor`), and
+  brings its newest prompt and reset. The job runs again at once, and the decider keeps new jobs off that machine's agent
+  until the problem resolves; a job pinned there is held.
+- **Every account at its limit.** A job with no other place is held with `held by problem: <title>: every account is at its
+  usage limit` (`problemHold`; a pinned job names its problem only).
+- **The reset.** `limitResetOf` reads a Unix time, an ISO time, a relative wait ("in 2 hours"), or a wall clock with its time
+  zone in parentheses, as Claude Code prints it. A wall clock with no zone cannot be placed, and a time past or more than 35
+  days off is not trusted. Then `LIMIT_RECHECK_MS` is used: 1 hour, or 10 minutes for a `rate` limit. The next job finds out
+  again, at the cost of one prompt. At `resetsAt` the failure sweep resolves the problem (`failure.resolved`, `by: check`), and
+  held jobs run. A person may resolve it sooner on the Failures view.
+- **What a person sees.** The problem card on Failures (`ui/src/components/problem-limit.tsx`): the account and lane, the
+  prompt, when the account takes jobs again, and what the hopper did with each job (`limitDid`: the machine it went to, or
+  the hold).
+
+Two machines signed in to one account are two problems, each opened by its own first hit: a machine is the place a hit is
+known for, and the second hit costs one prompt. The reset time zone is read with `Intl`, with no date library: nothing else
+in the daemon needs one.
+
+**Verification:** `test/domain/limit-prompts.test.ts` (each family, near misses, the last lines only, the reset forms),
+`test/herdr/executor-limit-prompt.test.ts` (the idle pane fails at once, the limit dialog, a normal idle pane still a status
+note, the job's marker wins, the footer not read, before the send, at an exit), `test/failures/assess.test.ts` (the problem,
+pinned, not stopped by a repeat, a job's own quote), `test/decider/problems.test.ts` (another account, every account, pinned),
+`test/integration/limit-prompt.test.ts` (the real daemon: two jobs and two wordings in one problem, the events, the rerouted
+job on the other machine, the hold's reason, the release at the reset time, a prompt with no time),
+`test/ui/failures-view.test.ts` (the card).

@@ -3,6 +3,7 @@
 // grouped into a problem (a shared cause, held or redirected), handed to a person (job-specific), or — a timed-out
 // job still at work (issue #630) — continued.
 import type { KeptWorkView } from './kept-work.ts';
+import type { LimitFamily } from './limit-prompts.ts';
 import type { ChecksState } from './pull-requests.ts';
 import type { StuckCause } from './stuck.ts';
 import type { Tldr } from './tldr.ts';
@@ -128,10 +129,24 @@ export interface Problem {
   jobIds: string[];
   /** A check (machine online, disk free) saw the cause present: once it passes, the problem resolves by itself. */
   checkSawCause?: boolean;
+  /** Issue #2897: the limit of an account that hit it, as the newest job saw it. It resolves by itself at `resetsAt`. */
+  limit?: ProblemLimit;
+}
+
+/** The limit an agent stopped at (issue #2897, `Problem.limit`): the account and lane, the prompt matched, and when the account takes jobs again. */
+export interface ProblemLimit {
+  family: LimitFamily;
+  prompt: string;
+  resetsAt: string;
+  /** The prompt named `resetsAt`; false: a guess, and a job finds out again then. */
+  resetNamed: boolean;
+  laneId?: string;
+  /** The account as the machine's usage source reads it; absent: not known, the machine's own. */
+  account?: string;
 }
 
 /** What the decider reads of an open problem. */
-export interface ProblemBlock { id: string; title: string; machineId?: string; executor?: string }
+export interface ProblemBlock { id: string; title: string; machineId?: string; executor?: string; /** An account at its limit (issue #2897): the hold says so. */ limit?: true }
 
 /** What a check reads of a problem's machine: online, its disk, its herdr (issue #741). */
 export type CauseCheck = 'online' | 'disk' | 'herdr';
@@ -340,6 +355,8 @@ export type Allowed = { ok: true } | { ok: false; why: string; soon?: true };
 export interface ProblemView extends Problem {
   /** The jobs that wait on its release. */
   held: string[];
+  /** Issue #2897: what the hopper did with each job an account's limit stopped: rerouted to a machine, or held. */
+  limitDid?: string[];
   actions: { resolve: Allowed; release: Allowed };
 }
 

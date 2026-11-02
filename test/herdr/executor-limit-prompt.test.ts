@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { limitPromptOfFailure } from '../../src/domain/limit-prompts.ts';
 import { exitedError } from '../../src/executors/herdr/exited.ts';
 import type { PaneWaitDeps } from '../../src/executors/herdr/pane-wait.ts';
-import { limitPromptOnTurn } from '../../src/executors/herdr/screen.ts';
+import { limitPromptOnTurn } from '../../src/executors/herdr/limit-screen.ts';
 import { contextFor, jobWith, setup } from './support.ts';
 
 const WALL = 'Run /extra-usage to continue, or ask your admin to enable access';
