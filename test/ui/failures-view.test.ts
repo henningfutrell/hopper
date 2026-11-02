@@ -20,6 +20,14 @@ afterEach(async () => {
 });
 
 describe('the Failures view', () => {
+  // Issue #2897: an account at its limit says who hit it, the prompt matched, when it takes jobs again, and what was done.
+  it('a problem of an account at its limit names the account, lane, prompt and what the hopper did', async () => {
+    const limit = { family: 'access', prompt: 'ask your admin to enable access', resetsAt: T0, resetNamed: false, laneId: 'desk/lane-1', account: 'claude: main' };
+    await boot('#failures', { failures: view({ problems: [problem({ limit, limitDid: ['Job j1: rerouted to host'] })] }) });
+    const text = problemCard()!.querySelector('[data-slot="limit"]')!.textContent;
+    for (const part of ['claude: main', 'desk/lane-1', 'ask your admin to enable access', 'names no time', 'Job j1: rerouted to host']) expect(text).toContain(part);
+  });
+
   it('an open problem: its cause, its jobs and the held ones; the nav badge counts open problems', async () => {
     await boot('#failures', { failures: view() });
     const c = problemCard()!;

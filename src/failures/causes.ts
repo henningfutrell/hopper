@@ -22,7 +22,16 @@ export const SWEPT = 'swept';
 /** The cause of a job whose conditional skills' done criteria are not met (issue #1924): the hopper sends it back to rework. */
 export const DONE_CRITERIA_UNMET = 'done-criteria-unmet';
 
+/** The cause of a job whose agent stopped at a usage, rate or access limit of its account (issue #2897, `src/domain/limit-prompts.ts`). */
+export const AGENT_LIMIT = 'agent-limit';
+
 export const BUILTIN_CAUSES: readonly BuiltinCause[] = [
+  // First: the prompt it quotes may name a rate limit or a login, which are other causes' words.
+  cause({
+    id: AGENT_LIMIT, name: 'Usage or access limit', cls: 'shared', decision: 'redirect', scope: 'executor',
+    description: 'The agent stopped at a usage, rate or access limit of the account it runs on, seen in its pane at once: every job of that agent on that machine would stop the same way. The job runs again on another machine, and that account takes no job until the time the prompt names (else for a while, then a job finds out again). With every account at its limit, the job is held with that reason.',
+    pattern: /^usage or access limit \(/,
+  }),
   // Before the agent's own exits (issue #2707): its text says how the agent exited too.
   cause({
     id: SWEPT, name: 'Stopped by the sweep', cls: 'transient', decision: 'retry', scope: 'machine',

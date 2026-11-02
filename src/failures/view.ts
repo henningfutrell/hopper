@@ -3,6 +3,7 @@
 // newest assessed failures still open (issues #529, #618) and those that ended in the last day, the profile — and, on
 // each problem, failure and hand-off (issue #551), whether the daemon takes each action now and why not. The routes
 // refuse with the same reasons, so the view offers only what is taken.
+import { limitDid } from './limits.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
 import type { UserStore } from '../domain/ports.ts';
 import { DEFAULT_YOLO_MODE, highFirst, jobPriorityTag, pullRequestList, stuckOf, type Allowed, type Discarding, type FailureCounts, type FailureRecord, type FailureSettings, type FailuresView, type Handoff, type HandoffResolutionAction, type HandoffView, type Job, type Problem, type ProblemView } from '../domain/types.ts';
@@ -155,7 +156,7 @@ export function handoffView(store: Pick<UserStore, 'failures' | 'jobs'>, h: Hand
 function problemView(store: Reads, p: Problem): ProblemView {
   const held = releasable(store, p.id);
   return {
-    ...p, held: held.map((r) => r.jobId),
+    ...p, held: held.map((r) => r.jobId), ...(p.limit ? { limitDid: limitDid(store, p) } : {}),
     actions: { resolve: p.status === 'open' ? OK : no('already resolved'), release: held.length > 0 ? OK : no('no job is held') },
   };
 }

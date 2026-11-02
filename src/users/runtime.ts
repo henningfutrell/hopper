@@ -27,7 +27,7 @@ import { createDetectionKit } from '../plugins/detect.ts';
 import { startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
-import { checksRedOf, createFailures, type Failures } from '../failures/index.ts'; import { giveBackChecks } from '../failures/give-backs.ts';
+import { checksRedOf, createFailures, type Failures } from '../failures/index.ts'; import { giveBackChecks } from '../failures/give-backs.ts'; import { toolAccountOf } from '../failures/limits.ts';
 import { createLastAccounts, createLogins, createSignIns, setupTokenSignIn, type Logins, type SignIns } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
@@ -393,7 +393,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     resumable: (job) => engine.resumable(job), reopens: (job) => engine.reopens(job), dismiss: (jobId, by) => { engine.dismiss(jobId, by); }, machines: () => host.machines().list(), discarding: (jobId) => engine.discarding(jobId),
     // Own PR checks red (issue #1230): the job's own pull request's checks, run again once, and their logs, by its source; Own PR unfinished (issue #1265): the step that finishes it.
     workState: async (job) => sourceOf(job)?.workState?.(job), pullRequestOpen: async (job) => sourceOf(job)?.pullRequestOpen?.(job), doneAtSource: (job) => doneAtSource(sourceOf(job), job), ...checksRedOf(sourceOf), checksWaitMs: config.checksWaitMs, unfinishedPullRequest: async (job) => sourceOf(job)?.unfinishedPullRequest?.(job),
-    trigger: (reason) => engine.trigger(reason), minorDecisions: { first: minorDecisions, gated }, ...(o.installedAt ? { installedAt: o.installedAt } : {}),
+    trigger: (reason) => engine.trigger(reason), accountOf: (machineId, executor) => toolAccountOf(engine.getUsageSources(), machineId, executor), minorDecisions: { first: minorDecisions, gated }, ...(o.installedAt ? { installedAt: o.installedAt } : {}),
   });
   sync.giveBackChecks(giveBackChecks({ failures, store, resumable: (job) => engine.resumable(job), reopens: (job) => engine.reopens(job), takesBack: sync.takesBack, continueJob: sync.continueJob, checkTendAgain: sync.checkTendAgain })); applyJobSources = (built) => { ({ running, fixed } = splitSources(built)); sync.setSources(jobSources()); }; // Retry, Continue, I fixed it, Push it, Tend again: checked by the failures service at the answer and at the send of their GitHub outbox rows (issue #1238 part 5)
   // Deliveries and notifiers from now on, so an instance event (update.applied at boot) reaches them.

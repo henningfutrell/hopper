@@ -26,7 +26,7 @@ import {
   type PendingRun, type Problem, type WorkState,
 } from '../domain/types.ts';
 import { assess, STALE_AFTER_MS } from './assess.ts';
-import { BUILTIN_CAUSES, causePresent, matchCause, namedCause } from './causes.ts';
+import { AGENT_LIMIT, BUILTIN_CAUSES, causePresent, matchCause, namedCause } from './causes.ts'; import { limitOfFailure, limitOpenFor } from './limits.ts';
 import { evidenceOf, machineOf } from './evidence.ts';
 import { createJevSteps, type JevCase } from './jev.ts';
 import { attemptOf, causeInputOf, recentOf, repeatedOf } from './chain.ts';
@@ -60,6 +60,8 @@ export interface FailuresOptions extends Pick<HandoffsOptions, 'rerun' | 'contin
   pullRequestOpen?(job: Job): Promise<boolean | undefined>;
   /** Whether the job's work is done at its source, asked before any run again of it (`done-at-source.ts`, issue #637). */
   doneAtSource?(job: Job): Promise<boolean>;
+  /** The account an agent's jobs run on on a machine (issue #2897), as its usage source reads it. Absent or undefined: not known. */
+  accountOf?(machineId: string, executor: string): string | undefined;
   /** When this hopper's build was made (its install record): a hopper bug's fix is in it only when it closed before (issue #1147). */
   installedAt?(): string | undefined;
   /** A discard of kept work under way or failed on its machine (issue #1194, `Engine.discarding`). Absent: none shown. */
@@ -77,9 +79,7 @@ const DONE: Record<PendingRun, FailureOutcome> = { retry: 'retried', redirect: '
 const CHECK_OF = new Map(BUILTIN_CAUSES.filter((c) => c.check).map((c) => [c.id, c.check!]));
 export function createFailures(o: FailuresOptions): Failures {
   const { store, clock } = o;
-  let stopped = false;
-  let unsubscribe: (() => void) | undefined;
-  let timer: NodeJS.Timeout | undefined;
+  let stopped = false, unsubscribe: (() => void) | undefined, timer: NodeJS.Timeout | undefined;
   let sweeping: Promise<void> | undefined; const lease = o.lease ?? soleLease();
   let prunedAt = 0;
   const now = () => clock.now();
@@ -123,7 +123,8 @@ export function createFailures(o: FailuresOptions): Failures {
       const attempt = attemptOf(store, job);
       const ranMs = job.startedAt && job.finishedAt ? Math.max(0, Date.parse(job.finishedAt) - Date.parse(job.startedAt)) : undefined;
       const recent = recentOf(store, job, signature, new Date(now().getTime() - s.groupWindowMin * 60_000).toISOString());
-      const open = openFor(signature, machineId);
+      // Every prompt of one account's limit is one problem (issue #2897): its wording does not split it.
+      const limit = cause?.id === AGENT_LIMIT ? limitOfFailure(job, error, at, machineId ? o.accountOf?.(machineId, job.spec.executor) : undefined) : undefined, open = limit ? limitOpenFor(store.problems.list({ status: 'open' }), machineId, job.spec.executor) : openFor(signature, machineId);
       // A job that reported a hopper bug about itself (issue #1147): its report's problem, open or to open.
       const report = ownReport(store.bugReports.list(), job.id);
       const reportOpen = report ? openFor(reportSignature(report), machineId) : undefined, heapOf = heap.patternOf(job), heapRetry = heap.retryOf(job); // And a heap abort pattern it is part of, or its heap retry (issue #2722).
@@ -142,11 +143,11 @@ export function createFailures(o: FailuresOptions): Failures {
       const joinId = a.problem?.kind === 'join' ? a.problem.id : undefined;
       const joining = [open, reportOpen, heapOf?.open].find((p) => p !== undefined && p.id === joinId);
       if (joining) {
-        problem = store.problems.update(joining.id, { jobIds: [...joining.jobIds, job.id], updatedAt: at.toISOString() });
+        problem = store.problems.update(joining.id, { jobIds: [...joining.jobIds, job.id], updatedAt: at.toISOString(), ...(limit ? { limit } : {}) });
       } else if (a.problem?.kind === 'open') {
         const { kind: _k, ...plan } = a.problem;
         const of = plan.causeId === HOPPER_BUG_CAUSE && report ? reportSignature(report) : plan.causeId === HEAP_ABORT_CAUSE && heapOf ? heapOf.pattern.signature : signature;
-        problem = store.problems.create({ ...plan, signature: of, status: 'open', openedAt: at.toISOString(), updatedAt: at.toISOString(), jobIds: [job.id] });
+        problem = store.problems.create({ ...plan, signature: of, status: 'open', openedAt: at.toISOString(), updatedAt: at.toISOString(), jobIds: [job.id], ...(limit ? { limit } : {}) });
         opened = true;
       }
       const acts = a.auto && (a.decision === 'retry' || a.decision === 'redirect' || a.decision === 'continue');
@@ -245,6 +246,8 @@ export function createFailures(o: FailuresOptions): Failures {
       const installedAt = o.installedAt?.();
       for (const p of bugs) if (reportsOf(p.signature, reports).some((r) => fixLanded(r, installedAt))) resolveAs(p.id, 'check');
     }
+    // An account at its limit takes jobs again at its reset time (issue #2897).
+    for (const p of store.problems.list({ status: 'open' })) if (p.limit && Date.parse(p.limit.resetsAt) <= now().getTime()) resolveAs(p.id, 'check');
     const open = store.problems.list({ status: 'open' }).filter((p) => p.causeId && CHECK_OF.has(p.causeId) && p.scope.machineId);
     if (open.length === 0) return;
     const machines = await o.machines();
@@ -346,7 +349,7 @@ export function createFailures(o: FailuresOptions): Failures {
       if (!settings().auto.hold) return [];
       // A Recurring problem (`general`) holds only its own jobs, never its whole scope (issue #637): no known cause says others meet it.
       // Nor a hopper bug's (issue #1147): only the jobs that reported it are known to meet it. Nor a heap abort pattern's (issue #2722).
-      return store.problems.list({ status: 'open' }).filter((p) => !p.general && p.causeId !== HOPPER_BUG_CAUSE && p.causeId !== HEAP_ABORT_CAUSE).map((p) => ({ id: p.id, title: p.title, ...p.scope }));
+      return store.problems.list({ status: 'open' }).filter((p) => !p.general && p.causeId !== HOPPER_BUG_CAUSE && p.causeId !== HEAP_ABORT_CAUSE).map((p) => ({ id: p.id, title: p.title, ...p.scope, ...(p.limit ? { limit: true as const } : {}) }));
     },
     settings,
     setSettings(patch) {

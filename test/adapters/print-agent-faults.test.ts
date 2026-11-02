@@ -68,6 +68,10 @@ describe.each(AGENTS)('the %s executor, on a CLI that misbehaves', (agent) => {
     });
   });
 
+  it('an exit at a limit prompt: the failure is the limit (issue #2897)', async () => {
+    expect(await runIn('limit-prompt')).toEqual({ kind: 'failed', error: "usage or access limit (usage): the agent stopped at: You've hit your limit · resets 3pm (UTC)" });
+  });
+
   it('huge output: the answer still reads, its summary capped', async () => {
     process.env.FAKE_AGENT_HUGE_MB = '8';
     const out = await runIn('huge');

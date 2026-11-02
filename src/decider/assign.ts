@@ -275,7 +275,9 @@ export function problemHold(job: Job, machines: MachineSnapshot[], problems: rea
   const places = machines.filter((m) => m.online && m.executors.includes(job.spec.executor) && windowsFits(m, job) && (pin === undefined || m.id === pin));
   const blocking = places.map((m) => problems.find((b) => problemHits(b, m.id, job)));
   if (places.length === 0 || blocking.some((b) => b === undefined)) return undefined;
-  return `held by problem: ${blocking[0]!.title}`;
+  // Every place the job may run at its limit (issue #2897): no reroute is left, and the reason says so.
+  const allAtLimit = pin === undefined && blocking.every((b) => b!.limit);
+  return `held by problem: ${blocking[0]!.title}${allAtLimit ? ': every account is at its usage limit' : ''}`;
 }
 
 /**
