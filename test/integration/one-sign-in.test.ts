@@ -222,7 +222,7 @@ describe('one live sign-in per machine and tool', () => {
     const store = instance.userStore(instance.users.get(ADMIN_ID)!);
     const logins = createLogins({ store, clock });
     let starts = 0;
-    const setupToken = { start: async () => { starts += 1; return { url: `https://claude.ai/oauth/authorize?run=${starts}`, paste: async () => ({ ok: true as const }), cancel: () => {} }; } };
+    const setupToken = { start: async () => { starts += 1; return { url: `https://claude.ai/oauth/authorize?run=${starts}`, paste: async () => ({ ok: true as const, token: 'not-a-real-token' }), cancel: () => {} }; } };
     const signIns = createSignIns({ logins, sources: () => [], clock, sweepMs: 3_600_000, setupToken });
     cleanups.push(() => { signIns.stop(); store.close(); instance.close(); });
     const first = started(await signIns.startSetupToken({ account: 'a@example.com', by: 'admin' }));
