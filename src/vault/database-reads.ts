@@ -74,7 +74,7 @@ export function databaseReads(store: Pick<UserStore, 'vault' | 'events' | 'jobs'
   };
 
   const readAllowed: DatabaseReadFrom = async (ask, connect) => {
-    const { job, template, asset, sql, id, decision } = ask;
+    const { template, asset, id, decision } = ask;
     const role = databaseRoleName(id);
     const found = await credentialOf(asset);
     if ('no' in found) return refuse(ask, found.status, found.no, decision);
