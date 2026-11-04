@@ -81,8 +81,8 @@ export function remoteVault(o: {
 
   // A database read (issue #2231) crosses the same way, after Access allowed it here: the vault that holds the database's
   // minting credential mints the database read role, runs the SELECT and drops the role. One kept in a vault backend is read here.
-  const readFrom: DatabaseReadFrom = async (r) => {
-    if (o.local.view().secrets.some((s) => s.mints?.kind === 'database' && s.mints.name === r.asset.name && s.backend)) return o.local.readAllowed(r);
+  const readFrom: DatabaseReadFrom = async (r, connect) => {
+    if (o.local.view().secrets.some((s) => s.mints?.kind === 'database' && s.mints.name === r.asset.name && s.backend)) return o.local.readAllowed(r, connect);
     const answer = await call<DatabaseReadAnswer>('database-read', { read: r }, READ_TIMEOUT_MS);
     return 'problem' in answer ? refusedRead(o.store.events, r, { status: 503, no: answer.problem }, r.decision) : answer.result;
   };
@@ -126,7 +126,7 @@ export function remoteVault(o: {
     testMint: (asset, by) => o.local.testMint(asset, by, mintFrom), mintForDiscovery: (asset) => o.local.mintForDiscovery(asset, mintFrom),
     mintForCheck: (ask) => o.local.mintForCheck(ask, mintFrom),
     mintForNeedStep: (ask) => o.local.mintForNeedStep(ask, mintFrom),
-    readDatabase: (ask) => o.local.readDatabase(ask, readFrom),
+    readDatabase: (ask, connect) => o.local.readDatabase(ask, { from: readFrom, connect }),
     releaseMints: (box) => o.local.releaseMints(box, unbindFrom),
     // The database read roles a read left (issue #2231) are swept where their minting credentials are opened: in the
     // vault container; one kept in a vault backend here. A vault container out of reach sweeps at the next pass.
