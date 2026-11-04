@@ -6,7 +6,7 @@ import { laterRuns } from '../domain/rerun-chain.ts';
 import type { MintAsk } from './mint.ts';
 import type { MintTestAnswer } from './mint-test.ts'; import type { DiscoveryMintAnswer } from './discovery-mint.ts'; import type { Asset } from '../domain/access.ts';
 import type { CheckMintAnswer, CheckMintAsk } from './checks.ts';
-import type { NeedMintAnswer, NeedMintAsk } from './need-mint.ts'; import type { DatabaseReadAnswer, DatabaseReadAsk } from './database-reads.ts';
+import type { NeedMintAnswer, NeedMintAsk } from './need-mint.ts'; import type { DatabaseConnect, DatabaseReadAnswer, DatabaseReadAsk } from './database-reads.ts';
 import { createCredentialRequests, type Asker, type CredentialAsk, type Give, type NeedAnswer } from './requests.ts';
 import type { SetSecret, VaultResult, VaultService } from './service.ts';
 import type { SharedSecrets } from './shared.ts';
@@ -40,8 +40,11 @@ export interface Vault extends Pick<VaultService, 'forStep' | 'saveTemplate' | '
   releaseMints(box: string): Promise<void>;
   /** Unbinds each token a sandbox that ended left bound (issue #1371), and drops each database read role past its TTL (issue #2231): at start, then every few minutes. */
   reconcileMints(): Promise<void>;
-  /** A job's database read (issue #2231): Access decides here; the role is minted, used and dropped where the minting credential is opened. */
-  readDatabase(ask: DatabaseReadAsk): Promise<DatabaseReadAnswer>;
+  /**
+   * A job's database read (issue #2231): Access decides here; the role is minted, used and dropped where the minting
+   * credential is opened. `connect`: the job's bastion, for a database a minting credential reaches through it.
+   */
+  readDatabase(ask: DatabaseReadAsk, connect?: DatabaseConnect): Promise<DatabaseReadAnswer>;
   /**
    * A job on a box loaded a skill whose credential its template does not give (issue #583, the skill broker proved who
    * asks): a person is asked — a credential request, opened or joined — or the job is told they declined.
@@ -94,7 +97,7 @@ export const localVault = (v: VaultService): Omit<Vault, 'need' | 'give' | 'decl
   mint: (ask, key) => v.mint(ask, key),
   testMint: (asset, by) => v.testMint(asset, by), mintForDiscovery: (asset) => v.mintForDiscovery(asset),
   mintForCheck: (ask) => v.mintForCheck(ask),
-  mintForNeedStep: (ask) => v.mintForNeedStep(ask), readDatabase: (ask) => v.readDatabase(ask),
+  mintForNeedStep: (ask) => v.mintForNeedStep(ask), readDatabase: (ask, connect) => v.readDatabase(ask, { connect }),
   releaseMints: (box) => v.releaseMints(box), reconcileMints: () => v.reconcileMints(),
   saveTemplate: (t, by) => v.saveTemplate(t, by),
   removeTemplate: (name, by) => v.removeTemplate(name, by),

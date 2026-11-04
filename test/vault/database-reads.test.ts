@@ -140,7 +140,7 @@ describe('a database read through a bastion (issue #2231)', () => {
   const through = async (c: DatabaseMintingCredential): Promise<void> => {
     await new Promise<void>((done, fail) => {
       const s = connect(c.port, c.host, () => { s.write('x'); });
-      s.once('data', () => { s.destroy(); done(); }).once('error', fail);
+      s.once('data', () => { s.destroy(); done(); }).once('error', fail).once('close', () => fail(new Error('Connection terminated unexpectedly')));
     });
   };
 
