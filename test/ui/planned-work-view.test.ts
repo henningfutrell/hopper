@@ -119,6 +119,8 @@ describe('the Planned work tab (issues #2840, #2861)', () => {
     expect(opened.mock.calls.map((c) => c[0])).toEqual(['https://example.com/shot.png', 'https://github.com/acme/app/issues/7']);
     await act(async () => { node('job:acme/app#5:job-run-2')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(window.location.hash).toBe('#job/job-run-2');
+    // The job view reads the job's parts list; its answer draws the plain-words header.
+    await vi.waitFor(() => expect(document.querySelector('[data-slot="job-header"]')).not.toBeNull());
   });
 
   it('CSV and JSON save the export, with the session header', async () => {
