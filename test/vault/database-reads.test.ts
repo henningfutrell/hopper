@@ -9,14 +9,16 @@ import type { Asset, MintDecision, VaultAccess } from '../../src/domain/access.t
 import type { DatabaseMintingCredential, DatabaseReader } from '../../src/domain/database-read.ts';
 import type { DomainEvent, NewEvent } from '../../src/domain/types.ts';
 import type { VaultSecret } from '../../src/domain/vault.ts';
-import { databaseReads } from '../../src/vault/database-reads.ts';
+import { connect } from 'node:net';
+import { Duplex } from 'node:stream';
+import { databaseReads, type DatabaseConnect } from '../../src/vault/database-reads.ts';
 
 const NOW = new Date('2026-10-23T12:00:00Z');
 const DB: Asset = { kind: 'database', name: 'lab/apps/orders' };
 const MINTER_PASSWORD = 'minter-pw-never-shown';
 const CREDENTIAL = JSON.stringify({ engine: 'postgres', host: 'db.lab.internal', database: 'orders', user: 'hopper_minter', password: MINTER_PASSWORD, schemas: ['app'] });
 
-function world(o: { allowed?: boolean; status?: string; read?: DatabaseReader['read']; mint?: DatabaseReader['mint']; secrets?: VaultSecret[] } = {}) {
+function world(o: { allowed?: boolean; status?: string; read?: DatabaseReader['read']; mint?: DatabaseReader['mint']; secrets?: VaultSecret[]; credential?: string } = {}) {
   const events: DomainEvent[] = [];
   const asked: unknown[] = [];
   const done: { minted: { role: string; password: string; validUntil: Date }[]; read: { role: string; password: string; sql: string }[]; dropped: string[]; swept: number } = { minted: [], read: [], dropped: [], swept: 0 };
@@ -39,7 +41,7 @@ function world(o: { allowed?: boolean; status?: string; read?: DatabaseReader['r
     jobs: { get: (id: string) => (id === 'job-1' ? { id, status: o.status ?? 'running' } : undefined) },
     tx: <T>(fn: () => T): T => fn(),
   };
-  const reads = databaseReads(store as never, { access, reader, valueOf: async () => ({ value: CREDENTIAL }), clock: { now: () => NOW }, logger: { warn: () => {} } });
+  const reads = databaseReads(store as never, { access, reader, valueOf: async () => ({ value: o.credential ?? CREDENTIAL }), clock: { now: () => NOW }, logger: { warn: () => {} } });
   return { reads, events, asked, done };
 }
 
@@ -113,11 +115,76 @@ describe('the sweep of database read roles (issue #2231)', () => {
   it('hands a read Access allowed to the vault that holds the minting credential, and mints nothing here (issue #586)', async () => {
     const w = world();
     const handed: unknown[] = [];
-    const a = await w.reads.readDatabase(ASK, async (r) => { handed.push(r); return { csv: 'n\n3\n', rows: 1, bytes: 4 }; });
+    const a = await w.reads.readDatabase(ASK, { from: async (r) => { handed.push(r); return { csv: 'n\n3\n', rows: 1, bytes: 4 }; } });
     expect(a).toEqual({ csv: 'n\n3\n', rows: 1, bytes: 4 });
     expect(handed).toEqual([{ ...ASK, id: expect.stringMatching(/^[0-9a-f]{16}$/), decision: 'd1' }]);
     expect(w.done.minted).toEqual([]);
-    expect(await world({ allowed: false }).reads.readDatabase(ASK, async (r) => { handed.push(r); return { status: 500, no: 'not asked' }; })).toMatchObject({ status: 403 });
+    expect(await world({ allowed: false }).reads.readDatabase(ASK, { from: async (r) => { handed.push(r); return { status: 500, no: 'not asked' }; } })).toMatchObject({ status: 403 });
     expect(handed).toHaveLength(1);
+  });
+});
+
+describe('a database read through a bastion (issue #2231)', () => {
+  const TARGET = 'lab/apps/svc/orders-db:5432';
+  const THROUGH = JSON.stringify({ ...(JSON.parse(CREDENTIAL) as object), through: TARGET });
+  /** A bastion's relay as a byte pipe: answers each connection with `hello`, and counts them. */
+  const relay = () => {
+    const asked: string[] = [];
+    const connect: DatabaseConnect = async (target) => {
+      asked.push(target);
+      return new Duplex({ read() {}, write(_c, _e, cb) { this.push('hello'); cb(); } });
+    };
+    return { asked, connect };
+  };
+  /** A reader that reaches the database through the credential it is given, as a real one does: a connection and one byte each way. */
+  const through = async (c: DatabaseMintingCredential): Promise<void> => {
+    await new Promise<void>((done, fail) => {
+      const s = connect(c.port, c.host, () => { s.write('x'); });
+      s.once('data', () => { s.destroy(); done(); }).once('error', fail);
+    });
+  };
+
+  it('mints, reads and drops over connections to the target of the job\'s bastion, and sweeps there too', async () => {
+    const seen: DatabaseMintingCredential[] = [];
+    const w = world({ credential: THROUGH, mint: async (c) => { seen.push(c); await through(c); }, read: async (c) => { seen.push(c); await through(c); return { csv: 'n\n1\n', rows: 1, bytes: 4 }; } });
+    const r = relay();
+    expect(await w.reads.readDatabase(ASK, { connect: r.connect })).toEqual({ csv: 'n\n1\n', rows: 1, bytes: 4 });
+    expect(new Set(r.asked)).toEqual(new Set([TARGET]));
+    expect(r.asked).toHaveLength(2);
+    for (const c of seen) expect(c).toMatchObject({ host: '127.0.0.1', tlsName: 'db.lab.internal' });
+    expect(seen[0]!.port).toBe(seen[1]!.port);
+    expect(w.done.swept).toBe(1);
+    expect(w.events.map((e) => e.type)).toEqual(['database.role_minted', 'database.role_dropped', 'database.read', 'database.role_dropped']);
+  });
+
+  it('with no bastion that runs, it mints nothing and says how to start one', async () => {
+    const w = world({ credential: THROUGH });
+    const a = await w.reads.readDatabase(ASK, { connect: async () => ({ status: 404, no: 'this job has no bastion that runs' }) });
+    expect(a).toEqual({ status: 404, no: `database lab/apps/orders is reached through bastion target ${TARGET}: this job has no bastion that runs. Start it: sh "$HOPPER_SKILL" bastion --template orders-read --targets "${TARGET}" --why "<why>" --wait` });
+    expect(w.done.minted).toEqual([]);
+    expect(w.events.map((e) => e.type)).toEqual(['database.read_refused']);
+  });
+
+  it('where no bastion can be reached, as in the vault\'s own container, it refuses and says so', async () => {
+    const w = world({ credential: THROUGH });
+    expect(await w.reads.readAllowed({ ...ASK, id: 'r1', decision: 'd1' })).toEqual({ status: 409, no: `database lab/apps/orders is reached through bastion target ${TARGET}, and this vault has no way to a bastion: a vault in a container of its own reads only a database it reaches itself` });
+    expect(w.done.minted).toEqual([]);
+  });
+
+  it('says what the relay answered when a connection after the first is refused', async () => {
+    let n = 0;
+    const r = relay();
+    const connectOnce: DatabaseConnect = async (t) => (n++ === 0 ? r.connect(t) : { status: 403, no: 'Access denies the relay' });
+    const w = world({ credential: THROUGH, mint: async (c) => { await through(c); }, read: async (c) => { await through(c); return { csv: '', rows: 0, bytes: 0 }; } });
+    const a = await w.reads.readDatabase(ASK, { connect: connectOnce });
+    expect(a).toMatchObject({ status: 502 });
+    expect((a as { no: string }).no).toContain('Access denies the relay');
+  });
+
+  it('the sweep at each reconcile pass leaves a credential only a job\'s bastion reaches', async () => {
+    const w = world({ credential: THROUGH });
+    await w.reads.sweepDatabaseRoles();
+    expect(w.done.swept).toBe(0);
+    expect(w.events).toEqual([]);
   });
 });
