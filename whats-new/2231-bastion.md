@@ -1,1 +1,0 @@
-- A job can now read a database inside a cluster through its own bastion, so nobody has to keep a port forward open by hand.

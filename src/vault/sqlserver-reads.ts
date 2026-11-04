@@ -32,7 +32,7 @@ const lit = (s: string): string => `N'${s.replace(/'/g, "''")}'`;
 const tlsOf = (c: DatabaseMintingCredential): Pick<sql.config, 'options'> => ({
   options: {
     encrypt: c.sslmode !== 'disable', trustServerCertificate: c.sslmode !== 'verify-full', appName: 'hopper',
-    ...(c.ca ? { cryptoCredentialsDetails: { ca: c.ca } } : {}), ...(c.tlsName ? { serverName: c.tlsName } : {}),
+    ...(c.ca ? { cryptoCredentialsDetails: { ca: c.ca } } : {}),
   },
 });
 

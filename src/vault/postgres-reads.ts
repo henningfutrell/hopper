@@ -33,7 +33,7 @@ const ident = (s: string): string => pg.escapeIdentifier(s);
 const lit = (s: string): string => pg.escapeLiteral(s);
 
 /** The TLS the client asks for: none, TLS, or TLS with the certificate and the host's name checked. */
-const sslOf = (c: DatabaseMintingCredential): pg.ClientConfig['ssl'] => (c.sslmode === 'disable' ? false : { rejectUnauthorized: c.sslmode === 'verify-full', ...(c.ca ? { ca: c.ca } : {}), ...(c.tlsName ? { servername: c.tlsName } : {}) });
+const sslOf = (c: DatabaseMintingCredential): pg.ClientConfig['ssl'] => (c.sslmode === 'disable' ? false : { rejectUnauthorized: c.sslmode === 'verify-full', ...(c.ca ? { ca: c.ca } : {}) });
 
 /** One connection to the credential's database as `user`, for `fn`; closed after it, whatever happens. */
 async function connected<T>(c: DatabaseMintingCredential, login: { user: string; password: string }, fn: (client: pg.Client) => Promise<T>): Promise<T> {

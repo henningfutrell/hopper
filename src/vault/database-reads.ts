@@ -15,9 +15,6 @@ import { databaseCredentialOf, DATABASE_ROLE_TTL_SECONDS, databaseRoleName, sqlP
 import { mintingCredentialFor } from '../domain/minting.ts';
 import type { VaultSecret } from '../domain/vault.ts';
 import { AT_WORK } from './box.ts';
-import { openDatabaseRoute, type DatabaseConnect, type DatabaseRoute } from './database-route.ts';
-
-export type { DatabaseConnect } from './database-route.ts';
 
 /** A job's read: the template Access decides it for, the database, and its one SELECT. */
 export interface DatabaseReadAsk { job: string; template: string; asset: Asset; sql: string }
@@ -26,20 +23,14 @@ export type DatabaseReadAnswer = DatabaseReadResult | { status: number; no: stri
 /** A read Access allowed: its id (the database read role's name and the check's) and Access's decision. */
 export interface AllowedDatabaseRead extends DatabaseReadAsk { id: string; decision: string }
 /** Mints, reads and drops for a read Access allowed, where the minting credential is opened. Never rejects. */
-export type DatabaseReadFrom = (r: AllowedDatabaseRead, connect?: DatabaseConnect) => Promise<DatabaseReadAnswer>;
+export type DatabaseReadFrom = (r: AllowedDatabaseRead) => Promise<DatabaseReadAnswer>;
 
 export interface DatabaseReads {
-  /**
-   * One read (issue #2231): Access, then `from` (the vault here by default) mints a database read role, runs the SELECT and
-   * drops the role. `connect`: the job's bastion, for a database a minting credential reaches through it. Never rejects.
-   */
-  readDatabase(ask: DatabaseReadAsk, via?: { from?: DatabaseReadFrom | undefined; connect?: DatabaseConnect | undefined }): Promise<DatabaseReadAnswer>;
+  /** One read (issue #2231): Access, then `from` (the vault here by default) mints a database read role, runs the SELECT and drops the role. Never rejects. */
+  readDatabase(ask: DatabaseReadAsk, from?: DatabaseReadFrom): Promise<DatabaseReadAnswer>;
   /** The read after Access, here: the database's minting credential opened, a role minted, the SELECT, the drop. */
   readAllowed: DatabaseReadFrom;
-  /**
-   * Drops each database read role whose `VALID UNTIL` passed, in each database a minting credential mints for: at start and
-   * every few minutes. One only a job's bastion reaches waits for its next read, which sweeps it.
-   */
+  /** Drops each database read role whose `VALID UNTIL` passed, in each database a minting credential mints for: at start and every few minutes. */
   sweepDatabaseRoles(): Promise<void>;
 }
 
@@ -63,44 +54,15 @@ export function databaseReads(store: Pick<UserStore, 'vault' | 'events' | 'jobs'
   const refuse = (ask: DatabaseReadAsk, status: number, reason: string, decision?: string): DatabaseReadAnswer =>
     refusedRead(events, ask, { status, no: reason }, decision);
 
-  const sweepOf = async (asset: Asset, secret: VaultSecret, c: DatabaseMintingCredential): Promise<void> => {
-    try {
-      for (const role of await o.reader.sweep(c)) {
-        events.append({ type: 'database.role_dropped', data: { asset, credential: secret.name, role, reason: 'expired' } });
-      }
-    } catch (e) {
-      o.logger.warn(`hopper: the sweep of database read roles in database ${asset.name} failed: ${(e as Error).message.split(c.password).join('***')}`);
-    }
-  };
-
-  const readAllowed: DatabaseReadFrom = async (ask, connect) => {
-    const { template, asset, id, decision } = ask;
+  const readAllowed: DatabaseReadFrom = async (ask) => {
+    const { job, template, asset, sql, id, decision } = ask;
     const role = databaseRoleName(id);
     const found = await credentialOf(asset);
     if ('no' in found) return refuse(ask, found.status, found.no, decision);
-    const { secret } = found;
-    if (!found.credential.through) return readWith(ask, role, secret, found.credential);
-    const target = found.credential.through;
-    const said = `database ${asset.name} is reached through bastion target ${target}`;
-    if (!connect) return refuse(ask, 409, `${said}, and this vault has no way to a bastion: a vault in a container of its own reads only a database it reaches itself`, decision);
-    const route = await openDatabaseRoute(target, connect).catch((e: unknown) => ({ status: 502, no: e instanceof Error ? e.message : String(e) }));
-    if ('no' in route) return refuse(ask, route.status, `${said}: ${route.no}. Start it: sh "$HOPPER_SKILL" bastion --template ${template} --targets "${target}" --why "<why>" --wait`, decision);
-    const c: DatabaseMintingCredential = { ...found.credential, host: '127.0.0.1', port: route.port, tlsName: found.credential.host };
-    try {
-      const answer = await readWith(ask, role, secret, c, route);
-      await sweepOf(asset, secret, c);
-      return answer;
-    } finally {
-      route.close();
-    }
-  };
-
-  async function readWith(ask: AllowedDatabaseRead, role: string, secret: VaultSecret, c: DatabaseMintingCredential, route?: DatabaseRoute): Promise<DatabaseReadAnswer> {
-    const { job, template, asset, sql, id, decision } = ask;
+    const { secret, credential: c } = found;
     // The database read role's login: made here, used here, never kept or said. Hidden from any message the database answers too.
     const password = randomBytes(24).toString('base64url');
-    // A client says only that its connection ended; the route says why.
-    const hide = (m: string): string => `${m}${route?.problem() ? `: ${route.problem()}` : ''}`.split(password).join('***').split(c.password).join('***');
+    const hide = (m: string): string => m.split(password).join('***').split(c.password).join('***');
     const validUntil = new Date(o.clock.now().getTime() + DATABASE_ROLE_TTL_SECONDS * 1000);
     try {
       await o.reader.mint(c, { role, password, validUntil });
@@ -127,11 +89,11 @@ export function databaseReads(store: Pick<UserStore, 'vault' | 'events' | 'jobs'
     const ms = o.clock.now().getTime() - started;
     events.append({ type: 'database.read', jobId: job, data: { ...at, template, asset, role, decision, sql, ...(result ? { rows: result.rows, bytes: result.bytes } : { problem: problem ?? 'no answer' }), ms } });
     return result ?? { status: 502, no: `the read of database ${asset.name} failed: ${problem ?? 'no answer'}` };
-  }
+  };
 
   return {
     readAllowed,
-    async readDatabase(ask, via) {
+    async readDatabase(ask, from = readAllowed) {
       const { job, template, sql, asset } = ask;
       if (!atWork(job)) return { status: 409, no: 'the job is not at work: the vault reads a database only while its job runs' };
       const bad = sqlProblem(sql);
@@ -141,15 +103,21 @@ export function databaseReads(store: Pick<UserStore, 'vault' | 'events' | 'jobs'
       const id = randomBytes(8).toString('hex');
       const decision = await o.access.decideCheckMint({ template, check: `database-read-${id}`, operation: 'read', asset });
       if (!decision.allowed) return refuse(ask, 403, `Access denied it: ${decision.reason}. A person approves read on database ${asset.name} for template ${template} on Access requests`, decision.id);
-      return (via?.from ?? readAllowed)({ job, template, asset, sql, id, decision: decision.id }, via?.connect);
+      return from({ job, template, asset, sql, id, decision: decision.id });
     },
 
     async sweepDatabaseRoles() {
       for (const secret of vault.list().filter((s) => s.mints?.kind === 'database')) {
         const asset = secret.mints!;
         const found = await credentialOf(asset);
-        if ('no' in found || found.credential.through) continue;
-        await sweepOf(asset, secret, found.credential);
+        if ('no' in found) continue;
+        try {
+          for (const role of await o.reader.sweep(found.credential)) {
+            events.append({ type: 'database.role_dropped', data: { asset, credential: secret.name, role, reason: 'expired' } });
+          }
+        } catch (e) {
+          o.logger.warn(`hopper: the sweep of database read roles in database ${asset.name} failed: ${(e as Error).message.split(found.credential.password).join('***')}`);
+        }
       }
     },
   };
