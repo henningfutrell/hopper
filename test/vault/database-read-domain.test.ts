@@ -66,19 +66,6 @@ describe('a database minting credential (issue #2231)', () => {
   });
 });
 
-describe('a credential reached through a bastion (issue #2231)', () => {
-  const value = (o: object): string => JSON.stringify({ engine: 'postgres', host: 'db.apps.svc', database: 'orders', user: 'hopper_minter', password: 'pw', schemas: ['app'], ...o });
-  it('names one bastion target; its host stays the name the certificate names', () => {
-    expect(databaseCredentialOf(value({ through: 'lab/apps/svc/orders-db:5432' }))).toMatchObject({ host: 'db.apps.svc', through: 'lab/apps/svc/orders-db:5432' });
-    expect(databaseCredentialOf(value({}))).not.toHaveProperty('through');
-  });
-  it('refuses what is no bastion target', () => {
-    for (const through of ['orders-db:5432', 'lab/apps/svc/orders-db', 'lab/apps/secret/x:5432', 7]) {
-      expect(databaseCredentialOf(value({ through }))).toBe("a database minting credential's through is one bastion target: <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>");
-    }
-  });
-});
-
 describe('a read (issue #2231)', () => {
   it('is one statement of SQL, at most 64 KiB', () => {
     expect(sqlProblem('SELECT 1')).toBeUndefined();

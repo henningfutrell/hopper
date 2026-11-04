@@ -119,10 +119,7 @@ One statement only: a SELECT (or WITH … SELECT, VALUES). The login can change 
 The login reads only the schemas a person named for the database. A statement stops after 60 s.
 An answer of more than 100000 rows or 16 MiB is refused, never cut: page it (WHERE id > <last id> ORDER BY id LIMIT 10000).
 Each read and its SQL are on the job's timeline. Put no secret in the SQL.
-If no minting credential mints for the database, only a person can add one, on Vault. Say so; do not look for another credential.
-A database inside a cluster may be reached through a bastion: the read then says so and names the target. Ask for a template with the observe and that target too, start the bastion of it, and read again:
-   sh "$HOPPER_SKILL" sandbox-template --why "<why>" --plan "port-forward to the database, read only" --needs "read/database/<cluster>/<namespace>/<database> observe/namespace/<cluster>/<namespace>" --targets "<the target>" --wait
-   sh "$HOPPER_SKILL" bastion --template TEMPLATE --targets "<the target>" --why "<why>" --wait`;
+If no minting credential mints for the database, only a person can add one, on Vault. Say so; do not look for another credential.`;
 
 export const SKILLS: readonly Skill[] = [
   {
