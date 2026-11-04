@@ -35680,27 +35680,45 @@ reconcile pass). So the vault container, not the hopper, needs the route to the 
 sweep through the container; `test/vault/database-reads.test.ts` hands a read Access allowed to another vault.
 
 **What is left (later parts).** The live proof on the target clusters, after a person has set up the minting
-credentials and the route below.
+credentials and the route below. A read through a bastion with the vault in a container of its own.
 
-**The route to an in-cluster database (owner decision, 2026-10-24).** The hopper must open a TCP connection to the
-database to mint and to read. A database inside a cluster has no route from where the hopper runs. Four ways were put to
-the owner: `pods/portforward` for the observe role and a bastion's forward; an internal load balancer or a NodePort; a
-NetworkPolicy and a hopper part in the cluster; a read replica or an export outside the cluster. The decision: **a person
-runs `kubectl port-forward` to the database and a relay to it, and the hopper ships no tool for either.** The minting
-credential's `host` and `port` name the relay's end, which the hopper (or the vault container) reaches. The same holds for
-the SQL Server behind a private load balancer: a person's relay from a network that routes to it.
-- **Why no tool.** A forward the hopper starts needs an RBAC change for the observe role (`pods/portforward`), which the
-  issue's stop rule forbids, and a hopper part that holds it open. A person's own forward uses the person's own cluster
-  access, is opened only while the person keeps it, and makes no change to the cluster, its RBAC or its network.
-- **What stays the same.** The database read role, Access, the audit and the sweep work as before: the relay carries
-  only the TCP stream. No box reaches the database, and no credential goes to the relay.
-- **The trade-off the person takes.** A forward reaches the pod's ports, and the relay's end is open to whoever reaches
-  it: bind it to loopback, or to an address only the hopper reaches. TLS through a relay: the server's certificate names
-  the database's own host name, not the relay's, so `verify-full` fails on an address. Give the hopper's machine a host
-  name the certificate names that resolves to the relay (a hosts entry), or use `require` only on a path the person trusts.
-- **When the forward or the relay is down**, the mint fails with the connection's error and is recorded as
-  `database.read_refused`; a read role left in the database stays until its `VALID UNTIL` (on SQL Server, until the sweep
-  reaches it again).
+**The route to an in-cluster database (owner decision, 2026-11-03, in place of the one of 2026-10-24).** The hopper must
+open a TCP connection to the database to mint and to read. A database inside a cluster has no route from where the hopper
+runs. Four ways were put to the owner: `pods/portforward` for the observe role and a bastion's forward; an internal load
+balancer or a NodePort; a NetworkPolicy and a hopper part in the cluster; a read replica or an export outside the cluster.
+The decision: **`pods/portforward` for the observe role, and the job's bastion carries the read.** An earlier decision had a
+person keep a `kubectl port-forward` and a relay open, and the hopper ship no tool for it; a forward that dies with a
+person's session does not serve a job that reads when it runs.
+- **The RBAC change is a person's.** The issue's stop rule forbids a job from making a cluster-side opening. The owner
+  picked this one, and the owner makes it, on each database's namespace. The hopper makes no RBAC change.
+- **The credential names the target** (`through`, `<cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>`,
+  `DatabaseMintingCredential`). `host` stays what the certificate names and is never connected to; `port` is not used.
+- **The route** (`src/vault/database-route.ts`). For one read, a port on 127.0.0.1; each connection to it is one relay
+  connection of the job's bastion (`Bastions.relay`, handed in as `DatabaseConnect` at `src/http/job-skill.ts`, so `src/vault/`
+  knows no sandbox). The readers connect as to any host, which is why this is a port and not a stream handed to each client:
+  `pg` and `tedious` each want a socket of their own shape, and their TLS passes through as bytes. `tlsName` carries the
+  credential's `host` to the readers for the certificate check. Whoever reaches the port reaches only what the job's own
+  relay reaches, and still needs a login of the database.
+- **The job starts the bastion**; the read does not start one. A bastion needs a template with the observe and an approved
+  target, and a job has one bastion at a time, so starting one inside a read would hide a choice that is the job's. The
+  relay is asked once before anything is minted, so with no bastion the read mints nothing and its refusal names the target
+  and the command. The target is no secret: the job's bastion needs it anyway.
+- **Access and the audit.** The read's own Access decision is as before. Each connection also passes `bastion#can_relay`
+  and is a `bastion.relayed` event: a mint, its check, the read, the drop and the sweep are each a connection.
+- **The sweep.** The reconcile pass has no job and so no bastion: it leaves a credential with `through`. The read's end sweeps
+  that database through its route. A hopper that stopped mid-read leaves a role until the next read there; its `VALID UNTIL`
+  ends its logins meanwhile (on SQL Server, only the hopper had the login's password).
+- **The vault in a container of its own** refuses such a read and says why: a byte pipe of the hopper's does not cross the
+  vault's wire. Left for later, if the instance that needs it runs that profile.
+- **SQL Server behind a private load balancer** has no bastion target: a person's relay from a network that routes to it,
+  with the credential's `host` and `port` its end (help/vault.md). An in-cluster SQL Server takes `through` as Postgres does.
+- **The trade-off the person takes.** A forward reaches every port of the pod, and the observe role may forward in the whole
+  namespace, for each template a person approved. With `sslmode` `disable` the box sees the database's traffic in clear.
+- **When the forward is down**, the relay's own words go into the refusal or the read's problem, as for a bastion read.
+
+Tests (route): `test/vault/database-route.test.ts` (the port, the refusals, the close, TLS checked against the credential's
+host), `test/vault/database-reads.test.ts`, `test/vault/postgres-reads.test.ts` (a real Postgres over the route: a write
+refused), `test/integration/database-read-bastion.test.ts` (a real hopper, `hopper-skill`, bastion and Postgres).
 
 Tests (part 1): `test/vault/database-read-domain.test.ts` (the asset, high radius, the read policy, the credential, the
 CSV), `test/vault/postgres-reads.test.ts` (a real Postgres: the role's attributes and settings, every write refused also

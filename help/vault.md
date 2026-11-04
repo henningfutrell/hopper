@@ -195,14 +195,40 @@ What a database read role gets:
 
 The hopper must reach the database's host and port itself: it makes the role there, and runs the read there. When the vault runs in a container of its own, the vault container makes the role and runs the read, so it is the vault container that must reach the database. A box needs no route to the database.
 
-#### A database the hopper cannot reach
+#### A database inside a cluster: through a bastion
 
-The hopper has no tool to reach a database inside a cluster, or behind a private load balancer. A person opens the route:
+The hopper reaches a database inside a cluster through the job's **bastion**: the box that holds `kubectl port-forward` for the job. Each connection of the read goes through that forward. Nothing opens in the database's network, and no job and no box gets the minting login or the read role's password.
 
-1. Run `kubectl port-forward` to the database's service with your own cluster access, for example `kubectl -n <namespace> port-forward svc/<database> 15432:5432`.
-2. When the hopper (or the vault container) runs on another computer, run a relay from an address the hopper reaches to the forward, for example with `socat`. Bind it only to an address the hopper reaches: anyone who reaches the relay reaches the database's port.
-3. In the minting credential, set `host` and `port` to the relay's end (or to the forward's end, when the hopper runs on the same computer).
-4. Keep the forward and the relay open while jobs read. When they stop, each read fails with the connection's error, and the job's timeline shows **database.read_refused**.
+A person sets this up once for each namespace:
+
+1. Give the cluster's observe identity `pods/portforward` in the database's namespace: the Role and RoleBinding in `docs/deploy.md`, "The observe role". This is an RBAC change on your cluster. The hopper does not make it. The trade-off: a forward reaches every port of the pods in that namespace, for each template a person approved with `observe` there.
+2. In the minting credential, add `through`, the bastion target that forwards to the database:
+
+   ```json
+   {"engine": "postgres", "host": "orders-db.apps.svc", "database": "orders", "user": "hopper_minter", "password": "…", "schemas": ["app"], "through": "lab/apps/svc/orders-db:5432"}
+   ```
+
+   With `through`, the hopper never connects to `host` and ignores `port`. `host` is the name that the database's certificate names: `verify-full` checks the certificate against it.
+
+What a job needs:
+
+- A template with read on the database, `observe` on its namespace, and the target as a bastion target. A person approves all three.
+- Its own bastion to that target. A read with no bastion says which target to start.
+
+What to expect:
+
+- Each connection is a **bastion.relayed** event on the job's timeline. Access decides each one.
+- With `sslmode` `disable`, the database's traffic passes through the bastion's box in clear. Use TLS when the database has it.
+- A hopper that stops in the middle of a read leaves its role. The role's `VALID UNTIL` ends its logins, and the next read through a bastion drops it. On SQL Server, which has no `VALID UNTIL`, only the hopper had the login's password, and the next read drops the login.
+- A read through a bastion needs the vault in the hopper. With the vault in a container of its own, the read is refused and says why.
+
+#### A database the hopper cannot reach by a bastion
+
+A database outside a cluster, for example behind a private load balancer, has no bastion target. A person opens the route:
+
+1. On a computer that reaches the database, run a relay from an address the hopper reaches to the database's address, for example with `socat`. Bind it only to an address the hopper reaches: anyone who reaches the relay reaches the database's port.
+2. In the minting credential, set `host` and `port` to the relay's end.
+3. Keep the relay open while jobs read. When it stops, each read fails with the connection's error, and the job's timeline shows **database.read_refused**.
 
 TLS through the relay: the database's certificate names its own host name, not the relay's. With `verify-full`, give the hopper's computer a host name the certificate names that goes to the relay (a hosts entry), and set `host` to that name. Use `require` only when you trust the path to the database.
 
