@@ -113,6 +113,10 @@ export interface FollowsPullRequests {
    * a base from before to the landing branch. A throw is asked again at the next round. Absent: none is listed.
    */
   censusPullRequests?(facts: Omit<CensusFacts, 'landing'>): Promise<void>;
+  /** Pull request `url` merged (issue #2914, "Head branch deletion"): keeps its head branch's deletion, once. Absent: none. */
+  headBranchMerged?(url: string): void;
+  /** The sweep of stale head branches (issue #2914): keeps a deletion for each of the job repositories'. `live`: a job not ended names this pull request. False: it had no repository to read yet, so it runs again at the next round. Absent: none. */
+  sweepHeadBranches?(facts: { live(url: string): boolean }): Promise<boolean>;
   /**
    * The pull requests jobs wait on (issue #1433, `waitedPullRequests`): of `pulls`, the ones merged or closed without a merge
    * now. Asked at each sync while a job of the source waits on one, whatever job, if any, follows it. One the source cannot

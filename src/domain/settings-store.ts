@@ -20,7 +20,7 @@ import type { GradeSettings } from './grades.ts';
 import type { MemoryAlert } from './machine-history.ts'; import type { DiskBudget } from './hopper-disk.ts'; import type { DiskDefaults } from './disk-defaults.ts'; import type { HeaderBadgeSettings } from './header-badges.ts'; import type { PushRequirement } from './push-requirements.ts';
 import type {
   AutoAnswerSettings, PreemptionSettings, ComponentWatcherSettings, GitHubWatchSettings, BlastRadiusSettings, ConnectedAccountKey, LaneId, LaneDismissals, LaneTuningSettings, DiscoveryRecord, FailureSettings, LoginExpiryAction, MinorDecisionSettings, NamedCause, PhaseShiftSettings,
-  PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, ShrinkGuardSettings, LandingBatchSettings,
+  HeadBranchSettings, PluginInstall, PluginStoreSource, PriorityLaneSettings, QueueGate, ReviewKind, ReviewSettings, ThreadAskSettings, TldrSettings, UpdateSettings, UsageGraphView, UsageLimitPair, YoloModeSettings, ContributionSettings, ShrinkGuardSettings, LandingBatchSettings,
 } from './types.ts';
 
 /** A user's settings (in the user schema). */
@@ -168,6 +168,8 @@ export interface UserSettingsRepository {
   setLandingBatches(settings: LandingBatchSettings): void;
   /** Delivery settings (issue #2554 part 3): per repository, its promotion set schedule and delivery gates; absent: never set (none). */
   getDeliverySettings(): DeliverySettings | undefined; setDeliverySettings(settings: DeliverySettings): void;
+  /** Head branch deletion (issue #2914), per repository; absent: on everywhere. */
+  getHeadBranches(): HeadBranchSettings | undefined; setHeadBranches(settings: HeadBranchSettings): void;
   /** Contribution (issue #429): whether jobs may work through a fork of a repository their user cannot push to; absent: off. */
   getContribution(): ContributionSettings | undefined;
   setContribution(settings: ContributionSettings): void;

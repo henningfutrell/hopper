@@ -12,6 +12,7 @@
 // entry of the repository (`pullRequest: true`) and an issue; and `u<i>: repository(owner, name) { pullRequests(states: OPEN) }`
 // aliases, each repository's open pull request entries, newest (highest number) first.
 
+import { branchQueries } from './fake-branches.ts';
 import type { FakeCtx, FakeReply, FakeReq } from './fake-routes.ts';
 import type { FakeIssue, FakePullRequest, FakeRepo } from './fake-state.ts';
 
@@ -223,6 +224,8 @@ function pulls(ctx: FakeCtx, req: FakeReq, b: GqlBody): FakeReply {
 export function graphql(ctx: FakeCtx, req: FakeReq): FakeReply {
   const b = (req.body ?? {}) as GqlBody;
   const query = b.query ?? '';
+  const branches = branchQueries(ctx, b);
+  if (branches) return branches;
   if (/[pu]0: repository\(owner/.test(query)) return pulls(ctx, req, b);
   if (/r0: repository\(owner/.test(query)) return listing(ctx, req, b);
   if (/q0: repository\(owner/.test(query)) return batched(ctx, req, b);

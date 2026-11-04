@@ -69,6 +69,12 @@ export interface FakeGitHub extends GitHubApi {
   setBaseTip(repo: string, base: string, tip: string | undefined): void;
   /** A push to a pull request's branch (issue #618): a new head commit at `at`, with or without merge conflicts after it. */
   pushToPullRequest(url: string, at: string, o?: { conflicting?: boolean }): void;
+  /** Whether branch `name` of `repo` is there (issue #2914): a pull request's head, until it is deleted. */
+  hasBranch(repo: string, name: string): boolean;
+  /** A push to branch `name` (`tip`), or its protection (issue #2914). */
+  setBranch(repo: string, name: string, o: { tip?: string; protected?: boolean }): void;
+  /** Pull request `url`'s head is in a fork (issue #2914). */
+  setForkPull(url: string): void;
   /** Mark an open draft pull request ready for review (issue #626). */
   markReady(url: string): void;
   /** Merge an open pull request (at `at`, default now): one that closes its issue closes it. */

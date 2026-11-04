@@ -56,7 +56,7 @@ export interface FakePullRequest { url: string; createdAt: string; isDraft: bool
 
 export interface FakeMention extends FakePullRequest { state: 'OPEN' | 'CLOSED' | 'MERGED'; body: string; repo: string; mergedAt?: string }
 
-export interface FakeRepoInput { owner: string; name: string; labels?: string[]; issues?: FakeIssueInput[]; lacks?: FakeLack[] }
+export interface FakeRepoInput { owner: string; name: string; labels?: string[]; issues?: FakeIssueInput[]; lacks?: FakeLack[]; branches?: { name: string; sha: string; protected?: boolean }[] }
 
 export interface FakeInstallationInput {
   id: number;
@@ -116,6 +116,8 @@ export interface FakeRepo {
   labels: Set<string>;
   issues: Map<number, FakeIssue>;
   lacks: FakeLack[];
+  /** Its branches (issue #2914): only those a test names. */
+  branches: Map<string, { sha: string; protected?: boolean }>;
 }
 
 export interface FakeTokenRecord {
@@ -166,6 +168,7 @@ export function buildState(o: FakeGitHubOptions, now: string): FakeState {
       }
       state.repos.set(`${r.owner}/${r.name}`, {
         owner: r.owner, name: r.name, installationId: inst.id, labels: new Set(r.labels ?? []), issues, lacks: r.lacks ?? [],
+        branches: new Map((r.branches ?? []).map((b) => [b.name, { sha: b.sha, ...(b.protected ? { protected: true } : {}) }])),
       });
     }
   }

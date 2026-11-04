@@ -7719,6 +7719,54 @@ Version 1 (`docs/schemas/contribution.changed.v1.json`). An admin turned Contrib
 }
 ```
 
+## `head_branches.changed`
+
+Version 1 (`docs/schemas/head_branches.changed.v1.json`). An admin changed head branch deletion (issue #2914): `repos` names each repository set on or off; a repository not named is on.
+
+| field | type | required |
+|---|---|---|
+| `from` | object | yes |
+| `to` | object | yes |
+| `by` | string | yes |
+
+```json
+{
+  "from": {
+    "repos": {}
+  },
+  "to": {
+    "repos": {
+      "owner/repo": false
+    }
+  },
+  "by": "owner"
+}
+```
+
+## `head_branch.deleted`
+
+Version 1 (`docs/schemas/head_branch.deleted.v1.json`). The hopper deleted the head branch of a merged or closed pull request (issue #2914, design.md "Head branch deletion"): `via` `merge`, at the record of its merge, or `sweep`. `head` is the commit the branch was at, so a person can make it again.
+
+| field | type | required |
+|---|---|---|
+| `repo` | string | yes |
+| `branch` | string | yes |
+| `pullRequest` | string | yes |
+| `head` | string | yes |
+| `via` | `merge` \| `sweep` | yes |
+| `source` | string | yes |
+
+```json
+{
+  "repo": "owner/repo",
+  "branch": "hopper/12-fix",
+  "pullRequest": "https://github.com/owner/repo/pull/12",
+  "head": "a1b2c3d",
+  "via": "merge",
+  "source": "github"
+}
+```
+
 ## `shrink_guard.changed`
 
 Version 1 (`docs/schemas/shrink_guard.changed.v1.json`). An admin changed the shrink guard's percent (issue #1096): a job's push that brings in its base branch is refused when it takes more than this percent of a file's lines, or empties or removes it, and the branch's own change did not. `from` and `to` (`percent`), and `by`, who. It applies to the next push.
