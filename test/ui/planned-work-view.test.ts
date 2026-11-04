@@ -8,6 +8,8 @@ import { createElement } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { jobBom } from '../../src/domain/job-bom.ts';
+import type { Job } from '../../src/domain/types.ts';
 
 const issue = (n: number) => ({ id: `acme/app#${n}`, repo: 'acme/app', number: n, title: `title ${n}`, url: `https://github.com/acme/app/issues/${n}` });
 const at = '2026-10-03T00:00:00Z';
@@ -26,6 +28,8 @@ const PLAN = {
   ],
 };
 
+const RUNNING_JOB = { id: 'job-run-2', spec: { executor: 'test', payload: {}, goal: 'goal' }, priority: 50, status: 'running', approved: true, attempts: 1, createdAt: '2026-10-03T10:00:00Z', updatedAt: '2026-10-03T10:00:00Z' } as Job;
+
 const asked: string[] = [];
 const posted: [string, unknown][] = [];
 function fakeDaemon() {
@@ -35,7 +39,8 @@ function fakeDaemon() {
     '/api/machines': { machines: [] }, '/api/events': { events: [] }, '/api/questions': { questions: [] }, '/api/sources': { sources: [] },
     // The job view a job node opens.
     '/api/connected-accounts': { accounts: [] },
-    '/api/jobs/job-run-2': { id: 'job-run-2', spec: { executor: 'test', payload: {}, goal: 'goal' }, priority: 50, status: 'running', approved: true, attempts: 1, createdAt: '2026-10-03T10:00:00Z', updatedAt: '2026-10-03T10:00:00Z' },
+    '/api/jobs/job-run-2': RUNNING_JOB,
+    '/api/jobs/job-run-2/bom': jobBom({ job: RUNNING_JOB, events: [], questions: [], artifacts: [], related: [], now: at }),
   };
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string, init?: RequestInit) => {
@@ -52,6 +57,8 @@ function fakeDaemon() {
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'local', name: 'login code' }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path === '/api/planned-work') return new URLSearchParams(query).get('plan') === 'acme/app#1' ? json(200, PLAN) : json(404, { error: 'no work plan acme/app#99 is kept: import it first (POST /ui/api/planned-work/import)' });
     if (path === '/api/planned-work/export') return new Response('plan_id\n', { status: 200, headers: { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="planned-work-acme-app-1.csv"' } });
+    // The job view's other reads (its tokens, its review) are not a {}: it reads their fields.
+    if (path.startsWith('/api/jobs/') && !(path in routes)) return json(404, { error: 'not found' });
     return json(200, routes[path] ?? {});
   });
 }
