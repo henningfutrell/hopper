@@ -2,6 +2,7 @@
 // the user's token from the hopper's GitHub App, over the REST and GraphQL calls in app/), and the in-memory fake (fake.ts). Errors are GitHubApiError, classified
 // permanent (403/404/410/422, missing scope) or transient (network, 5xx, rate limit, timeout).
 
+import type { BranchFacts, BranchRef, HeadBranchPull } from '../../domain/head-branches.ts';
 import type { ChecksState, FailedCheck } from '../../domain/pull-requests.ts';
 import type { CheckFact } from '../../domain/conditional-skills.ts';
 import type { LinkedItem } from '../../domain/linked-pulls.ts';
@@ -106,6 +107,9 @@ export interface NumberedPullRequest extends OpenPullRequest {
 }
 
 /** An open pull request of a repository, with its branch (issue #637) and its body (issue #763: the issue it closes). */
+/** One page of a repository's branches (issue #2914). `after`: the next page's cursor, absent on the last page. */
+export interface BranchRefPage { refs: BranchRef[]; defaultBranch: string; after?: string }
+
 export interface BranchPullRequest extends OpenPullRequest {
   /** Its head branch's name. */
   headRef: string;
@@ -301,6 +305,14 @@ export interface GitHubApi {
    * pull request it follows). GitHub's refusal — not mergeable, checks required, no access — throws.
    */
   merge(repo: string, number: number): Promise<void>;
+  /** Pull request `number` as a head branch's deletion reads it (issue #2914); undefined: no such pull request. Absent: nothing is deleted. */
+  headBranchPull?(repo: string, number: number): Promise<HeadBranchPull | undefined>;
+  /** Branch `branch` as a deletion reads it (issue #2914); undefined: no such branch. */
+  branchFacts?(repo: string, branch: string): Promise<BranchFacts | undefined>;
+  /** Deletes branch `branch` (issue #2914). A branch already gone, or one GitHub's rules keep (422), ends with no throw. */
+  deleteBranch?(repo: string, branch: string): Promise<void>;
+  /** One page of `repo`'s branches with the pull requests whose head each is (issue #2914), for the sweep; `after`: the next page's cursor. */
+  branchRefs?(repo: string, after?: string): Promise<BranchRefPage>;
   /**
    * Close pull request `number` of `repo` without a merge (issue #677: a person's Close PR; issue #1143: a job's pull
    * request with nothing left to land).

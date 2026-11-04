@@ -23,7 +23,7 @@ function world(on = true) {
   };
   const make = (s: typeof on) => {
     const outbox = createGitHubOutbox({ source: 'github', rows, clock });
-    const branches = createHeadBranches({ api: gh, outbox, clock, settings: () => ({ on: s, keep: ['landing'] }), record: (t, d) => { events.push([t, d]); } });
+    const branches = createHeadBranches({ api: gh, outbox, clock, source: 'github', settings: () => ({ on: s, keep: ['landing'] }), record: (t, d) => { events.push([t, d]); } });
     return { outbox, branches, flush: () => outbox.flush(outboxSend(gh, async () => {}, async () => {}, undefined, branches.send)) };
   };
   return { gh, rows, events, open, ...make(on), again: () => make(on), later: (ms: number) => { now += ms; } };
@@ -130,6 +130,7 @@ describe('the sweep (issue #2914)', () => {
     const off = world(false);
     await off.branches.sweep([REPO], { live: () => false });
     expect(off.gh.calls.filter((c) => c.method === 'branchRefs')).toEqual([]);
+    expect(await off.branches.sweep([], { live: () => false })).toBe(false);
     const w = world();
     const url = w.open('a'); w.gh.mergePullRequest(url, OLD);
     await w.branches.sweep([REPO], { live: () => false });

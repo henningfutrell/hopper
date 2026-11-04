@@ -3,6 +3,7 @@
 // `../http/`, each with the account's token: the one way the hopper reaches GitHub (issue #1377).
 // `token()` is asked at every call: a disconnect or a new connection applies at once. A token GitHub refuses
 // (401) is renewed (`renew`, issue #358) and the call made once more with the new one.
+import { branchFacts, branchRefs, deleteBranch, headBranchPull } from '../http/head-branches.ts';
 import { GitHubApiError, isPermanent, webOriginOf } from '../api.ts';
 import type { GitHubApi } from '../api.ts';
 import { closingPullRequest, crossReferences, issueEdits, issuePlace, linkedItem, openClosingPullRequests, openPullRequests, projectItems, pullRequest, referencingPullRequests } from '../http/graphql.ts';
@@ -90,6 +91,10 @@ export function createAccountGitHubApi(o: { apiUrl: string; installUrl?: string 
     openPullRequestsIn: (repos) => call(`open pull requests of ${repos.length} repositories`, (t) => openPullRequestsIn(req, t, repos)),
     pullRequestStates: (refs) => call(`${refs.length} pull requests`, (t) => pullRequestStates(req, t, refs)),
     merge: (repo, number) => call(`merge ${repo}#${number}`, (t) => rest.mergePullRequest(req, t, repo, number)),
+    headBranchPull: (repo, number) => call(`head branch of ${repo}#${number}`, (t) => headBranchPull(req, t, repo, number)),
+    branchFacts: (repo, branch) => call(`branch ${branch} of ${repo}`, (t) => branchFacts(req, t, repo, branch)),
+    deleteBranch: (repo, branch) => call(`delete branch ${branch} of ${repo}`, (t) => deleteBranch(req, t, repo, branch)),
+    branchRefs: (repo, after) => call(`branches of ${repo}`, (t) => branchRefs(req, t, repo, after)),
     closeWithoutMerge: (repo, number) => call(`close ${repo}#${number}`, (t) => rest.closePullRequest(req, t, repo, number)),
     retarget: (repo, number, base) => call(`base of ${repo}#${number}`, (t) => rest.retargetPullRequest(req, t, repo, number, base)),
     toDraft: (repo, number) => call(`draft ${repo}#${number}`, (t) => rest.convertToDraft(req, t, repo, number)),

@@ -61,7 +61,8 @@
 // #2127): before each tend, the source reads it when the ledger does not hold it closed (`JobSource.issueState`).
 // Strays (issue #1143 part 4, `strays.ts`): in a round of every one, after reconciling, the pull requests no job follows, of items no job works on, get the same housekeeping.
 // The census (issue #1176, `census.ts`): after the strays, at most once an hour, the source lists every open pull request of its job repositories that no job
-// names and the ledger does not hold, each with why (`JobSource.censusPullRequests`, `untrackedPullRequests`).
+// names and the ledger does not hold, each with why (`JobSource.censusPullRequests`, `untrackedPullRequests`). After it, the sweep of stale head branches
+// (issue #2914, `head-branch-sweep.ts`), at most once an hour.
 // The work-item ledger (issue #1067, part 3): what an open pull request waits on (its **pull request wait**: a draft, merge
 // conflicts, failed checks, checks running, the merge) is recorded as `job.pull_request_seen` when it differs from what the
 // ledger holds for it, so the item says what it waits on. What was seen of it stays kept with no event otherwise.
@@ -70,7 +71,7 @@ import { createTendAgain } from './tend-again.ts'; import { createPullRequestAct
 import { dueRepoOf, heldTooLong, queueHeads, tendOrder, type Holds, type QueueHead, type TendDue } from '../domain/tending-queue.ts';
 import { pickHead } from './tend-order.ts';
 import { strayHousekeeping } from './strays.ts'; import { changeOf, keepFollowed } from './keep-followed.ts';
-import { pullRequestCensus } from './census.ts'; import { recordCiMiss } from './ci-missed.ts'; import { companionPullRequests } from './companions.ts'; import { waitingJobPullRequests } from './waiting-pull-requests.ts';
+import { headBranchSweep } from './head-branch-sweep.ts'; import { pullRequestCensus } from './census.ts'; import { recordCiMiss } from './ci-missed.ts'; import { companionPullRequests } from './companions.ts'; import { waitingJobPullRequests } from './waiting-pull-requests.ts';
 import {
   failedTend, following, followsWhenEnded, inMotion, jobPullRequestRepo, judge, MAX_TENDS, rebasesWhenBaseMoves, rechecksMerge, reconcilable, tendBrief, tendRetryAt, tendsInRow, tendStep,
   type ActingPerson, type BaseMerge, type ChangeKind, type FollowUp, type FoundPullRequest, type Job, type JevFirst, type PullRequestSeen, type Tended, type TendChecks,
@@ -109,7 +110,7 @@ export type FollowRound = 'all' | 'in_motion' | 'none';
 
 export function createAfterDone(c: AfterDoneContext) {
   const { store } = c;
-  const strays = strayHousekeeping(c), census = pullRequestCensus(c), companions = companionPullRequests(c), waiting = waitingJobPullRequests(c);
+  const strays = strayHousekeeping(c), census = pullRequestCensus(c), sweep = headBranchSweep(c), companions = companionPullRequests(c), waiting = waitingJobPullRequests(c);
 
   /**
    * The newest of `listed`, from one read of the jobs table (issue #1154): a sync of a source with about 740 ended jobs
@@ -137,12 +138,13 @@ export function createAfterDone(c: AfterDoneContext) {
 
   /** Keep what following found, and record a merge or a close: by the hopper, by `acting`, or as seen on GitHub. */
   function record(jobId: string, r: FollowUp, acting?: ActingPerson): void {
-    keepFollowed(c, jobId, r);
     // Who merged it: the act's, else as its merge marker kept it, after a stop (issue #1588).
-    const who = acting ?? r.acting;
+    keepFollowed(c, jobId, r); const who = acting ?? r.acting;
     // And a CI run that failed on a check a push requirement stands for (issue #2555 part 5).
     if (r.outcome === 'open') { seen(jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined); recordCiMiss(store, jobId, r.pullRequest, r.state.seen as PullRequestSeen | undefined); }
     if (r.outcome === 'open' || r.outcome === 'checked') return;
+    // Its head branch's deletion before the record (issue #2914): a stop between them records the merge again, and keeps no second row.
+    if (r.outcome === 'merged') { const job = store.jobs.get(jobId); if (job) c.sourceOf(job)?.headBranchMerged?.(r.pullRequest); }
     store.events.append({
       type: r.outcome === 'merged' ? 'job.pull_request_merged' : r.outcome === 'abandoned' ? 'job.pull_request_abandoned' : 'job.pull_request_closed', jobId,
       data: {
@@ -453,7 +455,7 @@ export function createAfterDone(c: AfterDoneContext) {
     /** One sync of the source: the jobs of its round to follow, or to judge again; then the tends. `asked`: a census now. */
     async catchUp(source: JobSource, listed: Job[], round: FollowRound = 'all', asked = false): Promise<void> {
       const all = round === 'all';
-      if (all) await reconcile(source, listed).then(() => strays(source, listed)).then(() => census(source, listed, asked)).then(() => companions.read(source, listed)).then(() => waiting(source, listed));
+      if (all) await reconcile(source, listed).then(() => strays(source, listed)).then(() => census(source, listed, asked)).then(() => sweep(source, listed)).then(() => companions.read(source, listed)).then(() => waiting(source, listed));
       const stored = store.jobs.list(), jobs = fresh(listed, stored), newest = newestOfItems(stored);
       const run = (j: Job, fn: (s: JobSource, id: string) => Promise<void>) =>
         c.enqueue(j.id, () => fn(source, j.id).catch((e: unknown) => { c.failed(j.id, e); }));

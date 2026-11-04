@@ -207,6 +207,8 @@ export interface JobSourceContext {
   needsMerge?(repo: string): boolean;
   /** A repository's landing branch (issue #1143): its landing batch setting (issue #1142), read at each call; undefined: no landing batches. */
   landingBranch?(repo: string): string | undefined;
+  /** A repository's head branch deletion (issue #2914): on or off, and the branches it never deletes. Read at each call. Absent: nothing is deleted. */
+  headBranches?(repo: string): { on: boolean; keep: string[] };
   /** The change rule of this repository (issue #1076): what kind of change a pull request is, and each kind's merge gate. Read at each call. */
   changeRule(repo: string): ChangeRule;
   /** The artifacts a job made (issue #673): each one's id and the URL of the issue it is linked to. */

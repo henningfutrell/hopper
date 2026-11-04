@@ -358,6 +358,8 @@
         "job.child_issue_filed",
         "job.sub_issue_linked",
         "contribution.changed",
+        "head_branches.changed",
+        "head_branch.deleted",
         "shrink_guard.changed",
         "credential_check.changed",
         "pointed_job.created",

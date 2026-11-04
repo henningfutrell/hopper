@@ -15,6 +15,8 @@ import type { PullRequestAct } from './pull-requests.ts';
  * Rework's `notes`; or Failures' Retry, a hand-off's Continue or I fixed it, Push it or Tend again (part 5), run by its own
  * service, which `target` (the failure record, hand-off or job the act names) and the person's `input` name, so the sync
  * loop checks and runs it again after a restart. `at`: when the act was kept, so a send again finds a job made since.
+ * `delete_head_branch` deletes a pull request's head branch (issue #2914): `via` the record of its merge, or the sweep. Its row's
+ * key is the pull request's URL, not an issue's.
  */
 export type OutboxChange =
   | { op: 'add_labels'; labels: string[] }
@@ -24,7 +26,8 @@ export type OutboxChange =
   | { op: 'comment'; body: string }
   | { op: 'close_not_planned' }
   | { op: 'pull_request'; act: PullRequestAct; jobId: string; acting: ActingPerson }
-  | { op: 'give_back'; act: OutboxGiveBack; jobId: string; acting?: ActingPerson; notes?: string; target?: string; input?: GiveBackInput; at?: string };
+  | { op: 'give_back'; act: OutboxGiveBack; jobId: string; acting?: ActingPerson; notes?: string; target?: string; input?: GiveBackInput; at?: string }
+  | { op: 'delete_head_branch'; pullRequest: string; via: 'merge' | 'sweep' };
 
 /** The give-backs kept as outbox rows: Run again and Rework (part 4), and the acts their own services run (part 5). */
 export type OutboxGiveBack = GiveBackAct;
@@ -37,14 +40,14 @@ export type OutboxGiveBackMore = Pick<Extract<OutboxChange, { op: 'give_back' }>
  * a person's Merge now or Close PR (part 3), a person's act that gives an ended job's item back (parts 4 and 5), or
  * `mirror`, the label mirror's change of a blocked item's end labels to its state (issue #1891), or `follow`, the end labels
  * of the state a followed pull request's end moves its item to (issue #1892 part 14), or `report`, a job's claim and the end
- * labels of the state its end moves its item to (issue #1892 part 15).
+ * labels of the state its end moves its item to (issue #1892 part 15), or `head_branch`, a head branch's deletion (issue #2914).
  */
-export type OutboxAct = IntakeActionKind | 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow' | 'report';
+export type OutboxAct = IntakeActionKind | 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow' | 'report' | 'head_branch';
 
-const NOT_INTAKE: readonly OutboxAct[] = ['resolve', 'merge', 'close', 'rerun', 'rework', 'retry', 'continue', 'fixed', 'push', 'tend', 'mirror', 'follow', 'report'];
+const NOT_INTAKE: readonly OutboxAct[] = ['resolve', 'merge', 'close', 'rerun', 'rework', 'retry', 'continue', 'fixed', 'push', 'tend', 'mirror', 'follow', 'report', 'head_branch'];
 
 /** An act whose rows are not an intake item's write: the item shows no marker for them. */
-export const notIntake = (act: OutboxAct): act is 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow' | 'report' => NOT_INTAKE.includes(act);
+export const notIntake = (act: OutboxAct): act is 'resolve' | PullRequestAct | OutboxGiveBack | 'mirror' | 'follow' | 'report' | 'head_branch' => NOT_INTAKE.includes(act);
 
 /**
  * The sync loop's part of a flush: it sends a Merge now or Close PR row (part 3) or a give-back row (parts 4 and 5), and
@@ -148,6 +151,7 @@ export function coalesce(rows: OutboxRow[]): OutboxPlan[] {
       else if (c.op === 'read_comments') reads.push(r.id);
       else if (c.op === 'close_not_planned') closes.push(r.id);
       else if (c.op === 'comment') comments.set(c.body, [...(comments.get(c.body) ?? []), r.id]);
+      else if (c.op === 'delete_head_branch') acts.set(c.pullRequest, { change: acts.get(c.pullRequest)?.change ?? c, rows: [...(acts.get(c.pullRequest)?.rows ?? []), r.id] });
       else if (c.op === 'pull_request' || c.op === 'give_back') { const k = `${c.jobId}\n${c.act}`; acts.set(k, { change: acts.get(k)?.change ?? c, rows: [...(acts.get(k)?.rows ?? []), r.id] }); }
       else {
         const op = c.op === 'add_labels' ? 'add' : 'remove';

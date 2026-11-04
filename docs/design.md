@@ -25932,6 +25932,57 @@ a value, a client's answer), `test/decider/infra-credentials.test.ts` (held, pin
 `test/ui/machine-infra-credentials.test.ts` (the text, the guided fix, Needs you's lines), `test/ui/needs-you.test.ts`,
 `test/ui/accounts-view.test.ts`.
 
+## Head branch deletion (issue #2914, 2026-11-04)
+
+**The problem.** A repository held about 1,445 branches, about 1,380 of them heads of pull requests already merged. The batch
+runner deletes its own `hopper-batch/*` branches; nothing deleted a job's.
+
+**What the hopper does now** (`src/domain/head-branches.ts`, pure; `src/sources/github/head-branches.ts`, the calls):
+
+- **At a merge.** The record of a followed pull request's merge (`after-done.ts`), by the hopper, by a person's Merge now or as
+  seen on GitHub, and of a stray's (`strays.ts`), keeps one **GitHub outbox** row: op `delete_head_branch`, act `head_branch`,
+  key the pull request's URL. The row is kept before the merge's event, and only once per pull request, so a stop between them
+  records the merge again and keeps no second row. The next send (at most 5 s later) deletes the branch.
+- **The sweep** (`src/sources/head-branch-sweep.ts`). In a round of every follow, after the census, at most once an hour, the
+  source lists the branches of its job repositories (GraphQL `refs`, each with the pull requests whose head it is) and keeps a
+  row, `via` `sweep`, for each stale one, at most 100 per pass. Stale (`staleHeadBranches`): no open pull request of this
+  repository has it as its head, and a pull request that ended at least 24 hours ago (`HEAD_BRANCH_GRACE_MS`) ended on the commit
+  it is at now. A pull request a job not ended names is left. It catches what the merge's row does not reach: a pull request no
+  job followed, a companion's, a direct job's, and the backlog from before this change.
+- **The send** reads the pull request and the branch again, and deletes the branch only when nothing keeps it (`pullBranchKept`,
+  `headBranchKept`): an open pull request; a fork's head; the default branch; a release branch (`RELEASE_BRANCHES`, `release/…`,
+  `releases/…`); the repository's landing or tested branch; a protected branch; a tip that is not the pull request's head (commits
+  after it ended: GitHub keeps a merged or closed pull request's head at the commit it ended on); another open pull request with
+  this branch as its head, or as its base (GitHub closes that one when its base branch goes). A kept branch is left, with no
+  event. The setting is read at the send too.
+- **The setting.** Delete head branches after merge, per repository, on by default, covers both (`GET /api/head-branches`,
+  `POST /ui/api/head-branches`, an admin's, `head_branches.changed`; Settings → Head branches). A repository the hopper does not
+  work on follows the same setting at a merge; the sweep reads only job repositories.
+- **The record.** `head_branch.deleted` names the repository, the branch, the pull request, the commit and `via`, so a person can
+  make the branch again. GitHub also keeps the pull request's Restore branch.
+
+**A crash anywhere.** Each step leaves something the next hopper finishes. Stopped between the merge call and its record: the merge
+marker (issue #1588) records the merge at the next follow, and the row goes with it. Stopped before the delete: the claim ends, and
+the row is sent. Stopped after the delete and before the row is `sent`: the send again reads no branch and is done (the event
+of that delete is lost; the branch is gone). A row that failed for good is listed on Sources with a Retry, and the sweep keeps no
+second row for it. Whatever else is left, the sweep finds after the grace.
+
+**Decisions:**
+- **An outbox row, not a saga.** The outbox has the source's GitHub connection, its claim and backoff, its crash harness and a
+  person's Retry already; a saga's key would hold a pull request's deletion for ever once it ended. One cost: a hopper moved back to
+  an older build (a steadier update channel) cannot read this op, so rows not sent at that moment hold that build's outbox until
+  they are gone. Rows are sent within seconds; the window is a sweep's minute or two.
+- **A grace on the sweep.** A closed pull request may be reopened, and a person may still be at a branch just merged. The merge's
+  own row does not wait: its branch's work is on the base.
+- **No compare-and-delete.** GitHub's delete takes no expected commit, so a push between the read and the delete is lost from the
+  branch, though not from the pusher's clone. The window is one call.
+- **GitLab is not covered.** The issue names GitHub's route; GitLab's merge request has its own remove-source-branch option.
+
+**Verification:** `test/domain/head-branches.test.ts` (the rules), `test/sources/github-head-branches.test.ts` (merge row, kept
+branches, retry, the sweep), `test/sources/github-head-branch-http.test.ts` (the adapter), `test/integration/head-branches.test.ts`
+(the daemon: a merge, a stop before the merge's record, the setting, the sweep), `test/crash/head-branch-kill.test.ts` (SIGKILL before the
+delete, after it, and before the row is sent).
+
 ## Pull request housekeeping (issue #1143 part 1, 2026-10-14)
 
 **The problem.** Job pull requests sat with no signal on them. Three still had `dev` as their base after `main` became the

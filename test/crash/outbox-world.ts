@@ -62,7 +62,7 @@ export async function outboxWorld(): Promise<OutboxWorld> {
 }
 
 /** Keeps `rows` in the admin's outbox, as an act keeps them; the next send of a running hopper takes them. */
-export function keepRows(w: OutboxWorld, rows: Omit<OutboxInput, 'source' | 'repo'>[]): void {
+export function keepRows(w: Pick<OutboxWorld, 'userUrl'>, rows: Omit<OutboxInput, 'source' | 'repo'>[]): void {
   const store = openUserStore({ url: w.userUrl, clock: { now: () => new Date() }, idGen: randomUUID });
   try { store.githubOutbox.add(rows.map((r) => ({ ...r, source: 'github', repo: REPO })), new Date().toISOString()); } finally { store.close(); }
 }
