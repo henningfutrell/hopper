@@ -8,7 +8,7 @@ import type { UserStore } from '../domain/store.ts';
 import type { SweepLease } from '../domain/leases.ts';
 import { everyJobRepository } from '../domain/job-repositories.ts';
 import { DEFAULT_YOLO_MODE, isRerunnable, mergeRuleFor, needsMergeIn, yoloModeFor, type Parts } from '../domain/types.ts';
-import { landingBranch } from '../domain/landing-batches.ts';
+import { landingBranch } from '../domain/landing-batches.ts'; import { DEFAULT_HEAD_BRANCHES, headBranchDeletionOn } from '../domain/head-branches.ts';
 import { rejectionOf } from '../domain/rejection.ts';
 import { requestsWaitingOf } from '../domain/work-items.ts';
 import { awaitsBatch, promotedOpen } from '../domain/work-item-landing.ts';
@@ -143,5 +143,10 @@ export const pullRequestSettings = (store: UserStore) => ({
   needsMerge: (repo: string): boolean => needsMergeIn(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(store)),
   // The landing batch setting's, never GitHub's default branch (issues #1142, #1143).
   landingBranch: (repo: string): string | undefined => { const cfg = store.settings.getLandingBatches()?.repos[repo.toLowerCase()]; return cfg && landingBranch(cfg); },
+  // The landing and tested branches stay (issue #2914), whatever they are named.
+  headBranches: (repo: string) => {
+    const cfg = store.settings.getLandingBatches()?.repos[repo.toLowerCase()];
+    return { on: headBranchDeletionOn(store.settings.getHeadBranches() ?? DEFAULT_HEAD_BRANCHES, repo), keep: cfg ? [landingBranch(cfg), cfg.tested] : [] };
+  },
   changeRule: (repo: string) => mergeRuleFor(store.settings.getYoloMode() ?? DEFAULT_YOLO_MODE, repo, everyJobRepository(store)),
 });

@@ -23,7 +23,7 @@ import type { FakeActor, FakeGitHub, Method, PullRequestInput } from './fake-typ
 import { fakeConflicts } from './fake-conflicts.ts'; import { fakeChangedLines } from './fake-changed-lines.ts';
 import { fakeIssuePlace } from './fake-issue-place.ts';
 import { fakePulls } from './fake-pulls.ts';
-import { fakePullActs } from './fake-pull-acts.ts';
+import { fakeHeadBranches } from './fake-head-branches.ts'; import { fakePullActs } from './fake-pull-acts.ts';
 import { fakeListing } from './fake-listing.ts'; import { fakeLinks } from './fake-links.ts';
 
 export type { FakeActor, FakeGitHub, PullRequestInput } from './fake-types.ts';
@@ -111,7 +111,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
   const touch = (i: GitHubIssue) => { i.updatedAt = stamp(); };
   const listing = fakeListing(issues, (m, a) => enter(m, a)); const links = fakeLinks((m, a) => enter(m, a));
   const acts = fakePullActs(pulls, (m, a) => enter(m, a), notFound);
-  const batched = fakePulls(pulls, issues, (m, a) => enter(m, a));
+  const batched = fakePulls(pulls, issues, (m, a) => enter(m, a)); const branches = fakeHeadBranches(pulls, (m, a) => enter(m, a));
   const pullOf = (repo: string, n: number) => (issues.has(key(repo, n)) ? undefined : pulls.find((p) => p.url === `https://github.com/${repo}/pull/${n}`));
   const heads = fakeHeadChecks((m, a) => enter(m, a), (repo, ref) => pulls.find((p) => p.repo === repo && (p.headRef === ref || p.headOid === ref))?.url);
 
@@ -232,7 +232,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
       if (p.state !== 'open' || p.isDraft || p.conflicting) throw new GitHubApiError(`Pull Request is not mergeable (HTTP 405): ${p.url}`, true, 405);
       merged(p, new Date().toISOString(), human);
     },
-    ...acts.api,
+    ...acts.api, ...branches.api,
     jobLog: jobLogs.jobLog,
     rerunJob: jobLogs.rerunJob, workflowRun: jobLogs.workflowRun, pullRequestReviews: reviews.pullRequestReviews,
     headChecks: heads.headChecks, checkRuns: heads.checkRuns, ...links.api,
@@ -325,7 +325,7 @@ export function createFakeGitHub(o: { login?: string; defaultBranch?: string } =
     failNext(method, error) { failures.set(method, [...(failures.get(method) ?? []), error]); },
     issue(repo, n) { return copy(find(repo, n)); },
     commentsOn(repo, n) { return (comments.get(key(repo, n)) ?? []).map((c) => ({ ...c })); },
-    ...acts.helpers, ...links.helpers,
+    ...acts.helpers, ...links.helpers, ...branches.controls,
     labelsIn(repo) { return [...repoLabels(repo)]; },
   };
   return fake;

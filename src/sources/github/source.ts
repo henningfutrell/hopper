@@ -47,7 +47,7 @@ import { NOT_ASSIGNED, discoverIssues, type Rejection } from './discover.ts';
 import { intakeAct } from './intake-actions.ts';
 import { createApprovals } from './approvals.ts'; import { autoOutcome } from './auto-approve.ts';
 import { createLabelMirror } from './label-mirror.ts'; import { handoffSettling } from './item-labels.ts';
-import { actGaveUp, createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts';
+import { actGaveUp, createGitHubOutbox, memoryGitHubOutbox, outboxSend } from './outbox.ts'; import { createHeadBranches } from './head-branches.ts';
 import { outsideReader } from './outside.ts';
 import { priorityOf, readProjects } from './priority.ts';
 import { awaitingBatch, closePromoted, declinedOutcome, openRequests, originsOf, reopenedRequests, requestOutcome, withdrawRequests } from './origin.ts';
@@ -91,7 +91,7 @@ export interface GitHubSourceOptions {
    * And a repository's landing branch, from its landing batch settings (issue #1143); absent or undefined: no pull request is moved.
    * And the change rule of a repository (issue #1076): a followed pull request's kind and its merge gate. Absent: the built-in rule.
    */
-  yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined; changeRule?: (repo: string) => ChangeRule;
+  headBranches?: (repo: string) => { on: boolean; keep: string[] }; yoloMode?: (repo: string) => boolean; landingBranch?: (repo: string) => string | undefined; changeRule?: (repo: string) => ChangeRule;
   /** Whether the hopper merges nothing in the repo (issue #2752): none of the job repositories, and yolo mode not named on for it. Absent: never. */
   needsMerge?: (repo: string) => boolean;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. Absent: none. */
@@ -214,6 +214,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
 
   // Take into Intake sent (issue #1238): its pull request's row follows it, before the next census.
   const outbox = createGitHubOutbox({ source: o.name, rows: o.outbox ?? memoryGitHubOutbox(), clock: o.clock, ...(o.intake ? { record: o.intake.record } : {}), ...(o.connected ? { connected: o.connected } : {}), sent: (r) => { if (r.act === 'take_in' && !outbox.held(r.key)) census.takenIn(r.key); } });
+  const headBranches = createHeadBranches({ api, outbox, clock: o.clock, source: o.name, ...(o.headBranches ? { settings: o.headBranches } : {}), ...(o.intake ? { record: o.intake.record } : {}) });
   const workItem = o.intake?.workItem;
   // Its pull request in a repository the hopper does not merge in (issue #2752): `hopper:needs-merge` on the issue.
   const needsMerge = (key: string): boolean => { const url = workItem?.(key)?.pullRequest; return url !== undefined && (o.needsMerge?.(pullRequestRepo(url, '')) ?? false); };
@@ -235,7 +236,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
   return {
     name: o.name, kind: o.kind ?? o.name,
     thread: gitHubThread(api),
-    intake: () => outbox.on(approvals.on(outcomes)), afterAnswerTimings: outbox.timings, releaseOutbox: outbox.release, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts), actGaveUp(acts)),
+    intake: () => outbox.on(approvals.on(outcomes)), afterAnswerTimings: outbox.timings, releaseOutbox: outbox.release, flushOutbox: (acts) => outbox.flush(outboxSend(api, approvals.readComments, (repo, labels) => ensureLabels(reportContext(), repo, labels), acts, headBranches.send), actGaveUp(acts)),
     pullRequestAct: (job, act, acting) => (job.source?.repo ? outbox.pullRequestAct(job.source.key, job.source.repo, act, job.id, acting) : undefined),
     giveBackAct: (job, act, acting, more) => (job.source?.repo ? outbox.giveBackAct(job.source.key, job.source.repo, act, job.id, acting, more) : undefined),
     intakeAction: async (a) => a.kind === 'dismiss' ? tagged.dismiss(a.keys) : a.kind === 'tagged_start' && a.started ? tagged.start(a.started) : intakeAct({ source: o.name, offered: approvals.on(outcomes), listedLabels, assignee: o.assignee(), intake: o.intake, trust: o.trust, approve: approvals.approve, resolve: approvals.resolve, label: config.label, priorityLabels: Object.keys(config.priorityLabels), takeIn: census.takeIn(), outbox }, a),
@@ -374,7 +375,7 @@ export function createGitHubSource(o: GitHubSourceOptions): JobSource {
       return unfinishedPullRequest(api, job);
     },
     follow: (job, act, at) => followPullRequest(followContext(), job, act, at),
-    housekeepStrays: (strays) => housekeepStrays(followContext(), strays), censusPullRequests: (facts) => census.read(scanned, facts),
+    housekeepStrays: (strays) => housekeepStrays(followContext(), strays), censusPullRequests: (facts) => census.read(scanned, facts), headBranchMerged: headBranches.merged, sweepHeadBranches: (facts) => headBranches.sweep(scanned, facts),
     unfollowedPullRequests: (jobs) => unfollowedPullRequests(api, jobs), tendStarted: tendStartedOn(api), readCompanions: (pulls) => readCompanions(followContext(), pulls), fileCompanionRebase: (job, text) => fileCompanionRebase(api, job, text, config.label, o.assignee()),
     readFollowed: (jobs) => batch.read(jobs), endedPullRequests: (pulls) => endedPullRequests(api, pulls), endedWatched: (refs) => endedWatched(api, refs), waitedChecks: (repo, number) => waitedChecks(api, repo, number), waitedReviews: (repo, number) => waitedReviews(api, repo, number),
     crossReferences: (job) => crossReferencesOfJob(api, job),

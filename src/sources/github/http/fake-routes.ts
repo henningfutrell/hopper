@@ -4,7 +4,7 @@
 
 import { createHash } from 'node:crypto';
 import type { FakeGitHubOptions, FakeIssue, FakeRepo, FakeState, FakeTokenRecord } from './fake-state.ts';
-import { endPull } from './fake-pull-end.ts';
+import { endPull } from './fake-pull-end.ts'; import { branchRoutes } from './fake-branches.ts';
 
 export interface FakeReply { status: number; body?: unknown; headers?: Record<string, string> }
 export interface FakeCtx { state: FakeState; opts: FakeGitHubOptions; baseUrl: string; login: string; now(): Date }
@@ -53,6 +53,8 @@ function commitChecks(repo: FakeRepo, ref: string, what: 'checks' | 'statuses'):
 
 function issueRoutes(ctx: FakeCtx, req: FakeReq, repo: FakeRepo, rest: string): FakeReply | undefined {
   const body = (req.body ?? {}) as Record<string, unknown>;
+  const branch = branchRoutes(req, repo, rest);
+  if (branch) return branch;
   if (req.method === 'GET' && rest === '/issues') {
     const state = req.query.state ?? 'open';
     const want = (req.query.labels ?? '').split(',').filter(Boolean);

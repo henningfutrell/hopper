@@ -12,7 +12,7 @@ import type { JobSource } from '../domain/ports.ts';
 import { strayPullRequests, type Job, type StrayHousekept } from '../domain/types.ts';
 import type { AfterDoneContext } from './after-done.ts';
 
-export function strayHousekeeping(c: Pick<AfterDoneContext, 'store' | 'enqueue' | 'finalReported' | 'setSource'>) {
+export function strayHousekeeping(c: Pick<AfterDoneContext, 'store' | 'enqueue' | 'finalReported' | 'setSource' | 'sourceOf'>) {
   const { store } = c;
 
   function kept(d: StrayHousekept): void {
@@ -21,6 +21,8 @@ export function strayHousekeeping(c: Pick<AfterDoneContext, 'store' | 'enqueue' 
       return;
     }
     const follow = 'ended' in d ? d.ended : 'closed';
+    const job = store.jobs.get(d.jobId);
+    if (follow === 'merged' && job) c.sourceOf(job)?.headBranchMerged?.(d.pullRequest);
     c.setSource(d.jobId, { ...(store.jobs.get(d.jobId)?.sourceState?.source ?? {}), pullRequest: d.pullRequest, follow });
     store.events.append({
       type: follow === 'merged' ? 'job.pull_request_merged' : 'job.pull_request_closed', jobId: d.jobId,

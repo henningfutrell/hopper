@@ -55,7 +55,7 @@ export interface GitHubSourceDeps {
   /** Whether the hopper merges nothing in a repository (issue #2752); absent: never. */
   needsMerge?: (repo: string) => boolean;
   /** A repository's landing branch (issue #1143); absent or undefined: no pull request is moved. */
-  landingBranch?: (repo: string) => string | undefined;
+  landingBranch?: (repo: string) => string | undefined; headBranches?: (repo: string) => { on: boolean; keep: string[] };
   /** The change rule of a repository (issue #1076); absent: the built-in rule. */
   changeRule?: (repo: string) => ChangeRule;
   /** The artifacts a job made (issue #673): what makes an artifact-only issue done. */
@@ -119,7 +119,7 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
         source: createGitHubSource({
           name: o.name, kind, whoami: login, assignee: () => login, config, api, clock: o.clock, trust: o.trust,
           knownKeys: o.knownKeys, rerunnable: o.rerunnable, ...(o.rejections ? { rejections: o.rejections } : {}),
-          ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.needsMerge ? { needsMerge: o.needsMerge } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), ...(o.openedPullRequests ? { openedPullRequests: o.openedPullRequests } : {}),
+          ...(o.intake ? { intake: o.intake } : {}), ...(o.yoloMode ? { yoloMode: o.yoloMode } : {}), ...(o.needsMerge ? { needsMerge: o.needsMerge } : {}), ...(o.headBranches ? { headBranches: o.headBranches } : {}), ...(o.landingBranch ? { landingBranch: o.landingBranch } : {}), ...(o.changeRule ? { changeRule: o.changeRule } : {}), ...(o.jobArtifacts ? { jobArtifacts: o.jobArtifacts } : {}), ...(o.openedPullRequests ? { openedPullRequests: o.openedPullRequests } : {}),
           ...(o.doneCriteria ? { doneCriteria: o.doneCriteria } : {}), ...(o.allowedDeletes ? { allowedDeletes: o.allowedDeletes } : {}), ...(o.deliveryHold ? { deliveryHold: o.deliveryHold } : {}),
           ...(o.issueGraph ? { issueGraph: o.issueGraph } : {}), ...listingOf(o), connected: () => accounts.account(provider) !== undefined,
         }),
@@ -231,6 +231,9 @@ export function createAccountSource(o: GitHubSourceDeps & { key: ConnectedAccoun
       const s = current();
       return s?.censusPullRequests ? s.censusPullRequests(facts) : Promise.reject(new SourceError(why(), false));
     },
+    // Unconnected, nothing is deleted (issue #2914): the sweep finds it later.
+    headBranchMerged: (url) => { current()?.headBranchMerged?.(url); },
+    sweepHeadBranches: async (facts) => await current()?.sweepHeadBranches?.(facts) ?? false,
     // Unconnected, nothing is said on the pull request (issue #1143): a note never throws.
     tendStarted: async (job, pullRequest, step) => { await current()?.tendStarted?.(job, pullRequest, step); },
     // Unconnected, nothing is merged (issue #796), and nothing is said of conflicts (issue #939).

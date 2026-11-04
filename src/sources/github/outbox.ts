@@ -220,6 +220,15 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
       });
     },
     /**
+     * Keeps one row of `act` for item `key`, unless the item has one already, sent ones too until they are pruned (issue
+     * #2914). True: kept now.
+     */
+    keepOnce(act: OutboxAct, key: string, repo: string, change: OutboxChange): boolean {
+      if (rows.of(o.source, key).some((r) => r.act === act)) return false;
+      rows.add([{ change, source: o.source, act, key, repo, tag: '' }], now());
+      return true;
+    },
+    /**
      * A person's Merge now or Close PR on job `jobId`'s pull request, its item `key`: kept as a row, or the act already on
      * its way for the job (a second click) answered. The same act that failed is sent again, from its first attempt.
      */
@@ -331,13 +340,14 @@ export function createGitHubOutbox(o: GitHubOutboxOptions) {
 /**
  * Each coalesced change on GitHub; Approve's comment read through `readComments`; the hopper's labels an add names made
  * first, with `ensureLabels` (issue #1154: only those); a Merge now, Close PR or give-back through `acts`, the
- * sync loop's: without it, it waits.
+ * sync loop's: without it, it waits; a head branch's deletion through `deleteHeadBranch` (issue #2914).
  */
 export function outboxSend(
   api: Pick<GitHubApi, 'addLabels' | 'removeLabels' | 'addAssignees' | 'postComment' | 'listComments' | 'closeAsNotPlanned'>,
   readComments: (repo: string, key: string) => Promise<void>,
   ensureLabels: (repo: string, labels: readonly string[]) => Promise<void> = async () => {},
   acts?: OutboxActs,
+  deleteHeadBranch?: (repo: string, change: Extract<OutboxChange, { op: 'delete_head_branch' }>) => Promise<void>,
 ): OutboxSend {
   return async (repo, key, change, once) => {
     const n = Number(key.slice(key.lastIndexOf('/') + 1));
@@ -353,6 +363,7 @@ export function outboxSend(
       if (!acts) throw new SourceError('the sync loop does not run: the act waits', false);
       await (change.op === 'pull_request' ? acts.pullRequest(change) : acts.giveBack(change));
     }
+    else if (change.op === 'delete_head_branch') await deleteHeadBranch?.(repo, change);
     else await readComments(repo, key);
   };
 }
