@@ -2,7 +2,10 @@
 // the schemas its minting credential names, read-only by default, short timeouts, two connections, VALID UNTIL its TTL;
 // every write is refused, also after it turns the read-only default off; it reaches neither another schema nor another
 // database; a read answers CSV up to a cap; a drop ends its sessions; the sweep drops a role whose VALID UNTIL passed.
+import { connect, type Socket } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import pg from 'pg';
+import { openDatabaseRoute } from '../../src/vault/database-route.ts';
 import { createPostgresReader, scramVerifier } from '../../src/vault/postgres-reads.ts';
 import { READ_CONNECTION_LIMIT, DATABASE_ROLE_TTL_SECONDS } from '../../src/domain/database-read.ts';
 import { readDatabases, type ReadDatabases } from '../support/database-read.ts';
@@ -34,6 +37,12 @@ const refusal = async (r: string, sql: string | string[], db?: string): Promise<
   } finally {
     await c?.end().catch(() => {});
   }
+};
+
+const refusalThrough = async (c: { host: string; port: number; database: string }, r: string, sql: string): Promise<string> => {
+  const client = new pg.Client({ host: c.host, port: c.port, database: c.database, user: r, password: PASSWORD });
+  await client.connect();
+  try { await client.query(sql); return 'no refusal'; } catch (e) { return (e as Error).message; } finally { await client.end().catch(() => {}); }
 };
 
 describe('a database read role (issue #2231)', () => {
@@ -144,4 +153,26 @@ describe('the end of a database read role (issue #2231)', () => {
     expect(await exists(gone)).toBe(false);
     expect(await exists(kept)).toBe(true);
   });
+});
+
+describe('a database read role through a route (issue #2231)', () => {
+  it('mints, reads and drops over a byte pipe to the database, as a bastion carries it', async () => {
+    const pipes: Socket[] = [];
+    const route = await openDatabaseRoute('lab/apps/svc/db:5432', async () => { const s = connect(dbs.credential.port, dbs.credential.host); pipes.push(s); return s; });
+    if ('no' in route) throw new Error(route.no);
+    const c = { ...dbs.credential, host: '127.0.0.1', port: route.port };
+    try {
+      const r = role();
+      await reader.mint(c, { role: r, password: PASSWORD, validUntil: soon() });
+      expect((await reader.read(c, { role: r, password: PASSWORD, sql: 'SELECT count(*) AS n FROM app.users' })).csv).toBe('n\n2\n');
+      expect((await refusalThrough(c, r, 'INSERT INTO app.users VALUES (3)'))).toMatch(/permission denied|read-only/);
+      await reader.drop(c, r);
+      expect(await exists(r)).toBe(false);
+      expect(pipes.length).toBeGreaterThanOrEqual(3);
+    } finally {
+      route.close();
+    }
+    await new Promise((done) => setTimeout(done, 50));
+    expect(pipes.every((p) => p.destroyed)).toBe(true);
+  }, 60_000);
 });
