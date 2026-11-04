@@ -135,9 +135,11 @@ describe('the move onto a cluster (scripts/hopper-cluster.sh)', () => {
 });
 
 describe('the Helm chart', () => {
-  // `helm template` runs in the test, under the suite's load (issue #2831): it took more than 15 s on CI.
+  // Outside the test, as in every Helm chart test: `helm template` is the shard's first start of helm, which took 175 s
+  // on CI once, past a test's time limit, and 3 s most times (issues #2831, #2911).
+  const rs = render();
+
   it('renders no .env: no mount, argument or value names one, and the master key comes from a Secret', () => {
-    const rs = render();
     expect(JSON.stringify(rs)).not.toMatch(/(^|[\s"'/=])\.env\b/);
     for (const r of rs) {
       for (const c of [...(r.spec?.template?.spec.containers ?? []), ...(r.spec?.template?.spec.initContainers ?? [])]) {
@@ -145,7 +147,7 @@ describe('the Helm chart', () => {
         for (const e of c.env ?? []) if (/^HOPPER_MASTER_KEY$|(KEY|TOKEN|PASSWORD|SECRET)$/.test(e.name)) expect(e.value, `${r.metadata.name}/${c.name} ${e.name}`).toBeUndefined();
       }
     }
-  }, 60_000);
+  });
 });
 
 describe('the files the hopper runs from', () => {
