@@ -41,10 +41,13 @@ export type SslMode = (typeof SSL_MODES)[number];
  * A database's minting credential (a vault secret that mints for `database/<name>`): where the database is, the login
  * that may create, grant and drop the database read roles, and what a database read role may SELECT from: every table of
  * the `schemas`, and the `tables` (`<schema>.<table>`) one at a time. At least one of the two names something.
- * `ca`: the PEM the database's certificate is checked against, when it is not one the system trusts.
+ * `ca`: the PEM the database's certificate is checked against, when it is not one the system trusts. `through`: the
+ * bastion target that forwards to the database, when the hopper has no route of its own: the job's bastion carries each
+ * connection, and `host` is then only the name the certificate is checked against. `tlsName`: never in a credential,
+ * set for a read through a route, whose `host` is the route's end.
  */
 export interface DatabaseMintingCredential {
-  engine: DatabaseEngine; host: string; port: number; database: string; user: string; password: string; sslmode: SslMode; ca?: string; schemas: string[]; tables: string[];
+  engine: DatabaseEngine; host: string; port: number; database: string; user: string; password: string; sslmode: SslMode; ca?: string; schemas: string[]; tables: string[]; through?: string; tlsName?: string;
 }
 
 /** A schema's or a table's name as a database read role is granted it: a plain identifier, so no quoting can change what is granted. */
@@ -54,6 +57,8 @@ const TABLE = /^[A-Za-z_][A-Za-z0-9_$]{0,62}\.[A-Za-z_][A-Za-z0-9_$]{0,62}$/;
 export const tableParts = (table: string): [string, string] => table.split('.') as [string, string];
 /** A host: a DNS name or an address. */
 const HOST = /^[A-Za-z0-9]([A-Za-z0-9.:-]{0,252})$/;
+/** A bastion target, as a job names it to its bastion (`parseTargets`, src/sandbox/bastion.ts, says more of a bad one). */
+const THROUGH = /^[^/\s]+\/[^/\s]+\/(svc|pod|deploy)\/[^/:\s]+:\d{1,5}$/;
 
 /** The minting credential's value read, or why it cannot be. Never says the value. */
 export function databaseCredentialOf(value: string): DatabaseMintingCredential | string {
@@ -76,8 +81,10 @@ export function databaseCredentialOf(value: string): DatabaseMintingCredential |
   if (bad !== undefined) return `${said}'s schema ${JSON.stringify(bad)} is no plain schema name (letters, digits, _ and $)`;
   const badTable = tables.find((t) => typeof t !== 'string' || !TABLE.test(t));
   if (badTable !== undefined) return `${said}'s table ${JSON.stringify(badTable)} is no plain <schema>.<table> name (letters, digits, _ and $)`;
+  if (v.through !== undefined && (typeof v.through !== 'string' || !THROUGH.test(v.through))) return `${said}'s through is one bastion target: <cluster>/<namespace>/<svc|pod|deploy>/<name>:<port>`;
   const ca = str('ca');
-  return { engine: engine as DatabaseEngine, host, port, database, user, password, sslmode: sslmode as SslMode, ...(ca ? { ca } : {}), schemas: [...new Set(schemas as string[])], tables: [...new Set(tables as string[])] };
+  const through = str('through');
+  return { engine: engine as DatabaseEngine, host, port, database, user, password, sslmode: sslmode as SslMode, ...(ca ? { ca } : {}), ...(through ? { through } : {}), schemas: [...new Set(schemas as string[])], tables: [...new Set(tables as string[])] };
 }
 
 /** A minting credential's asset for a database: its whole name, as an asset name (`<cluster>/<namespace>/<database>`). */

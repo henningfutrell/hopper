@@ -69,7 +69,7 @@ export function mintsValueOf(mints: Asset | undefined, value: string): { shape?:
  * schemas and tables a database read role may SELECT from. `problem`: why the typed value is not one, never the value.
  */
 function databaseValueOf(value: string): { shape: string; problem?: string } {
-  const shape = 'JSON: {"engine": "postgres" or "sqlserver", "host": "…", "database": "…", "user": "<the minting login>", "password": "…", "schemas": ["public"], "tables": ["<schema>.<table>"]} (schemas, tables or both; and port, sslmode — verify-full, require or disable — or ca when it has them)';
+  const shape = 'JSON: {"engine": "postgres" or "sqlserver", "host": "…", "database": "…", "user": "<the minting login>", "password": "…", "schemas": ["public"], "tables": ["<schema>.<table>"]} (schemas, tables or both; and port, sslmode — verify-full, require or disable — ca or through — a bastion target, for a database inside a cluster — when it has them)';
   if (!value) return { shape };
   let v: Record<string, unknown> = {};
   try { v = JSON.parse(value) as Record<string, unknown>; } catch { /* below */ }

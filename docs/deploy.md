@@ -1235,7 +1235,7 @@ hopper calls the AWS STS or the Kubernetes API that the minting credential names
      read-only check's `kube.get` fails with the write probes.
 
   **The observe role**, `hopper-observe`. It reads, as `hopper-read` does, and port-forwards to the pods of the
-  namespaces you name (the monitoring services, for example). It changes no asset. Make it, and let the minting identity
+  namespaces you name (the monitoring services, or a database a job reads through its bastion, for example). It changes no asset. Make it, and let the minting identity
   assume it:
 
   ```sh
