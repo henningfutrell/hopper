@@ -6418,34 +6418,31 @@ Version 1 (`docs/schemas/vault.grant_asked.v1.json`). A job on a box asked the v
 
 ## `vault.granted`
 
-Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it; a delegate approver's (issue #1138) names the delegate and the person it acts for; `standing read grant` (issue #1472) when the user's standing read grant gave it, with no person, to a job on a box of a template that only reads what the read policy holds. Issue #2923: `scope`, when the grant is a scope grant — a person's grant of the job's ask, kept for its template or Windows host and the job's repository —; a later job that the scope grant gives the vault with no person has `by` `scope grant by <person>`.
+Version 1 (`docs/schemas/vault.granted.v1.json`). A person granted a job's item the vault (issue #652), after Access allowed it (OpenFGA `vault_grant#can_grant`) — on Vault, or as the submitter of a direct job that authorizes `vault` (issue #901): its jobs — this one, and those Run again or Rework make — get what their box's template gives. `by` who granted it; a delegate approver's (issue #1138) names the delegate and the person it acts for; `standing read grant` (issue #1472) when the user's standing read grant gave it, with no person, to a job on a box of a template that only reads what the read policy holds.
 
 | field | type | required |
 |---|---|---|
 | `job` | string | yes |
 | `key` | string | yes |
 | `by` | string | yes |
-| `scope` | string | no |
 
 ```json
 {
   "job": "f3b1c2d4-0000-4000-8000-000000000001",
   "key": "https://github.com/octo-org/hello/issues/7",
-  "by": "octocat",
-  "scope": "template kube, repo octo-org/hello"
+  "by": "octocat"
 }
 ```
 
 ## `vault.grant_revoked`
 
-Version 1 (`docs/schemas/vault.grant_revoked.v1.json`). A person took back a job's item's vault grant (issue #652): its jobs get nothing from the vault again until a person grants it again. `by` who took it back. A quarantine of the job takes it back too (issue #655 part 6): `by` `quarantine by <person>`. Issue #2923: the hopper takes back by itself the grant of an item whose newest job ended (`by` `its job ended`); a person takes back a scope grant by its key (`scope`, the job its newest job), and the next ask of that scope waits for a person again.
+Version 1 (`docs/schemas/vault.grant_revoked.v1.json`). A person took back a job's item's vault grant (issue #652): its jobs get nothing from the vault again until a person grants it again. `by` who took it back. A quarantine of the job takes it back too (issue #655 part 6): `by` `quarantine by <person>`.
 
 | field | type | required |
 |---|---|---|
 | `job` | string | yes |
 | `key` | string | yes |
 | `by` | string | yes |
-| `scope` | string | no |
 
 ```json
 {

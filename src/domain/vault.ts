@@ -210,8 +210,6 @@ export interface VaultView {
   grantAsks?: VaultGrantAsk[];
   /** The vault grants (issue #652): the items whose jobs may use the vault's helper, who granted each, and when; what each covers and how it was made (issue #1124). */
   grants?: VaultGrantView[];
-  /** The scope grants (issue #2923): one per scope a person granted — template or Windows host, and repository —, its jobs folded under it. */
-  scopeGrants?: import('./vault-scope-grants.ts').VaultScopeGrantView[];
   /** Issue #909: the waiting profiles an API token asked to approve, which a person is to confirm. Absent: none. */
   asks?: ProfileAsk[];
 }

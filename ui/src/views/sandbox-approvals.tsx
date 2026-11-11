@@ -9,8 +9,7 @@
 // Issue #2197: one card per run. A job's ask that waits on a template, on its run, or on both, is one card: what the step
 // will do and its undo, the access it needs (profiles, secrets, egress, image) and the job. Approve approves it all at
 // once (`approve-run`), and the job's step goes on; Decline tells the job no. High-priority jobs' cards come first.
-// Part 3: Allow again, on the card, approves the access for later jobs too. Issue #2923: it is on by default, so an
-// approval covers later jobs; turned off, the approval is for this job only.
+// Part 3: the approval is for this job only; Allow again, on the card, approves the access for later jobs too.
 // Issue #2206: the job's asks for an AWS action on a role the template changes are on its card; Approve grants them too.
 import { Boxes, Check, Loader2, Rocket, TriangleAlert, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -79,7 +78,7 @@ function grants(t: TemplateView | undefined, c: RunCardView, again: boolean): Re
 export function Waiting({ c, template: t, asks, secrets, can, high }: { c: RunCardView; template?: TemplateView | undefined; asks?: ProfileAsk[] | undefined; secrets: readonly VaultSecret[]; can: boolean; high?: number | undefined }) {
   const [reason, setReason] = useState('');
   const [declining, setDeclining] = useState(false);
-  const [again, setAgain] = useState(true);
+  const [again, setAgain] = useState(false);
   const key = runKey(c, t);
   const approval = useAccessApprovals((s) => s.items[key]);
   const selected = useAccessApprovals((s) => s.selected.includes(key));

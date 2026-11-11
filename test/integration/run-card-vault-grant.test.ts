@@ -9,10 +9,6 @@
 //     When a person approves the card once
 //     Then the template and the run are approved, and the job's item has its vault grant, by that person
 //   Scenario: a job whose item has a vault grant already: its card grants nothing more
-//   Scenario: a second job that asks for the same template waits for no person (issue #2923)
-//     Given a person approved the first job's card once
-//     When a second job of another item asks for the sandbox runs of web
-//     Then it gets no run card and no grant ask: the approval and the card's scope grant cover it
 import { execFile } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -47,13 +43,6 @@ async function boot(): Promise<{ a: TestApp; token: string }> {
 
 /** A running job that asked for the sandbox runs of web: its id, once its ask waits for a person. */
 async function asking(a: TestApp): Promise<string> {
-  const { job, code } = await asks(a);
-  expect(code).toBe(3);
-  return job;
-}
-
-/** A running job that asked for the sandbox runs of web: its id, and the skill's exit code (3: it waits for a person). */
-async function asks(a: TestApp): Promise<{ job: string; code: number }> {
   const job = await a.pull({ op: 'sleep', ms: 60000 });
   await a.waitForStatus(job.id, 'running', 10000);
   const dir = mkdtempSync(join(tmpdir(), 'job-credentials-'));
@@ -64,7 +53,8 @@ async function asks(a: TestApp): Promise<{ job: string; code: number }> {
     execFile('sh', [join(dir, 'skill'), 'sandbox', '--template', 'web', '--why', 'deploy the web service'], { env: { PATH: process.env.PATH, HOPPER_URL: a.url, HOPPER_TOKEN_FILE: join(dir, 'token') } },
       (err) => resolve(err ? Number((err as { code?: number }).code ?? 1) : 0));
   });
-  return { job: job.id, code };
+  expect(code).toBe(3);
+  return job.id;
 }
 
 const view = async (a: TestApp, token: string): Promise<VaultView> => (await a.api<VaultView>('GET', '/api/vault', undefined, { 'x-hopper-session': token })).body;
@@ -79,9 +69,7 @@ describe('one card per job per template (issue #2639 part 3)', () => {
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(r.body.runs ?? []).toEqual([]);
     expect(r.body.templates.find((t) => t.name === 'web')?.approval).toBeDefined();
-    // The card's grant is a scope grant (issue #2923): the template web, for the job's repository.
-    expect(r.body.grants).toEqual([]);
-    expect(r.body.scopeGrants?.map((g) => ({ template: g.template, jobs: g.jobs.map((j) => j.job) }))).toEqual([{ template: 'web', jobs: [job] }]);
+    expect(r.body.grants?.map((g) => g.job)).toEqual([job]);
     const types = (await a.events()).filter((e) => e.jobId === job || e.type === 'vault.approved').map((e) => e.type);
     expect(types).toEqual(expect.arrayContaining(['vault.granted', 'vault.approved']));
   });
@@ -93,18 +81,5 @@ describe('one card per job per template (issue #2639 part 3)', () => {
     const [card] = (await view(a, token)).runs ?? [];
     expect(card).toMatchObject({ jobId: job, template: 'web' });
     expect(card).not.toHaveProperty('vaultGrant');
-  });
-
-  it('a second job that asks for the same template waits for no person (issue #2923)', async () => {
-    const { a, token } = await boot();
-    const first = await asking(a);
-    expect((await a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: first, template: 'web' }, { token })).status).toBe(200);
-    const second = await asks(a);
-    const v = await view(a, token);
-    expect(second.code).toBe(0);
-    expect(v.runs ?? []).toEqual([]);
-    expect(v.grantAsks ?? []).toEqual([]);
-    expect(v.sandboxRequests?.find((x) => x.jobId === second.job)).toMatchObject({ state: 'approved', approvedBy: expect.stringMatching(/^scope grant by /) });
-    expect(v.scopeGrants?.map((g) => ({ template: g.template, runs: g.runs, jobs: g.jobs.map((j) => j.job) }))).toEqual([{ template: 'web', runs: true, jobs: [second.job, first] }]);
   });
 });

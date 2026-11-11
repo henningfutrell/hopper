@@ -19,12 +19,7 @@ const STALE = {
   made: 'submit', via: 'cli', command: 'hopper job submit --authorize vault',
   item: { title: 'Rotate the lab key', job: 'c1d2e3f4-0000-4000-8000-000000000004', status: 'finished', stale: true },
 };
-// Issue #2923: a scope grant, one row for its template and repository, its jobs folded under it, newest first.
-const SCOPE = {
-  key: 'template web, repo octo-org/hello', template: 'web', repo: 'octo-org/hello', by: 'alice', at: '2026-11-11T10:00:00.000Z', runs: true, live: 1,
-  jobs: [{ job: 'e1e2e3e4-0000-4000-8000-000000000005', title: 'Check the nodes', status: 'running', ended: false }, { job: 'f1f2f3f4-0000-4000-8000-000000000006', title: 'Read the logs', status: 'finished', ended: true }],
-};
-const VIEW = { secrets: [], templates: [], grantAsks: [ASK], grants: [GRANT, STALE], scopeGrants: [SCOPE] };
+const VIEW = { secrets: [], templates: [], grantAsks: [ASK], grants: [GRANT, STALE] };
 
 interface Call { path: string; method: string; body?: Record<string, unknown> }
 
@@ -45,7 +40,6 @@ function fakeDaemon() {
     calls.push({ path, method: init.method ?? 'GET', ...(body ? { body } : {}) });
     if (path === '/ui/api/session') return json(200, { authenticated: true, expiresAt: '2099-01-01T00:00:00.000Z', user: { role: 'admin', realm: 'github', name: 'alice', instanceAdmin: true }, signIn: { local: true, origin: location.origin, realms: [] } });
     if (path === `/ui/api/jobs/${JOB}/grant-vault`) return json(200, { ...VIEW, grantAsks: [], grants: [GRANT, { key: ASK.key, job: JOB, by: 'alice', at: '2026-10-11T12:01:00.000Z', made: 'grant', item: { title: 'Add the cluster check', url: ASK.key, job: JOB, status: 'running', stale: false } }] });
-    if (path === '/ui/api/vault/revoke-scope-grant') return json(200, { ...VIEW, scopeGrants: [] });
     if (path === `/ui/api/jobs/${GRANT.job}/revoke-vault`) return json(200, { ...VIEW, grants: [STALE] });
     if (path in routes) return json(200, routes[path]);
     return json(404, { error: 'not found' });
@@ -82,7 +76,6 @@ async function boot() {
 const card = (): HTMLElement | null => [...document.querySelectorAll('li')].find((l) => l.textContent?.includes('Grant this job the vault')) ?? null;
 const grantRow = (): HTMLElement | null => [...document.querySelectorAll('li')].find((l) => l.textContent?.includes('Fix the login')) ?? null;
 const staleRow = (): HTMLElement | null => [...document.querySelectorAll('li')].find((l) => l.textContent?.includes('Rotate the lab key')) ?? null;
-const scopeRow = (): HTMLElement | null => document.querySelector<HTMLElement>(`[data-scope-grant="${SCOPE.key}"]`);
 const button = (text: string): HTMLButtonElement => [...card()!.querySelectorAll('button')].find((b) => b.textContent?.trim() === text)! as HTMLButtonElement;
 
 afterEach(() => {
@@ -135,20 +128,5 @@ describe('Access requests: a job that asks for the vault (issue #652)', () => {
     expect(row.textContent).not.toContain('5e6f7a8b');
     await act(async () => { [...row.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Revoke')!.click(); });
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path.endsWith('/revoke-vault'))).toMatchObject({ path: `/ui/api/jobs/${STALE.job}/revoke-vault` }));
-  });
-
-  it('a scope grant is one row for its template and repository, its jobs folded under it; Revoke takes it back by its key (issue #2923)', async () => {
-    const daemon = await boot();
-    const row = scopeRow()!;
-    expect(row.textContent).toContain('Template web');
-    expect(row.textContent).toContain('octo-org/hello');
-    expect(row.textContent).toContain('1 at work');
-    expect(row.textContent).toContain('granted by alice on 2026-11-11');
-    expect(row.textContent).toContain('with the sandbox runs of its template');
-    expect(row.querySelector('summary')?.textContent).toBe('2 jobs');
-    expect([...row.querySelectorAll('details li')].map((l) => l.textContent?.slice(0, 12))).toEqual(['job e1e2e3e4', 'job f1f2f3f4']);
-    await act(async () => { [...row.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Revoke')!.click(); });
-    await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/vault/revoke-scope-grant')).toMatchObject({ method: 'POST', body: { key: SCOPE.key } }));
-    await vi.waitFor(() => expect(scopeRow()).toBeNull());
   });
 });

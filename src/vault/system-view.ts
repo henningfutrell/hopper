@@ -41,12 +41,7 @@ export function systemScopeView(o: { system: SystemSecrets; instance?: SystemSec
 export function withSystemScope(v: Vault, o: { system: SystemSecrets; instance?: SystemSecrets; events: Pick<EventLog, 'recent'> }): Vault {
   return {
     ...v,
-    // A spread would read every field of the view: the grant fields are getters (src/vault/grants.ts), and the engine reads the
-    // view each tick for its templates only (issue #2923). So the fields keep their getters, and the system scope is one too.
-    view: () => Object.defineProperties({} as VaultView, {
-      ...Object.getOwnPropertyDescriptors(v.view()),
-      system: { get: () => systemScopeView(o), enumerable: true, configurable: true },
-    }),
+    view: () => ({ ...v.view(), system: systemScopeView(o) }),
     systemInBackend: (name, backend, reference, who) => o.system.keepInBackend(name, backend, reference, who),
   };
 }

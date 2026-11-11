@@ -58,14 +58,8 @@ export interface Vault extends Pick<VaultService, 'forStep' | 'saveTemplate' | '
   holdCheck(name: string, why: string | undefined): void;
   /** The shared secrets (issue #718): the hopper's admin sets and removes them. Absent: this hopper keeps none. */
   shared?: Pick<SharedSecrets, 'set' | 'remove'>;
-  /**
-   * A person grants a job's item the vault (issue #652, src/vault/grants.ts), after Access: its jobs then get what their box's template gives.
-   * With `place`, or the job's open ask, it is a scope grant of that scope (issue #2923): every later job of the repository that asks from it;
-   * `runs`, it approves their sandbox runs of the template too. `item`: the item's grant only, whatever the job asked.
-   */
-  grant?(jobId: string, by: string, how?: { place?: import('../domain/vault-scope-grants.ts').VaultPlace; runs?: boolean; item?: boolean }): VaultResult;
-  /** A person takes a scope grant back (issue #2923): no later ask of its scope passes by it, from the next ask on. 409: none. */
-  revokeScopeGrant?(key: string, by: string): VaultResult;
+  /** A person grants a job's item the vault (issue #652, src/vault/grants.ts), after Access: its jobs then get what their box's template gives. */
+  grant?(jobId: string, by: string): VaultResult;
   /** A person takes a job's item's vault grant back (issue #652): its jobs get nothing from the vault again. */
   revokeGrant?(jobId: string, by: string): VaultResult;
   /** A person, or a delegate approver for them (issue #1138), denies a job's grant ask: the ask goes, and the job asks no more. 409: none waits. */

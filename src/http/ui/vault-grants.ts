@@ -3,8 +3,6 @@
 // decides (OpenFGA `vault_grant#can_grant`); 503 when it cannot be asked. Each answers the vault's view. Least role: operator.
 // A person, or a delegate approver (issue #1138), may deny an ask instead. A delegate grants or denies only an ask that
 // waits, within its approver policy, and the grant records it with the person it acts for.
-// Issue #2923: a scope grant — the grant of an ask, kept for its template or Windows host and the job's repository — is
-// taken back by its scope's key, at once: the next ask of that scope waits for a person again.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Access } from '../../authz/service.ts';
@@ -21,13 +19,11 @@ import { approverOf, delegateOf, refuseDenied } from './delegates.ts';
 
 type Guard = { onRequest: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> };
 const idParams = z.object({ id: z.string() });
-const scopeBody = z.strictObject({ key: z.string().min(1).max(512) });
 const STATUS = { invalid: 400, not_found: 404, conflict: 409, unavailable: 503 } as const;
 
 export const VAULT_GRANT_OPERATIONS: Operation[] = [
   { method: 'post', path: '/ui/api/jobs/:id/grant-vault', tag: 'Vault', summary: 'Grant a job the vault', description: 'Issue #652: the job\'s item — and so this job, and the jobs Run again or Rework make of it — may use the vault\'s helper: the vault secrets and minted credentials its box\'s template gives, never more. Until then a job on a box that asks is refused, and shows on Access requests as a grant ask (`grantAsks`). `vault.granted`. The owner only: Access (OpenFGA, `vault_grant#can_grant`) decides first (403), 503 when it cannot be asked. A job asks, never grants. Through an API token that is no delegate\'s (a `*` key, issue #2229), the grant records `by` as `<label> (API token of <person>)`.', role: 'operator', returns: 'the vault\'s view', errors: [403, 404, 503] },
   { method: 'post', path: '/ui/api/jobs/:id/deny-vault', tag: 'Vault', summary: 'Deny a job\'s vault grant ask', description: 'Issue #1138: the job\'s grant ask goes, and the job, which still has no vault grant, asks no more; Run again makes a new job, which may ask again. `vault.grant_denied`. Access decides as for a grant. A delegate approver\'s token (the preset `delegate-approver`) grants and denies only an ask that waits (409 else), and is refused (403) an ask its approver policy names: the template, the machine or Windows host, a name the job asked for, or the template\'s secrets and assets. 409: no ask waits for the job.', role: 'operator', returns: 'the vault\'s view', errors: [403, 404, 409, 503] },
-  { method: 'post', path: '/ui/api/vault/revoke-scope-grant', tag: 'Vault', summary: 'Take a scope grant back', description: 'Issue #2923: a person\'s grant of a job\'s ask is kept for the ask\'s scope — its box\'s template, or the Windows host of its step, and the job\'s repository — and every later job that asks from that scope gets the vault with no person (`scopeGrants` in the vault\'s view, each with the jobs it granted). This takes it back by its `key`: from the next ask on, a job of that scope is refused and waits for a person again. `vault.grant_revoked` with `scope`. Access decides as for a grant. 409: no scope grant has that key.', role: 'operator', body: scopeBody, returns: 'the vault\'s view', errors: [403, 409, 503] },
   { method: 'post', path: '/ui/api/jobs/:id/revoke-vault', tag: 'Vault', summary: 'Take a job\'s vault grant back', description: 'Issue #652: the job\'s item\'s jobs get nothing from the vault again. `vault.grant_revoked`. Access decides as for a grant. 409: the item has no vault grant.', role: 'operator', returns: 'the vault\'s view', errors: [403, 404, 409, 503] },
 ];
 
@@ -61,18 +57,5 @@ export function registerVaultGrantRoutes(app: FastifyInstance, o: {
     });
   act('/ui/api/jobs/:id/grant-vault', 'granting the job the vault', (t, id, by) => t.vault.grant?.(id, by), true);
   act('/ui/api/jobs/:id/deny-vault', 'denying the job\'s grant ask', (t, id, by) => t.vault.denyGrant?.(id, by), true);
-  app.post('/ui/api/vault/revoke-scope-grant', o.operator, async (req) => {
-    const s = signedInOf(req);
-    if (!s) throw new HttpError(401, 'sign in to take a scope grant back');
-    const { key } = parseWith(scopeBody, req.body);
-    const t = o.tenant(req);
-    const d = await o.access.decideVaultGrant(s.userId, { ownerId: s.userId, key });
-    if (!d.allowed && d.unavailable) throw new HttpError(503, `${ACCESS_UNAVAILABLE}: ${d.reason}`);
-    if (!d.allowed) throw new HttpError(403, `taking the scope grant back is refused: ${d.reason}`);
-    const r = t.vault.revokeScopeGrant?.(key, approverOf(delegateOf(o.grants, s), s));
-    if (!r) throw new HttpError(503, 'this hopper\'s vault keeps no vault grants');
-    if (!r.ok) throw new HttpError(STATUS[r.code], r.error);
-    return vaultAnswer(t);
-  });
   act('/ui/api/jobs/:id/revoke-vault', 'taking the job\'s vault grant back', (t, id, by) => t.vault.revokeGrant?.(id, by));
 }

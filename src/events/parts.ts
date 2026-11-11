@@ -157,9 +157,8 @@ export const issueLineageEvents = {
 // the vault, a person took the grant back. Never a value.
 export const vaultGrantEvents = {
   'vault.grant_asked': strict({ job: z.string(), key: z.string(), machine: z.string().optional(), template: z.string().optional(), windowsHost: z.string().optional(), box: z.string().optional(), name: z.string() }),
-  // Issue #2923: `scope`, the standing grant's key, when the grant is of a scope.
-  'vault.granted': strict({ job: z.string(), key: z.string(), by: z.string(), scope: z.string().optional() }),
-  'vault.grant_revoked': strict({ job: z.string(), key: z.string(), by: z.string(), scope: z.string().optional() }),
+  'vault.granted': strict({ job: z.string(), key: z.string(), by: z.string() }),
+  'vault.grant_revoked': strict({ job: z.string(), key: z.string(), by: z.string() }),
   'vault.grant_denied': strict({ job: z.string(), key: z.string(), by: z.string() }),
 };
 

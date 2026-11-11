@@ -48,7 +48,7 @@ describe('a step schedule\'s secret (issue #2716)', () => {
   it('the vault grants pass a schedule\'s ask to the vault and open no grant ask', async () => {
     const asked: unknown[] = [];
     const v = withVaultGrants({ view: () => ({ templates: [] }), forStep: async (a: unknown) => { asked.push(a); return { value: 'v' }; } } as unknown as Vault, {
-      store: { events: { append: () => {} }, jobs: { get: () => undefined }, vaultGrants: { get: () => undefined, list: () => [] }, vaultScopeGrants: { get: () => undefined, list: () => [] } } as never, clock, targets: () => [], holds: () => true,
+      store: { events: { append: () => {} }, jobs: { get: () => undefined }, vaultGrants: { get: () => undefined, list: () => [] } } as never, clock, targets: () => [], holds: () => true,
     });
     expect(await v.forStep({ name: 'BUCKET_KEY', schedule: 'nightly-backup', host: 'b' })).toEqual({ value: 'v' });
     expect(asked).toHaveLength(1);
