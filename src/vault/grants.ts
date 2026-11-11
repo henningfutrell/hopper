@@ -144,13 +144,16 @@ export function withVaultGrants(v: Vault, o: {
   return {
     ...v,
     // Each ask and grant names what it covers (issue #1124): the item's title, repository, link and newest job.
+    // The grant fields are read only when a caller reads them: the engine reads the view each tick for its templates, and
+    // a store statement per tick stalls the event loop. The sweep of ended items' grants runs once per view, at the first.
     view: () => {
-      expireEnded();
+      let swept = false;
+      const sweep = (): void => { if (!swept) { swept = true; expireEnded(); } };
       return {
         ...v.view(),
-        grantAsks: open().map((a) => ({ ...a, item: grantItemOf(a.key, itemOf(a.key)) })),
-        grants: vaultGrants.list().map((g) => grantView(g, itemOf(g.key))),
-        scopeGrants: scopes.list().map((g) => scopeGrantView(g, (id) => jobs.get(id))),
+        get grantAsks() { sweep(); return open().map((a) => ({ ...a, item: grantItemOf(a.key, itemOf(a.key)) })); },
+        get grants() { sweep(); return vaultGrants.list().map((g) => grantView(g, itemOf(g.key))); },
+        get scopeGrants() { sweep(); return scopes.list().map((g) => scopeGrantView(g, (id) => jobs.get(id))); },
       };
     },
     async deliver(ask, machineKey) {
