@@ -88,11 +88,14 @@ export function withVaultGrants(v: Vault, o: {
   const placeOf = (a: VaultGrantAsk | undefined): VaultPlace | undefined =>
     a?.template !== undefined ? { template: a.template } : a?.windowsHost !== undefined ? { windowsHost: a.windowsHost } : undefined;
 
-  /** Takes back each grant of an item whose newest job ended (issue #2923): it gives nothing, and Run again asks again. */
+  /**
+   * Takes back each grant of an item whose newest job ended (issue #2923): it gives nothing, and Run again asks again. Not
+   * a direct job's that its submission made: the submission authorized the vault for its item, Run again too.
+   */
   function expireEnded(): void {
     for (const g of vaultGrants.list()) {
-      const newest = itemOf(g.key).newest;
-      if (!newest || !TERMINAL_STATUSES.includes(newest.status)) continue;
+      const item = itemOf(g.key), newest = item.newest;
+      if (!newest || !TERMINAL_STATUSES.includes(newest.status) || grantView(g, item).made === 'submit') continue;
       o.store.tx(() => {
         if (vaultGrants.remove(g.key)) events.append({ type: 'vault.grant_revoked', jobId: newest.id, data: { job: newest.id, key: g.key, by: ENDED_BY } });
       });

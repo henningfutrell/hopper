@@ -19427,7 +19427,8 @@ is revoked; one row per scope with its jobs under it; stale per-job rows go by t
   — a running job's too — is refused and becomes a grant ask. 409 when there is none.
 - **No stale rows.** The view (`GET /api/vault`) first takes back each item grant whose item's newest job ended
   (`vault.grant_revoked`, `by` `its job ended`). It gives nothing then, and the next job of the item asks — and a scope grant
-  answers it, when one holds its scope. A direct job's grant made at submit, whose job does not exist yet, stays.
+  answers it, when one holds its scope. A direct job's grant that its submission made stays, flagged stale as before: the
+  submission authorized the vault for the item, and Run again of it keeps it.
 - **The panel** (Access requests, Vault grants, `ui/src/views/vault-grants.tsx`): one row per scope grant — the template or
   Windows host, the repository, how many of its jobs are at work, who granted it and when, whether it carries the runs —,
   its jobs folded under it, newest first, and Revoke. Item grants below, as before.
