@@ -137,6 +137,21 @@ export function parsePrint<T extends object>(stdout: string, schema: z.ZodType<T
   return ran ? { ...parsed.data, model: ran } : parsed.data;
 }
 
+/**
+ * Why a print run that exited non-zero failed: its stderr, else its stdout (issue #2918: a spend limit is said on
+ * stdout only), the `result` of a JSON result when stdout is one; at most 300 characters.
+ */
+export function failureOf(stderr: string, stdout: string): string {
+  const err = stderr.trim();
+  if (err) return err.slice(0, 300);
+  const out = stdout.trim();
+  try {
+    const result = (JSON.parse(out) as { result?: unknown } | null)?.result;
+    if (typeof result === 'string' && result.trim()) return result.trim().slice(0, 300);
+  } catch { /* plain text */ }
+  return out.slice(0, 300);
+}
+
 /** The cost in USD a print run said (`total_cost_usd`); undefined: it said none. */
 export function costOfPrint(stdout: string): number | undefined {
   try {
@@ -188,7 +203,7 @@ export function claudePrint<T extends object>(o: ClaudePrintOptions, schema: z.Z
     child.on('close', (code) => {
       if (stopped) return;
       const left = leftOf(stderr);
-      const said = withoutRunMarks(stderr).trim().slice(0, 300);
+      const said = failureOf(withoutRunMarks(stderr), stdout);
       if (code !== 0) return finish({ error: `claude exited ${code}: ${said}${left.length ? `; ${leftReason(left)}` : ''}` });
       if (left.length) return finish({ error: leftReason(left) });
       const cost = o.onCost ? costOfPrint(stdout) : undefined;

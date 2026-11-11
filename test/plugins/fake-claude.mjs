@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* global process, setInterval */
 // Fake `claude` executable. Records argv, stdin, env and cwd to $FAKE_CLAUDE_OUT (JSON), then
-// behaves per $FAKE_CLAUDE_MODE: ok (default) | malformed | invalid | exit1 | hang. In `ok` mode
+// behaves per $FAKE_CLAUDE_MODE: ok (default) | malformed | invalid | exit1 | stdout-exit1 | json-exit1 | hang.
+// `stdout-exit1` and `json-exit1` exit 1 with the reason on stdout only, as plain text or as a JSON result (issue #2918). In `ok` mode
 // the structured_output is $FAKE_CLAUDE_STRUCTURED (JSON) when set, else a level's answer, and
 // modelUsage names `claude-<--model>-resolved`, as the real CLI names the model an alias ran.
 // With `--input-format stream-json` it answers the initialize control request on stdin with the
@@ -13,6 +14,7 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+const SPEND_LIMIT = 'You\'ve hit your individual spend limit · run /usage-credits to ask your admin for a higher limit';
 let stdin = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (c) => { stdin += c; });
@@ -50,6 +52,8 @@ process.stdin.on('end', () => {
   }
   if (mode === 'hang') { setInterval(() => {}, 1000); return; }
   if (mode === 'exit1') { process.stderr.write('auth failed'); process.exit(1); }
+  if (mode === 'stdout-exit1') { process.stdout.write(`${SPEND_LIMIT}\n`); process.exit(1); }
+  if (mode === 'json-exit1') { process.stdout.write(JSON.stringify({ type: 'result', is_error: true, result: SPEND_LIMIT })); process.exit(1); }
   if (mode === 'malformed') { process.stdout.write('not json {'); return; }
   if (mode === 'invalid') {
     process.stdout.write(JSON.stringify({ type: 'result', structured_output: { answer: 'x', escalate: 'no' } }));

@@ -84,6 +84,11 @@ describe('claude-cli on a client target (issue #482)', () => {
     expect(await (await level({ machine: 'studio', timeoutMs: 500 }, [STUDIO])).answer(req(), signal())).toEqual({ error: 'machine studio: claude timed out after 500 ms' });
   });
 
+  it('a reason the client\'s claude says on stdout only is in the error (issue #2918)', async () => {
+    process.env.FAKE_CLAUDE_MODE = 'stdout-exit1';
+    expect(await (await level({ machine: 'studio' }, [STUDIO])).answer(req(), signal())).toEqual({ error: "machine studio: claude exited 1: You've hit your individual spend limit · run /usage-credits to ask your admin for a higher limit" });
+  });
+
   it('a container target is still refused, with how to fix it', async () => {
     expect(await (await level({ machine: 'box' }, [BOX])).answer(req(), signal())).toEqual({ error: expect.stringMatching(/machine box is a container target: .*Pick another machine/) });
   });
