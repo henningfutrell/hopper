@@ -2,7 +2,7 @@
 // an account are written. Pure; the view renders what these return.
 import { describe, expect, it } from 'vitest';
 import type { MachineLaneEffect, PartAccount, UsageReading } from '../../src/domain/types.ts';
-import { accountFacts, executorEffectLines, laneEffectText, throttleText, orderReadings, readingKey, readingLabel, resetsIn, serviceLabel, shownSource, sourceLine } from '../../ui/src/model/usage.ts';
+import { accountFacts, executorEffectLines, laneEffectText, usedText, throttleText, orderReadings, readingKey, readingLabel, resetsIn, serviceLabel, shownSource, sourceLine } from '../../ui/src/model/usage.ts';
 
 const NOW = Date.parse('2026-10-03T12:00:00Z');
 const r = (over: Partial<UsageReading>): UsageReading => ({ source: 'claude', used: 10, limit: 100, unit: '%', at: '2026-10-03T11:58:00Z', ...over });
@@ -41,6 +41,14 @@ describe('usage model', () => {
     expect(laneEffectText(m({ usedFrac: 0.8, cap: 2, band: 'soft' }))).toBe('capped at 2 of 4 lanes (past the soft limit)');
     expect(laneEffectText(m({ usedFrac: 0.96, cap: 0, band: 'hard' }))).toBe('stopped: 0 of 4 lanes (hard limit)');
     expect(laneEffectText(m({ online: false, cap: 0, band: 'offline' }))).toBe('offline: no lanes');
+  });
+
+  it('usage not known (issue #2919): never 0%, the soft lanes only', () => {
+    expect(laneEffectText(m({ cap: 1, band: 'unknown' }))).toBe('capped at 1 of 4 lanes (usage unknown: no reading)');
+    expect(usedText(m({ band: 'unknown', unknown: ['claude-m'] }))).toBe('usage unknown: claude-m has no reading');
+    expect(usedText(m({ usedFrac: 0.42 }))).toBe('42% used');
+    expect(executorEffectLines(m({ executors: [{ executor: 'herdr-claude', usedFrac: 0, cap: 1, band: 'unknown', unknown: ['claude-m'] }, { executor: 'command', usedFrac: 0, cap: 4, band: 'free' }] })))
+      .toEqual(['herdr-claude: usage unknown: claude-m has no reading, capped at 1 of 4 lanes (usage unknown: no reading)']);
   });
 
   it('an executor whose budget limits it apart from the machine gets its own line; one the same as the machine gets none', () => {
