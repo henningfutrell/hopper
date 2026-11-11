@@ -67,7 +67,9 @@ export function runClaude(bin: string, args: string[], timeoutMs: number, input 
       if (!err) return resolve(done({ code: 0, stdout, stderr }));
       const e = err as NodeJS.ErrnoException & { killed?: boolean; code?: number | string };
       if (e.killed) return resolve(done({ code: 124, stdout, stderr: `claude timed out after ${timeoutMs} ms` }));
-      resolve(done({ code: typeof e.code === 'number' ? e.code : 127, stdout, stderr: stderr || e.message }));
+      // A claude that said why on stdout only keeps that as its reason (issue #2918), not execFile's "Command failed".
+      const code = typeof e.code === 'number' ? e.code : 127;
+      resolve(done({ code, stdout, stderr: stderr || (code !== 127 && stdout.trim() ? '' : e.message) }));
     });
     child.stdin?.on('error', () => undefined); // a claude that exits before reading answers its own exit code
     child.stdin?.end(input);

@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { clientLevel, type ClientTransport } from '../../../executors/client.ts';
 import { commandOn } from '../../../executors/command.ts';
 import { hopperSshAuth } from '../../../executors/ssh.ts';
-import { CLAUDE_TIMEOUT_MS, claudeModelChoices, claudePrint, ON_MACHINE, parsePrint, type ClaudePrintOptions } from '../../claude-print.ts';
+import { CLAUDE_TIMEOUT_MS, claudeModelChoices, claudePrint, failureOf, ON_MACHINE, parsePrint, type ClaudePrintOptions } from '../../claude-print.ts';
 import { containerRefusal, notConfigured, offlineNote, pickMachine } from '../../../domain/machine-pick.ts';
 import { CONFIDENCES, REVIEW_KINDS, type RunLogins } from '../../../domain/types.ts';
 import type { LevelReply, MachineSnapshot, PluginDefinition, ReviewReply } from '../../sdk.ts';
@@ -96,7 +96,7 @@ const claudeCli: PluginDefinition<'escalation-level', ClaudeCliOptions> = {
         const r = await unlessAborted(clientLevel(t, call, o.timeoutMs), signal);
         if (r === 'aborted') return { error: 'aborted' };
         if (r.code === 124) return { error: `machine ${id}: claude timed out after ${o.timeoutMs} ms` };
-        if (r.code !== 0) return { error: `machine ${id}: claude exited ${r.code}: ${r.stderr.trim().slice(0, 300)}` };
+        if (r.code !== 0) return { error: `machine ${id}: claude exited ${r.code}: ${failureOf(r.stderr, r.stdout)}` };
         return parsePrint(r.stdout, c.schema);
       } catch (e) {
         return { error: `machine ${id}: ${e instanceof Error ? e.message : String(e)}` };
