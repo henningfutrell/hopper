@@ -7,6 +7,7 @@
 // recommendation changes, Jev is asked first (`lane-count`, issue #550): its applied pick is the machine's recommendation
 // until the rules' recommendation or the configured lanes move.
 import { laneEffect, machinePolicy } from '../decider/usage.ts';
+import { readUsage } from './usage-read.ts';
 import { jobCostGroups, jobCostKind, jobCostProfiles } from '../decider/job-costs.ts';
 import { laneActions, laneProgress, recommendLanes } from '../decider/lane-tuning.ts';
 import { withJevLanes } from '../decider/lane-calls.ts';
@@ -78,7 +79,7 @@ export function createLaneTuning(c: EngineContext, calls: LaneCallDeps): LaneTun
   };
 
   const plan = async (): Promise<LaneTuningPlan> => {
-    const [machines, readings] = await Promise.all([c.machines.list(), Promise.all(c.usage().map((u) => u.poll())).then((r) => r.flat())]);
+    const [machines, { readings, unread }] = await Promise.all([c.machines.list(), readUsage(c)]);
     const now = c.clock.now();
     const at = now.toISOString();
     const policy = policyOf(c);
@@ -91,8 +92,9 @@ export function createLaneTuning(c: EngineContext, calls: LaneCallDeps): LaneTun
     const memory = memoryLaneCaps(machines);
     const machinesOut: LaneRecommendation[] = machines.map((m) => {
       const mem = memory.get(m.id);
+      const effect = laneEffect(m, readings, policy, at, unread);
       const rules = recommendLanes({
-        machine: m, loads, progress, usedFrac: laneEffect(m, readings, policy, at).usedFrac, soft: machinePolicy(m, policy).softLimit, hard: machinePolicy(m, policy).hardLimit, tuning: tuningOf(c.store, m.id),
+        machine: m, loads, progress, usedFrac: effect.usedFrac, ...(effect.unknown ? { usageUnknown: effect.unknown } : {}), soft: machinePolicy(m, policy).softLimit, hard: machinePolicy(m, policy).hardLimit, tuning: tuningOf(c.store, m.id),
         ...(mem ? { memory: mem } : {}),
       });
       const r = withJevLanes(rules, jev.get(m.id));

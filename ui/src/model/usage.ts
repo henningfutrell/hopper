@@ -39,7 +39,15 @@ export function laneEffectText(m: Pick<MachineLaneEffect, 'band' | 'cap' | 'maxL
     case 'free': return `all ${m.maxLanes} lanes`;
     case 'soft': return `capped at ${m.cap} of ${m.maxLanes} lanes (past the soft limit)`;
     case 'hard': return `stopped: 0 of ${m.maxLanes} lanes (hard limit)`;
+    case 'unknown': return `capped at ${m.cap} of ${m.maxLanes} lanes (usage unknown: no reading)`;
   }
+}
+
+/** How much of its budget a machine or executor used: `42% used`; with no reading (issue #2919) unknown, never 0%. */
+export function usedText(m: Pick<MachineLaneEffect, 'band' | 'usedFrac' | 'unknown'>): string {
+  if (m.band !== 'unknown') return `${Math.round(m.usedFrac * 100)}% used`;
+  const who = m.unknown ?? [];
+  return who.length ? `usage unknown: ${who.join(', ')} ${who.length === 1 ? 'has' : 'have'} no reading` : 'usage unknown: no reading';
 }
 
 /** A usage window in words: `weekly` for a week window (`week`, `week (Fable)` → `weekly (Fable)`), else as named. */
@@ -56,7 +64,7 @@ export const throttleText = (t: UsageThrottle): string =>
 export function executorEffectLines(m: MachineLaneEffect): string[] {
   return m.executors
     .filter((e) => e.cap !== m.cap || e.band !== m.band)
-    .map((e) => `${e.executor}: ${Math.round(e.usedFrac * 100)}% used${e.throttle?.window ? ` (${windowWord(e.throttle.window)})` : ''}, ${laneEffectText({ band: e.band, cap: e.cap, maxLanes: m.maxLanes })}`);
+    .map((e) => `${e.executor}: ${usedText(e)}${e.throttle?.window ? ` (${windowWord(e.throttle.window)})` : ''}, ${laneEffectText({ band: e.band, cap: e.cap, maxLanes: m.maxLanes })}`);
 }
 
 const SERVICES: Record<string, string> = { claude: 'Claude', github: 'GitHub' };

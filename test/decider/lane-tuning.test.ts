@@ -112,6 +112,13 @@ describe('lane recommendation', () => {
     expect(r).toMatchObject({ machineId: 'm', label: 'box', online: true, configured: 2, lanes: 4, headroom: 4, confidence: 0.5, usage: 'free', usedFrac: 0.2 });
   });
 
+  it('no lanes added while the usage is not known (issue #2919)', () => {
+    const loads = [load(0), load(1), load(2), load(3), load(4)];
+    const r = recommendLanes({ machine, loads, ...free, usedFrac: 0, usageUnknown: ['claude-m'], tuning: DEFAULT_LANE_TUNING });
+    expect(r.lanes).toBe(machine.maxLanes);
+    expect(r.reason).toMatch(/; usage unknown \(claude-m has no reading\): no lanes added$/);
+  });
+
   it('no lanes added near the soft limit or past it; fewer when the headroom is lower', () => {
     const loads = [load(0), load(1, { memUsedAvgBytes: 6 * GIB }), load(2, { memUsedAvgBytes: 8 * GIB })];
     const near = recommendLanes({ machine, loads, ...free, usedFrac: 0.65, tuning: DEFAULT_LANE_TUNING });

@@ -6,6 +6,7 @@ import { isLocked } from '../domain/locked.ts';
 import type { InFlight, WorkItemLedger, WorkItemState } from '../domain/work-items.ts';
 import { effectivePriority, order } from '../decider/assign.ts';
 import { laneEffect, readingsOf } from '../decider/usage.ts';
+import { readUsage } from './usage-read.ts';
 import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type HopperDisk, type MachineLeftovers, type SweepSettings, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { usageLimitsOf } from './usage-limits.ts';
@@ -125,7 +126,7 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string, swee
     getUsage,
     getUsageSources,
     async getUsageReport() {
-      const [machines, readings] = await Promise.all([c.machines.list(), getUsage()]);
+      const [machines, { readings, unread }] = await Promise.all([c.machines.list(), readUsage(c)]);
       const policy = policyOf(c);
       return {
         readings,
@@ -133,8 +134,9 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string, swee
         limits: usageLimitsOf(c),
         machines: machines.map((m) => {
           // At the clock, as the decider reads it: a week window in its burn window throttles up to 100% (issues #373, #2169).
-          const { usedFrac, cap, band, throttle, executors } = laneEffect(m, readings, policy, c.clock.now().toISOString());
-          return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band, ...(throttle ? { throttle } : {}), executors, ...(m.usageLimits ? { usageLimits: { ...m.usageLimits } } : {}) };
+          // A source with no reading now leaves the usage unknown, never 0% (issue #2919).
+          const { usedFrac, cap, band, throttle, unknown, executors } = laneEffect(m, readings, policy, c.clock.now().toISOString(), unread);
+          return { machineId: m.id, label: m.label, online: m.online, maxLanes: m.maxLanes, usedFrac, cap, band, ...(throttle ? { throttle } : {}), ...(unknown ? { unknown } : {}), executors, ...(m.usageLimits ? { usageLimits: { ...m.usageLimits } } : {}) };
         }),
       };
     },

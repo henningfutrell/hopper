@@ -127,13 +127,16 @@ same Decision. Algorithm, in order:
    `reasons`. **Informational readings** (`informational: true` — a window that limits one
    model only, issue #18) are skipped. So is a reading whose `resetsAt` is at or before `inputs.at`
    (its window reset since it was read). A week window in its **burn window** counts, with 100% as its
-   hard limit ("Usage pacing"). No readings → `0`. Since issue #140 steps 1-2 run per executor, over the
+   hard limit ("Usage pacing"). No readings → `0` (and band `unknown` when a source cannot be read, step 2). Since issue #140 steps 1-2 run per executor, over the
    readings that limit its jobs ("Usage per executor").
 2. **Lane cap per machine** (`policy.softLimit`, `policy.hardLimit`, `policy.softLanes`: the usage limits, "Usage limits" (issue #522)):
    - offline → `0`
    - `usedFrac < soft` → `maxLanes`
    - `usedFrac >= hard` → `0` (stop: close idle lanes, drain busy ones, start nothing)
    - between → `min(maxLanes, softLanes)`: the **soft lanes**, a fixed count, default 1 (issue #2091, "Soft lanes")
+   - no reading counts, and an **unread usage source** limits these jobs on the machine (issue #2919) → band
+     `unknown`, `min(maxLanes, softLanes)`: usage that cannot be read is never 0%. The reason says
+     `m: usage unknown (<source> has no reading), lane cap 1 of 6 (unknown)`; lane tuning adds no lane.
 
    The band is taken per reading and the highest one wins (issue #2169): so a burning week window, whose hard limit is
    100%, still sets the soft band from the soft limit. The reading that sets it, the most used of those in the highest
@@ -6473,9 +6476,15 @@ holds no credential. Prior art: `a status-bar script`.
   shown, never throttling — decider step 1 skips it (it limits one model, not every job).
 - A window past its `resetsAt` is left out until the next read. No read yet, a failed read
   (`usage unavailable: …`, `claude -p /usage failed: …`) or readings older than 3 intervals
-  (`stale: last read …`) → no readings and the reason in `state().problem`. **Fails open**: with no
-  readings, lanes are capped by machines only — the same as no usage source. Accepted: claude down
-  must not stop the hopper, and the reason is on the Usage view.
+  (`stale: last read …`) → no readings and the reason in `state().problem`. **Unknown, never 0%**
+  (issue #2919, amends "fails open"): such a source is an **unread usage source** (`unreadUsageOf`, the
+  decider input `unreadUsage`); where no other reading limits the jobs of its executors on its machine, their lane
+  effect's band is `unknown` and their cap the soft lanes — decider step 2. The hopper still runs with claude down,
+  at the soft lanes, and the Usage view says `usage unknown: <source> has no reading` in place of a percent. A
+  `/usage` text with its subscription line and no window lines (Claude Code 2.1.3xx prints it so when its own read
+  of its usage service failed, a 429 as a rule, and it holds no snapshot) is `usage unavailable: claude printed no
+  usage limits (…)`. Since 2.1.3xx the text has no `Current session` line while no session runs, and ends with a
+  contribution report (`What's contributing to your usage?`); the window lines are as before.
 - `claude auth status --json` (same run, same probe dir) gives the **account**: email, plan
   (`subscriptionType`), organization (`orgName`), sign-in method. Ids and anything else are dropped.
 

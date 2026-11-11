@@ -5,7 +5,7 @@ import type { EventType } from './event-types.ts';
 import type { ExecutorUnavailable, QueueOrder } from './plugins.ts';
 import type { RoutedBy } from './routing.ts'; import type { GradeRoute } from './grade-routing.ts';
 import type { DeciderPolicy } from './decider-policy.ts';
-import type { SignedOutTool, UsageLimitPair, UsageReading } from './usage.ts';
+import type { SignedOutTool, UnreadUsage, UsageLimitPair, UsageReading } from './usage.ts';
 import type { ResourceReading } from './machine-history.ts'; import type { JobMachineLink, MachineDrained, MachineHerdr, MachineInfraCredentials, MachineLaneHealth, MachineLeaving, PendingLoad, UpdateSwap } from './machines.ts'; import type { MachineSandboxHost } from './sandbox-host.ts';
 import type { ParkedElsewhere } from './checkpoints.ts'; import type { FailedProcessNote } from './failed-processes.ts';
 import type { ActingPerson, ContinuedBy, JobAssessment, JobLiveness, ProblemBlock } from './failures.ts';
@@ -445,7 +445,7 @@ export interface DecisionInputs {
    * `memoryPausedAt` (issue #2291): per machine, when this hopper last paused a job there for memory, as the paused job may be parked and not an input.
    * `waitSessions` (issue #2303): the jobs on their own wait whose agent the hopper may end to free memory. Absent: none.
    */
-  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; parkingExecutors?: string[]; memoryPausedAt?: Record<MachineId, string>; waitSessions?: import('./memory-floor.ts').WaitSession[]; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[]; budgetHeld?: { jobId: JobId; reason: string }[];
+  avoidLanes?: Record<JobId, LaneId>; preemption?: import('./preemption.ts').PreemptionInput; parkingExecutors?: string[]; memoryPausedAt?: Record<MachineId, string>; waitSessions?: import('./memory-floor.ts').WaitSession[]; expectedCosts?: Record<JobId, import('./job-costs.ts').ExpectedCost>; placementPicks?: Record<JobId, import('./lane-tuning.ts').PlacementPick>; signedOut?: SignedOutTool[]; unreadUsage?: UnreadUsage[]; credentialHeld?: string[]; sandboxesHeld?: { jobId: JobId; reason: string }[]; stampHeld?: { jobId: JobId; reason: string }[]; budgetHeld?: { jobId: JobId; reason: string }[];
   policy: DeciderPolicy;
 }
 
@@ -572,7 +572,7 @@ export { HERDR_SESSION, HOST_KEY, type AttachedMachine, type CleanupProblem, typ
 // ---- Routing rules: src/domain/routing.ts; plugins: src/domain/plugins.ts (re-exported here, one vocabulary) ----
 
 export type * from './routing.ts';
-export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, SignedOutTool, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, UsageThrottle, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
+export type { Account, ExecutorLaneEffect, MachineLaneEffect, PartAccount, SignedOutTool, UsagePacing, UsageLimitPair, UsageLimits, UsageReading, UsageReport, UsageSourceReport, UsageSourceState, UsageThrottle, UnreadUsage, UsageBand, ToolAccount, ToolAccountMachine, ToolAccountsReport, ToolLogin, ToolSignIn, ToolSignInStart } from './usage.ts';
 export * from './usage-history.ts'; export type { HeaderBadge, HeaderBadgeSettings } from './header-badges.ts';
 export * from './machine-history.ts'; export * from './hopper-disk.ts'; export * from './leftovers.ts'; export * from './disk-defaults.ts'; export type { CacheCaps, CappedKind } from './cache-caps.ts'; export type { DiskThresholds, EndStatus, SweepSettings } from './machines.ts';
 export * from './stack-resources.ts'; export * from './telemetry-summary.ts';
