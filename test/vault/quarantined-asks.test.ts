@@ -16,7 +16,7 @@ describe('a quarantined job\'s grant ask (issue #655 part 6)', () => {
     let doors = true;
     const store = {
       events: { append: () => undefined }, jobs: { get: (id: string) => (id === job.id ? job : undefined), opensDoors: () => doors, getBySourceKey: () => undefined },
-      vaultGrants: { get: () => undefined, list: () => [] }, tx: <T>(f: () => T) => f(), directJobs: { get: () => undefined }, settings: {},
+      vaultGrants: { get: () => undefined, list: () => [] }, vaultScopeGrants: { get: () => undefined, list: () => [] }, tx: <T>(f: () => T) => f(), directJobs: { get: () => undefined }, settings: {},
     };
     const vault = withVaultGrants({ view: () => ({ templates: [] }) } as unknown as Vault, { store: store as never, clock, targets: () => [], holds: () => true });
     await vault.forStep({ job: 'j1', name: 's', host: 'win' } as never);

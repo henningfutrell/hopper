@@ -33,11 +33,11 @@ export const templateItem = (t: TemplateView): ApprovalItem => ({
 });
 /**
  * The run card's one approval (issue #2197): its template as it is, each profile it lists, and its run; for this job's
- * runs only, or with `allowAgain` (part 3) for later jobs with the same needs too.
+ * runs only (`allowAgain` false, part 3), or by default for later jobs with the same needs too (issue #2923).
  */
-export const runItem = (c: RunCardView, t?: Pick<TemplateView, 'savedAt' | 'label'>, allowAgain = false): ApprovalItem => ({
+export const runItem = (c: RunCardView, t?: Pick<TemplateView, 'savedAt' | 'label'>, allowAgain = true): ApprovalItem => ({
   key: runKey(c, t), label: t?.label ?? c.template,
-  posts: [{ path: '/ui/api/sandbox-requests', body: { action: 'approve-run', job: c.jobId, template: c.template, ...(allowAgain ? { allowAgain: true } : {}) } }],
+  posts: [{ path: '/ui/api/sandbox-requests', body: { action: 'approve-run', job: c.jobId, template: c.template, ...(allowAgain ? {} : { allowAgain: false }) } }],
 });
 
 const put = (key: string, a: ItemApproval): void => useAccessApprovals.setState((s) => ({ items: { ...s.items, [key]: a } }));

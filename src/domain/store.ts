@@ -541,7 +541,7 @@ export interface UserStore {
   problems: ProblemRepository;
   handoffs: HandoffRepository; waitCheckLeases: import('./wait-checks.ts').WaitCheckLeases; // the wait checks' leases (issue #1694)
   itemSnapshots: ItemSnapshotRepository;
-  vaultGrants: VaultGrantRepository;
+  vaultGrants: VaultGrantRepository; vaultScopeGrants: import('./vault-scope-grants.ts').VaultScopeGrantRepository; // the scope grants (issue #2923)
   bugReports: BugReportRepository;
   /** The issue graph (issue #437): store only, nothing reads it yet. */
   issueGraph: import('./issue-graph.ts').IssueGraphRepository; workItems: import('./work-items.ts').WorkItemLedger; // the work-item ledger (issue #1067)
