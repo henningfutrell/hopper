@@ -137,6 +137,8 @@ export interface LaneTuningInput {
   loads: readonly LaneLoad[];
   progress: readonly LaneProgress[];
   usedFrac: number;
+  /** Issue #2919: the usage sources with no reading that limit the machine; its usage is not known, so no lane is added. */
+  usageUnknown?: readonly string[];
   soft: number;
   hard: number;
   tuning: LaneTuning;
@@ -178,6 +180,10 @@ export function recommendLanes(o: LaneTuningInput): LaneRecommendation {
     lanes = Math.min(lanes, m.maxLanes);
     const limit = usage === 'hard' ? `the hard limit ${pct(o.hard)}` : `the soft limit ${pct(o.soft)}`;
     reason += `; usage ${pct(o.usedFrac)} ${USAGE_TEXT[usage]} ${limit}: no lanes added; high-priority work keeps its lanes`;
+  }
+  if (o.usageUnknown?.length && lanes > m.maxLanes) {
+    lanes = m.maxLanes;
+    reason += `; usage unknown (${o.usageUnknown.join(', ')} ${o.usageUnknown.length === 1 ? 'has' : 'have'} no reading): no lanes added`;
   }
   if (o.memory && o.memory.lanes < lanes) {
     lanes = o.memory.lanes;

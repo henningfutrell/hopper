@@ -1,5 +1,5 @@
 import { DEFAULT_SOFT_LANES } from '../domain/decider-policy.ts';
-import type { DeciderPolicy, ExecutorLaneEffect, MachineSnapshot, UsageReading, UsageThrottle } from '../domain/types.ts';
+import type { DeciderPolicy, ExecutorLaneEffect, MachineSnapshot, UnreadUsage, UsageBand, UsageReading, UsageSourceState, UsageThrottle } from '../domain/types.ts';
 
 export interface MachineUsage {
   usedFrac: number;
@@ -75,14 +75,33 @@ export function placementPressure(machineId: string, readings: UsageReading[], a
   return Math.max(0, ceiling - binding.used / binding.limit) / hours;
 }
 
-export type CapBand = 'offline' | 'free' | 'soft' | 'hard';
+export type CapBand = UsageBand;
 
 export interface LaneCap {
   cap: number;
   band: CapBand;
   /** The usage window that sets the band (issue #2169); absent: no reading throttles. */
   throttle?: UsageThrottle;
+  /** Band `unknown` (issue #2919): the unread usage sources that limit the jobs. */
+  unknown?: string[];
 }
+
+/**
+ * The unread usage sources (issue #2919): each that returned no reading and says a problem (its read failed, not read yet,
+ * stale), on the machine its account names (every machine, when it names none). Pure.
+ */
+export function unreadUsageOf(sources: readonly { name: string; readings: readonly UsageReading[]; state: UsageSourceState | undefined }[]): UnreadUsage[] {
+  return sources.flatMap(({ name, readings, state }) => {
+    if (readings.length > 0 || !state?.problem) return [];
+    const machineId = state.account?.detail.machine;
+    return [{ source: name, ...(typeof machineId === 'string' ? { machineId } : {}), ...(state.executors ? { executors: [...state.executors] } : {}) }];
+  });
+}
+
+/** The unread usage sources that limit `executor`'s jobs on the machine (without one, those that limit every job). */
+const unreadFor = (machineId: string, unread: readonly UnreadUsage[], executor: string | undefined): string[] =>
+  unread.filter((u) => (u.machineId === undefined || u.machineId === machineId)
+    && (u.executors === undefined || (executor !== undefined && u.executors.includes(executor)))).map((u) => u.source);
 
 /**
  * The policy on machine `m`: its own usage limits, when it has them, in place of the user's (issue #1860); its own soft
@@ -93,10 +112,10 @@ export const machinePolicy = (m: Pick<MachineSnapshot, 'usageLimits'>, p: Decide
     ? { ...p, softLimit: m.usageLimits.soft, hardLimit: m.usageLimits.hard, ...(m.usageLimits.softLanes === undefined ? {} : { softLanes: m.usageLimits.softLanes }) }
     : p);
 
-const BAND_RANK: Record<CapBand, number> = { offline: 0, free: 1, soft: 2, hard: 3 };
+const BAND_RANK: Record<Exclude<CapBand, 'offline' | 'unknown'>, number> = { free: 1, soft: 2, hard: 3 };
 
 /** A reading's band at `p`: a burning week window reaches hard only when spent (issue #2169). */
-function bandOf(c: MachineUsage['counted'][number], p: DeciderPolicy): Exclude<CapBand, 'offline'> {
+function bandOf(c: MachineUsage['counted'][number], p: DeciderPolicy): Exclude<CapBand, 'offline' | 'unknown'> {
   if (c.usedFrac < p.softLimit) return 'free';
   return c.usedFrac >= (c.burning ? 1 : p.hardLimit) ? 'hard' : 'soft';
 }
@@ -110,13 +129,17 @@ const throttleOf = (c: MachineUsage['counted'][number]): UsageThrottle => ({
  * Step 2: the most lanes the machine may run, by its own usage limits when it has them (`machinePolicy`): every lane below
  * the soft limit, the soft lanes (at most maxLanes) from it to the hard limit, none at the hard limit (issue #2091). The
  * band is the highest of its readings' bands; its throttle is the reading that sets it, the most used of those (issue #2169).
+ * With no reading that counts while a usage source that limits the jobs (`unread`) has none, the band is `unknown` and the
+ * cap the soft lanes (issue #2919): usage that cannot be read is never taken as 0%.
  */
-export function laneCap(m: MachineSnapshot, usage: Pick<MachineUsage, 'counted'>, policy: DeciderPolicy): LaneCap {
+export function laneCap(m: MachineSnapshot, usage: Pick<MachineUsage, 'counted'>, policy: DeciderPolicy, unread: readonly string[] = []): LaneCap {
   if (!m.online) return { cap: 0, band: 'offline' };
   const p = machinePolicy(m, policy);
+  // Issue #2919: no reading counts and a source that limits these jobs cannot be read: not known, never free.
+  if (usage.counted.length === 0 && unread.length > 0) return { cap: Math.min(m.maxLanes, p.softLanes ?? DEFAULT_SOFT_LANES), band: 'unknown', unknown: [...unread] };
   const top = usage.counted
     .map((c) => ({ c, band: bandOf(c, p) }))
-    .reduce<{ c: MachineUsage['counted'][number]; band: Exclude<CapBand, 'offline'> } | undefined>(
+    .reduce<{ c: MachineUsage['counted'][number]; band: Exclude<CapBand, 'offline' | 'unknown'> } | undefined>(
       (a, b) => (!a || BAND_RANK[b.band] > BAND_RANK[a.band] || (b.band === a.band && b.c.usedFrac > a.c.usedFrac) ? b : a), undefined);
   const band = top?.band ?? 'free';
   const throttle = top ? { throttle: throttleOf(top.c) } : {};
@@ -136,19 +159,23 @@ export interface LaneEffect extends LaneCap {
  * Steps 1-2 per executor the machine runs, at the decision's clock `at`: each executor's jobs are
  * capped by the readings that limit them, so one agent framework's budget leaves another's jobs alone
  * (issue #140). The machine's cap is its least limited executor's — its lanes stay while any executor
- * may use them; a machine that runs no executor is capped by the readings that limit every job.
+ * may use them; a machine that runs no executor is capped by the readings that limit every job. `unread`: the usage
+ * sources with no reading now (issue #2919).
  */
-export function laneEffect(m: MachineSnapshot, readings: UsageReading[], p: DeciderPolicy, at: string): LaneEffect {
+export function laneEffect(m: MachineSnapshot, readings: UsageReading[], p: DeciderPolicy, at: string, unread: readonly UnreadUsage[] = []): LaneEffect {
   const executors = m.executors.map((executor): ExecutorLaneEffect => {
     const usage = machineUsage(m.id, readings, at, p, executor);
-    return { executor, usedFrac: usage.usedFrac, ...laneCap(m, usage, p) };
+    return { executor, usedFrac: usage.usedFrac, ...laneCap(m, usage, p, unreadFor(m.id, unread, executor)) };
   });
   const each = [undefined, ...m.executors].map((e) => machineUsage(m.id, readings, at, p, e));
   const ignored = [...new Set(each.flatMap((u) => u.ignored))];
   const burning = [...new Set(each.flatMap((u) => u.burning))];
   const least = executors.reduce<ExecutorLaneEffect | undefined>((a, b) => (!a || b.cap > a.cap || (b.cap === a.cap && b.usedFrac < a.usedFrac) ? b : a), undefined);
   if (least) {
-    return { usedFrac: least.usedFrac, cap: least.cap, band: least.band, ...(least.throttle ? { throttle: least.throttle } : {}), ignored, burning, executors };
+    return {
+      usedFrac: least.usedFrac, cap: least.cap, band: least.band, ...(least.throttle ? { throttle: least.throttle } : {}),
+      ...(least.unknown ? { unknown: least.unknown } : {}), ignored, burning, executors,
+    };
   }
-  return { usedFrac: each[0]!.usedFrac, ...laneCap(m, each[0]!, p), ignored, burning, executors };
+  return { usedFrac: each[0]!.usedFrac, ...laneCap(m, each[0]!, p, unreadFor(m.id, unread, undefined)), ignored, burning, executors };
 }

@@ -59,11 +59,29 @@ describe('claude-plan parser', () => {
     ]);
   });
 
+  it('the /usage text of Claude Code 2.1.322 (issue #2919): the subscription line, week windows with no session, the contribution report', () => {
+    const text = [
+      'You are currently using your subscription to power your Claude Code usage', '',
+      'Current week (all models): 12% used · resets Aug 11, 11am (America/Chicago)',
+      'Current week (Fable): 3% used · resets Aug 11, 11am (America/Chicago)', '',
+      "What's contributing to your usage?", 'Approximate · sessions on this machine only · shares overlap', '',
+      'Last 24h · 70 requests · 7 sessions', '  50%  See what fills your context · run /context',
+    ].join('\n');
+    expect(parseUsageEnvelope(JSON.stringify({ type: 'result', is_error: false, result: text, local_command: 'usage' }), AUG8_NOON)).toEqual({ windows: [
+      { window: 'week', used: 12, resetsAt: '2026-08-11T16:00:00.000Z' },
+      { window: 'week (Fable)', used: 3, resetsAt: '2026-08-11T16:00:00.000Z', informational: true },
+    ] });
+    // Its usage service gave no limits: the subscription line and the contribution report only. No reading, never 0%.
+    const noLimits = ['You are currently using your subscription to power your Claude Code usage', '', "What's contributing to your usage?", 'Last 24h · 3 requests · 1 sessions'].join('\n');
+    expect(parseUsageEnvelope(JSON.stringify({ is_error: false, result: noLimits }), AUG8_NOON))
+      .toEqual({ problem: 'usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)' });
+  });
+
   it('the envelope: its result text parsed; header-only, is_error, empty or not JSON → a problem, never readings', () => {
     const ok = JSON.stringify({ type: 'result', is_error: false, result: 'Current session: 4% used · resets Aug 8, 2:10pm (America/Chicago)' });
     expect(parseUsageEnvelope(ok, AUG8_NOON)).toEqual({ windows: [{ window: 'session', used: 4, resetsAt: '2026-08-08T19:10:00.000Z' }] });
     expect(parseUsageEnvelope(JSON.stringify({ is_error: false, result: 'You are currently using your subscription to power your Claude Code usage' }), AUG8_NOON))
-      .toEqual({ problem: 'usage unavailable: You are currently using your subscription to power your Claude Code usage' });
+      .toEqual({ problem: 'usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)' });
     expect(parseUsageEnvelope(JSON.stringify({ is_error: true, result: 'Usage is not available right now' }), AUG8_NOON))
       .toEqual({ problem: 'usage unavailable: Usage is not available right now' });
     expect(parseUsageEnvelope(JSON.stringify({ is_error: false, result: '' }), AUG8_NOON)).toEqual({ problem: 'usage unavailable: empty result' });
@@ -185,7 +203,7 @@ describe('claude-plan plugin', () => {
     writeFileSync(join(control, 'mode'), 'header-only');
     const t = await create();
     await waitFor(() => (t.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
-    expect(t.state!().problem).toBe('usage unavailable: You are currently using your subscription to power your Claude Code usage');
+    expect(t.state!().problem).toBe('usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)');
 
     writeFileSync(join(control, 'mode'), 'logged-out');
     const u = await create();

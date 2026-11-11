@@ -18,6 +18,7 @@ import { autoAccept } from './queue-gate.ts';
 import { preemptionSettings } from './preemption.ts';
 import { queueOrder } from './queue-order.ts';
 import { recordWaitReleases, waitSessionsOf } from './wait-release.ts';
+import { readUsage } from './usage-read.ts';
 import { budgetHeldOf } from './token-budget.ts';
 
 export interface Claim { jobId: string; laneId: LaneId }
@@ -32,7 +33,7 @@ const RUNNING = ['claimed', 'running'] as const;
 export type ExpectedCostOf = (job: Job) => ExpectedCost | undefined;
 
 async function gather(c: EngineContext, trigger: string, cleanupDue: () => CleanupDue[], priorityLanes: PriorityLanes, blastRadius: BlastRadius, expected: ExpectedCostOf, picks: PlacementPicks, checks: PreStartChecks): Promise<{ machines: MachineSnapshot[]; inputs: () => DecisionInputs }> {
-  const [machines, ...readings] = await Promise.all([c.machines.list(), ...c.usage().map((u) => u.poll())]);
+  const [machines, usage] = await Promise.all([c.machines.list(), readUsage(c)]);
   const signedOut = signedOutOf(c.usage().map((u) => ({ name: u.name, state: u.state?.() })));
   // Store reads happen after the awaits, synchronously with decide and apply: no interleaving.
   return { machines, inputs: () => {
@@ -60,7 +61,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       trigger,
       machines,
       lanes: c.store.lanes.list(),
-      usage: readings.flat(),
+      usage: usage.readings,
       waiting,
       running: oldestFirst(c.store.jobs.list({ status: [...RUNNING] })),
       unavailableExecutors: c.executors.unavailable(),
@@ -73,6 +74,7 @@ async function gather(c: EngineContext, trigger: string, cleanupDue: () => Clean
       ...(placementPicks ? { placementPicks } : {}),
       ...(avoidLanes ? { avoidLanes } : {}),
       ...(signedOut.length ? { signedOut } : {}),
+      ...(usage.unread.length ? { unreadUsage: usage.unread } : {}),
       ...(credentialHeld.length ? { credentialHeld } : {}),
       ...(sandboxesHeld.length ? { sandboxesHeld } : {}),
       ...(preemption ? { preemption } : {}), parkingExecutors, ...memoryPausedAtOf(c, nowIso(c)), ...(waitSessions.length ? { waitSessions } : {}),

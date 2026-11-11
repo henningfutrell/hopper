@@ -3,6 +3,8 @@
 //   Current session: 1% used · resets Aug 8, 2:10pm (America/Chicago)
 //   Current week (all models): 27% used · resets Aug 11, 12pm (America/Chicago)
 //   Current week (Fable): 16% used · resets Aug 11, 12pm (America/Chicago)
+// Since Claude Code 2.1.3xx the text opens with a subscription line, prints only the windows its usage service gave (no
+// session line while no session runs), and ends with a contribution report; the window lines are as above (issue #2919).
 // The session and the week of all models limit every job, so they throttle lanes; any other
 // window (one model's week, or a shape not known here) limits less than every job and is
 // informational — shown, never throttling.
@@ -73,6 +75,10 @@ export function parseUsageText(text: string, now: Date): PlanWindow[] {
   return out.map((w, i) => ({ w, i })).sort((a, b) => rank(a.w) - rank(b.w) || a.i - b.i).map((x) => x.w);
 }
 
+/** The line Claude Code's `/usage` opens with for a subscription: `You are currently using your subscription (or overages) to power…`. */
+const SUBSCRIPTION_LINE = /^You are currently using your (?:subscription|overages) to power your Claude Code usage/;
+const NO_LIMITS = 'usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)';
+
 const firstLine = (text: string) => text.split('\n').map((l) => l.trim()).find(Boolean)?.slice(0, 200);
 
 /** stdout of `claude -p /usage --output-format json` → its windows, or why there are none. */
@@ -87,8 +93,12 @@ export function parseUsageEnvelope(stdout: string, now: Date): { windows: PlanWi
   const env = json as { is_error?: unknown; result?: unknown };
   const result = typeof env.result === 'string' ? env.result : '';
   const windows = env.is_error === true ? [] : parseUsageText(result, now);
-  // Claude Code prints the header alone when the usage service refuses.
-  if (windows.length === 0) return { problem: `usage unavailable: ${firstLine(result) ?? 'empty result'}` };
+  if (windows.length === 0) {
+    // Issue #2919: Claude Code prints its subscription line, and maybe its contribution report, with no usage limits when
+    // its own read of its usage service failed (a 429, as a rule) and it holds no snapshot of them. No reading, never 0%.
+    if (env.is_error !== true && SUBSCRIPTION_LINE.test(firstLine(result) ?? '')) return { problem: NO_LIMITS };
+    return { problem: `usage unavailable: ${firstLine(result) ?? 'empty result'}` };
+  }
   return { windows };
 }
 
