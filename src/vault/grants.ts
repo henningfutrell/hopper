@@ -10,9 +10,14 @@
 // `vault.granted` event for each job. It covers that box only, and that job only, until it ends; turned off, it grants
 // no job that has not asked yet. A job whose trust stamp is below `approved` (issue #655 part 7) gets none: a person grants it.
 // Nor does a job on a template that sandbox strictness (brake 2, part 8) asks a person for.
+// Scope grants (issue #2923): a person's grant of a job's ask is kept for the ask's scope — its template or Windows
+// host, and the job's repository —, so a later job that asks from the same scope gets the vault with no person, one
+// `vault.granted` for each job, under the same brakes as the standing read grant. Revoke ends it at the next ask. A grant
+// of an item whose newest job ended goes by itself (`vault.grant_revoked`, `by` `its job ended`), so no stale row piles up.
 import type { Clock, UserStore } from '../domain/ports.ts';
 import { jobBrake } from '../domain/intake-strictness.ts';
-import type { Job } from '../domain/types.ts';
+import { TERMINAL_STATUSES, type Job } from '../domain/types.ts';
+import { ENDED_BY, scopeGrantView, scopeKeyOf, scopeOf, scopeBy, withJob, type VaultPlace } from '../domain/vault-scope-grants.ts';
 import { directIdOf, grantItemOf, grantKeyOf, grantView, noGrant, readsOnlyInPolicy, STANDING_READ_GRANTER, type VaultGrantAsk } from '../domain/vault-grants.ts';
 import { DEFAULT_SANDBOX_STRICTNESS, personBrake } from '../domain/sandbox-strictness.ts';
 import type { ProxyTokenParts } from '../github-proxy/token.ts';
@@ -21,14 +26,14 @@ import type { VaultResult } from './service.ts';
 import type { Vault } from './vault.ts';
 
 export function withVaultGrants(v: Vault, o: {
-  store: Pick<UserStore, 'events' | 'jobs' | 'vaultGrants' | 'tx' | 'directJobs' | 'settings'>;
+  store: Pick<UserStore, 'events' | 'jobs' | 'vaultGrants' | 'vaultScopeGrants' | 'tx' | 'directJobs' | 'settings'>;
   clock: Clock;
   targets: () => ClientTarget[];
   holds: (parts: ProxyTokenParts) => boolean;
   /** The jobs a person denied. Default: a set of its own. */
   denied?: Set<string>;
 }): Vault {
-  const { events, jobs, vaultGrants } = o.store;
+  const { events, jobs, vaultGrants, vaultScopeGrants: scopes } = o.store;
   /** The open asks, by job. */
   const asks = new Map<string, VaultGrantAsk>();
   /** The jobs whose ask a person denied (issue #1138): still refused, they ask no more. */
@@ -42,16 +47,59 @@ export function withVaultGrants(v: Vault, o: {
    * 8) asks a person for.
    */
   function standingGrant(job: Job, template: string): boolean {
-    if (jobs.gate2Hold(job, jobBrake(o.store.settings.getIntakeStrictness(), job)) !== undefined) return false;
+    if (!noPersonFor(job, { template })) return false;
     const t = v.view().templates.find((x) => x.name === template);
     if (!t || !readsOnlyInPolicy(t, o.store.settings.getReadPolicy())) return false;
-    if (personBrake(o.store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, t)) return false;
     if (standing.has(job.id)) return true;
     if (o.store.settings.getSandboxApprovals()?.standingReadGrant !== true) return false;
     for (const id of standing) if (!AT_WORK.includes(jobs.get(id)?.status ?? '')) standing.delete(id);
     standing.add(job.id);
     events.append({ type: 'vault.granted', jobId: job.id, data: { job: job.id, key: grantKeyOf(job), by: STANDING_READ_GRANTER } });
     return true;
+  }
+
+  /**
+   * Whether a grant no person makes now may cover `job` from `place`: never below `approved` or its intake strictness
+   * (issue #655 parts 7, 12), nor on a template sandbox strictness (brake 2, part 8) asks a person for.
+   */
+  function noPersonFor(job: Job, place: VaultPlace): boolean {
+    if (jobs.gate2Hold(job, jobBrake(o.store.settings.getIntakeStrictness(), job)) !== undefined) return false;
+    if (!('template' in place)) return true;
+    const t = v.view().templates.find((x) => x.name === place.template);
+    return !t || !personBrake(o.store.settings.getSandboxStrictness() ?? DEFAULT_SANDBOX_STRICTNESS, t);
+  }
+
+  /** Whether a person's scope grant covers `job`'s ask from `place` (issue #2923): `vault.granted` once for each job. */
+  function scopeGrant(job: Job, place: VaultPlace): boolean {
+    const g = scopes.get(scopeKeyOf(scopeOf(job, place)));
+    if (!g || !noPersonFor(job, place)) return false;
+    const added = withJob(g, job.id);
+    if (added) o.store.tx(() => {
+      scopes.put(added);
+      events.append({ type: 'vault.granted', jobId: job.id, data: { job: job.id, key: grantKeyOf(job), by: scopeBy(g), scope: g.key } });
+    });
+    return true;
+  }
+
+  /** Whether `job` may use the vault from `place`: its item's grant, or a scope grant of the scope. */
+  const granted = (job: Job, place: VaultPlace): boolean => vaultGrants.get(grantKeyOf(job)) !== undefined || scopeGrant(job, place);
+
+  /** The place an open ask of `job` names, if any. */
+  const placeOf = (a: VaultGrantAsk | undefined): VaultPlace | undefined =>
+    a?.template !== undefined ? { template: a.template } : a?.windowsHost !== undefined ? { windowsHost: a.windowsHost } : undefined;
+
+  /**
+   * Takes back each grant of an item whose newest job ended (issue #2923): it gives nothing, and Run again asks again. Not
+   * a direct job's that its submission made: the submission authorized the vault for its item, Run again too.
+   */
+  function expireEnded(): void {
+    for (const g of vaultGrants.list()) {
+      const item = itemOf(g.key), newest = item.newest;
+      if (!newest || !TERMINAL_STATUSES.includes(newest.status) || grantView(g, item).made === 'submit') continue;
+      o.store.tx(() => {
+        if (vaultGrants.remove(g.key)) events.append({ type: 'vault.grant_revoked', jobId: newest.id, data: { job: newest.id, key: g.key, by: ENDED_BY } });
+      });
+    }
   }
 
   /** Records that `job` asked for `name` with no grant, from `where`: one ask per job, one event. */
@@ -71,7 +119,7 @@ export function withVaultGrants(v: Vault, o: {
     const box = boxAsk({ targets: o.targets, holds: o.holds, job: (id) => jobs.get(id), holdsTemplate: (t) => v.view().templates.some((x) => x.name === t) }, token, machineKey);
     if ('refused' in box) return undefined;
     const { machine: m, job } = box;
-    if (vaultGrants.get(grantKeyOf(job)) || standingGrant(job, m.template)) return undefined;
+    if (granted(job, { template: m.template }) || standingGrant(job, m.template)) return undefined;
     ask(job, name, { machine: m.name, template: m.template });
     return { machine: m.name, template: m.template, job: job.id, reason: noGrant(job.id) };
   }
@@ -79,7 +127,8 @@ export function withVaultGrants(v: Vault, o: {
   /** The asks of jobs still at work, not quarantined (issue #655 part 6), whose item has no grant. */
   const open = (): VaultGrantAsk[] => [...asks.values()].filter((a) => {
     const job = jobs.get(a.job);
-    const at = job !== undefined && AT_WORK.includes(job.status) && jobs.opensDoors(job) && !vaultGrants.get(a.key);
+    const place = placeOf(a);
+    const at = job !== undefined && AT_WORK.includes(job.status) && jobs.opensDoors(job) && !vaultGrants.get(a.key) && !(place && scopes.get(scopeKeyOf(scopeOf(job, place))));
     if (!at) asks.delete(a.job);
     return at;
   }).map((a) => ({ ...a, names: [...a.names] }));
@@ -95,11 +144,18 @@ export function withVaultGrants(v: Vault, o: {
   return {
     ...v,
     // Each ask and grant names what it covers (issue #1124): the item's title, repository, link and newest job.
-    view: () => ({
-      ...v.view(),
-      grantAsks: open().map((a) => ({ ...a, item: grantItemOf(a.key, itemOf(a.key)) })),
-      grants: vaultGrants.list().map((g) => grantView(g, itemOf(g.key))),
-    }),
+    // The grant fields are read only when a caller reads them: the engine reads the view each tick for its templates, and
+    // a store statement per tick stalls the event loop. The sweep of ended items' grants runs once per view, at the first.
+    view: () => {
+      let swept = false;
+      const sweep = (): void => { if (!swept) { swept = true; expireEnded(); } };
+      return {
+        ...v.view(),
+        get grantAsks() { sweep(); return open().map((a) => ({ ...a, item: grantItemOf(a.key, itemOf(a.key)) })); },
+        get grants() { sweep(); return vaultGrants.list().map((g) => grantView(g, itemOf(g.key))); },
+        get scopeGrants() { sweep(); return scopes.list().map((g) => scopeGrantView(g, (id) => jobs.get(id))); },
+      };
+    },
     async deliver(ask, machineKey) {
       const refused = gate(ask.token, machineKey, ask.name);
       if (!refused) return v.deliver(ask, machineKey);
@@ -111,7 +167,7 @@ export function withVaultGrants(v: Vault, o: {
       // A step schedule's run (issue #2716): its schedule's grant is the hopper's to check, before it asks.
       if (a.job === undefined) return v.forStep(a);
       const job = jobs.get(a.job);
-      if (job && !vaultGrants.get(grantKeyOf(job))) {
+      if (job && !granted(job, a.template !== undefined ? { template: a.template } : { windowsHost: a.host })) {
         ask(job, a.name, a.template !== undefined ? { box: a.host, template: a.template } : { windowsHost: a.host });
         const reason = noGrant(job.id);
         events.append({ type: 'vault.step_refused', jobId: job.id, data: { name: a.name, host: a.host, job: job.id, reason } });
@@ -128,10 +184,23 @@ export function withVaultGrants(v: Vault, o: {
       });
       return { refused: refused.reason };
     },
-    grant(jobId, by) {
+    grant(jobId, by, how = {}) {
       const job = jobs.get(jobId);
       if (!job) return missing(jobId);
       const key = grantKeyOf(job);
+      // A grant of where the job asks from is a scope grant of that scope (issue #2923); with no place known, the item's.
+      const place = how.item ? undefined : how.place ?? placeOf(asks.get(job.id));
+      if (place) {
+        const scope = scopeOf(job, place), scopeKey = scopeKeyOf(scope);
+        o.store.tx(() => {
+          const had = scopes.get(scopeKey);
+          if (had && (had.runs || !how.runs)) return;
+          scopes.put(had ? { ...had, runs: true } : { ...scope, key: scopeKey, by, at: o.clock.now().toISOString(), jobs: [job.id], ...(how.runs ? { runs: true as const } : {}) });
+          events.append({ type: 'vault.granted', jobId: job.id, data: { job: job.id, key, by, scope: scopeKey } });
+        });
+        asks.delete(job.id);
+        return { ok: true };
+      }
       o.store.tx(() => {
         if (vaultGrants.get(key)) return;
         vaultGrants.put({ key, job: job.id, by, at: o.clock.now().toISOString() });
@@ -150,6 +219,16 @@ export function withVaultGrants(v: Vault, o: {
         return true;
       });
       return removed ? { ok: true } : { ok: false, code: 'conflict', error: `job ${jobId} has no vault grant to revoke` };
+    },
+    revokeScopeGrant(scopeKey, by) {
+      const g = scopes.get(scopeKey);
+      if (!g) return { ok: false, code: 'conflict', error: `no scope grant of ${scopeKey} to revoke` };
+      const last = g.jobs.at(-1) ?? '';
+      o.store.tx(() => {
+        scopes.remove(scopeKey);
+        events.append({ type: 'vault.grant_revoked', ...(last ? { jobId: last } : {}), data: { job: last, key: scopeKey, by, scope: scopeKey } });
+      });
+      return { ok: true };
     },
     denyGrant(jobId, by) {
       const job = jobs.get(jobId);
