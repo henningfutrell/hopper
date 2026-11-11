@@ -19338,8 +19338,9 @@ not; the hopper's own unedited model is upgraded. `vault.granted { job, key, by 
 (`grantView`, `grantItemOf`, `src/domain/vault-grants.ts`; read in `withVaultGrants`): its title (a direct job's own, else
 the source's, else the job's goal), its repository, its issue or pull request link, the item's newest job
 (`getBySourceKey`; a job of no source is its own key) and that job's status, and **stale** — no job of the item waits or is
-at work, or none is kept. A stale grant gives nothing now; the panel flags it beside **Revoke**. Nothing revokes it by
-itself: Run again makes a new job of the same item, and the grant is kept for it. Each grant also says how it was made:
+at work, or none is kept. A stale grant gives nothing now; the panel flags it beside **Revoke**. Since issue #2923
+("Scope grants") the hopper revokes it by itself once the item's newest job ended, and a grant of a job's ask is kept for
+its scope, not for its item. Each grant also says how it was made:
 `made: grant` (Grant, an API token, or `hopper vault grant`) or `made: submit` (a direct job's submission that authorized
 `vault`, by its submitter); `via: cli` and `command` when the operator CLI made it — its session signs in no person, so
 its grants are kept `by: operator CLI` (`OPERATOR_CLI_NAME`), whoever ran it on the hopper's host with the database's
@@ -19390,6 +19391,67 @@ toggle off, such a job's next ask waits for a person — closed, never open.
 **Residual risk.** A read the policy holds is given to every job of the user while the toggle is on, whatever the job's
 origin: a job of a request card a person approved reads what any trusted job reads. The read policy is the upper bound,
 so an entry such as `cluster/*` gives every job a read of every cluster. Keep the policy narrow while the toggle is on.
+
+### Scope grants (issue #2923, 2026-11-11)
+
+Seen on a hopper: the owner granted the same access ("Mint cluster-read-all role") again for each new item, because a
+grant was kept for one item only. The rows of finished and cancelled jobs stayed on Vault grants as Stale, so the list grew
+without end and hid what was live. The same sandbox run template waited for a person on each job. Owner decision on the
+issue: an approval is a standing grant for an access scope, reused by every later job that asks for the same scope until it
+is revoked; one row per scope with its jobs under it; stale per-job rows go by themselves; revoke per scope, at once.
+
+- **The scope** (`src/domain/vault-scope-grants.ts`, `scopeOf`, `scopeKeyOf`): where a job asks the vault from — its box's
+  template, a box step's template, or the Windows host of its step — and the job's repository (`job.source.repo`; none for a
+  job of no repository). Its key names both: `template kube, repo octo-org/hello`. The asked secret or mint is not part of
+  the key: the template's approved scope already names them, and it still bounds what a granted job gets.
+- **Made by a person.** Grant on a grant ask (`POST /ui/api/jobs/:id/grant-vault`, `hopper vault grant`, a delegate
+  approver's or an API token's) is a scope grant of the ask's place. A run card's approval with **allow again**
+  (`approve-run`) is a scope grant of its template with `runs` (below). Each is kept in `vault_scope_grants` (tenant
+  migration 109), one row per key, with who granted it, when, and the jobs it granted (the newest 20).
+  `vault.granted` carries `scope`. With no ask and no card — Grant before the job asked, a direct job's submission — no
+  place is known, and the grant is the item's, as before.
+- **Used with no person** (`withVaultGrants`, `src/vault/grants.ts`). A job's ask passes when its item has a grant, or when a
+  scope grant holds its place and repository. The first ask of each job under a scope grant records `vault.granted`,
+  `by` `scope grant by <person>`, with `scope`, and folds the job under the row. The brakes are those of the standing read
+  grant: never a job below `approved` or its intake strictness (issue #655 parts 7, 12), never a template sandbox
+  strictness asks a person for (part 8). Such a job's ask is a grant ask for a person, as before. An open grant ask that a
+  new scope grant covers goes from the view.
+- **Sandbox runs.** Allow again on a run card is on by default (the card's switch; `allowAgain` absent or `true`;
+  `hopper sandbox approve-run --this-job-only` turns it off). Its scope grant has `runs`: a later job of the repository
+  whose sandbox request names the template is approved `by` `scope grant by <person>` (`scopeRun`,
+  `src/users/sandbox-requests.ts`), once the template's approval covers every job — so a run whose template and access
+  match an earlier approval waits for nobody. The run's brakes are those of every automatic approval (trust stamp, sandbox
+  strictness, Jev's check). With allow again off, the card approves this job only, and its vault grant is the item's.
+- **Revoke, per scope, at once.** `POST /ui/api/vault/revoke-scope-grant` `{ key }` (operator; Access decides as for a
+  grant): the row goes, `vault.grant_revoked` with `scope`. The gate reads the row at each ask, so the next ask of the scope
+  — a running job's too — is refused and becomes a grant ask. 409 when there is none.
+- **No stale rows.** The view (`GET /api/vault`) first takes back each item grant whose item's newest job ended
+  (`vault.grant_revoked`, `by` `its job ended`). It gives nothing then, and the next job of the item asks — and a scope grant
+  answers it, when one holds its scope. A direct job's grant made at submit, whose job does not exist yet, stays.
+- **The panel** (Access requests, Vault grants, `ui/src/views/vault-grants.tsx`): one row per scope grant — the template or
+  Windows host, the repository, how many of its jobs are at work, who granted it and when, whether it carries the runs —,
+  its jobs folded under it, newest first, and Revoke. Item grants below, as before.
+
+**Migration.** A table only: the build before runs on it and never reads it. Item grants kept before stay; one of an item
+whose job ended goes at the first view. `vault.granted` and `vault.grant_revoked` gain an optional `scope`.
+
+**Decided here.** The scope is the place and the repository, not the asked name: a template's approved scope names the
+names already, and keying by name would ask again for each secret of one template. A grant of an ask with no repository
+covers only jobs of no repository. No time limit: the issue names revoke; a template saved again with new access waits
+for a person's approval of the template first. Allow again flips to on by default, so the run card's default approval is
+standing, as the owner asked; this job only stays one switch away.
+
+**Residual risk.** A scope grant gives every later job of the repository what the template gives, whatever the job's
+item, once its trust stamp is `approved`: a job of a request card a person approved gets it too. Keep templates narrow,
+and revoke a scope grant that is wider than wanted. A quarantine revokes the item's grant, not a scope grant: the
+quarantined job opens no door, but a job whose quarantine is lifted at `approved` gets the vault again from its scope.
+Issue #2231's minted read-only database role is to use this grant: its
+template is the scope.
+
+Tests: `test/integration/vault-scope-grant.test.ts` (the real daemon and box: a second job of the scope gets the vault
+with no person, another repository waits, a revoke takes effect at once, an ended item's grant goes),
+`test/integration/run-card-vault-grant.test.ts` (a second job's run of the approved template waits for nobody),
+`test/domain/vault-scope-grants.test.ts`, `test/ui/vault-grants-view.test.ts` (the row, its jobs, Revoke).
 
 ## Delegate approvers (issue #1138, 2026-10-14)
 
@@ -34264,11 +34326,12 @@ high-priority job's card first, and the Access requests link ("Grok Bot routine 
 same needs, and remembered each write for the time limit: one approval for one job was a standing approval for all.
 The issue asks for a run's approval by default, and a choice to allow it again.
 
-- **For this job only, by default.** `approve-run` with no `allowAgain` approves the template for the card's job's runs
+- **For this job only** (the default until issue #2923; now `allowAgain: false`). `approve-run` with allow again off approves the template for the card's job's runs
   only: the template's approval names it (`approval.jobs`, `approvalJobs` in `src/domain/vault.ts`), and `vault.approved`
   carries `jobs`. No write approval is remembered. Another job that asks for the same access finds the template waiting
   for a person (`approvalCovers`): its ask is a run card of its own, and one approval adds that job to `jobs`.
-- **Allow again** (`allowAgain: true`; the card's **Allow again** switch; `hopper sandbox approve-run --allow-again`):
+- **Allow again** (`allowAgain: true`; the card's **Allow again** switch; on by default since issue #2923, "Scope grants",
+  with `hopper sandbox approve-run --this-job-only` to turn it off):
   the approval is for every job, as before part 3, and each write, sync or apply approval is remembered.
 - **Where the job is read.** Each place that decides whether a job's step may use a template reads the job:
   `templateReady(t, jobId)` (a box step, the broker's named sandbox, the sandboxes before the start), `coveringTemplate`
@@ -34288,7 +34351,7 @@ needs: the template is keyed by its needs, so the same needs are the same kind o
 
 Tests: `test/domain/run-card-allow-again.test.ts` (the pure rules), `test/integration/need-steps.test.ts` (the real daemon:
 a card's approval names its job and remembers nothing; with allow again it is for every job and remembered),
-`test/ui/sandbox-runs-view.test.ts` (the switch and its post), `test/cli/sandbox-runs.test.ts` (`--allow-again`).
+`test/ui/sandbox-runs-view.test.ts` (the switch and its post), `test/cli/sandbox-runs.test.ts` (`--this-job-only`, issue #2923).
 
 **Residual risk, stated.** One click now approves the template's image, egress hosts, vault secrets and every write the
 card lists. The confirm says each of them, and the card lists them before the click. Each approval is still its own

@@ -23,7 +23,7 @@ import { createHandoffRepository } from './handoffs.ts';
 import { createItemSnapshotRepository } from './item-snapshots.ts';
 import { createIssueGraphRepository } from './issue-graph.ts';
 import { createWorkItemLedger } from './work-items.ts';
-import { createVaultGrantRepository } from './vault-grants.ts';
+import { createVaultGrantRepository } from './vault-grants.ts'; import { createVaultScopeGrantRepository } from './vault-scope-grants.ts';
 import { createLoginRepository } from './logins.ts';
 import { createLastAccountRepository } from './last-accounts.ts';
 import { createPointedJobRepository } from './pointed-jobs.ts';
@@ -108,7 +108,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     problems: createProblemRepository(ctx),
     handoffs: createHandoffRepository(ctx),
     itemSnapshots: createItemSnapshotRepository(ctx),
-    vaultGrants: createVaultGrantRepository(ctx),
+    vaultGrants: createVaultGrantRepository(ctx), vaultScopeGrants: createVaultScopeGrantRepository(ctx),
     bugReports: createBugReportRepository(ctx),
     issueGraph: createIssueGraphRepository(ctx, workItems),
     workItems,
