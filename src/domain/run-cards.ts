@@ -75,8 +75,8 @@ export function approvalsOf(t: TemplateView, jobId?: string): { whole: boolean; 
  */
 export function runCards(o: {
   templates: readonly TemplateView[]; requests: readonly SandboxRequestView[]; waits: readonly TemplateWait[]; job: CardJob; actionAsks?: readonly ActionAskView[];
-  /** Whether the job's item, or a scope grant of the template for the job's repository (issue #2923), grants it the vault (issue #2639 part 3); absent, no card carries one. */
-  granted?: (jobId: string, template: string) => boolean;
+  /** Whether the job's item has a vault grant (issue #2639 part 3); absent, no card carries one. */
+  granted?: (jobId: string) => boolean;
 }): RunCardView[] {
   const byName = new Map(o.templates.map((t) => [t.name, t]));
   const cards = new Map<string, RunCardView>();
@@ -87,7 +87,7 @@ export function runCards(o: {
     if (cards.has(key) || declined.has(key) || !job) return;
     const t = byName.get(c.template);
     const actions = (o.actionAsks ?? []).filter((a) => a.job === c.jobId && t !== undefined && changesRole(t, a.role));
-    const grant = t !== undefined && givesVault(t) && o.granted !== undefined && !o.granted(c.jobId, c.template);
+    const grant = t !== undefined && givesVault(t) && o.granted !== undefined && !o.granted(c.jobId);
     cards.set(key, { ...c, ...(job.title ? { jobTitle: job.title } : {}), ...(job.url ? { jobUrl: job.url } : {}), ...(actions.length ? { actions } : {}), ...(grant ? { vaultGrant: true as const } : {}) });
   };
   const about = (x: { purpose?: string; plan?: string }) => ({ ...(x.purpose ? { purpose: x.purpose } : {}), ...(x.plan ? { plan: x.plan } : {}) });

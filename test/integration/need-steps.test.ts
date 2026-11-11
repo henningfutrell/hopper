@@ -190,7 +190,7 @@ describe('need steps (issue #1007)', () => {
     expect((await ofJob(b, jobId)).filter((e) => e.type === 'vault.run_card_opened').map((e) => e.data)).toEqual([{ template: t!.name, waits: { template: true, run: false }, purpose: WHY[1] }]);
 
     // One approval: the template, its write profile and the run. No other approval; the step goes on by itself.
-    const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: jobId, template: t!.name, allowAgain: false }, { token: b.token });
+    const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: jobId, template: t!.name }, { token: b.token });
     expect(approved.status, JSON.stringify(approved.body)).toBe(200);
     expect(approved.body.runs).toEqual([]);
     const r = await run.end;
@@ -199,20 +199,20 @@ describe('need steps (issue #1007)', () => {
     expect(r.stdout + r.stderr).toContain(`${write}: no apply without a plan`);
     const events = await ofJob(b, jobId);
     expect(events.find((e) => e.type === 'vault.mint_refused')?.data).toMatchObject({ machine: expect.stringMatching(/^hopper-need-/), template: t!.name, job: jobId });
-    // Part 3: with allow again off, the approval is for this job's runs only, and no write approval is remembered.
+    // Part 3: with no allow again, the approval is for this job's runs only, and no write approval is remembered.
     const after = await vaultOf(b);
     expect(after.templates.find((x) => x.name === t!.name)).toMatchObject({ approval: { by: expect.any(String), jobs: [jobId] }, pending: { profiles: [] } });
     expect((await b.a.events()).find((e) => e.type === 'vault.approved')?.data).toMatchObject({ template: t!.name, jobs: [jobId] });
     expect(after.rememberedWrites ?? []).toEqual([]);
   });
 
-  it('allow again on a run card (issue #2197 part 3), the default since issue #2923: the approval is for every job, and the write approval is remembered', async () => {
+  it('allow again on a run card (issue #2197 part 3): the approval is for every job, and the write approval is remembered', async () => {
     const b = await bootSteps([]);
     const { creds, jobId } = await stepJob(b);
     const run = step(b, creds, ['need', `write/aws-role/${ACCOUNT}/deploy`, ...WHY, '--plan', 'put a parameter (undo: delete it)', '--command', 'true', '--wait', '60']);
     await run.waiting;
     const [card] = (await vaultOf(b)).runs ?? [];
-    const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: jobId, template: card!.template }, { token: b.token });
+    const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: jobId, template: card!.template, allowAgain: true }, { token: b.token });
     expect(approved.status, JSON.stringify(approved.body)).toBe(200);
     expect((await run.end).stderr).toContain('hopper-step: the template is ready; the step runs now');
     const t = approved.body.templates.find((x) => x.name === card!.template)!;
@@ -229,7 +229,7 @@ describe('need steps (issue #1007)', () => {
     const run = step(b, first.creds, args);
     await run.waiting;
     const [card] = (await vaultOf(b)).runs ?? [];
-    const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: first.jobId, template: card!.template, allowAgain: false }, { token: b.token });
+    const approved = await b.a.ui<VaultView>('/ui/api/sandbox-requests', { action: 'approve-run', job: first.jobId, template: card!.template }, { token: b.token });
     expect(approved.status, JSON.stringify(approved.body)).toBe(200);
     expect((await run.end).stderr).toContain('hopper-step: the template is ready; the step runs now');
 

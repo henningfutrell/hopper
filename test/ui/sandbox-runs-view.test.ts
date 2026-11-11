@@ -128,22 +128,22 @@ describe('Access requests: sandbox runs (issue #991)', () => {
     expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')!.body).toEqual({ action: 'approve-run', job: HIGH.askedBy, template: HIGH.name });
   });
 
-  it('Allow again (issue #2197 part 3), on by default (issue #2923): turned off, the approval is for this job only', async () => {
+  it('Allow again (issue #2197 part 3): off, the approval is for this job only; on, the post asks for it again for later jobs', async () => {
     const daemon = await boot('#access-requests', runs);
     const card = runs()!.querySelector<HTMLElement>(`[data-run-card="${HIGH.askedBy} ${HIGH.name}"]`)!;
     const allow = card.querySelector<HTMLButtonElement>('[role="switch"]')!;
     expect(allow.getAttribute('aria-label')).toBe(`Allow again: ${HIGH.name}`);
-    expect(allow.getAttribute('aria-checked')).toBe('true');
-    await act(async () => { allow.click(); });
     expect(allow.getAttribute('aria-checked')).toBe('false');
+    await act(async () => { allow.click(); });
+    expect(allow.getAttribute('aria-checked')).toBe('true');
     await act(async () => { buttonIn(card, 'Approve').click(); });
     const confirm = () => [...document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] button')].find((b) => b.textContent?.trim() === 'Approve');
     await vi.waitFor(() => expect(confirm()).toBeDefined());
-    expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain('For this job only: another job that asks for the same access gets a card of its own');
+    expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain('Allow again: a later job with the same needs runs with no new card');
     expect(document.querySelector('[role="alertdialog"]')!.textContent).toContain(`It also grants ${ACTION_ASK.action} on ${ACTION_ASK.resource} as aws-role ${ACTION_ASK.role}`);
     await act(async () => { confirm()!.click(); });
     await vi.waitFor(() => expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')).toBeDefined());
-    expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')!.body).toEqual({ action: 'approve-run', job: HIGH.askedBy, template: HIGH.name, allowAgain: false });
+    expect(daemon.calls.find((x) => x.path === '/ui/api/sandbox-requests')!.body).toEqual({ action: 'approve-run', job: HIGH.askedBy, template: HIGH.name, allowAgain: true });
   });
 
   it('Decline needs a reason, then posts it', async () => {

@@ -110,8 +110,7 @@ describe('the owner\'s no-limits key on Access requests (issue #2229)', () => {
     const granted = await call(a, 'POST', `/ui/api/jobs/${job.id}/grant-vault`, token, {});
     expect(granted.status, granted.text).toBe(200);
     expect(granted.body.grantAsks).toEqual([]);
-    // The grant of the ask is a scope grant (issue #2923), recorded as the key.
-    expect(granted.body.scopeGrants).toEqual([expect.objectContaining({ jobs: [expect.objectContaining({ job: job.id })], by: expect.stringMatching(KEY_BY) })]);
+    expect(granted.body.grants).toEqual([expect.objectContaining({ job: job.id, by: expect.stringMatching(KEY_BY) })]);
     expect((await a.events()).find((e) => e.type === 'vault.granted')).toMatchObject({ jobId: job.id, data: { by: expect.stringMatching(KEY_BY) } });
     expect(await helper(dir, ['get', 'KUBE_TOKEN'], box.tokenFileOf(a, job.id))).toMatchObject({ code: 0, stdout: VALUE });
   });

@@ -64,8 +64,6 @@ export interface SandboxRequestsOptions {
   remembered?(): RememberedWrite[];
   /** The read policy: with the auto-approve policy, whether a read in a template remembered approvals cover needs a person. */
   policy?(): ReadPolicy | undefined;
-  /** Who approves the job's runs of `template` by a person's scope grant (issue #2923), its job then folded under it; undefined: none. */
-  scopeRun?(jobId: string, template: string): string | undefined;
   /**
    * Jev's `sandbox-request` check (issue #655 part 13): the point's mode now, and Jev asked about a request the approvals
    * would approve with no person (`approver`), with the job's other requests. `shadow`: only recorded. Absent: off.
@@ -198,9 +196,6 @@ export function createSandboxRequests(o: SandboxRequestsOptions): SandboxRequest
     const carried = carriedFrom(jobId, template);
     if (carried) return { by: carriedApprovalBy(carried) };
     if (o.remembered && rememberedCovers({ secrets: t.secrets ?? [], profiles: t.profiles ?? [] }, o.remembered(), readApprovedWithoutPerson(o.policy?.(), o.approvals()))) return { by: REMEMBERED_APPROVER };
-    // Issue #2923: a person's run card approval with allow again, kept for the template and the job's repository.
-    const scoped = approvalCovers(t, jobId) ? o.scopeRun?.(jobId, template) : undefined;
-    if (scoped) return { by: scoped };
     const person = t.approval?.by;
     // Issue #2197 part 3: and only when that approval covers the job's runs.
     const forJob = (t.askedBy === jobId || waitedOn.has(`${jobId} ${template}`)) && approvalCovers(t, jobId);

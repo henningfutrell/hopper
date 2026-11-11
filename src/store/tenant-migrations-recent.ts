@@ -41,7 +41,7 @@ import { STEP_SCHEDULE_TABLES } from './step-schedules.ts';
 import { KEPT_TRACK_TABLES } from './kept-tracks.ts';
 import { GRADE_TABLES, ITEM_GRADE_TABLES } from './grades.ts'; import { COMPLETION_REVIEW_TABLE } from './completion-reviews.ts'; import { RECOMMENDATION_TABLE } from './review-recommendations.ts';
 import { MEMORY_ENTRY_TABLE } from './repo-memories.ts';
-import { WORK_PLAN_TABLES } from './work-plans.ts'; import { VAULT_SCOPE_GRANT_TABLE } from './vault-scope-grants.ts';
+import { WORK_PLAN_TABLES } from './work-plans.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -238,7 +238,4 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
     WHERE l.seq = n.seq AND n.nth > 1;
   CREATE UNIQUE INDEX logins_one_waiting_sign_in ON logins (COALESCE((body::jsonb->>'machineId'), ''), (body::jsonb->>'tool'))
     WHERE status = 'pending' AND (body::jsonb->>'run') = 'sign-in'`,
-  // 109: The scope grants (issue #2923): one row per scope a person granted the vault for. A table only: the build
-  // before runs on it, and never reads it.
-  VAULT_SCOPE_GRANT_TABLE,
 ];
