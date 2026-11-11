@@ -8,6 +8,9 @@
 // there. A grant whose item has no job waiting or at work is flagged stale: it gives nothing now, and Revoke takes it back.
 // Issue #1138: Deny drops an ask, and that job asks no more; a grant says when it was made to the minute, and a delegate
 // approver's names the delegate and the person it acted for.
+// Issue #2923: Grant on an ask is a scope grant — the ask's template or Windows host, and the job's repository —, so a later
+// job that asks from the same scope gets the vault with no person. One row per scope, its jobs folded under it, and Revoke
+// takes it back at once. An item's grant whose job ended goes by itself, so no stale row piles up.
 import { Ban, KeyRound, ShieldCheck, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -15,7 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Empty, Panel } from '@/components/panel';
 import { post, SessionRejected } from '@/lib/api';
 import { StatusBadge } from '@/components/status';
-import type { VaultGrantItem, VaultGrantView, VaultView } from '@/model/wire';
+import type { VaultGrantItem, VaultGrantView, VaultScopeGrantView, VaultView } from '@/model/wire';
 import { useHopper } from '@/store';
 import { viewAnswer } from '@/store/vault';
 import { useCanOperate } from '@/store/selectors';
@@ -25,10 +28,11 @@ export function VaultGrants({ view }: { view: VaultView | null }) {
   const [busy, setBusy] = useState(false);
   const asks = view?.grantAsks ?? [];
   const grants = view?.grants ?? [];
-  const act = async (job: string, what: 'grant-vault' | 'deny-vault' | 'revoke-vault', done: string): Promise<void> => {
+  const scopes = view?.scopeGrants ?? [];
+  const act = async (job: string, what: 'grant-vault' | 'deny-vault' | 'revoke-vault' | 'revoke-scope-grant', done: string): Promise<void> => {
     setBusy(true);
     try {
-      await viewAnswer(() => post<VaultView>(`/ui/api/jobs/${encodeURIComponent(job)}/${what}`, {}));
+      await viewAnswer(() => (what === 'revoke-scope-grant' ? post<VaultView>('/ui/api/vault/revoke-scope-grant', { key: job }) : post<VaultView>(`/ui/api/jobs/${encodeURIComponent(job)}/${what}`, {})));
       toast.success(done);
     } catch (e) {
       if (e instanceof SessionRejected) useHopper.setState({ authed: false });
@@ -40,8 +44,8 @@ export function VaultGrants({ view }: { view: VaultView | null }) {
   return (
     <div data-access-panel="grants">
       <Panel title="Vault grants" icon={ShieldCheck} count={asks.length || ''} bodyClassName="space-y-3">
-        <p className="text-sm text-muted-foreground">A job on a box, or a job's Windows step, gets no vault secret and no minted credential until you grant it the vault. A grant covers the job's item, so Run again and Rework keep it; the box's template, or the Windows host, still limits what it gets.</p>
-        {asks.length === 0 && grants.length === 0 && <Empty>No job waits for a vault grant. When a job on a box, or a Windows step, asks the vault with no grant, it waits here.</Empty>}
+        <p className="text-sm text-muted-foreground">A job on a box, or a job's Windows step, gets no vault secret and no minted credential until you grant it the vault. A grant covers where the job asked from — the box's template, or the Windows host — for the job's repository: every later job that asks from there gets the vault with no new ask, until you revoke it. The template, or the Windows host, still limits what it gets.</p>
+        {asks.length === 0 && grants.length === 0 && scopes.length === 0 && <Empty>No job waits for a vault grant. When a job on a box, or a Windows step, asks the vault with no grant, it waits here.</Empty>}
         {asks.length > 0 && (
           <ul className="space-y-2">{asks.map((a) => (
             <li key={a.job} className="space-y-2 rounded-md border border-warn/50 p-3">
@@ -57,6 +61,27 @@ export function VaultGrants({ view }: { view: VaultView | null }) {
                   <Button size="sm" disabled={busy} onClick={() => void act(a.job, 'grant-vault', `job ${a.job.slice(0, 8)}: granted the vault`)}><ShieldCheck />Grant</Button>
                   <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(a.job, 'deny-vault', `job ${a.job.slice(0, 8)}: denied; it asks no more`)}><Ban />Deny</Button>
                 </div>
+              )}
+            </li>
+          ))}</ul>
+        )}
+        {scopes.length > 0 && (
+          <ul className="space-y-2">{scopes.map((g) => (
+            <li key={g.key} data-scope-grant={g.key} className="space-y-1 rounded-md border p-2 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium break-words">{scopeName(g)}</span>
+                {g.repo && <span className="text-muted-foreground">· {g.repo}</span>}
+                <span className="text-muted-foreground">· {g.live} at work</span>
+                {can && <Button size="sm" variant="outline" disabled={busy} onClick={() => void act(g.key, 'revoke-scope-grant', 'vault grant revoked')}><Undo2 />Revoke</Button>}
+              </div>
+              <p className="text-muted-foreground">{scopeHow(g)}</p>
+              {g.jobs.length > 0 && (
+                <details>
+                  <summary className="cursor-pointer text-muted-foreground">{g.jobs.length === 1 ? '1 job' : `${g.jobs.length} jobs`}</summary>
+                  <ul className="mt-1 space-y-0.5">{g.jobs.map((j) => (
+                    <li key={j.job} className="flex flex-wrap items-center gap-2"><span>job {j.job.slice(0, 8)}{j.title ? ` · ${j.title}` : ''}</span>{j.status && <StatusBadge status={j.status} />}</li>
+                  ))}</ul>
+                </details>
               )}
             </li>
           ))}</ul>
@@ -88,6 +113,15 @@ function ItemName({ item }: { item: VaultGrantItem }) {
       {item.job && <span className="text-muted-foreground"> · job {item.job.slice(0, 8)}</span>}
     </span>
   );
+}
+
+/** What a scope grant covers, in words: the template, or the Windows host. */
+const scopeName = (g: VaultScopeGrantView): string => (g.template !== undefined ? `Template ${g.template}` : `Windows host ${g.windowsHost ?? ''}`);
+
+/** Who granted the scope, on which day, and whether it approves the template's sandbox runs too. */
+function scopeHow(g: VaultScopeGrantView): string {
+  const runs = g.runs ? ', with the sandbox runs of its template' : '';
+  return `granted by ${g.by} on ${g.at.slice(0, 10)} ${g.at.slice(11, 16)} UTC${runs}: every later job of ${g.repo ?? 'no repository'} that asks from here gets the vault`;
 }
 
 /** Who granted it, on which day, and the way: a direct job's submission, or the operator CLI's command. */

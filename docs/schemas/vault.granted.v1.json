@@ -10,6 +10,9 @@
     },
     "by": {
       "type": "string"
+    },
+    "scope": {
+      "type": "string"
     }
   },
   "required": [

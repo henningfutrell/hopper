@@ -129,7 +129,8 @@ describe('a delegate approver (issue #1138)', () => {
 
     const approved = await delegateCli(a, file, ['grant', 'approve', job.id]);
     expect(approved.code, approved.err).toBe(0);
-    expect(JSON.parse(approved.out).grants).toEqual([expect.objectContaining({ job: job.id, by: expect.stringMatching(DELEGATE_BY), at: expect.any(String) })]);
+    // The grant of the ask is a scope grant (issue #2923), by the delegate for the person.
+    expect(JSON.parse(approved.out).scopeGrants).toEqual([expect.objectContaining({ jobs: [expect.objectContaining({ job: job.id })], by: expect.stringMatching(DELEGATE_BY), at: expect.any(String) })]);
     expect(readFileSync(file, 'utf8').trim()).not.toBe(minted.body.refresh);
     expect((await vault(a)).grantAsks).toEqual([]);
     expect((await a.events()).find((e) => e.type === 'vault.granted')).toMatchObject({ jobId: job.id, data: { by: expect.stringMatching(DELEGATE_BY) } });

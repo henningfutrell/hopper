@@ -12,7 +12,7 @@
 //     Then it is refused: the job has no vault grant
 //     And the Vault page lists a grant ask for the job, with the secret it asked for
 //   Scenario: granted, the job gets the value; the scope still bounds it
-//     When a person grants the job the vault
+//     When a person grants the job's ask (a scope grant, issue #2923: test/integration/vault-scope-grant.test.ts)
 //     Then the job gets KUBE_TOKEN, and the ask goes
 //     And a secret outside the template's scope is still refused
 //   Scenario: Run again keeps the grant
@@ -49,6 +49,7 @@ afterEach(async () => {
 
 interface GrantAsk { job: string; key: string; machine: string; template: string; names: string[]; askedAt: string; item?: unknown }
 interface GrantView { key: string; job: string; by: string; at: string; made?: string; item?: unknown }
+interface ScopeGrantView { key: string; template?: string; by: string; jobs: { job: string }[] }
 
 async function boot(server: FakeAuthorizationServer = createFakeAuthorizationServer()): Promise<{ a: TestApp; session: string; dir: string }> {
   const db = tempDbPath();
@@ -97,14 +98,13 @@ describe('the vault only by a per-job grant', () => {
     await helper(dir, ['get', 'KUBE_TOKEN'], token);
     expect((await a.events()).filter((e) => e.type === 'vault.grant_asked')).toHaveLength(1);
 
-    const granted = await a.ui<{ grants: GrantView[]; grantAsks: GrantAsk[] }>(`/ui/api/jobs/${job.id}/grant-vault`, {}, { token: session });
+    const granted = await a.ui<{ grants: GrantView[]; grantAsks: GrantAsk[]; scopeGrants: ScopeGrantView[] }>(`/ui/api/jobs/${job.id}/grant-vault`, {}, { token: session });
     expect(granted.status).toBe(200);
     expect(granted.body.grantAsks).toEqual([]);
-    expect(granted.body.grants).toEqual([{
-      key: job.source!.key, job: job.id, by: expect.any(String), at: expect.any(String), made: 'grant',
-      item: expect.objectContaining({ title: expect.any(String), job: job.id, status: 'running', stale: false }),
-    }]);
-    expect((await a.events()).find((e) => e.type === 'vault.granted')).toMatchObject({ jobId: job.id, data: { job: job.id, key: job.source!.key } });
+    // The grant of an ask is a scope grant (issue #2923): the ask's template, and the job's repository (none here).
+    expect(granted.body.grants).toEqual([]);
+    expect(granted.body.scopeGrants).toEqual([expect.objectContaining({ key: 'template kube, repo (none)', template: 'kube', by: expect.any(String), jobs: [expect.objectContaining({ job: job.id })] })]);
+    expect((await a.events()).find((e) => e.type === 'vault.granted')).toMatchObject({ jobId: job.id, data: { job: job.id, key: job.source!.key, scope: 'template kube, repo (none)' } });
 
     expect(await helper(dir, ['get', 'KUBE_TOKEN'], token)).toMatchObject({ code: 0, stdout: VALUE });
     const outside = await helper(dir, ['get', 'PROD_KEY'], token);
