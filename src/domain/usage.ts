@@ -61,6 +61,17 @@ export interface SignedOutTool {
   executors?: string[];
 }
 
+/**
+ * A usage source with no reading now (issue #2919): its read failed, it is not read yet, or its readings went stale. What
+ * it limits is not known, never 0%: on its machine (every machine, when it names none) the jobs of its executors (every
+ * job, when it names none) are in the `unknown` band unless another reading limits them.
+ */
+export interface UnreadUsage {
+  source: string;
+  machineId?: MachineId;
+  executors?: string[];
+}
+
 /** An account and the part that uses it: one entry of `GET /api/accounts`. */
 export interface PartAccount extends Account {
   role: 'usage-source' | 'job-source';
@@ -101,15 +112,23 @@ export interface UsageThrottle {
   burning?: true;
 }
 
+/**
+ * A lane effect's band: `free` below the soft limit, `soft` to the hard limit, `hard` at it, `offline`; `unknown` (issue
+ * #2919): a usage source that limits the jobs has no reading now and no other reading limits them — the soft lanes only.
+ */
+export type UsageBand = 'offline' | 'free' | 'soft' | 'hard' | 'unknown';
+
 /** What usage does to the jobs of one executor on a machine: the readings that limit that executor. */
 export interface ExecutorLaneEffect {
   executor: string;
   usedFrac: number;
   /** The most lanes its jobs may hold there. */
   cap: number;
-  band: 'offline' | 'free' | 'soft' | 'hard';
+  band: UsageBand;
   /** The window that sets the band; absent: no reading throttles. */
   throttle?: UsageThrottle;
+  /** Band `unknown` (issue #2919): the usage sources that limit its jobs and have no reading now. */
+  unknown?: string[];
 }
 
 /**
@@ -122,13 +141,15 @@ export interface MachineLaneEffect {
   label: string;
   online: boolean;
   maxLanes: number;
-  /** Max of used/limit over the readings that throttle this machine. */
+  /** Max of used/limit over the readings that throttle this machine; 0 with band `unknown`: no reading, not 0% used. */
   usedFrac: number;
   /** The lane cap: maxLanes below the soft limit, the soft lanes (at most maxLanes) from it to the hard limit, 0 at the hard limit or offline. */
   cap: number;
-  band: 'offline' | 'free' | 'soft' | 'hard';
+  band: UsageBand;
   /** The window that sets the band (issue #2169); absent: no reading throttles. */
   throttle?: UsageThrottle;
+  /** Band `unknown` (issue #2919): the usage sources that limit it and have no reading now. */
+  unknown?: string[];
   /** Per executor the machine runs, in its order. */
   executors: ExecutorLaneEffect[];
   /** The machine's own usage limits (issue #1860): the user's usage limits do not change its lane cap. Absent: the user's apply. */

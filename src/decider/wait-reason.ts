@@ -16,7 +16,8 @@ import {
 } from './assign.ts';
 
 const percent = (frac: number): string => `${Math.round(frac * 100)}%`;
-const usageNote = (band: CapBand, usedFrac: number): string => (band === 'soft' ? ` (usage soft limit, used ${percent(usedFrac)})` : '');
+const usageNote = (band: CapBand, usedFrac: number): string =>
+  (band === 'soft' ? ` (usage soft limit, used ${percent(usedFrac)})` : band === 'unknown' ? ' (usage unknown: no reading)' : '');
 
 /** The lane cap that binds on `s` for `job`: its executor's when that leaves less room than the machine's, else the machine's, with its real number and how many lanes it counts in use. */
 function laneFull(s: MachineStateWithCredentialHold, job: Job, pl?: PriorityLanesInput): string {

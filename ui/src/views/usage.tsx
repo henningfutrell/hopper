@@ -14,7 +14,7 @@ import { ReadingGauge } from '@/components/reading';
 import { StatusBadge, type Tone } from '@/components/status';
 import { useNow } from '@/hooks/use-now';
 import { usePoll } from '@/hooks/use-poll';
-import { accountFacts, executorEffectLines, laneEffectText, orderReadings, serviceLabel, sourceLine, throttleText } from '@/model/usage';
+import { accountFacts, executorEffectLines, laneEffectText, orderReadings, serviceLabel, sourceLine, throttleText, usedText } from '@/model/usage';
 import { bandAt, capAt, limitsProblem, throttleLine, windowLines, type LimitBand } from '@/model/usage-limits';
 import type { MachineHistory, MachineLaneEffect, MemoryAlert, PartAccount, UsageHistory, UsageLimitPair, UsageReport } from '@/model/wire';
 import { act, refreshUsage, useHopper } from '@/store';
@@ -25,7 +25,7 @@ const lanes = (n: number) => `${n} ${n === 1 ? 'lane' : 'lanes'}`;
 const softLanes = (n: number) => `${n} soft ${n === 1 ? 'lane' : 'lanes'}`;
 /** A machine's own usage limits (issue #1860), and its own soft lanes when it names them (issue #2091). */
 const ownLimits = (l: UsageLimitPair) => `${pct(l.soft)} / ${pct(l.hard)}${l.softLanes === undefined ? '' : `, ${softLanes(l.softLanes)}`}`;
-const BAND_TONE: Record<MachineLaneEffect['band'], Tone> = { free: 'ok', soft: 'warn', hard: 'bad', offline: 'muted' };
+const BAND_TONE: Record<MachineLaneEffect['band'], Tone> = { free: 'ok', soft: 'warn', hard: 'bad', offline: 'muted', unknown: 'warn' };
 
 function AccountRow({ a }: { a: PartAccount }) {
   return (
@@ -71,11 +71,11 @@ function LaneEffect({ usage }: { usage: UsageReport }) {
                 <StatusBadge status={m.band} tone={BAND_TONE[m.band]} />
                 <span className="num ml-auto text-sm font-semibold">cap {m.cap}/{m.maxLanes}</span>
               </div>
-              <div className="relative h-2 overflow-hidden rounded-full bg-muted" role="img" aria-label={`${m.label}: ${pct(m.usedFrac)} used`}>
+              <div className="relative h-2 overflow-hidden rounded-full bg-muted" role="img" aria-label={`${m.label}: ${usedText(m)}`}>
                 <div className={`h-full rounded-full ${m.band === 'hard' ? 'bg-bad' : m.band === 'soft' ? 'bg-warn' : 'bg-ok'}`} style={{ width: pct(Math.min(1, m.usedFrac)) }} />
                 {(m.usageLimits ? [m.usageLimits.soft, m.usageLimits.hard] : [soft, hard]).map((x) => <div key={x} className="absolute top-0 h-full w-0.5 bg-background" style={{ left: pct(x) }} />)}
               </div>
-              <div className="num text-xs text-muted-foreground">{pct(m.usedFrac)} used · {laneEffectText(m)}</div>
+              <div className={`num text-xs ${m.band === 'unknown' ? 'text-warn' : 'text-muted-foreground'}`} data-used={m.machineId}>{usedText(m)} · {laneEffectText(m)}</div>
               {m.throttle && <div className="num text-xs text-muted-foreground" data-throttle={m.machineId}>throttled by {throttleText(m.throttle)}</div>}
               {m.usageLimits && (
                 <div className="num text-xs text-muted-foreground" data-own-limits={m.machineId}>its own usage limits: {ownLimits(m.usageLimits)}</div>
@@ -157,8 +157,11 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
   const problem = limitsProblem(draft);
   const shown = problem ? { soft: saved.soft, hard: saved.hard, softLanes: saved.softLanes } : draft;
   const online = usage.machines.filter((m) => m.online);
-  // The most used online machine, and the window that throttles it (issue #2169).
-  const top = online.reduce<(typeof online)[number] | undefined>((a, b) => (!a || b.usedFrac > a.usedFrac ? b : a), undefined);
+  // The most used online machine whose usage is read, and the window that throttles it (issue #2169). A machine with no
+  // reading is unknown, never 0% (issue #2919).
+  const read = online.filter((m) => m.band !== 'unknown');
+  const unknown = online.length - read.length;
+  const top = read.reduce<(typeof read)[number] | undefined>((a, b) => (!a || b.usedFrac > a.usedFrac ? b : a), undefined);
   const now = top?.usedFrac ?? 0;
   const band = bandAt(now, shown, top?.throttle?.burning);
   const half = (history?.stepMs ?? 0) / 2;
@@ -177,17 +180,20 @@ function UsageLimits({ usage }: { usage: UsageReport }) {
     <Panel title="Usage limits" icon={SlidersHorizontal} fold="usage.limits" bodyClassName="space-y-3" className="lg:col-span-2">
       <div className="flex flex-wrap items-end gap-x-4 gap-y-1">
         <div>
-          <div className="num text-3xl font-semibold tracking-tight" data-slot="usage-now-value">{pct(now)}</div>
+          <div className="num text-3xl font-semibold tracking-tight" data-slot="usage-now-value">{top || !unknown ? pct(now) : 'unknown'}</div>
           <div className="text-xs text-muted-foreground" data-slot="usage-now-throttle">
-            used now, the highest throttling reading{top?.throttle ? `: ${throttleText(top.throttle)}` : ''}
+            {top || !unknown ? <>used now, the highest throttling reading{top?.throttle ? `: ${throttleText(top.throttle)}` : ''}</> : 'no usage reading now'}
+            {unknown > 0 && <span className="text-warn" data-slot="usage-now-unknown">{top || !unknown ? '; ' : ': '}usage unknown on {unknown} {unknown === 1 ? 'machine' : 'machines'}</span>}
           </div>
         </div>
-        <div className={`text-sm font-medium ${BAND_TEXT[band]}`} data-slot="usage-band">{band}: {bandSays(band, shown.softLanes)}</div>
+        {(top || !unknown) && <div className={`text-sm font-medium ${BAND_TEXT[band]}`} data-slot="usage-band">{band}: {bandSays(band, shown.softLanes)}</div>}
         {online.length > 0 && (
           <ul className="ml-auto flex flex-wrap gap-1.5" aria-label="Lane cap per machine at these limits">
             {online.map((m) => {
               // A machine with its own usage limits (issue #1860) keeps them whatever the user's are; with no soft lanes of its own, the user's apply.
-              const cap = capAt(m.maxLanes, m.usedFrac, m.usageLimits ? { softLanes: shown.softLanes, ...m.usageLimits } : shown, m.throttle?.burning);
+              // With no reading (issue #2919) the cap is the soft lanes whatever the limits: none to preview.
+              const cap = m.band === 'unknown' ? Math.min(m.maxLanes, m.usageLimits?.softLanes ?? shown.softLanes)
+                : capAt(m.maxLanes, m.usedFrac, m.usageLimits ? { softLanes: shown.softLanes, ...m.usageLimits } : shown, m.throttle?.burning);
               return (
                 <li key={m.machineId} data-machine-cap={m.machineId} className="num rounded-md border px-2 py-0.5 text-xs">
                   <span className="text-muted-foreground">{m.label || m.machineId}</span>{' '}

@@ -28,6 +28,10 @@ export const TEXT_CHANGED = 'its item changed since the snapshot: keep the origi
 /** Queued before origins were judged (issue #652): nothing starts it until its issue is of a trusted origin or approved. */
 export const ORIGIN_PENDING = 'queued before trusted origins: held until its issue is judged — approve its request card in Intake, or cancel it';
 
+/** A machine's or executor's usage in a reason: `42% used`, or, with no reading (issue #2919), which source has none. */
+const usedNote = (usedFrac: number, unknown: readonly string[] | undefined): string =>
+  (unknown ? `usage unknown (${unknown.join(', ')} ${unknown.length === 1 ? 'has' : 'have'} no reading)` : `${Math.round(usedFrac * 100)}% used`);
+
 /** Pure: same inputs, same Decision. `inputs.at` is the clock; `decisionId` is supplied. */
 export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const { policy, lanes } = inputs;
@@ -42,7 +46,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
   const executorOf = new Map([...inputs.waiting, ...inputs.running].map((j) => [j.id, j.spec.executor]));
   const pinById = new Map([...inputs.waiting, ...inputs.running].map((j) => [j.id, pinOf(j)]));
   const states: MachineState[] = machines.map((machine) => {
-    const { usedFrac, cap, band, throttle, ignored, burning, executors } = laneEffect(machine, inputs.usage, policy, inputs.at);
+    const { usedFrac, cap, band, throttle, unknown, ignored, burning, executors } = laneEffect(machine, inputs.usage, policy, inputs.at, inputs.unreadUsage);
     for (const r of ignored) reasons.push(`ignored usage reading ${r.source}: limit ${r.limit} is not positive`);
     for (const r of burning) {
       reasons.push(`${machine.id}: usage window ${r.window} of ${r.source} is in its burn window (resets ${r.resetsAt}, used ${Math.round((r.used / r.limit) * 100)}%): its hard limit is 100%`);
@@ -51,9 +55,9 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     for (const t of signedOut) reasons.push(signedOutNote(t));
     const mine = lanes.filter((l) => l.machineId === machine.id);
     const held = mine.filter((l) => l.state !== 'idle');
-    reasons.push(`${machine.id}: ${Math.round(usedFrac * 100)}% used${throttle?.window ? ` (${throttle.window})` : ''}, lane cap ${cap} of ${machine.maxLanes} (${band})${ownLimits(machine)}${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
+    reasons.push(`${machine.id}: ${usedNote(usedFrac, unknown)}${throttle?.window ? ` (${throttle.window})` : ''}, lane cap ${cap} of ${machine.maxLanes} (${band})${ownLimits(machine)}${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
     for (const e of executors.filter((x) => x.cap !== cap || x.band !== band)) {
-      reasons.push(`${machine.id} ${e.executor}: ${Math.round(e.usedFrac * 100)}% used, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
+      reasons.push(`${machine.id} ${e.executor}: ${usedNote(e.usedFrac, e.unknown)}, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
     }
     return {
       machine, cap, band, usedFrac, assigned: 0, overCap: 0, placed: { memoryBytes: 0, cpu: 0 }, ...memoryOf(memoryRoom(machine, lanes, inputs.running, inputs.at)),
