@@ -10,6 +10,9 @@
 //     Then it gets the value, and no grant ask waits
 //     And the Vault grants panel has one row for the scope, with both jobs under it
 //   Scenario: a job of another repository still waits for a person
+//     Given a person granted the scope's ask of a job of octo-org/hello
+//     When a job of octo-org/other asks for KUBE_TOKEN from the same box
+//     Then it is refused, and its grant ask waits
 //   Scenario: a revoke takes effect at once
 //     When a person revokes the scope grant
 //     Then the running job's next ask is refused, and a grant ask waits for it
@@ -69,8 +72,10 @@ async function running(a: TestApp, repo: string, ms: number): Promise<Job> {
 
 const vault = async (a: TestApp): Promise<View> => (await a.api<View>('GET', '/api/vault')).body;
 
-describe('scope grants', () => {
-  it('a second job that asks for an approved scope gets the vault with no person; another repository still waits', async () => {
+// Each test boots a hopper, joins a box and runs jobs one after another: 1-7 s here, about four times as long on a loaded
+// CI runner, so past the 15 s default (issue #2928).
+describe('scope grants', { timeout: 45_000 }, () => {
+  it('a second job that asks for an approved scope gets the vault with no person', async () => {
     const { a, session, dir } = await boot();
     const first = await running(a, REPO, 2500);
     expect(first.source?.repo).toBe(REPO);
@@ -96,8 +101,15 @@ describe('scope grants', () => {
     // Asked again, no second event for the job.
     await helper(dir, ['get', 'KUBE_TOKEN'], box.tokenFileOf(a, second.id));
     expect((await a.events()).filter((e) => e.type === 'vault.granted')).toHaveLength(2);
+  });
 
-    await a.waitForStatus(second.id, 'finished', 10000);
+  it('a job of another repository still waits for a person', async () => {
+    const { a, session, dir } = await boot();
+    const first = await running(a, REPO, 2500);
+    await helper(dir, ['get', 'KUBE_TOKEN'], box.tokenFileOf(a, first.id));
+    expect((await a.ui<View>(`/ui/api/jobs/${first.id}/grant-vault`, {}, { token: session })).body.scopeGrants).toEqual([expect.objectContaining({ key: SCOPE })]);
+    await a.waitForStatus(first.id, 'finished', 10000);
+
     const other = await running(a, 'octo-org/other', 60000);
     expect((await helper(dir, ['get', 'KUBE_TOKEN'], box.tokenFileOf(a, other.id))).stderr).toMatch(/has no vault grant/);
     expect((await vault(a)).grantAsks?.map((g) => g.job)).toEqual([other.id]);

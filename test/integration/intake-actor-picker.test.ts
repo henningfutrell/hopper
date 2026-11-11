@@ -64,7 +64,8 @@ const jobsFor = async (a: TestApp, url: string): Promise<Job[]> =>
 const intake = async (a: TestApp): Promise<IntakeOutcome[]> =>
   (await a.api('GET', '/api/sources')).body.sources.find((s: { name: string }) => s.name === 'github').detail.intake;
 
-describe('trusted actors from GitHub (issue #930)', () => {
+// The first test boots a hopper with cold imports: past 15 s on a loaded CI runner (issue #2928).
+describe('trusted actors from GitHub (issue #930)', { timeout: 45_000 }, () => {
   it('the candidates are real accounts, each with where it came from; no bot is offered', async () => {
     const { a, forge, token } = await start();
     const helper = await a.addUser('helper-user');
