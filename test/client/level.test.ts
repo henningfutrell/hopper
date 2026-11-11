@@ -7,7 +7,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:f
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { levelArgv, levelCallOf } from '../../src/client/level.ts';
+import { levelArgv, levelCallOf, runClaude } from '../../src/client/level.ts';
 import { mintToken } from '../../src/client/signature.ts';
 import { ClientError, clientLevel } from '../../src/executors/client.ts';
 import { startTestClient, type TestClient } from '../support/client.ts';
@@ -96,5 +96,19 @@ describe('levelCallOf: the call a /level body asks for', () => {
   it('the timeout is capped at 15 minutes, and defaults to 3', () => {
     expect(levelCallOf({ ...CALL, timeoutMs: 10 ** 9 })).toMatchObject({ timeoutMs: 15 * 60 * 1000 });
     expect(levelCallOf(CALL)).toMatchObject({ timeoutMs: 180_000 });
+  });
+});
+
+describe('runClaude: why a run that exited non-zero failed (issue #2918)', () => {
+  it('a claude that says why on stdout only keeps stdout, and no execFile "Command failed" on stderr', async () => {
+    process.env.FAKE_CLAUDE_MODE = 'stdout-exit1';
+    const r = await runClaude(CLAUDE, levelArgv(CALL), 10_000, CALL.prompt);
+    expect(r).toMatchObject({ code: 1, stderr: '' });
+    expect(r.stdout).toMatch(/^You've hit your individual spend limit/);
+  });
+
+  it('a claude that says why on stderr keeps it', async () => {
+    process.env.FAKE_CLAUDE_MODE = 'exit1';
+    expect(await runClaude(CLAUDE, levelArgv(CALL), 10_000, CALL.prompt)).toMatchObject({ code: 1, stderr: 'auth failed' });
   });
 });
