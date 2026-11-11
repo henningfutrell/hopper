@@ -149,6 +149,16 @@ describe('claude-cli (escalation level)', () => {
     expect(await (await level()).answer(req(), signal())).toEqual({ error: expect.any(String) });
   });
 
+  it.each(['stdout-exit1', 'json-exit1'])('%s: a reason claude says on stdout only is in the error (issue #2918)', async (mode) => {
+    process.env.FAKE_CLAUDE_MODE = mode;
+    expect(await (await level()).answer(req(), signal())).toEqual({ error: "claude exited 1: You've hit your individual spend limit · run /usage-credits to ask your admin for a higher limit" });
+  });
+
+  it('exit1: the reason on stderr is the error', async () => {
+    process.env.FAKE_CLAUDE_MODE = 'exit1';
+    expect(await (await level()).answer(req(), signal())).toEqual({ error: 'claude exited 1: auth failed' });
+  });
+
   it('a missing binary returns { error }; a timeout returns { error }', async () => {
     expect(await (await level({ bin: join(dir, 'nope') })).answer(req(), signal())).toEqual({ error: expect.any(String) });
     process.env.FAKE_CLAUDE_MODE = 'hang';
