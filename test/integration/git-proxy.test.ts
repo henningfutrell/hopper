@@ -48,7 +48,8 @@ afterEach(stopGitProxies);
 
 const basicOf = (auth: string): string => Buffer.from(auth.replace(/^basic\s+/i, ''), 'base64').toString('utf8');
 
-describe('git through the hopper (issue #652)', () => {
+// Each test boots a hopper and runs git through it: up to 15 s on a loaded CI runner (issue #2928).
+describe('git through the hopper (issue #652)', { timeout: 45_000 }, () => {
   it('a job clones its repository and pushes a branch of its work, with its user\'s connection, on its timeline', async () => {
     const t = await start();
     const { job, home, git } = await running(t);

@@ -5,7 +5,7 @@
 import { jobBrake } from '../domain/intake-strictness.ts';
 import { earlierRuns } from '../domain/rerun-chain.ts';
 import { liveWrites, rememberHoursOf } from '../domain/remembered-writes.ts';
-import { NO_SKIPS } from '../domain/sandbox-approvals.ts';
+import { NO_SKIPS } from '../domain/sandbox-approvals.ts'; import { scopeBy, scopeKeyOf, scopeOf, withJob } from '../domain/vault-scope-grants.ts';
 import { DEFAULT_SANDBOX_STRICTNESS } from '../domain/sandbox-strictness.ts';
 import { outsideStamp } from '../domain/stamp-capabilities.ts';
 import type { UserStore } from '../domain/ports.ts';
@@ -86,7 +86,7 @@ function sandboxJev(o: { store: Pick<UserStore, 'settings' | 'jobs'>; templates:
 }
 
 export function userSandboxRequests(o: {
-  userId: string; store: Pick<UserStore, 'events' | 'settings' | 'jobs'>; templates: () => TemplateView[]; clock: { now(): Date };
+  userId: string; store: Pick<UserStore, 'events' | 'settings' | 'jobs' | 'vaultScopeGrants'>; templates: () => TemplateView[]; clock: { now(): Date };
   /** Jev, for the `sandbox-request` check (issue #655 part 13); and what lowers a job's trust when Jev denies its run. Absent: no check. */
   jevFirst?: JevFirst; jevDenied?: (jobId: string) => void;
   /** Each operation profile's minimum trust in Access (issue #655 parts 15, 16): what a job's stamp may ask for. Absent: none. */
@@ -112,10 +112,24 @@ export function userSandboxRequests(o: {
     // Issue #1001: a person's remembered write approvals, and the read policy for the reads beside them.
     remembered: () => liveWrites(store.settings.getRememberedWrites(), rememberHoursOf(store.settings.getSandboxApprovals()), o.clock.now()),
     policy: () => store.settings.getReadPolicy(),
+    scopeRun: (id, template) => scopeRun(store, id, template),
     clock: o.clock,
   });
 }
 
+
+/**
+ * Who approves the job's runs of `template` by a person's scope grant with runs (issue #2923): the template and the job's
+ * repository. The job is folded under the grant. Undefined: no such grant.
+ */
+function scopeRun(store: Pick<UserStore, 'jobs' | 'vaultScopeGrants'>, jobId: string, template: string): string | undefined {
+  const job = store.jobs.get(jobId);
+  const g = job ? store.vaultScopeGrants.get(scopeKeyOf(scopeOf(job, { template }))) : undefined;
+  if (!g?.runs) return undefined;
+  const added = withJob(g, jobId);
+  if (added) store.vaultScopeGrants.put(added);
+  return scopeBy(g);
+}
 
 /** How often the hopper looks for a request no person answered in time (issue #655 part 9). */
 export const HOLD_SWEEP_MS = 60_000;

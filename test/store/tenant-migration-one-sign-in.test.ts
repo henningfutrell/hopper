@@ -3,7 +3,7 @@
 // they were.
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../../src/store/db.ts';
-import { migrateTenant, TENANT_SCHEMA_VERSION } from '../../src/store/tenant-migrations.ts';
+import { migrateTenant } from '../../src/store/tenant-migrations.ts';
 import { useTempStore } from './helpers.ts';
 
 const t = useTempStore();
@@ -22,7 +22,8 @@ const statusOf = (raw: Db, id: string): string => String(raw.get('SELECT status 
 
 describe('tenant migration: one waiting sign-in per machine and tool (issue #2898)', () => {
   it('keeps the newest waiting sign-in, and the index then refuses a second', () => {
-    const before = TENANT_SCHEMA_VERSION - 1;
+    // The store before migration 108, the one of issue #2898.
+    const before = 107;
     const raw = t.tenantAt(t.url(), before);
     login(raw, '1', { machineId: 'box' });
     login(raw, '2', { machineId: 'box' });
