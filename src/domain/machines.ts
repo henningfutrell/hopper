@@ -1,7 +1,7 @@
 // Attached machines and attaching one from the UI (design.md "Attached machines", "Machines from
 // the UI"; docs/glossary.md "Attached machine", "Machine edit", "Detected ssh target"). An attached
 // machine is a machine-source instance of the `ssh`, `docker` or `client` plugin (issue #74).
-import type { ActionVia, LaneId, MachineSnapshot } from './types.ts';
+import type { ActionVia, JobStatus, LaneId, MachineSnapshot } from './types.ts';
 import type { UsageLimitPair } from './usage.ts';
 // A Windows host (issue #731) is reached over ssh as an ssh target is, but runs only steps: src/domain/windows-steps.ts.
 export type { WindowsHost, WindowsHostsView } from './windows-steps.ts';
@@ -310,3 +310,6 @@ export interface JobMachineLink {
 
 /** The sandbox playground's shapes (issue #1410): no machine, but shown on Machines. */
 export type { PlaygroundLimits, PlaygroundSandbox, PlaygroundSize, PlaygroundState, PlaygroundView } from './sandbox-playground.ts';
+
+/** A job a removal or rename of its machine waits for (issue #2932); `release`: a person may release its wait to free the machine. */
+export interface MachineHold { jobId: string; status: JobStatus; release?: true }

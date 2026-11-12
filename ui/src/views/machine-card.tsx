@@ -29,6 +29,7 @@ import { MachineDrainButton, MachineDrainNotice } from './machine-drain';
 import { SandboxHostButton, SandboxHostNotice } from './machine-sandbox-host';
 import { UnhealthyLanesNotice } from './machine-lane-health';
 import { MachineLeftovers } from './machine-leftovers';
+import { MachineHolds } from './machine-holds';
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -70,7 +71,7 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
     <>
       <Button size="sm" variant="outline" disabled={ctx.busy} onClick={() => ctx.setEditing(m.id)} aria-label={`Edit ${m.id}`}><Pencil />Edit</Button>
       <Confirm title={`Remove ${m.id}?`} action="Remove"
-        description={<>It is removed and stops taking jobs at once. Refused while a job runs there or waits for an answer in a pane there.</>}
+        description={<>It is removed and stops taking jobs at once. Refused while a job runs there, waits for an answer in a pane there, or keeps its session there on its own wait; the card lists them.</>}
         onConfirm={() => void ctx.edit({ action: 'remove', role: 'machine-source', name: m.id, version: ctx.config!.version }, `Removed ${m.id}`)}>
         <Button size="sm" variant="outline" disabled={ctx.busy} aria-label={`Remove ${m.id}`}><Trash2 />Remove</Button>
       </Confirm>
@@ -144,6 +145,7 @@ export function MachineCard({ m, ctx }: { m: MachineView; ctx: Ctx }) {
       <UnhealthyLanesNotice m={m} now={now} />
       <CredentialCheck m={m} authed={ctx.authed} busy={ctx.busy} />
       <MachineLeftovers m={m} canAct={ctx.authed && operator} />
+      <MachineHolds m={m} canAct={ctx.authed && operator} />
       {m.resources?.windowsLink && <WindowsLinkProblem link={m.resources.windowsLink} />}
       {m.workTreeProblem && (
         <p role="alert" className="text-sm text-destructive">Takes no new job: {m.workTreeProblem}. Its jobs wait for another machine; set its work tree with Edit.</p>

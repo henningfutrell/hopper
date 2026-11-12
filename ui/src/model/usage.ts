@@ -39,7 +39,7 @@ export function laneEffectText(m: Pick<MachineLaneEffect, 'band' | 'cap' | 'maxL
     case 'free': return `all ${m.maxLanes} lanes`;
     case 'soft': return `capped at ${m.cap} of ${m.maxLanes} lanes (past the soft limit)`;
     case 'hard': return `stopped: 0 of ${m.maxLanes} lanes (hard limit)`;
-    case 'unknown': return `capped at ${m.cap} of ${m.maxLanes} lanes (usage unknown: no reading)`;
+    case 'unknown': return `capped at ${m.cap} of ${m.maxLanes} lanes (usage unknown: no reading; Soft lanes on Usage set this cap)`;
   }
 }
 

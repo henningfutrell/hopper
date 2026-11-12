@@ -287,7 +287,7 @@ function applyRename(name: string, to: string, next: InstanceSpec, version: stri
   if (role !== 'machine-source') return refuse('invalid', `only a machine is renamed; ${name} is a ${role} instance`);
   if (ctx.configured.some((c) => c.role === role && c.instance.name === to)) return refuse('conflict', `a machine is already named ${to}`);
   const jobs = [...new Set([...ctx.inUse(role, name), ...(ctx.pinned?.(name) ?? [])])];
-  if (jobs.length) return refuse('conflict', `${name} still has jobs (${jobs.join(', ')}): wait for them to end, or cancel them, then rename it`);
+  if (jobs.length) return refuse('conflict', `${name} still has jobs (${jobs.join(', ')}): wait for them to end, release their waits or cancel them (its Machines card lists them), then rename it`);
   return writePlugins(ctx.config, version, (doc) => {
     place(doc, role, name, { ...next, name: to }, ctx.configured);
     for (const { role: r, instance } of ctx.configured) {
@@ -307,7 +307,7 @@ function applyListEdit(e: Extract<PluginsEdit, { action: 'add' | 'remove' }>, ct
   if (e.action === 'remove') {
     if (!current) return refuse('not_found', `no ${e.role} instance named ${e.name}`);
     const jobs = ctx.inUse(e.role, e.name);
-    if (jobs.length) return refuse('conflict', `${e.name} still has jobs (${jobs.join(', ')}): wait for them to end, or cancel them, then remove it`);
+    if (jobs.length) return refuse('conflict', `${e.name} still has jobs (${jobs.join(', ')}): ${e.role === 'machine-source' ? 'wait for them to end, release their waits or cancel them (its Machines card lists them)' : 'wait for them to end, or cancel them'}, then remove it`);
     return writePlugins(ctx.config, e.version, (doc) => {
       const users = e.role === 'executor' ? executorUsers(e.name, doc, ctx) : e.role === 'machine-source' ? machineUsers(e.name, ctx) : [];
       if (users.length) return refuse('conflict', `${e.role === 'executor' ? 'executor' : 'machine'} ${e.name} is named by ${users.join(', ')}; change ${users.length === 1 ? 'it' : 'them'} first`);
