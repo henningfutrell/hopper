@@ -14060,6 +14060,13 @@ The soft and hard limits are a setting of the user, edited on the Usage view, no
   fields edit the same draft. Nothing is stored until Save. A viewer sees the graph without handles.
 - **Gauges follow the limits.** Every usage gauge's marks and colours are the limits the decider uses now, not
   fixed 70% / 95%; before the usage report has loaded, a gauge has no marks and one neutral colour.
+- **From the command line** (issue #2932). `hopper usage limits` prints the limits and each machine's lane cap, band and
+  the sources it has no reading of. `hopper usage limits set [--soft F] [--hard F] [--soft-lanes N]` posts the route
+  above, the limits it does not name as they are now. With `--machine M` it sets that machine's own usage limits
+  (issue #1860) as a plugins edit of its options, starting from the user's soft and hard limits when it has none;
+  `limits clear --machine M` takes them off. `hopper usage no-limits <usage source> on|off` sets the source's
+  `noLimits` option ("An account with no usage limits"). `src/cli-operator-usage-limits.ts`,
+  `test/cli/usage-limits.test.ts`.
 
 **Verification:** `test/integration/usage-limits.test.ts` (the real daemon: defaults from the environment; an
 admin sets limits, the next Decision uses them and holds a job at the new hard limit, raising them starts it;
