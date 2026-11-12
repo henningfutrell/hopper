@@ -10,7 +10,6 @@ import { readUsage } from './usage-read.ts';
 import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type HopperDisk, type MachineLeftovers, type SweepSettings, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { usageLimitsOf } from './usage-limits.ts';
-import { resumesElsewhere } from './wait.ts';
 import { gateOf, isUnaccepted, preSort } from './queue-gate.ts';
 import { queueOrder } from './queue-order.ts';
 
@@ -70,11 +69,6 @@ export interface Queries {
   getUsageSources(): UsageSourceReport[];
   /** Jobs that need a machine: on a busy or draining lane there, or waiting for an answer in a pane there (`resumeOn`). */
   jobsOnMachine(machineId: string): string[];
-  /**
-   * The jobs on the machine that a removal or a rename of it must wait for (issue #2932): those of `jobsOnMachine` but a job
-   * on its own wait that resumes on any machine from its kept checkpoint (`resumesElsewhere`).
-   */
-  jobsNeedingMachine(machineId: string): string[];
 }
 
 /** The locked entries among `all`, by the work-item ledger's `ledger`: highest priority first, then oldest. */
@@ -86,11 +80,6 @@ function lockedOf(all: Job[], ledger: Pick<WorkItemLedger, 'get'>): Job[] {
 export function createQueries(c: EngineContext, diskOf: (machineId: string, sweep?: SweepSettings) => HopperDisk | undefined = () => undefined, leftoversOf: (machineId: string) => MachineLeftovers | undefined = () => undefined): Queries {
   const getUsage = async (): Promise<UsageReading[]> => (await Promise.all(c.usage().map((u) => u.poll()))).flat();
   const getUsageSources = (): UsageSourceReport[] => c.usage().map((u) => ({ name: u.name, ...u.state?.() }));
-  const onMachine = (machineId: string): string[] => {
-    const onLanes = c.store.lanes.list(machineId).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []));
-    const waitingPanes = c.store.jobs.list({ status: ['waiting_answer', 'waiting_on'] }).filter((j) => j.resumeOn === machineId).map((j) => j.id);
-    return [...new Set([...onLanes, ...waitingPanes])];
-  };
   return {
     getQueue() {
       // Each with its phase named (issue #548): the views show it.
@@ -151,9 +140,10 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string, swee
         }),
       };
     },
-    jobsOnMachine: onMachine,
-    jobsNeedingMachine(machineId) {
-      return onMachine(machineId).filter((id) => { const j = c.store.jobs.get(id); return !j || !resumesElsewhere(j); });
+    jobsOnMachine(machineId) {
+      const onLanes = c.store.lanes.list(machineId).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []));
+      const waitingPanes = c.store.jobs.list({ status: ['waiting_answer', 'waiting_on'] }).filter((j) => j.resumeOn === machineId).map((j) => j.id);
+      return [...new Set([...onLanes, ...waitingPanes])];
     },
   };
 }
