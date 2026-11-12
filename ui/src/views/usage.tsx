@@ -19,6 +19,7 @@ import { bandAt, capAt, limitsProblem, throttleLine, windowLines, type LimitBand
 import type { MachineHistory, MachineLaneEffect, MemoryAlert, PartAccount, UsageHistory, UsageLimitPair, UsageReport } from '@/model/wire';
 import { act, refreshUsage, useHopper } from '@/store';
 import { MachinesResourcesPanel } from './machine-resources';
+import { NoLimitsOption } from './usage-no-limits';
 
 const pct = (f: number) => `${Math.round(f * 100)}%`;
 const lanes = (n: number) => `${n} ${n === 1 ? 'lane' : 'lanes'}`;
@@ -100,6 +101,7 @@ function Sources({ usage }: { usage: UsageReport }) {
         return (
           <Panel key={s.name} title={s.name} icon={GaugeIcon} fold={`usage.source.${s.name}`} count={readings.length || ''} bodyClassName="space-y-3">
             <div className={`text-xs break-words ${line.problem ? 'text-warn' : 'text-muted-foreground'}`}>{line.text}</div>
+            <NoLimitsOption source={s.name} />
             {readings.length ? <div className="flex flex-wrap justify-around gap-x-2 gap-y-4">{readings.map((r) => <ReadingGauge key={`${r.window ?? ''}|${r.machineId ?? ''}`} r={r} now={now} />)}</div>
               : <Empty>no readings now</Empty>}
           </Panel>
