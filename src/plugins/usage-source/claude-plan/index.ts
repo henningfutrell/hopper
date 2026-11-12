@@ -37,7 +37,7 @@ const USAGE_ARGS = ['-p', '/usage', '--output-format', 'json', '--no-session-per
 const AUTH_ARGS = ['auth', 'status', '--json'];
 
 /** Whether the account's plan has no usage limits: an Enterprise plan (issue #2932). */
-const hasNoLimits = (plan: string | undefined): boolean => plan !== undefined && /enterprise/i.test(plan);
+const hasNoLimits = (plan: unknown): boolean => typeof plan === 'string' && /enterprise/i.test(plan);
 
 const failed = (what: string, r: CliRun): string => `claude ${what} failed: ${'error' in r ? r.error : `exited ${r.code}: ${withoutRunMarks(r.stderr).trim().slice(0, 300)}`}`;
 
@@ -157,7 +157,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
         const retry = notReady(usage) ? { notReady: true } : {};
         // Issue #2932: an account with no usage limits prints none — an Enterprise plan, or one the source is told has none —:
         // a good read with no budget, so the machine is not capped as usage unknown.
-        if ('problem' in parsed && parsed.printedNone && (o.noLimits === true || hasNoLimits(account.detail.plan))) return { machineId: id, budgets: [], account, ...retry };
+        if ('problem' in parsed && parsed.printedNone && (o.noLimits === true || hasNoLimits(read.detail.plan))) return { machineId: id, budgets: [], account, ...retry };
         if ('problem' in parsed) return { problem: parsed.problem, account, ...retry };
         return {
           machineId: id,
