@@ -81,8 +81,11 @@ const NO_LIMITS = 'usage unavailable: claude printed no usage limits (Claude Cod
 
 const firstLine = (text: string) => text.split('\n').map((l) => l.trim()).find(Boolean)?.slice(0, 200);
 
-/** stdout of `claude -p /usage --output-format json` → its windows, or why there are none. */
-export function parseUsageEnvelope(stdout: string, now: Date): { windows: PlanWindow[] } | { problem: string } {
+/**
+ * stdout of `claude -p /usage --output-format json` → its windows, or why there are none. `printedNone`: Claude Code printed
+ * its subscription line and no usage limits (issue #2919) — an account with none (an Enterprise plan) prints that too (issue #2932).
+ */
+export function parseUsageEnvelope(stdout: string, now: Date): { windows: PlanWindow[] } | { problem: string; printedNone?: true } {
   let json: unknown;
   try {
     json = JSON.parse(stdout);
@@ -96,7 +99,7 @@ export function parseUsageEnvelope(stdout: string, now: Date): { windows: PlanWi
   if (windows.length === 0) {
     // Issue #2919: Claude Code prints its subscription line, and maybe its contribution report, with no usage limits when
     // its own read of its usage service failed (a 429, as a rule) and it holds no snapshot of them. No reading, never 0%.
-    if (env.is_error !== true && SUBSCRIPTION_LINE.test(firstLine(result) ?? '')) return { problem: NO_LIMITS };
+    if (env.is_error !== true && SUBSCRIPTION_LINE.test(firstLine(result) ?? '')) return { problem: NO_LIMITS, printedNone: true };
     return { problem: `usage unavailable: ${firstLine(result) ?? 'empty result'}` };
   }
   return { windows };
