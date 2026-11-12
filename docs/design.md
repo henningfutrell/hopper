@@ -6485,6 +6485,10 @@ holds no credential. Prior art: `a status-bar script`.
   of its usage service failed, a 429 as a rule, and it holds no snapshot) is `usage unavailable: claude printed no
   usage limits (…)`. Since 2.1.3xx the text has no `Current session` line while no session runs, and ends with a
   contribution report (`What's contributing to your usage?`); the window lines are as before.
+- **An account with no usage limits** (issue #2932): an Enterprise plan prints the same text, with no window lines, at
+  every read. When the account's plan (`subscriptionType`) names `enterprise`, or the source's option `noLimits` is on,
+  that text is a good read with no budget: no reading and no problem, so the source is no unread usage source and the
+  machine's lanes are not capped as `unknown`. A failed read (`is_error`, an exit, not JSON) is still a problem.
 - `claude auth status --json` (same run, same probe dir) gives the **account**: email, plan
   (`subscriptionType`), organization (`orgName`), sign-in method. Ids and anything else are dropped.
 
