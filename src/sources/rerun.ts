@@ -29,6 +29,11 @@ export interface RerunContext {
    */
   sourceOf(job: Job): JobSource | undefined;
   flagsOf(job: Job): { finalReported?: boolean };
+  /**
+   * Tell the job's end to its own source now (issue #2932), called on its report chain: Run again just after a Cancel does
+   * not wait for the next sync. A source that does not take the report leaves it untold.
+   */
+  reportEnd(jobId: string): Promise<void>;
   /** Run fn on the job's report chain, so it never overlaps the job's own reports. */
   enqueue(jobId: string, fn: () => Promise<void>): Promise<void>;
   /** Sync the source at once, not waiting for the result. */
@@ -61,7 +66,7 @@ export function createRerun(c: RerunContext) {
    * `tending` (issue #1010): a newer job of its item may exist when it is the job's own tend job, cancelled by no person
    * and no source: the tend runs again. `ends`: the ends taken, Push it's too (issue #1010) for a Continue with kept work.
    */
-  function check(jobId: string, rework = false, tending = false, ends: readonly JobStatus[] = RERUN_ENDS): RerunResult | JobSource {
+  function check(jobId: string, rework = false, tending = false, ends: readonly JobStatus[] = RERUN_ENDS, untold = false): RerunResult | JobSource {
     const job = store.jobs.get(jobId);
     if (!job) return { ok: false, reason: 'not_found', message: `job ${jobId} not found` };
     if (rework) {
@@ -70,7 +75,7 @@ export function createRerun(c: RerunContext) {
     }
     if (!ends.includes(job.status)) return conflict(jobId, `it is ${job.status}, not ${ends.join(', ').replace(/, ([^,]+)$/, ' or $1')}`);
     const source = c.sourceOf(job);
-    const taken = takesBackOf(job, source);
+    const taken = takesBackOf(job, source, untold);
     if (!taken.ok || !source) return conflict(jobId, taken.ok ? 'its source is not running' : taken.why);
     if (rework && !source.rework) return conflict(jobId, `its source ${source.name} cannot rework a pull request`);
     const newest = store.jobs.getBySourceKey(job.source!.key);
@@ -83,14 +88,18 @@ export function createRerun(c: RerunContext) {
    * Whether the job's source takes its item back now: it runs, it can run an item again, and the job's end is reported to
    * it. A source that adopts the job (issue #1352) needs no report: the job's own source is gone and is told nothing more.
    * A live job (issue #1777: Continue or a resume took it back to the queue) has no end to report: it is said so, not soon.
+   * `untold` (issue #2932): an end not told yet is no refusal, as for Run again and Rework, which tell it first.
    */
-  function takesBackOf(job: Job, source: JobSource | undefined): Allowed {
+  function takesBackOf(job: Job, source: JobSource | undefined, untold = false): Allowed {
     if (!TERMINAL_STATUSES.includes(job.status)) return { ok: false, why: liveWhy(job.status) };
     if (!source) return { ok: false, why: 'its source is not running, and no running source takes its repository: turn one on in Sources' };
     if (!source.rerun) return { ok: false, why: `its source ${source.name} cannot run an item again` };
-    if (source.name === job.source?.source && !c.flagsOf(job).finalReported) return { ok: false, why: 'its end is not reported to its source yet', soon: true };
+    if (!untold && toldNot(job, source)) return { ok: false, why: 'its end is not reported to its source yet', soon: true };
     return { ok: true };
   }
+
+  /** Whether the job's end is still to be told to `source`, its own source. An adopter is told nothing (issue #1352). */
+  const toldNot = (job: Job, source: JobSource): boolean => source.name === job.source?.source && !c.flagsOf(job).finalReported;
 
   /**
    * A job its source's adopter gave back (issue #1352): its removed source is told nothing more, so its end counts as told,
@@ -111,10 +120,13 @@ export function createRerun(c: RerunContext) {
     give: (source: JobSource, job: Job) => Promise<G> = async (source, job) => ({ item: await source.rerun!(job) }) as G, rework = false, tending = false,
     ends: readonly JobStatus[] = RERUN_ENDS,
   ): Promise<RerunResult> {
-    const checked = check(jobId, rework, tending, ends);
+    // An end not told yet is told first, on the chain (issue #2932); only a source that still does not take it refuses.
+    const checked = check(jobId, rework, tending, ends, true);
     if ('ok' in checked) return checked;
     let result: RerunResult = { ok: false, reason: 'source', message: 'not sent' };
     const giveAndThen = async (): Promise<RerunResult> => {
+      const job = store.jobs.get(jobId);
+      if (job && toldNot(job, checked)) await c.reportEnd(jobId);
       const source = check(jobId, rework, tending, ends);
       if ('ok' in source) return source;
       let given: G;
@@ -242,7 +254,7 @@ export function createRerun(c: RerunContext) {
     giveBack(jobId: string, act: { kind: 'rerun' } | { kind: 'rework'; notes: string }, acting?: ActingPerson): GiveBackAnswer {
       const running = givingBack.get(jobId);
       if (running) return { ok: true, jobId, giveBack: running };
-      const checked = check(jobId, act.kind === 'rework');
+      const checked = check(jobId, act.kind === 'rework', false, RERUN_ENDS, true);
       if ('ok' in checked && !checked.ok) return { ok: false, reason: checked.reason === 'not_found' ? 'not_found' : 'conflict', message: checked.message };
       const kept = 'ok' in checked ? undefined : checked.giveBackAct?.(store.jobs.get(jobId)!, act.kind, acting, act.kind === 'rework' ? { notes: act.notes } : {});
       if (kept) { c.sendNow(checked as JobSource); return { ok: true, jobId, giveBack: kept }; }

@@ -50,7 +50,8 @@ describe('Run again before the end is reported (issue #2932)', () => {
     const { world, sync, source } = await setup(1);
     expect(sync.giveBack('j', { kind: 'rerun' })).toMatchObject({ ok: true, giveBack: 'rerun' });
     await settle(20);
-    expect(source.reports.map((x) => x.kind)).toEqual(['cancelled']);
+    // The old job's end first; then the new job's claim, at the sync the give-back starts.
+    expect(source.reports.map((x) => `${x.job.id === 'j' ? 'old' : 'new'} ${x.kind}`)).toEqual(['old cancelled', 'new claimed']);
     expect(world.store.jobs.getBySourceKey(KEY)!.id).not.toBe('j');
   });
 
