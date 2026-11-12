@@ -4687,11 +4687,13 @@ Version 1 (`docs/schemas/job.memory_paused.v1.json`). A Decision paused this run
 
 ## `job.wait_released`
 
-Version 1 (`docs/schemas/job.wait_released.v1.json`). A Decision ended the agent of this job on its own wait (issues #2303, #2326), on its machine (`machineId`): the hopper ends this wait by itself, with no pane, and a waiting job holds no agent. Its pane and agent end next and its checkpoint is taken; it stays on its wait, its work tree and agent session kept (`waitReleased` on the job). When its wait ends, it resumes its session from that checkpoint on any machine with room, else in a new pane on its machine. `reason`: the Decision's.
+Version 1 (`docs/schemas/job.wait_released.v1.json`). A Decision ended the agent of this job on its own wait (issues #2303, #2326), on its machine (`machineId`): the hopper ends this wait by itself, with no pane, and a waiting job holds no agent. Its pane and agent end next and its checkpoint is taken; it stays on its wait, its work tree and agent session kept (`waitReleased` on the job). When its wait ends, it resumes its session from that checkpoint on any machine with room, else in a new pane on its machine. `reason`: the Decision's. `by`, `via` (issue #2932): a person released it to free its machine (Release the wait, `POST /ui/api/jobs/:id/release-wait`), and the way they did; no Decision then.
 
 | field | type | required |
 |---|---|---|
 | `reason` | string | yes |
+| `by` | string | no |
+| `via` | `ui` \| `cli` \| `api` | no |
 
 ```json
 {

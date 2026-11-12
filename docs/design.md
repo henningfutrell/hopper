@@ -6709,6 +6709,15 @@ architecture (`attachedMachines:`, its own schema, its own edit route) — again
   agent ended (a wait release) with the checkpoint of its whole session kept does not count (issue #2932,
   `jobsNeedingMachine`, `resumesElsewhere` in `src/engine/wait.ts`): woken, it resumes on any machine. The same holds
   for a rename and for a pool client's leave.
+  The jobs a removal waits for are listed on the machine's card (issue #2932 part 2): each machine of `GET /api/machines`
+  carries `holding` (`jobId`, `status`, `release`), and the card links each job. A job on its own wait that holds the
+  machine — its agent session in a pane there, or a wait release whose checkpoint was not kept — has **Release the wait**
+  (`POST /ui/api/jobs/:id/release-wait`, `hopper job release-wait <id>`, `releaseWaitByPerson` in
+  `src/engine/wait-release.ts`): as the Decision's wait release, its pane and agent end and its checkpoint is taken now;
+  kept, the job no longer holds the machine. `job.wait_released` with `by` and `via`, none when the hopper released it
+  already. Refused (409, with why) for a wait on its own command (ending its pane ends the command), a job pinned to a
+  machine, one with no agent session, an executor that cannot park, or a checkpoint not kept. A job on a lane, or waiting
+  for an answer in a pane, is parked or cancelled on its own page. The refusal of a removal or rename names the card.
 - **A retired machine's pinned jobs** (issue #919). The machine is then **retired**: gone from the plugins
   config, and no machine source lists it. A waiting job (queued or held) pinned to it — by hand, by a routing
   rule, or to resume there (`resumeOn`) — would wait for it for good. The next scheduler pass, before the
