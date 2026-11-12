@@ -6,6 +6,7 @@
 // A completion review kept, and its model review (issue #2846 part 3).
 // Part of EVENT_SCHEMAS (schemas.ts), with its docs (docs.ts) and examples (examples.ts).
 import { z } from 'zod';
+import { ACTION_VIAS } from '../domain/failures.ts';
 import { REVIEW_OUTCOMES, SUGGESTION_AREAS } from '../domain/completion-review.ts';
 import { WASTE_KINDS } from '../domain/token-waste.ts';
 
@@ -16,7 +17,7 @@ const reviews = z.strictObject({ on: z.boolean(), outcomes: z.array(z.enum(REVIE
 export const PREEMPTION_EVENT_SCHEMAS = {
   'job.preempted': z.strictObject({ by: z.string(), byPriority: z.number(), priority: z.number(), reason: z.string() }),
   'job.memory_paused': z.strictObject({ availableBytes: z.number().min(0), floorBytes: z.number().positive(), reason: z.string() }),
-  'job.wait_released': z.strictObject({ reason: z.string() }),
+  'job.wait_released': z.strictObject({ reason: z.string(), by: z.string().optional(), via: z.enum(ACTION_VIAS).optional() }),
   'preemption.settings_changed': z.strictObject({ from: settings, to: settings, by: z.string() }),
   'completion_review.settings_changed': z.strictObject({ from: reviews, to: reviews, by: z.string() }),
   'completion_review.recommended': z.strictObject({ signature: z.string(), title: z.string() }),
@@ -29,7 +30,7 @@ export const PREEMPTION_EVENT_SCHEMAS = {
 export const PREEMPTION_EVENT_DOCS = {
   'job.preempted': 'A Decision preempted this running job (issue #1525): job `by`, of priority `byPriority`, waits for a lane, every lane it may use is busy, and this job has the lower priority `priority`. It is parked next (`job.parked`), its lane frees, and it is queued again (`job.unparked`) to resume where it stopped. `reason`: the Decision\'s.',
   'job.memory_paused': 'A Decision paused this running job (issue #2291): its machine has `availableBytes` of memory available, below its memory floor `floorBytes`, and this job has the lowest priority there, of those the one that started there last (issue #2737). Issue #2499: or its machine\'s memory pressure is at or above 40% (`availableBytes` and `floorBytes` its own), or its host pool has `availableBytes` below the pool\'s floor `floorBytes` and this job has the lowest priority on any machine of it. It is parked next (`job.parked`), its lane and memory free, and it is queued again (`job.unparked`) to resume there where it stopped once the memory holds it. `reason`: the Decision\'s.',
-  'job.wait_released': 'A Decision ended the agent of this job on its own wait (issues #2303, #2326), on its machine (`machineId`): the hopper ends this wait by itself, with no pane, and a waiting job holds no agent. Its pane and agent end next and its checkpoint is taken; it stays on its wait, its work tree and agent session kept (`waitReleased` on the job). When its wait ends, it resumes its session from that checkpoint on any machine with room, else in a new pane on its machine. `reason`: the Decision\'s.',
+  'job.wait_released': 'A Decision ended the agent of this job on its own wait (issues #2303, #2326), on its machine (`machineId`): the hopper ends this wait by itself, with no pane, and a waiting job holds no agent. Its pane and agent end next and its checkpoint is taken; it stays on its wait, its work tree and agent session kept (`waitReleased` on the job). When its wait ends, it resumes its session from that checkpoint on any machine with room, else in a new pane on its machine. `reason`: the Decision\'s. `by`, `via` (issue #2932): a person released it to free its machine (Release the wait, `POST /ui/api/jobs/:id/release-wait`), and the way they did; no Decision then.',
   'preemption.settings_changed': 'An admin changed the preemption settings (issue #1525): whether a job of higher priority takes the lane of a running job of lower priority (`enabled`), and how many minutes a job runs before it may be preempted (`minRunMinutes`). `from` and `to`.',
   'completion_review.settings_changed': 'An admin changed which ended jobs get a completion review (issue #2846): on or off (`on`), the ends reviewed (`outcomes`), whether a job of a work item with more than one job is reviewed whatever its end (`multiJob`), and the run time below which a first run is trivial (`minRunMinutes`). `from` and `to`.',
   'completion_review.recommended': 'The completion review of this job found a hopper defect of a signature no review found before (issue #2846 part 2): a bug-report recommendation waits for a person in Needs you and Your reports. `signature`: the defect\'s (`cause:<cause id>`, or `requeue-loop` with the first cause); `title`: the report\'s. Nothing is filed until a person approves it.',

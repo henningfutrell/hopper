@@ -70,6 +70,9 @@ export function registerJobActionRoutes(app: FastifyInstance, o: {
     const { note } = parseWith(endWaitBody, req.body ?? {});
     return o.tenant(req).engine.endWait(parseWith(idParams, req.params).id, note || undefined);
   });
+  // Release the wait (issue #2932): a job on its own wait no longer holds its machine; woken, it resumes on any machine.
+  app.post('/ui/api/jobs/:id/release-wait', o.operator, async (req) =>
+    o.tenant(req).engine.releaseWait(parseWith(idParams, req.params).id, actingOf(signedInWith(req))));
   // A note to a job (issue #997): queued on it until its session gets it, by whoever sent it, through the UI or an API token.
   app.post('/ui/api/jobs/:id/notes', o.operator, async (req) => {
     const { text } = parseWith(noteBody, req.body ?? {});
