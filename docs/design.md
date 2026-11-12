@@ -6705,7 +6705,10 @@ architecture (`attachedMachines:`, its own schema, its own edit route) — again
   or client target is still attached with its script and `hopper config edit plugins.yaml`.
 - **Removing a machine** (`remove`, role `machine-source`) is refused (409, naming the jobs) while a
   lane there is busy or draining or a job waits in a pane there, as the old machine edit was. An
-  executor named by a machine's `executors` cannot be removed ("machine <name>").
+  executor named by a machine's `executors` cannot be removed ("machine <name>"). A job on its own wait whose
+  agent ended (a wait release) with the checkpoint of its whole session kept does not count (issue #2932,
+  `jobsNeedingMachine`, `resumesElsewhere` in `src/engine/wait.ts`): woken, it resumes on any machine. The same holds
+  for a rename and for a pool client's leave.
 - **A retired machine's pinned jobs** (issue #919). The machine is then **retired**: gone from the plugins
   config, and no machine source lists it. A waiting job (queued or held) pinned to it — by hand, by a routing
   rule, or to resume there (`resumeOn`) — would wait for it for good. The next scheduler pass, before the
