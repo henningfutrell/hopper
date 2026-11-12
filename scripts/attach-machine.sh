@@ -35,19 +35,21 @@ remote true || die "cannot reach $TARGET over ssh (ssh -o BatchMode=yes $TARGET 
 
 step "pin the host key of $TARGET from ~/.ssh/known_hosts"
 DEST="$(ssh -G -- "$TARGET")"
-HOST="$(printf '%s\n' "$DEST" | awk '$1 == "hostname" { print $2; exit }')"
-PORT="$(printf '%s\n' "$DEST" | awk '$1 == "port" { print $2; exit }')"
+# Each reader below reads its input to the end: under pipefail, a reader that stops early can end the script with
+# the writer's SIGPIPE (141) when the writer is slow (issue #2936).
+HOST="$(printf '%s\n' "$DEST" | awk '$1 == "hostname" && !n++ { print $2 }')"
+PORT="$(printf '%s\n' "$DEST" | awk '$1 == "port" && !n++ { print $2 }')"
 [ "$PORT" = 22 ] || HOST="[$HOST]:$PORT"
 KNOWN="$(ssh-keygen -F "$HOST" -f "$HOME/.ssh/known_hosts" 2>/dev/null | grep -v '^#' || true)"
-HOST_KEY="$(printf '%s\n' "$KNOWN" | awk '$2 == "ssh-ed25519" { print $2, $3; exit }')"
-[ -n "$HOST_KEY" ] || HOST_KEY="$(printf '%s\n' "$KNOWN" | awk 'NF >= 3 { print $2, $3; exit }')"
+HOST_KEY="$(printf '%s\n' "$KNOWN" | awk '$2 == "ssh-ed25519" && !n++ { print $2, $3 }')"
+[ -n "$HOST_KEY" ] || HOST_KEY="$(printf '%s\n' "$KNOWN" | awk 'NF >= 3 && !n++ { print $2, $3 }')"
 [ -n "$HOST_KEY" ] || die "no host key for $TARGET in ~/.ssh/known_hosts: connect once by hand (ssh $TARGET), check its fingerprint, then run this again"
 
 # The herdr the hopper owns there (issue #741): this machine's herdr, at a path with its version in it, linked as
 # current. The hopper's calls and the session unit run it; the hopper keeps it at its own version from then on.
 OWNED='.local/share/hopper/herdr'
 HERDR="$(command -v herdr || true)"
-VERSION="$( [ -n "$HERDR" ] && "$HERDR" --version 2>/dev/null | awk '$1 == "herdr" && $2 ~ /^[0-9][0-9A-Za-z.+-]*$/ { print $2; exit }' || true)"
+VERSION="$( [ -n "$HERDR" ] && "$HERDR" --version 2>/dev/null | awk '$1 == "herdr" && $2 ~ /^[0-9][0-9A-Za-z.+-]*$/ && !n++ { print $2 }' || true)"
 if [ -z "$VERSION" ]; then
   printf 'attach-machine: warning: no herdr here that says its version: none installed at ~/%s on %s; the hopper installs its own at its first probe\n' "$OWNED" "$TARGET" >&2
 elif [ "$(remote 'uname -sm')" != "$(uname -sm)" ]; then
@@ -80,13 +82,13 @@ remote 'mkdir -p ~/.config/systemd/user && cat > ~/.config/systemd/user/hopper-h
 step "enable and start hopper-herdr on $TARGET"
 remote 'systemctl --user daemon-reload && systemctl --user enable --now hopper-herdr' || die "systemctl on $TARGET failed"
 
-if ! remote 'loginctl show-user "$(id -un)" -p Linger' | grep -q '^Linger=yes'; then
+if ! remote 'loginctl show-user "$(id -un)" -p Linger' | grep '^Linger=yes' >/dev/null; then
   printf 'attach-machine: warning: no linger on %s: its herdr session stops when you log out. Run there: sudo loginctl enable-linger "$(id -un)"\n' "$TARGET" >&2
 fi
 
 step "verify the herdr session on $TARGET"
 for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if remote "$HERDR_PATH; herdr --session $SESSION status server" | grep -q '^status: running$'; then
+  if remote "$HERDR_PATH; herdr --session $SESSION status server" | grep '^status: running$' >/dev/null; then
     echo "herdr session $SESSION is running on $TARGET"
     cat <<EOF
 
