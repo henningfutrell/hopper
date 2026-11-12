@@ -1962,8 +1962,10 @@ after a job that finished without shipping stayed stuck, skipped without a word.
 source, nor for a sync to offer its item again: `POST /ui/api/jobs/:id/rerun` (operator; the Ended
 panel's Run again button) asks the sync loop (`SourceRegistry.rerun`) to queue the item again now. Only
 the newest job of its key, status `failed`, `finished` (a result that is not wanted), `rejected` or `cancelled`
-(issue #1352), whose end was reported (`finalReported`), of a running source that implements `JobSource.rerun` —
-else 409; unknown → 404. **An item belongs to its repository and issue, not to the source that first saw it**
+(issue #1352), of a running source that implements `JobSource.rerun` — else 409; unknown → 404. Its end must be
+reported (`finalReported`): **an end not reported yet is reported first** (issue #2932), on the job's report chain, so Run
+again and Rework just after a Cancel do not wait for the next sync; only when the source still does not take that report is
+the act refused (409, or `job.give_back_failed` after a person's answer), "its end is not reported to its source yet". **An item belongs to its repository and issue, not to the source that first saw it**
 (issue #1352): when a job's own source no longer runs (its instance was removed, as the polling `github-account`
 was), a running source that **adopts** it (`JobSource.adopts`: the job's repository is one of its job repositories)
 takes the item back in its place, and the new job is that source's. Its end need not be reported: the removed source
@@ -14078,7 +14080,8 @@ The soft and hard limits are a setting of the user, edited on the Usage view, no
   (issue #1860) as a plugins edit of its options, starting from the user's soft and hard limits when it has none;
   `limits clear --machine M` takes them off. `hopper usage no-limits <usage source> on|off` sets the source's
   `noLimits` option ("An account with no usage limits"). `src/cli-operator-usage-limits.ts`,
-  `test/cli/usage-limits.test.ts`.
+  `test/cli/usage-limits.test.ts`. On the Usage page, an admin turns a source's **No usage limits** on or off on its
+  panel, one plugins edit of its options (`ui/src/views/usage-no-limits.tsx`, `test/ui/usage-no-limits.test.ts`).
 
 **Verification:** `test/integration/usage-limits.test.ts` (the real daemon: defaults from the environment; an
 admin sets limits, the next Decision uses them and holds a job at the new hard limit, raising them starts it;
