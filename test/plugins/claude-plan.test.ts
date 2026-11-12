@@ -74,14 +74,14 @@ describe('claude-plan parser', () => {
     // Its usage service gave no limits: the subscription line and the contribution report only. No reading, never 0%.
     const noLimits = ['You are currently using your subscription to power your Claude Code usage', '', "What's contributing to your usage?", 'Last 24h · 3 requests · 1 sessions'].join('\n');
     expect(parseUsageEnvelope(JSON.stringify({ is_error: false, result: noLimits }), AUG8_NOON))
-      .toEqual({ problem: 'usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)' });
+      .toEqual({ problem: 'usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)', printedNone: true });
   });
 
   it('the envelope: its result text parsed; header-only, is_error, empty or not JSON → a problem, never readings', () => {
     const ok = JSON.stringify({ type: 'result', is_error: false, result: 'Current session: 4% used · resets Aug 8, 2:10pm (America/Chicago)' });
     expect(parseUsageEnvelope(ok, AUG8_NOON)).toEqual({ windows: [{ window: 'session', used: 4, resetsAt: '2026-08-08T19:10:00.000Z' }] });
     expect(parseUsageEnvelope(JSON.stringify({ is_error: false, result: 'You are currently using your subscription to power your Claude Code usage' }), AUG8_NOON))
-      .toEqual({ problem: 'usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)' });
+      .toEqual({ problem: 'usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)', printedNone: true });
     expect(parseUsageEnvelope(JSON.stringify({ is_error: true, result: 'Usage is not available right now' }), AUG8_NOON))
       .toEqual({ problem: 'usage unavailable: Usage is not available right now' });
     expect(parseUsageEnvelope(JSON.stringify({ is_error: false, result: '' }), AUG8_NOON)).toEqual({ problem: 'usage unavailable: empty result' });
@@ -204,6 +204,23 @@ describe('claude-plan plugin', () => {
     const t = await create();
     await waitFor(() => (t.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(t.state!().problem).toBe('usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)');
+
+    // Issue #2932: an account with no usage limits (an Enterprise plan), or a source told so, reads as no limit: no problem.
+    writeFileSync(join(control, 'plan'), 'enterprise');
+    const e = await create();
+    await waitFor(() => e.state!().refreshedAt, { what: 'the first read' });
+    expect(e.state!().problem).toBeUndefined();
+    expect(await e.poll()).toEqual([]);
+    writeFileSync(join(control, 'plan'), 'max');
+    const n = await create({ noLimits: true });
+    await waitFor(() => n.state!().refreshedAt, { what: 'the first read' });
+    expect(n.state!().problem).toBeUndefined();
+    expect(await n.poll()).toEqual([]);
+    // Told so, a source still says a failed read: only "no usage limits printed" reads as none.
+    writeFileSync(join(control, 'mode'), 'is-error');
+    const f = await create({ noLimits: true });
+    await waitFor(() => (f.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect(f.state!().problem).toBe('usage unavailable: Usage is not available right now');
 
     writeFileSync(join(control, 'mode'), 'logged-out');
     const u = await create();
