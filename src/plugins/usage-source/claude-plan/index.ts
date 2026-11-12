@@ -28,16 +28,13 @@ import { createPolledUsageSource, EXECUTORS_DESCRIPTION } from '../polled.ts';
 import { runCli, type CliRun } from '../run.ts';
 import { parseAuthStatus, parseUsageEnvelope } from './parse.ts';
 
-export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine?: string; sshBin: string; executors: string[]; noLimits?: boolean }
+export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine?: string; sshBin: string; executors: string[] }
 
 /** Each claude call is killed after this long. */
 const TIMEOUT_MS = 45_000;
 
 const USAGE_ARGS = ['-p', '/usage', '--output-format', 'json', '--no-session-persistence'];
 const AUTH_ARGS = ['auth', 'status', '--json'];
-
-/** Whether the account's plan has no usage limits: an Enterprise plan (issue #2932). */
-const hasNoLimits = (plan: unknown): boolean => typeof plan === 'string' && /enterprise/i.test(plan);
 
 const failed = (what: string, r: CliRun): string => `claude ${what} failed: ${'error' in r ? r.error : `exited ${r.code}: ${withoutRunMarks(r.stderr).trim().slice(0, 300)}`}`;
 
@@ -56,7 +53,6 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
     sshBin: z.string().min(1).default('ssh').meta({ commandBearing: true, description: 'the ssh client, for an ssh target' }),
     // The built-in Claude Code executor instance; name the others that run Claude.
     executors: z.array(z.string().min(1)).min(1).default(['herdr-claude', 'claude']).meta({ description: EXECUTORS_DESCRIPTION }),
-    noLimits: z.boolean().optional().meta({ description: 'the account has no usage limits: when claude prints none, its jobs run on every lane, not on the soft lanes only. An Enterprise plan is read so without it' }),
   }),
   // claude runs on the machine, whichever it is: never a call to claude here. Whether it runs shows in the source's state.
   detect: async (_sys, o) => ({ status: 'available', detail: o.machine ? `claude on machine ${o.machine}` : 'claude on the only machine there is' }),
@@ -155,9 +151,6 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
         const account = { ...read, detail: { ...read.detail, machine: id } };
         // At start an attached machine is offline until its first probe: no reason to wait an interval.
         const retry = notReady(usage) ? { notReady: true } : {};
-        // Issue #2932: an account with no usage limits prints none — an Enterprise plan, or one the source is told has none —:
-        // a good read with no budget, so the machine is not capped as usage unknown.
-        if ('problem' in parsed && parsed.printedNone && (o.noLimits === true || hasNoLimits(read.detail.plan))) return { machineId: id, budgets: [], account, ...retry };
         if ('problem' in parsed) return { problem: parsed.problem, account, ...retry };
         return {
           machineId: id,
