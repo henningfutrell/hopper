@@ -81,6 +81,104 @@ describe('a wait release (issues #2303, #2326)', () => {
     expect(told).toContain('A person ended your wait');
   });
 
+  it('a machine whose only job is a released wait with its checkpoint is removed; woken, that job resumes on another machine (issue #2932)', async () => {
+    const checkpoint: CheckpointCapture = {
+      taken: { branch: 'hopper/deploy', base: 'b'.repeat(40), head: 'c'.repeat(40), commits: [], patch: gzipSync('diff'), session: gzipSync('{"session":true}') },
+    };
+    const repositories = [`${homedir()}/deploy`];
+    const seat = createFakeHerdrClient({ session: 'seat-s', turns: [WAIT], repositories, checkpoint });
+    const host = createFakeHerdrClient({ session: 'host-s', turns: [done('Deployed.')], repositories, checkpoint });
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const machines = (['seat', 'host'] as const).map((name) => ({ name, plugin: 'local', options: { lanes: 1, workTree: '~/deploy', session: `${name}-s` } }));
+    const a = t = await startTestApp({
+      dbPath: db.dbPath, plugins: { executors: EXECUTORS, machines },
+      seams: { herdr: seat, herdrSessions: { 'seat-s': seat, 'host-s': host }, herdrSession: async () => {}, levels: [] },
+    });
+    const admin = await a.login();
+    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained, ...(drained ? { reason: 'test' } : {}) }, { token: admin })).status).toBe(200);
+    const remove = async () => {
+      const version = ((await a.api('GET', '/api/plugins')).body as { config: { version: string } }).config.version;
+      return a.ui('/ui/api/plugins', { action: 'remove', role: 'machine-source', name: 'seat', version }, { token: admin });
+    };
+
+    await drain('host', true);
+    const waiter = await a.pull({}, { executor: 'herdr-claude', prompt: 'Deploy it', env: {} });
+    await a.waitForStatus(waiter.id, 'waiting_on', 8000);
+    // Its session still holds seat until the wait release has kept its checkpoint: the job waits in seat's pane.
+    expect(a.user().engine.jobsOnMachine('seat')).toEqual([waiter.id]);
+    await waitFor(async () => ((await a.job(waiter.id)).waitReleased?.checkpointAt ? true : undefined), { what: 'its checkpoint kept', timeoutMs: 20000 });
+
+    // Now it resumes on any machine: seat is removed, though the job still names it as where it waits.
+    expect(a.user().engine.jobsNeedingMachine('seat')).toEqual([]);
+    expect((await remove()).status).toBe(200);
+    await drain('host', false);
+    expect((await a.ui(`/ui/api/jobs/${waiter.id}/end-wait`, {}, { token: admin })).status).toBe(200);
+    await a.waitForStatus(waiter.id, 'finished', 8000);
+    expect((await a.events('types=job.started')).filter((e) => e.jobId === waiter.id).at(-1)!.laneId).toContain('host');
+  });
+
+  it('a released wait whose checkpoint was not kept holds its machine; the card lists it, and a person releases it so the machine is removed (issue #2932)', async () => {
+    const good: CheckpointCapture = {
+      taken: { branch: 'hopper/deploy', base: 'b'.repeat(40), head: 'c'.repeat(40), commits: [], patch: gzipSync('diff'), session: gzipSync('{"session":true}') },
+    };
+    const repositories = [`${homedir()}/deploy`];
+    const seatOptions: Parameters<typeof createFakeHerdrClient>[0] = { session: 'seat-s', turns: [WAIT], repositories, checkpoint: { none: 'the work tree is out of reach' } };
+    const seat = createFakeHerdrClient(seatOptions);
+    const host = createFakeHerdrClient({ session: 'host-s', turns: [done('Deployed.')], repositories, checkpoint: good });
+    const db = tempDbPath();
+    cleanup = db.cleanup;
+    const machines = (['seat', 'host'] as const).map((name) => ({ name, plugin: 'local', options: { lanes: 1, workTree: '~/deploy', session: `${name}-s` } }));
+    const a = t = await startTestApp({
+      dbPath: db.dbPath, plugins: { executors: EXECUTORS, machines },
+      seams: { herdr: seat, herdrSessions: { 'seat-s': seat, 'host-s': host }, herdrSession: async () => {}, levels: [] },
+    });
+    const admin = await a.login();
+    const drain = async (machineId: string, drained: boolean) => expect((await a.ui('/ui/api/machines/drain', { machineId, drained, ...(drained ? { reason: 'test' } : {}) }, { token: admin })).status).toBe(200);
+    const remove = async () => {
+      const version = ((await a.api('GET', '/api/plugins')).body as { config: { version: string } }).config.version;
+      return a.ui('/ui/api/plugins', { action: 'remove', role: 'machine-source', name: 'seat', version }, { token: admin });
+    };
+    const holding = async () => ((await a.api('GET', '/api/machines')).body as { machines: { id: string; holding?: unknown }[] }).machines.find((m) => m.id === 'seat')!.holding;
+
+    await drain('host', true);
+    const waiter = await a.pull({}, { executor: 'herdr-claude', prompt: 'Deploy it', env: {} });
+    const waiting = await a.waitForStatus(waiter.id, 'waiting_on', 8000);
+    // The hopper releases its wait, but takes no checkpoint: the job still needs seat.
+    const paneId = (waiting.executorState as { paneId: string }).paneId;
+    await waitFor(() => seat.closed.includes(paneId), { what: 'the waiting job\'s pane closed', timeoutMs: 20000 });
+    await waitFor(() => (seat.checkpoints.length > 0 ? true : undefined), { what: 'a checkpoint tried' });
+    expect((await a.job(waiter.id)).waitReleased?.checkpointAt).toBeUndefined();
+    expect(await holding()).toEqual([{ jobId: waiter.id, status: 'waiting_on', release: true }]);
+    const refused = await remove();
+    expect(refused.status).toBe(409);
+    expect(JSON.stringify(refused.body)).toContain(waiter.id);
+
+    // The checkpoint fails again: the release says why, and the job still holds seat.
+    const again = await a.ui(`/ui/api/jobs/${waiter.id}/release-wait`, {}, { token: admin });
+    expect(again.status).toBe(409);
+    expect(JSON.stringify(again.body)).toContain('the work tree is out of reach');
+
+    // Its checkpoint is kept now: the job no longer holds seat, and seat is removed.
+    seatOptions!.checkpoint = good;
+    const released = await a.ui(`/ui/api/jobs/${waiter.id}/release-wait`, {}, { token: admin });
+    expect(released.status).toBe(200);
+    expect((released.body as Job).waitReleased?.checkpointAt).toBeDefined();
+    expect(await holding()).toBeUndefined();
+    expect((await remove()).status).toBe(200);
+    // The hopper released it, so a person's release adds no event.
+    expect((await a.events('types=job.wait_released')).filter((e) => e.jobId === waiter.id)).toHaveLength(1);
+
+    // Woken, it resumes its session on host.
+    await drain('host', false);
+    expect((await a.ui(`/ui/api/jobs/${waiter.id}/end-wait`, {}, { token: admin })).status).toBe(200);
+    const back = await a.waitForStatus(waiter.id, 'finished', 8000);
+    expect(back.agentSession).toBe(waiting.agentSession);
+    expect((await a.events('types=job.started')).filter((e) => e.jobId === waiter.id).at(-1)!.laneId).toContain('host');
+    // A job not on its own wait is refused.
+    expect((await a.ui(`/ui/api/jobs/${waiter.id}/release-wait`, {}, { token: admin })).status).toBe(409);
+  });
+
   it('a gated outside wait with no check is released, and stays parked until a person ends it; then it resumes on another machine (issue #2338)', async () => {
     const GATED = { output: ['● The plan is ready.', '  HOPPER_WAITING', '  for: the production apply', '  on: outside: gated: the production apply'] };
     const checkpoint: CheckpointCapture = {

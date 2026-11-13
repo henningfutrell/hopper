@@ -232,7 +232,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   // Client targets on the hopper's client release (issue #545); ssh targets on the hopper's own herdr (issue #741).
   const keepClient = createClientReleaseKeeper({ release: o.clientRelease, logger, now: () => clock.now().getTime() }), keepHerdr = createOwnedHerdrKeeper({ logger });
   let executorNames = (): string[] => [];
-  let jobsOnMachine = (_name: string): string[] => [], ridesRestart = (_jobId: string): boolean => false; // the update swap (issue #2738)
+  let jobsOnMachine = (_name: string): string[] => [], jobsNeedingMachine = (_name: string): string[] => [], ridesRestart = (_jobId: string): boolean => false; // the update swap (issue #2738)
   let applyJobSources = (_built: BuiltJobSource[]): void => {};
   // How the hopper reaches each attached machine (issue #74: the machine-source context's `target`).
   const target = createTargetPool({
@@ -287,7 +287,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     derivedJobSources: (configured) => [...furtherAccountSources(configured, connectedAccounts.keys()), ...gitlabAccountSources(configured, store.settings.getGitLabAccount() !== undefined)], // a source for each further GitHub account, and the GitLab account's (issue #1448)
     executorInUse: (name) => notEnded().filter((j) => j.spec.executor === name).map((j) => j.id),
     attached: {
-      inUse: (name) => jobsOnMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),
+      inUse: (name) => jobsNeedingMachine(name), pinned: (name) => notEnded().filter((j) => j.spec.machineId === name).map((j) => j.id),
       sshAuth, ...(seams.resolveTarget ? { resolveTarget: seams.resolveTarget } : {}), ...(seams.hostKeyOffer ? { hostKeyOffer: seams.hostKeyOffer } : {}),
       publicKey: () => (secret('HOPPER_SSH_KEY_FILE') ? undefined : ownKey?.publicKey),
       startSession: seams.herdrSession ?? ((s) => startHerdrSession(s, cliEnv)),
@@ -378,7 +378,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     // A machine's lanes and a waiting job's machine are decider calls too (issue #688).
     jevFirst: minorDecisions, ...(o.jobMoves ? { jobMoves: { begin: (key: string, data: JobMoveData) => o.jobMoves!.begin(user.id, key, data) } } : {}), ...(o.jobRuns ? { jobRuns: { begin: (key: string, data: JobRunData) => o.jobRuns!.begin(user.id, key, data), open: (ids: readonly string[]) => o.jobRuns!.open(user.id, ids) } } : {}),
   });
-  jobsOnMachine = (name) => engine.jobsOnMachine(name); ridesRestart = (id) => { const j = store.jobs.get(id); return ridesClientRestart(j, j && executors.get(j.spec.executor)); };
+  jobsOnMachine = (name) => engine.jobsOnMachine(name); jobsNeedingMachine = (name) => engine.jobsNeedingMachine(name); ridesRestart = (id) => { const j = store.jobs.get(id); return ridesClientRestart(j, j && executors.get(j.spec.executor)); };
   const sync = createSourceSync({
     // The in-motion cycle (issue #985): the pull requests in motion every cycle, every followed one each intake sync interval.
     sources: jobSources(), host: engine.sourceHost, clock, jevFirst: minorDecisions, followEvery,
@@ -417,7 +417,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
     secretProblem: (sub) => webhookSecrets.problem(sub), vault, topologyDiscovery: { ...createTopologyDiscovery({ store, topology: proxy.githubProxy.topology, reader: seams.topologyReader ?? createTopologyReader(), secrets: () => vault.view().secrets, mint: (asset) => vault.mintForDiscovery(asset), overrides: () => readClusters(store.config) }), discover: () => o.discoverTopology?.() ?? Promise.resolve(undefined) }, // issues #558, #585, #586; topology discovery (issue #1781 part 3)
     machineLink: { hopperKey: hopperLink.publicKey, join: (j) => host.joinMachine(j), client: link,
-      tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined), leave: machineLeave({ userId: user.id, links: o.links, targets: () => host.targets(), jobsOn: (name) => jobsOnMachine(name), config: store.config, edit: (e) => host.edit(e) }) }, // issue #1284
+      tokenFor: (key) => (host.targets().some((m) => 'client' in m && m.client.key === key) ? linkToken(hopperLink.privateKey, key) : undefined), leave: machineLeave({ userId: user.id, links: o.links, targets: () => host.targets(), jobsOn: (name) => jobsNeedingMachine(name), config: store.config, edit: (e) => host.edit(e) }) }, // issue #1284
     async start() {
       if (started) return; started = true;
       search.start(); await engine.start(); // search first: every job event from here on marks its job for the index

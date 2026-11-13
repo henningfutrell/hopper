@@ -4,6 +4,17 @@
   "properties": {
     "reason": {
       "type": "string"
+    },
+    "by": {
+      "type": "string"
+    },
+    "via": {
+      "type": "string",
+      "enum": [
+        "ui",
+        "cli",
+        "api"
+      ]
     }
   },
   "required": [

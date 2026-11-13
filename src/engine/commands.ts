@@ -13,6 +13,7 @@ import type { Runner } from './runner.ts';
 import { recordEndWait, recordPollSeen, type WaitEnder } from './wait.ts';
 import type { WaitOn } from '../domain/wait-on.ts';
 import { recordNote } from './notes.ts';
+import { releaseWaitByPerson } from './wait-release.ts';
 import { acceptNewText, keepOriginal } from './item-snapshots.ts';
 import { recordApproveTrust, recordDeny, recordLiftQuarantine, recordQuarantine } from './quarantine.ts';
 import { recordCriticalFlag } from './critical-flag.ts';
@@ -63,6 +64,11 @@ export interface Commands {
    * Conflict unless it is `waiting_on`.
    */
   endWait(id: string, note?: string, by?: WaitEnder): Job;
+  /**
+   * A person releases a job's own wait to free its machine (issue #2932): its agent ends and its checkpoint is taken now;
+   * woken, it resumes on any machine with room. Conflict, with why, when it still needs its machine after.
+   */
+  releaseWait(id: string, acting: ActingPerson): Promise<Job>;
   /**
    * The GitHub proxy saw the job poll `on` (issue #1210), and answered `answer`: a job on a wait for its own command has its
    * wait typed as what it polls; an hour after the wait began, the hopper ends it with the answer. Nothing for another job.
@@ -191,6 +197,8 @@ export function createCommands(c: EngineContext, runner: Runner, cleanups: Clean
     },
 
     endWait: (id, note, by) => store.tx(() => recordEndWait(c, id, note, by)),
+
+    releaseWait: (id, acting) => releaseWaitByPerson(c, id, acting),
 
     pollSeen: (id, on, answer) => store.tx(() => recordPollSeen(c, id, on, answer)),
 

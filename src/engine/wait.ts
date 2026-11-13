@@ -14,13 +14,23 @@ import { EngineError } from './errors.ts';
 export const WAIT_RELEASED_NOTE = '[hopper] The hopper ended this session\'s agent while you waited, so a waiting job holds no memory. A background command you started then stopped with it.';
 
 /**
+ * Whether a job on its own wait whose agent ended resumes on any machine when woken (issue #2326): the checkpoint of its whole
+ * session is kept, and no machine pins it. Such a job does not need the machine it waited on (issue #2932).
+ */
+export function resumesElsewhere(job: Job): boolean {
+  const r = job.waitReleased;
+  return job.status === 'waiting_on' && r?.checkpointAt !== undefined && job.checkpoint?.session !== undefined && job.checkpoint.at === r.checkpointAt
+    && job.agentSession !== undefined && job.spec.machineId === undefined;
+}
+
+/**
  * A released job's wake (issue #2326): with a checkpoint of its whole session kept after its agent ended, it is not pinned to
  * its machine; picked up to resume elsewhere, as a parked job (issue #921), its claim restores the checkpoint on any machine
  * with room. Undefined: it resumes on its own machine.
  */
 function wakeElsewhere(c: Pick<EngineContext, 'clock'>, job: Job): Pick<Job, 'parked'> | undefined {
   const r = job.waitReleased;
-  if (!r?.checkpointAt || !job.checkpoint?.session || job.checkpoint.at !== r.checkpointAt || !job.agentSession || job.spec.machineId !== undefined) return undefined;
+  if (!r || !job.checkpoint || !resumesElsewhere(job)) return undefined;
   const elsewhere = { at: nowIso(c), checkpointAt: job.checkpoint.at, from: r.machineId };
   return { parked: { at: r.at, from: 'waiting_answer', auto: true, why: 'its agent ended on its own wait', elsewhere } };
 }

@@ -126,6 +126,18 @@ describe('attach-machine.sh', () => {
     expect(log()).not.toMatch(/systemctl/);
   });
 
+  // Issue #2936: under set -o pipefail, a reader that stops early makes its writer die of SIGPIPE when the writer is
+  // slow (a loaded CI runner), and the script ended with 141. A race no stand-in makes certain, so read the script:
+  // no awk or grep at the end of a pipe stops before its input ends.
+  it('reads every pipe to its end, so a slow writer never ends the script with SIGPIPE (issue #2936)', () => {
+    const piped = readFileSync(SCRIPT, 'utf8').split('\n').filter((l) => !l.trimStart().startsWith('#') && /\|\s*(awk|grep)\b/.test(l));
+    expect(piped.length).toBeGreaterThan(0);
+    for (const l of piped) {
+      expect(l, l).not.toMatch(/\|\s*awk\s+'[^']*\bexit\b/);
+      expect(l, l).not.toMatch(/\|\s*grep\s+-[a-zA-Z]*q/);
+    }
+  });
+
   it('warns when the user does not linger there (the session would stop at logout)', () => {
     const r = run(['laptop'], { FAKE_LINGER: 'no' });
     expect(r.status).toBe(0);

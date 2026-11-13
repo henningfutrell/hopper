@@ -44,11 +44,11 @@ describe('usage model', () => {
   });
 
   it('usage not known (issue #2919): never 0%, the soft lanes only', () => {
-    expect(laneEffectText(m({ cap: 1, band: 'unknown' }))).toBe('capped at 1 of 4 lanes (usage unknown: no reading)');
+    expect(laneEffectText(m({ cap: 1, band: 'unknown' }))).toBe('capped at 1 of 4 lanes (usage unknown: no reading; Soft lanes on Usage set this cap)');
     expect(usedText(m({ band: 'unknown', unknown: ['claude-m'] }))).toBe('usage unknown: claude-m has no reading');
     expect(usedText(m({ usedFrac: 0.42 }))).toBe('42% used');
     expect(executorEffectLines(m({ executors: [{ executor: 'herdr-claude', usedFrac: 0, cap: 1, band: 'unknown', unknown: ['claude-m'] }, { executor: 'command', usedFrac: 0, cap: 4, band: 'free' }] })))
-      .toEqual(['herdr-claude: usage unknown: claude-m has no reading, capped at 1 of 4 lanes (usage unknown: no reading)']);
+      .toEqual(['herdr-claude: usage unknown: claude-m has no reading, capped at 1 of 4 lanes (usage unknown: no reading; Soft lanes on Usage set this cap)']);
   });
 
   it('an executor whose budget limits it apart from the machine gets its own line; one the same as the machine gets none', () => {

@@ -3,9 +3,11 @@
 // and with `--job` one job's, GET /api/jobs/:id/tokens. The daemon checks the filters and answers 400 for a bad one.
 // `hopper usage budget [set …]` (part 3): the token budget, GET /api/token-budget, or an admin's POST /ui/api/token-budget;
 // with the day caps, in all and per repository (part 5). `usage model-routing` and `usage job-budget`: cli-operator-model-routing.ts.
+// `usage limits` and `usage no-limits` (issue #2932): cli-operator-usage-limits.ts.
 import { parseArgs } from 'node:util';
 import { usage, type Call } from './cli-operator-call.ts';
 import { MODEL_ROUTING_USAGE, modelRoutingCall } from './cli-operator-model-routing.ts';
+import { noLimitsCall, USAGE_LIMITS_USAGE, usageLimitsCall } from './cli-operator-usage-limits.ts';
 
 export const USAGE_USAGE = `  hopper usage tokens [--repo <owner/repo>] [--since <date>] [--by <group>] [--split <group>]
                                                      token use and estimated cost by job, issue, repo, machine, lane, account, model or day
@@ -17,7 +19,8 @@ export const USAGE_USAGE = `  hopper usage tokens [--repo <owner/repo>] [--since
   hopper usage budget set [--job-tokens <n>] [--job-cost <usd>] [--day-tokens <n>] [--day-cost <usd>]
                           [--repo-day-tokens <n>] [--repo-day-cost <usd>]
                                                      change it; 0 turns that cap off
-${MODEL_ROUTING_USAGE}`;
+${MODEL_ROUTING_USAGE}
+${USAGE_LIMITS_USAGE}`;
 
 const LINE = 'usage tokens [--repo <owner/repo>] [--since <date>] [--by <group>] [--split <group>] | usage tokens --job <id> | usage budget [set [--job-tokens <n>] [--job-cost <usd>] [--day-tokens <n>] [--day-cost <usd>] [--repo-day-tokens <n>] [--repo-day-cost <usd>]]';
 
@@ -32,6 +35,8 @@ const amount = (s: string | undefined): number | undefined => {
 
 export function usageCall(args: string[]): Call {
   if (args[0] === 'model-routing' || args[0] === 'job-budget') return modelRoutingCall(args);
+  if (args[0] === 'limits') return usageLimitsCall(args);
+  if (args[0] === 'no-limits') return noLimitsCall(args);
   let parsed;
   try {
     parsed = parseArgs({ args, allowPositionals: true, strict: true, options: { job: { type: 'string' }, repo: { type: 'string' }, since: { type: 'string' }, by: { type: 'string' }, split: { type: 'string' }, ...Object.fromEntries(CAPS.map(([o]) => [o, { type: 'string' as const }])) } });

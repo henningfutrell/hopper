@@ -10,6 +10,9 @@ import { readUsage } from './usage-read.ts';
 import { TERMINAL_STATUSES, highFirst, withPhase, isHighPriority, prioritySettingsOf, type Job, type Lane, type PreSort, type QueueGate, type MachineSnapshot, type HopperDisk, type MachineLeftovers, type SweepSettings, type UsageReading, type UsageReport, type UsageSourceReport } from '../domain/types.ts';
 import { policyOf, type EngineContext } from './context.ts';
 import { usageLimitsOf } from './usage-limits.ts';
+import { resumesElsewhere } from './wait.ts';
+import { personReleaseRefusal } from './wait-release.ts';
+import type { MachineHold } from '../domain/machines.ts';
 import { gateOf, isUnaccepted, preSort } from './queue-gate.ts';
 import { queueOrder } from './queue-order.ts';
 
@@ -55,7 +58,7 @@ export const ENDED_WINDOW_MS = 24 * 3_600_000;
  * `leftovers`: the leftovers there the sweep does not judge, for a person to keep or remove (issue #1116); absent, none listed.
  * `cleanupLeftovers`: the cleanup leftovers there (issue #2504 part 3), counted, with the bytes the disk measure says they hold (part 10); absent, none.
  */
-export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers; cleanupLeftovers?: MachineCleanupLeftovers };
+export type MachineView = MachineSnapshot & { lanes: Lane[]; usage: UsageReading[]; hopperDisk?: HopperDisk; leftovers?: MachineLeftovers; cleanupLeftovers?: MachineCleanupLeftovers; holding?: MachineHold[] };
 
 export interface Queries {
   getQueue(): QueueView;
@@ -69,6 +72,11 @@ export interface Queries {
   getUsageSources(): UsageSourceReport[];
   /** Jobs that need a machine: on a busy or draining lane there, or waiting for an answer in a pane there (`resumeOn`). */
   jobsOnMachine(machineId: string): string[];
+  /**
+   * The jobs on the machine that a removal or a rename of it must wait for (issue #2932): those of `jobsOnMachine` but a job
+   * on its own wait that resumes on any machine from its kept checkpoint (`resumesElsewhere`).
+   */
+  jobsNeedingMachine(machineId: string): string[];
 }
 
 /** The locked entries among `all`, by the work-item ledger's `ledger`: highest priority first, then oldest. */
@@ -80,6 +88,16 @@ function lockedOf(all: Job[], ledger: Pick<WorkItemLedger, 'get'>): Job[] {
 export function createQueries(c: EngineContext, diskOf: (machineId: string, sweep?: SweepSettings) => HopperDisk | undefined = () => undefined, leftoversOf: (machineId: string) => MachineLeftovers | undefined = () => undefined): Queries {
   const getUsage = async (): Promise<UsageReading[]> => (await Promise.all(c.usage().map((u) => u.poll()))).flat();
   const getUsageSources = (): UsageSourceReport[] => c.usage().map((u) => ({ name: u.name, ...u.state?.() }));
+  const onMachine = (machineId: string): string[] => {
+    const onLanes = c.store.lanes.list(machineId).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []));
+    const waitingPanes = c.store.jobs.list({ status: ['waiting_answer', 'waiting_on'] }).filter((j) => j.resumeOn === machineId).map((j) => j.id);
+    return [...new Set([...onLanes, ...waitingPanes])];
+  };
+  const needing = (machineId: string): string[] => onMachine(machineId).filter((id) => { const j = c.store.jobs.get(id); return !j || !resumesElsewhere(j); });
+  const holdsOf = (machineId: string): MachineHold[] => needing(machineId).flatMap((jobId) => {
+    const j = c.store.jobs.get(jobId);
+    return j ? [{ jobId, status: j.status, ...(personReleaseRefusal(c, j) === undefined ? { release: true as const } : {}) }] : [];
+  });
   return {
     getQueue() {
       // Each with its phase named (issue #548): the views show it.
@@ -117,7 +135,8 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string, swee
         const acceptance = acceptanceMap.get(m.id);
         // Issue #1467: the decider's own rule, so the card never says other than what it does.
         const held = credentialHeld(m.infraCredentials, acceptance, strict);
-        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(hopperDisk ? { hopperDisk } : {}), ...(leftovers ? { leftovers } : {}), ...(cleanupLeftovers ? { cleanupLeftovers } : {}), ...(acceptance ? { credentialAcceptance: acceptance } : {}), ...(held ? { credentialHeld: true } : {}) };
+        const holding = holdsOf(m.id);
+        return { ...m, lanes: lanes.filter((l) => l.machineId === m.id), usage: readingsOf(m.id, usage), ...(holding.length ? { holding } : {}), ...(hopperDisk ? { hopperDisk } : {}), ...(leftovers ? { leftovers } : {}), ...(cleanupLeftovers ? { cleanupLeftovers } : {}), ...(acceptance ? { credentialAcceptance: acceptance } : {}), ...(held ? { credentialHeld: true } : {}) };
       });
     },
     async getLiveUse(jobId) {
@@ -140,10 +159,7 @@ export function createQueries(c: EngineContext, diskOf: (machineId: string, swee
         }),
       };
     },
-    jobsOnMachine(machineId) {
-      const onLanes = c.store.lanes.list(machineId).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []));
-      const waitingPanes = c.store.jobs.list({ status: ['waiting_answer', 'waiting_on'] }).filter((j) => j.resumeOn === machineId).map((j) => j.id);
-      return [...new Set([...onLanes, ...waitingPanes])];
-    },
+    jobsOnMachine: onMachine,
+    jobsNeedingMachine: needing,
   };
 }

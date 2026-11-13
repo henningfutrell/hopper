@@ -1962,8 +1962,10 @@ after a job that finished without shipping stayed stuck, skipped without a word.
 source, nor for a sync to offer its item again: `POST /ui/api/jobs/:id/rerun` (operator; the Ended
 panel's Run again button) asks the sync loop (`SourceRegistry.rerun`) to queue the item again now. Only
 the newest job of its key, status `failed`, `finished` (a result that is not wanted), `rejected` or `cancelled`
-(issue #1352), whose end was reported (`finalReported`), of a running source that implements `JobSource.rerun` —
-else 409; unknown → 404. **An item belongs to its repository and issue, not to the source that first saw it**
+(issue #1352), of a running source that implements `JobSource.rerun` — else 409; unknown → 404. Its end must be
+reported (`finalReported`): **an end not reported yet is reported first** (issue #2932), on the job's report chain, so Run
+again and Rework just after a Cancel do not wait for the next sync; only when the source still does not take that report is
+the act refused (409, or `job.give_back_failed` after a person's answer), "its end is not reported to its source yet". **An item belongs to its repository and issue, not to the source that first saw it**
 (issue #1352): when a job's own source no longer runs (its instance was removed, as the polling `github-account`
 was), a running source that **adopts** it (`JobSource.adopts`: the job's repository is one of its job repositories)
 takes the item back in its place, and the new job is that source's. Its end need not be reported: the removed source
@@ -6485,6 +6487,10 @@ holds no credential. Prior art: `a status-bar script`.
   of its usage service failed, a 429 as a rule, and it holds no snapshot) is `usage unavailable: claude printed no
   usage limits (…)`. Since 2.1.3xx the text has no `Current session` line while no session runs, and ends with a
   contribution report (`What's contributing to your usage?`); the window lines are as before.
+- **An account with no usage limits** (issue #2932): an Enterprise plan prints the same text, with no window lines, at
+  every read. When the account's plan (`subscriptionType`) names `enterprise`, or the source's option `noLimits` is on,
+  that text is a good read with no budget: no reading and no problem, so the source is no unread usage source and the
+  machine's lanes are not capped as `unknown`. A failed read (`is_error`, an exit, not JSON) is still a problem.
 - `claude auth status --json` (same run, same probe dir) gives the **account**: email, plan
   (`subscriptionType`), organization (`orgName`), sign-in method. Ids and anything else are dropped.
 
@@ -6701,7 +6707,19 @@ architecture (`attachedMachines:`, its own schema, its own edit route) — again
   or client target is still attached with its script and `hopper config edit plugins.yaml`.
 - **Removing a machine** (`remove`, role `machine-source`) is refused (409, naming the jobs) while a
   lane there is busy or draining or a job waits in a pane there, as the old machine edit was. An
-  executor named by a machine's `executors` cannot be removed ("machine <name>").
+  executor named by a machine's `executors` cannot be removed ("machine <name>"). A job on its own wait whose
+  agent ended (a wait release) with the checkpoint of its whole session kept does not count (issue #2932,
+  `jobsNeedingMachine`, `resumesElsewhere` in `src/engine/wait.ts`): woken, it resumes on any machine. The same holds
+  for a rename and for a pool client's leave.
+  The jobs a removal waits for are listed on the machine's card (issue #2932 part 2): each machine of `GET /api/machines`
+  carries `holding` (`jobId`, `status`, `release`), and the card links each job. A job on its own wait that holds the
+  machine — its agent session in a pane there, or a wait release whose checkpoint was not kept — has **Release the wait**
+  (`POST /ui/api/jobs/:id/release-wait`, `hopper job release-wait <id>`, `releaseWaitByPerson` in
+  `src/engine/wait-release.ts`): as the Decision's wait release, its pane and agent end and its checkpoint is taken now;
+  kept, the job no longer holds the machine. `job.wait_released` with `by` and `via`, none when the hopper released it
+  already. Refused (409, with why) for a wait on its own command (ending its pane ends the command), a job pinned to a
+  machine, one with no agent session, an executor that cannot park, or a checkpoint not kept. A job on a lane, or waiting
+  for an answer in a pane, is parked or cancelled on its own page. The refusal of a removal or rename names the card.
 - **A retired machine's pinned jobs** (issue #919). The machine is then **retired**: gone from the plugins
   config, and no machine source lists it. A waiting job (queued or held) pinned to it — by hand, by a routing
   rule, or to resume there (`resumeOn`) — would wait for it for good. The next scheduler pass, before the
@@ -14056,6 +14074,14 @@ The soft and hard limits are a setting of the user, edited on the Usage view, no
   fields edit the same draft. Nothing is stored until Save. A viewer sees the graph without handles.
 - **Gauges follow the limits.** Every usage gauge's marks and colours are the limits the decider uses now, not
   fixed 70% / 95%; before the usage report has loaded, a gauge has no marks and one neutral colour.
+- **From the command line** (issue #2932). `hopper usage limits` prints the limits and each machine's lane cap, band and
+  the sources it has no reading of. `hopper usage limits set [--soft F] [--hard F] [--soft-lanes N]` posts the route
+  above, the limits it does not name as they are now. With `--machine M` it sets that machine's own usage limits
+  (issue #1860) as a plugins edit of its options, starting from the user's soft and hard limits when it has none;
+  `limits clear --machine M` takes them off. `hopper usage no-limits <usage source> on|off` sets the source's
+  `noLimits` option ("An account with no usage limits"). `src/cli-operator-usage-limits.ts`,
+  `test/cli/usage-limits.test.ts`. On the Usage page, an admin turns a source's **No usage limits** on or off on its
+  panel, one plugins edit of its options (`ui/src/views/usage-no-limits.tsx`, `test/ui/usage-no-limits.test.ts`).
 
 **Verification:** `test/integration/usage-limits.test.ts` (the real daemon: defaults from the environment; an
 admin sets limits, the next Decision uses them and holds a job at the new hard limit, raising them starts it;
