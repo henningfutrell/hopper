@@ -123,7 +123,9 @@ describe('API tokens (issue #718)', () => {
     // Logout with a token ends that token.
     expect((await agent(a, 'POST', '/ui/api/logout', viewer, {})).status).toBe(200);
     expect((await agent(a, 'GET', '/api/queue', viewer)).status).toBe(401);
-  });
+    // One request per POST /ui/api/* route, one after the other (over 220): on a loaded CI runner it took more than 15 s
+    // (issue #2953), and each new route adds to it, so it gets more than the 45 s default (issue #2948), as api-reference.
+  }, 60_000);
 
   it('a token acts with the role it was minted with, lives the admin\'s lifetime at most, and never mints a token', async () => {
     const { a } = await boot();
