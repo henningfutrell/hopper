@@ -20,8 +20,9 @@ export default defineConfig({
     pool: 'forks',
     // One run root as TMPDIR, and teardown of all the run left (test/support/run.ts, first: its
     // teardown runs last); one Postgres for the run (test/support/postgres.ts); isolated HOME and
-    // loopback-only fetch in every worker (test/support/isolate.ts).
+    // loopback-only fetch in every worker (test/support/isolate.ts); 45 s for each test under test/integration/
+    // (test/support/integration-timeout.ts, issue #2948).
     globalSetup: ['test/support/run.ts', 'test/support/postgres.ts'],
-    setupFiles: ['test/support/isolate.ts'],
+    setupFiles: ['test/support/isolate.ts', 'test/support/integration-timeout.ts'],
   },
 });
