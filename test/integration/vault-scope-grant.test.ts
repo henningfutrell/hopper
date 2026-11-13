@@ -72,9 +72,7 @@ async function running(a: TestApp, repo: string, ms: number): Promise<Job> {
 
 const vault = async (a: TestApp): Promise<View> => (await a.api<View>('GET', '/api/vault')).body;
 
-// Each test boots a hopper, joins a box and runs jobs one after another: 1-7 s here, about four times as long on a loaded
-// CI runner, so past the 15 s default (issue #2928).
-describe('scope grants', { timeout: 45_000 }, () => {
+describe('scope grants', () => {
   it('a second job that asks for an approved scope gets the vault with no person', async () => {
     const { a, session, dir } = await boot();
     const first = await running(a, REPO, 2500);
