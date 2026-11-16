@@ -57,6 +57,8 @@ async function followed(gh: FakeGitHub, app: TestApp) {
   await app.sync();
   for (const issue of issues) await app.waitForStatus((await jobFor(app, issue.url)).id, 'finished');
   for (const issue of issues) await waitFor(() => gh.issue(REPO, issue.number).labels.includes('hopper:pr-ready'), { what: 'hopper:pr-ready' });
+  // The label goes on during the final report, before the report is kept: a sync before that follows the job not yet.
+  for (const issue of issues) await waitFor(async () => (await jobFor(app, issue.url)).sourceState?.sync?.finalReported === true, { what: 'final report kept' });
   return issues;
 }
 
