@@ -2,8 +2,8 @@
 // the user's usage limits and each machine's lane cap and band —; `limits set` changes the soft and hard limits and the soft
 // lanes, keeping those it does not name (an admin's POST /ui/api/usage/limits); with `--machine` it sets that machine's own
 // usage limits (issue #1860), and `limits clear --machine` takes them off, each a plugins edit of the machine's options
-// (POST /ui/api/plugins). `hopper usage no-limits <source> on|off` sets a usage source's `noLimits` option: its account has
-// no usage limits, so a read that prints none is no limit. `hopper usage day-budget <source> <usd>|off` sets its `dayCostUsd`, the
+// (POST /ui/api/plugins). `hopper usage meter <source> auto|live|analytics` sets a usage source's `meter` option (issue #2966):
+// how its account is metered; auto, the default, leaves its options. `hopper usage day-budget <source> <usd>|off` sets its `dayCostUsd`, the
 // account day budget (issue #2966). The daemon checks every value.
 import { parseArgs } from 'node:util';
 import { OperatorRefusal, usage, type Call, type Getter } from './cli-operator-call.ts';
@@ -13,13 +13,16 @@ export const USAGE_LIMITS_USAGE = `  hopper usage limits                        
   hopper usage limits set [--machine <machine>] [--soft <0..1>] [--hard <0..1>] [--soft-lanes <n>]
                                                      change them, or one machine's own; the limits not named stay
   hopper usage limits clear --machine <machine>      the machine goes by the user's usage limits again
-  hopper usage no-limits <usage source> on|off       its account has no usage limits (an Enterprise plan is read so by
-                                                     itself): a read that prints none lets its jobs run on every lane
+  hopper usage meter <usage source> auto|live|analytics
+                                                     how its account is metered: live reads its usage windows; analytics
+                                                     reads it as having no usage limits and shows its daily usage; auto:
+                                                     analytics for an Enterprise plan, else live
   hopper usage day-budget <usage source> <usd>|off   its account day budget: at the estimated spend of one UTC day, its
                                                      jobs run on the soft lanes only`;
 
 const LINE = 'usage limits [set [--machine <machine>] [--soft <0..1>] [--hard <0..1>] [--soft-lanes <n>] | clear --machine <machine>]';
-const NO_LIMITS_LINE = 'usage no-limits <usage source> on|off';
+const METER_LINE = 'usage meter <usage source> auto|live|analytics';
+const METERS = new Set(['auto', 'live', 'analytics']);
 const DAY_BUDGET_LINE = 'usage day-budget <usage source> <usd>|off';
 
 interface Configured { role: string; instance: { name: string; plugin: string; options?: Record<string, unknown> } }
@@ -96,12 +99,13 @@ export function usageLimitsCall(args: string[]): Call {
   };
 }
 
-export function noLimitsCall(args: string[]): Call {
-  const [, source, onOff, ...extra] = args;
-  if (!source || source.startsWith('-') || (onOff !== 'on' && onOff !== 'off') || extra.length > 0) throw usage(NO_LIMITS_LINE);
+/** `usage meter <source> auto|live|analytics` (issue #2966): the source's `meter`; auto, the default, takes it out of its options. */
+export function meterCall(args: string[]): Call {
+  const [, source, meter, ...extra] = args;
+  if (!source || source.startsWith('-') || meter === undefined || !METERS.has(meter) || extra.length > 0) throw usage(METER_LINE);
   return {
     role: 'admin', path: '/ui/api/plugins',
-    post: optionsEdit('usage-source', source, 'usage source', async ({ noLimits: _, ...rest }) => (onOff === 'on' ? { ...rest, noLimits: true } : rest)),
+    post: optionsEdit('usage-source', source, 'usage source', async ({ meter: _, ...rest }) => (meter === 'auto' ? rest : { ...rest, meter })),
   };
 }
 

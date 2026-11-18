@@ -71,7 +71,7 @@ import { updateRoutes } from './update.ts';
 import { masterKeyRoutes, type MasterKeyStatus } from './master-key.ts';
 import type { RateLimiterControl } from '../github-limiter/settings.ts';
 import { instanceRoutes } from './instance.ts';
-import { usageHistoryRoutes } from './usage-history.ts';
+import { usageHistoryRoutes } from './usage-history.ts'; import { dailyUsageRoutes } from './daily-usage.ts';
 import { machineHistoryRoutes } from './machine-history.ts';
 import { stackResourceRoutes } from './stack-resources.ts';
 import type { StackResourcesReader } from '../stack-resources/index.ts';
@@ -249,7 +249,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   const instanceAdmin = createInstanceAdmin({ signIn: o.signIn, instance: o.instance });
   userRoutes(app, { tenants: o.tenants, instanceAdmin });
   instanceRoutes(app, { tenants: o.tenants, clock: o.clock, instanceAdmin });
-  usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin });
+  usageHistoryRoutes(app, { ...tenant, tenants: o.tenants, clock: o.clock, instanceAdmin }); dailyUsageRoutes(app, { ...tenant, clock: o.clock }); // the daily usage trend (issue #2966)
   machineHistoryRoutes(app, { ...tenant, clock: o.clock });
   stackResourceRoutes(app, { stackResources: o.stackResources, history: o.instance.stackHistory, instanceAdmin, clock: o.clock, process: loop.reading, telemetry: telemetrySummary.read });
   componentWatcherReadRoutes(app, { ...tenant, instanceAdmin }); // Component watchers (issue #1077): the stack's only for the instance admin

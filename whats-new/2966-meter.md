@@ -1,0 +1,1 @@
+- On the Usage page, an admin can now pick how each Claude account is metered: by its usage limits, or by spend for an Enterprise seat. The hopper picks it by itself from the plan, and shows the daily usage of an Enterprise seat without more setup than the analytics key.

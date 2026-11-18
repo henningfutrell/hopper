@@ -11,6 +11,8 @@
 //   Scenario: a source with no key shows the not-configured state and its steps; an admin sets the key there
 //   Scenario: an admin removes a key that is set
 //   Scenario: a viewer sees the key's status and no form
+//   Scenario: the model puts the kept days on the 30 days up to the newest, stacked by account (part 4)
+//   Scenario: the panel shows the trend of the kept days (GET /api/usage/daily?days=30), and none when no day is kept
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +20,11 @@ import type { AnalyticsKeyView, DailyUsage } from '../../src/domain/usage.ts';
 
 // Browser code, type-checked by ui/tsconfig.json: imported by path.
 const MODEL = '../../ui/src/model/daily-usage.ts';
-interface DailyModel { dayFacts(d: DailyUsage): { cost: string; tokens: string; work: string } }
+interface TrendDay { day: string; tokens: number; costUsd: number; parts: { key: string; tokens: number; costUsd: number }[] }
+interface DailyModel {
+  dayFacts(d: DailyUsage): { cost: string; tokens: string; work: string };
+  dailyTrend(rows: DailyUsage[], days: number, to: string): { days: TrendDay[]; stacks: { key: string; color: string }[] };
+}
 
 const SEAT = 'seat@example.com';
 const DAY: DailyUsage = {
@@ -37,6 +43,19 @@ describe('one account\'s day (issue #2966)', () => {
   });
 });
 
+describe('the trend of daily usage (issue #2966 part 4)', () => {
+  it('puts every day up to the newest, one with no row too, stacked by account; tokens and cost per day', async () => {
+    const { dailyTrend } = (await import(MODEL)) as DailyModel;
+    const other = { ...DAY, account: 'two@example.com', costCents: 66, tokens: { input: 1, output: 1, cacheRead: 0, cacheCreation: 0 } };
+    const t = dailyTrend([{ ...DAY, date: '2026-11-15' }, DAY, { ...other, date: '2026-11-17' }], 3, '2026-11-17');
+    expect(t.days.map((d) => d.day)).toEqual(['2026-11-15', '2026-11-16', '2026-11-17']);
+    expect(t.stacks.map((s) => s.key)).toEqual([SEAT, 'two@example.com']);
+    expect(t.days[1]).toEqual({ day: '2026-11-16', tokens: 0, costUsd: 0, parts: [] });
+    expect(t.days[2]).toEqual({ day: '2026-11-17', tokens: 4002, costUsd: 12.34 + 0.66, parts: [{ key: SEAT, tokens: 4000, costUsd: 12.34 }, { key: 'two@example.com', tokens: 2, costUsd: 0.66 }] });
+  });
+});
+
+let trend: () => unknown = () => ({ days: 30, from: '2026-10-19', to: '2026-11-17', daily: [] });
 let calls: { method: string; path: string; body?: unknown }[] = [];
 let usage: () => unknown = () => ({});
 let key: AnalyticsKeyView = { set: false };
@@ -50,10 +69,12 @@ function fakeDaemon() {
     '/api/webhooks': () => ({ subscriptions: [] }), '/api/webhooks/deliveries': () => ({ deliveries: [] }),
     '/api/questions': () => ({ questions: [] }), '/api/sources': () => ({ sources: [] }), '/api/usage': () => usage(), '/api/accounts': () => ({ accounts: [] }),
     '/api/credential-check': () => ({ strict: false }), '/api/claude-analytics-key': () => key,
+    '/api/usage/daily': () => trend(),
   };
   const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   return vi.fn(async (input: string, init: RequestInit = {}) => {
     const path = String(input).split('?')[0]!;
+    if (path === '/api/usage/daily') calls.push({ method: 'GET', path: String(input) });
     const body = init.body ? JSON.parse(String(init.body)) as { action: string; value?: string } : undefined;
     calls.push({ method: init.method ?? 'GET', path, ...(body ? { body } : {}) });
     if (init.method === 'POST' && path === '/ui/api/claude-analytics-key') {
@@ -108,6 +129,7 @@ afterEach(() => {
   act(() => root?.unmount());
   root = undefined;
   key = { set: false };
+  trend = () => ({ days: 30, from: '2026-10-19', to: '2026-11-17', daily: [] });
   vi.unstubAllGlobals();
 });
 
@@ -156,5 +178,19 @@ describe('the Usage page of the claude-analytics source (issue #2966)', () => {
     await vi.waitFor(() => expect(text('usage-analytics-key-status')).toBe('Not set'));
     expect(keyInput()).toBeNull();
     expect(button('Save')).toBeUndefined();
+  });
+
+  it('shows the trend of the kept days, read for 30 days, and says when no day is kept yet', async () => {
+    trend = () => ({ days: 30, from: '2026-10-19', to: '2026-11-17', daily: [{ ...DAY, date: '2026-11-16' }, DAY] });
+    await boot({ daily: { date: '2026-11-17', days: [DAY], unmatched: [] } }, '[data-slot="usage-daily-trend"]');
+    expect(calls.some((c) => c.path === '/api/usage/daily?days=30')).toBe(true);
+    await vi.waitFor(() => expect(text('usage-daily-trend')).toMatch(/30 days/));
+    expect(text('usage-daily-trend')).toContain('$24.68');
+    expect(text('usage-daily-trend')).toContain(SEAT);
+  });
+
+  it('says no day is kept yet when the trend is empty', async () => {
+    await boot({ notConfigured: NOT_CONFIGURED }, '[data-slot="usage-daily-trend"]');
+    await vi.waitFor(() => expect(text('usage-daily-trend')).toMatch(/no day kept yet/i));
   });
 });

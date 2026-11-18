@@ -1,0 +1,1 @@
+- The Usage page now shows the last 30 days of each Claude Enterprise seat's cost and tokens as a chart, not only yesterday.

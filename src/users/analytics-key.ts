@@ -4,7 +4,8 @@
 // keeps. Only the hopper opens the key, in its own process: never a job, a machine or a box. An admin sets the key on Usage
 // or by the operator CLI (`POST /ui/api/claude-analytics-key`): it is checked once against the Analytics API, at the
 // `baseUrl` of the user's `claude-analytics` source (else the Claude API), before it is kept; one that fails is not kept.
-import type { Account, AnalyticsKeyView } from '../domain/types.ts';
+import { dailyUsageKeepFrom, type DailyUsageRepository } from '../domain/daily-usage.ts';
+import type { Account, AnalyticsKeyView, DailyUsageRead } from '../domain/types.ts';
 import type { Clock, ConfigRecords, UsageSource } from '../domain/ports.ts';
 import { PLUGINS, loadPluginsConfig } from '../plugins/plugins-config.ts';
 import { ANALYTICS_BASE_URL, checkAnalyticsKey } from '../plugins/usage-source/claude-analytics/index.ts';
@@ -16,8 +17,10 @@ import type { SystemChanger, SystemResult, SystemSecrets } from '../vault/system
 const PURPOSE = 'the claude-analytics usage source';
 const NAME = 'claude-analytics-key';
 
-export function analyticsContext(system: Pick<SystemSecrets, 'open'>, sources: () => readonly UsageSource[]): AnalyticsContext {
+export function analyticsContext(system: Pick<SystemSecrets, 'open'>, sources: () => readonly UsageSource[], kept?: { store: Pick<DailyUsageRepository, 'keep'>; clock: Clock }): AnalyticsContext {
   return {
+    // Each read's days, for the trend (issue #2966 part 4); rows older than the days kept go.
+    ...(kept ? { keep: (read: DailyUsageRead) => kept.store.keep(read.days, dailyUsageKeepFrom(kept.clock.now())) } : {}),
     key: () => system.open(NAME, PURPOSE),
     // An account read signed in, with an email: one per email, the first source's.
     accounts: () => {

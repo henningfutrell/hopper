@@ -3,7 +3,7 @@
 // `intervalSeconds`; `poll` answers from the last good read and never waits; a budget past its
 // reset is left out; readings older than 3 intervals are stale. Each reading names the instance,
 // the machine it is of (if any, issue #139) and the executors whose jobs it limits.
-import type { Account, DailyUsageRead, ToolSignIn, UsageReading, UsageSourceState } from '../../domain/types.ts';
+import type { Account, DailyUsageRead, ResolvedMeter, ToolSignIn, UsageReading, UsageSourceState } from '../../domain/types.ts';
 import type { UsageSource } from '../../domain/ports.ts';
 
 /** One budget as a read finds it; the source, executors and time are added here. */
@@ -15,7 +15,7 @@ export type Budget = Pick<UsageReading, 'used' | 'limit' | 'unit' | 'window' | '
  * `notConfigured`: what a person must set first (issue #2966), a state and not a problem. `daily`: the daily usage read.
  */
 export type Read = ({ budgets: Budget[]; machineId?: string; daily?: DailyUsageRead } | { problem: string } | { notConfigured: string })
-  & { account?: Account; notReady?: boolean };
+  & { account?: Account; notReady?: boolean; meter?: ResolvedMeter };
 
 export interface PolledContext {
   clock: { now(): Date };
@@ -34,6 +34,8 @@ export function createPolledUsageSource(
     intervalSeconds: number; machineId?: string; executors?: string[]; read(signal: AbortSignal): Promise<Read>;
     /** Its account day budget (issue #2966), in US dollars; absent or 0: off. */
     dayCostUsd?: number;
+    /** The meter it was set to (issue #2966), known before any read; absent: each read resolves it. */
+    meter?: ResolvedMeter;
     /** An informational source (issue #2966): each reading is informational, and with none its usage is not unknown. */
     informational?: true;
     /** Its tool's sign-in on its machine (issue #1128): once one goes through, the account is read again at once. */
@@ -51,6 +53,8 @@ export function createPolledUsageSource(
   let lastError: string | undefined;
   let account: Account | undefined;
   let accountReadAt: Date | undefined;
+  /** The meter the last read that resolved one resolved to (issue #2966). */
+  let meter = o.meter;
   let running: Promise<void> | undefined;
   let retryAt: number | undefined;
   let stopped = false;
@@ -77,6 +81,7 @@ export function createPolledUsageSource(
     if ('notConfigured' in r) { budgets = []; daily = undefined; refreshedAt = undefined; }
     notConfigured = 'notConfigured' in r ? r.notConfigured : undefined;
     note('problem' in r ? r.problem : undefined);
+    if (r.meter) meter = r.meter;
     account = r.account;
     accountReadAt = r.account ? ctx.clock.now() : undefined;
   };
@@ -127,6 +132,7 @@ export function createPolledUsageSource(
         ...(o.executors ? { executors: [...o.executors] } : {}),
         ...(o.signIn ? { signIn: true as const } : {}),
         ...(o.dayCostUsd ? { dayCostUsd: o.dayCostUsd } : {}),
+        ...(meter ? { meter } : {}),
       };
     },
     ...(o.signInTarget ? { signInTarget: o.signInTarget } : {}),
