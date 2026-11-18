@@ -86,7 +86,5 @@ describe('hopper usage limits (issue #2932)', () => {
     expect(() => usageCall(['limits', 'set', '--soft', '70%'])).toThrow(/usage: hopper usage limits/);
     expect(() => usageCall(['limits', 'clear'])).toThrow(/usage: hopper usage limits/);
     expect(() => usageCall(['limits', 'clear', '--machine', 'l2', '--soft', '0.5'])).toThrow(/usage: hopper usage limits/);
-    expect(() => usageCall(['no-limits', 'claude-l4'])).toThrow(/usage: hopper usage no-limits/);
-    expect(() => usageCall(['no-limits', 'claude-l4', 'maybe'])).toThrow(/usage: hopper usage no-limits/);
   });
 });

@@ -148,7 +148,7 @@ describe('claude-plan plugin', () => {
   it('detection never calls claude nor looks for it: claude runs on the machine the source names, this one too (#174)', async () => {
     let ran = false;
     const kit = fakeKit({ which: async () => undefined, version: async () => { ran = true; return 'x'; }, succeeds: async () => { ran = true; return true; } });
-    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', executors: ['herdr-claude'] }))
+    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', executors: ['herdr-claude'], meter: 'auto' }))
       .toEqual({ status: 'available', detail: 'claude on machine laptop' });
     expect(ran).toBe(false);
   });
@@ -206,34 +206,19 @@ describe('claude-plan plugin', () => {
     await waitFor(() => (t.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(t.state!().problem).toBe('usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)');
 
-    // Issue #2932: an account with no usage limits (an Enterprise plan) reads as no limit: no problem. The meter (issue #2966):
-    // auto resolves an Enterprise plan to analytics, and the state says so.
+    // Issue #2932: an Enterprise plan reads as no limit, no problem: auto resolves it to the analytics meter (issue #2966).
     writeFileSync(join(control, 'plan'), 'enterprise');
-    const e = await create();
-    await waitFor(() => e.state!().refreshedAt, { what: 'the first read' });
-    expect(e.state!().problem).toBeUndefined();
-    expect(e.state!().meter).toBe('analytics');
-    expect(await e.poll()).toEqual([]);
-    // live: the same text is usage unknown, Enterprise plan or not.
-    const l = await create({ meter: 'live' });
+    const e = await create(); await waitFor(() => e.state!().refreshedAt, { what: 'the first read' });
+    expect([e.state!().problem, e.state!().meter, await e.poll()]).toEqual([undefined, 'analytics', []]);
+    const l = await create({ meter: 'live' }); // live: the same text is usage unknown, Enterprise plan or not
     await waitFor(() => (l.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
-    expect(l.state!().problem).toMatch(/^usage unavailable: claude printed no usage limits/);
-    expect(l.state!().meter).toBe('live');
-    // analytics: an account of another plan reads as having no limits.
-    writeFileSync(join(control, 'plan'), 'max');
-    const n = await create({ meter: 'analytics' });
-    expect(n.state!().meter).toBe('analytics');
+    expect(l.state!()).toMatchObject({ problem: expect.stringMatching(/^usage unavailable: claude printed no usage limits/), meter: 'live' });
+    writeFileSync(join(control, 'plan'), 'max'); // analytics: another plan reads as having no limits
+    const n = await create({ meter: 'analytics' }); expect(n.state!().meter).toBe('analytics'); // set: known before any read
     await waitFor(() => n.state!().refreshedAt, { what: 'the first read' });
-    expect(n.state!().problem).toBeUndefined();
-    expect(await n.poll()).toEqual([]);
-    // auto, a plan with limits: live.
-    const a = await create();
-    await waitFor(() => (a.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
-    expect(a.state!().meter).toBe('live');
-    // analytics still says a failed read: only "no usage limits printed" reads as none.
-    writeFileSync(join(control, 'mode'), 'is-error');
-    const f = await create({ meter: 'analytics' });
-    await waitFor(() => (f.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect([n.state!().problem, await n.poll()]).toEqual([undefined, []]);
+    writeFileSync(join(control, 'mode'), 'is-error'); // analytics still says a failed read: only "none printed" is no limit
+    const f = await create({ meter: 'analytics' }); await waitFor(() => (f.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(f.state!().problem).toBe('usage unavailable: Usage is not available right now');
 
     writeFileSync(join(control, 'mode'), 'logged-out');

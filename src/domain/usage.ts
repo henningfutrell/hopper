@@ -109,7 +109,15 @@ export interface UsageSourceState {
   notConfigured?: string;
   /** Its last read of daily usage (issue #2966, `claude-analytics`): absent for every other source. */
   daily?: DailyUsageRead;
+  /**
+   * The meter its account resolved to (issue #2966, glossary "Meter", claude-plan's option `meter`): `analytics`, an account
+   * with no usage limits, metered by spend; `live`, its usage windows. Absent: not resolved yet, or a source with no meter.
+   */
+  meter?: ResolvedMeter;
 }
+
+/** What a usage source's meter resolves to (issue #2966): its `auto` is resolved by the account's plan. */
+export type ResolvedMeter = 'live' | 'analytics';
 
 /**
  * One Claude account's Claude Code use on one UTC day, as the Claude Enterprise Analytics API gives it (issue #2966, glossary

@@ -28,7 +28,14 @@ import { createPolledUsageSource, EXECUTORS_DESCRIPTION } from '../polled.ts';
 import { runCli, type CliRun } from '../run.ts';
 import { parseAuthStatus, parseUsageEnvelope } from './parse.ts';
 
-export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine?: string; sshBin: string; executors: string[]; noLimits?: boolean; dayCostUsd?: number }
+export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine?: string; sshBin: string; executors: string[]; meter: Meter; dayCostUsd?: number }
+
+/**
+ * How the account is metered (issue #2966, glossary "Meter"): `live` reads its session and week windows from `/usage`;
+ * `analytics` reads it as having no usage limits (metered by spend: the account day budget and the daily usage gate it);
+ * `auto` resolves an Enterprise plan to `analytics`, any other plan to `live`.
+ */
+export type Meter = 'auto' | 'live' | 'analytics';
 
 /** Each claude call is killed after this long. */
 const TIMEOUT_MS = 45_000;
@@ -56,7 +63,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
     sshBin: z.string().min(1).default('ssh').meta({ commandBearing: true, description: 'the ssh client, for an ssh target' }),
     // The built-in Claude Code executor instance; name the others that run Claude.
     executors: z.array(z.string().min(1)).min(1).default(['herdr-claude', 'claude']).meta({ description: EXECUTORS_DESCRIPTION }),
-    noLimits: z.boolean().optional().meta({ description: 'the account has no usage limits: when claude prints none, its jobs run on every lane, not on the soft lanes only. An Enterprise plan is read so without it' }),
+    meter: z.enum(['auto', 'live', 'analytics']).default('auto').meta({ description: 'how the account is metered (issue #2966): live reads its session and week windows, and a read with none is usage unknown; analytics reads it as having no usage limits, so its jobs run on every lane (the account day budget still applies) and the claude-analytics source shows its daily usage; auto: analytics for an Enterprise plan, else live' }),
     dayCostUsd: z.number().min(0).max(1e6).optional().meta({ description: 'the account day budget (issue #2966): the most estimated cost, in US dollars, the jobs of this account may spend in one UTC day, as the token ledger counts it; at it or over it, its jobs run on the soft lanes only. Absent or 0: off' }),
   }),
   // claude runs on the machine, whichever it is: never a call to claude here. Whether it runs shows in the source's state.
@@ -142,7 +149,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
     const notReady = (r: CliRun): boolean => 'error' in r && r.error.startsWith('machine ');
     const failure = (what: string, r: CliRun): string => (notReady(r) && 'error' in r ? r.error : failed(what, r));
     return createPolledUsageSource(ctx, {
-      signIn, signInTarget, intervalSeconds: o.intervalSeconds, executors: o.executors, ...(o.dayCostUsd ? { dayCostUsd: o.dayCostUsd } : {}), ...(o.machine ? { machineId: o.machine } : {}),
+      signIn, signInTarget, intervalSeconds: o.intervalSeconds, executors: o.executors, ...(o.meter !== 'auto' ? { meter: o.meter } : {}), ...(o.dayCostUsd ? { dayCostUsd: o.dayCostUsd } : {}), ...(o.machine ? { machineId: o.machine } : {}),
       async read(signal) {
         // None named: the only machine there is now; none, or several: said, and tried again soon (a machine is probed online after start).
         const picked = o.machine ? { machine: o.machine } : pickMachine({ reach: 'any', machines: await ctx.machines() });
@@ -156,10 +163,14 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
         const account = { ...read, detail: { ...read.detail, machine: id } };
         // At start an attached machine is offline until its first probe: no reason to wait an interval.
         const retry = notReady(usage) ? { notReady: true } : {};
-        // Issue #2932: an account with no usage limits prints none — an Enterprise plan, or one the source is told has none —:
-        // a good read with no budget, so the machine is not capped as usage unknown.
-        if ('problem' in parsed && parsed.printedNone && (o.noLimits === true || hasNoLimits(read.detail.plan))) return { machineId: id, budgets: [], account, ...retry };
-        if ('problem' in parsed) return { problem: parsed.problem, account, ...retry };
+        // The meter (issue #2966): auto resolves by the plan the account read names; none read, it stays unresolved.
+        const plan = read.detail.plan;
+        const meter = o.meter !== 'auto' ? o.meter : plan === undefined ? undefined : hasNoLimits(plan) ? 'analytics' : 'live';
+        const resolved = meter ? { meter } : {};
+        // Analytics (issue #2932): an account with no usage limits, as it prints none or whatever windows it prints: a good read
+        // with no budget, so the machine is not capped as usage unknown. A failed read is still a problem.
+        if (meter === 'analytics' && (!('problem' in parsed) || parsed.printedNone)) return { machineId: id, budgets: [], account, ...resolved, ...retry };
+        if ('problem' in parsed) return { problem: parsed.problem, account, ...resolved, ...retry };
         return {
           machineId: id,
           budgets: parsed.windows.map((w) => ({
@@ -167,6 +178,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
             ...(w.resetsAt ? { resetsAt: w.resetsAt } : {}), ...(w.informational ? { informational: true as const } : {}),
           })),
           account,
+          ...resolved,
           ...retry,
         };
       },

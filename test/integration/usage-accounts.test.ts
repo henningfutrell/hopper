@@ -69,7 +69,7 @@ describe('claude-plan through the composition root', () => {
       ['session', 80, 100, '%', false], ['week', 30, 100, '%', false], ['week (Fable)', 99, 100, '%', true],
     ]);
     expect(report.sources).toEqual([
-      { name: 'claude', refreshedAt: expect.any(String), accountReadAt: expect.any(String), executors: ['scripted'], signIn: true, account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } } },
+      { name: 'claude', refreshedAt: expect.any(String), accountReadAt: expect.any(String), executors: ['scripted'], signIn: true, meter: 'live', account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } } },
       { name: 'fake' },
     ]);
     expect(report.limits).toEqual({ soft: 0.7, hard: 0.95, softLanes: 1, defaults: { soft: 0.7, hard: 0.95, softLanes: 1 }, set: false });
