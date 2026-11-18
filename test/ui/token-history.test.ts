@@ -86,6 +86,9 @@ async function render(split: 'repo' | 'account') {
     const waste = [{ jobId: 'j-waste', title: 'Paint the shed', repo: 'o/a', ...totals(400), signals: [{ kind: 'no_progress', why: '200 turns with no commit and no push.' }] }];
     return json({ by: 'day', total: totals(groups.reduce((n, g) => n + g.input, 0)), groups, top: [], waste, perMerged: { pullRequests: 5, tokens: 115, costUsd: 0.115 } });
   }));
+  // The ledger's days are fixed: the panel's last 30 days end on the last of them, whatever day the test runs.
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-21T12:00:00.000Z'));
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   document.body.innerHTML = '<div id="root"></div>';
   vi.resetModules();
@@ -102,6 +105,7 @@ afterEach(async () => {
   await act(async () => root?.unmount());
   root = undefined;
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   localStorage.clear();
 });
 
