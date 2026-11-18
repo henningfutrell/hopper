@@ -1,4 +1,4 @@
-// `hopper usage limits` and `hopper usage no-limits` (issue #2932): the call the operator CLI makes, before any daemon, and
+// `hopper usage limits` (issue #2932) and `hopper usage meter` (issue #2966): the call the operator CLI makes, before any daemon, and
 // the edit it posts from what the daemon answers.
 import { describe, expect, it } from 'vitest';
 import type { Getter } from '../../src/cli-operator-call.ts';
@@ -50,15 +50,19 @@ describe('hopper usage limits (issue #2932)', () => {
     await expect(usageCall(['limits', 'set', '--machine', 'nope', '--soft-lanes', '2']).post!(daemon)).rejects.toThrow(/no machine named nope/);
   });
 
-  it('marks a usage source as one whose account has no usage limits, or not', async () => {
-    const on = usageCall(['no-limits', 'claude-l4', 'on']);
-    expect(on).toMatchObject({ role: 'admin' });
-    expect(await on.post!(daemon)).toEqual({
+  it('sets the meter of a usage source\'s account (issue #2966): auto takes it out of its options', async () => {
+    const set = usageCall(['meter', 'claude-l4', 'analytics']);
+    expect(set).toMatchObject({ role: 'admin' });
+    expect(await set.post!(daemon)).toEqual({
       path: '/ui/api/plugins',
-      body: { action: 'options', role: 'usage-source', name: 'claude-l4', version: 'v1', options: { machine: 'l4', noLimits: true } },
+      body: { action: 'options', role: 'usage-source', name: 'claude-l4', version: 'v1', options: { machine: 'l4', meter: 'analytics' } },
     });
-    expect(((await usageCall(['no-limits', 'claude-l4', 'off']).post!(daemon)).body as { options: unknown }).options).toEqual({ machine: 'l4' });
-    await expect(usageCall(['no-limits', 'nope', 'on']).post!(daemon)).rejects.toThrow(/no usage source named nope/);
+    expect(((await usageCall(['meter', 'claude-l4', 'live']).post!(daemon)).body as { options: unknown }).options).toEqual({ machine: 'l4', meter: 'live' });
+    expect(((await usageCall(['meter', 'claude-l4', 'auto']).post!(daemon)).body as { options: unknown }).options).toEqual({ machine: 'l4' });
+    await expect(usageCall(['meter', 'nope', 'live']).post!(daemon)).rejects.toThrow(/no usage source named nope/);
+    expect(() => usageCall(['meter', 'claude-l4', 'spend'])).toThrow(/usage: hopper usage meter/);
+    expect(() => usageCall(['meter', 'claude-l4'])).toThrow(/usage: hopper usage meter/);
+    expect(() => usageCall(['no-limits', 'claude-l4', 'on'])).toThrow(/usage: hopper usage/);
   });
 
   it('sets a usage source\'s account day budget, or takes it off (issue #2966)', async () => {

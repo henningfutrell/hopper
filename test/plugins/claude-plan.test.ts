@@ -132,8 +132,9 @@ describe('claude-plan plugin', () => {
 
   it('is a usage source; options machine (none: the only machine there is, #442), bin (command-bearing, default claude), intervalSeconds (default 600, at least 120) and executors (default the built-in herdr-claude and claude, issue #533)', () => {
     expect(claudePlan).toMatchObject({ id: 'claude-plan', role: 'usage-source' });
-    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'] } });
-    expect(parseOptions(claudePlan, { machine: 'local' })).toEqual({ ok: true, options: { machine: 'local', bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'] } });
+    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'], meter: 'auto' } });
+    expect(parseOptions(claudePlan, { machine: 'local' })).toEqual({ ok: true, options: { machine: 'local', bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'], meter: 'auto' } });
+    expect(parseOptions(claudePlan, { meter: 'spend' }).ok).toBe(false);
     expect(parseOptions(claudePlan, { machine: 'local', executors: ['claude-big'] })).toMatchObject({ ok: true, options: { executors: ['claude-big'] } });
     expect(parseOptions(claudePlan, { machine: 'local', intervalSeconds: 60 }).ok).toBe(false);
     const schema = optionsJsonSchema(claudePlan) as { properties: Record<string, { commandBearing?: boolean; machine?: boolean }>; required?: string[] };
@@ -166,7 +167,7 @@ describe('claude-plan plugin', () => {
     ]);
     await waitFor(() => s.state!().account, { what: 'account' });
     expect(s.state!()).toEqual({
-      refreshedAt: at, accountReadAt: at, executors: ['herdr-claude', 'claude'], signIn: true,
+      refreshedAt: at, accountReadAt: at, executors: ['herdr-claude', 'claude'], signIn: true, meter: 'live',
       account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } },
     });
     expect(JSON.stringify(s.state!())).not.toContain('SECRET');
@@ -205,20 +206,33 @@ describe('claude-plan plugin', () => {
     await waitFor(() => (t.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(t.state!().problem).toBe('usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)');
 
-    // Issue #2932: an account with no usage limits (an Enterprise plan), or a source told so, reads as no limit: no problem.
+    // Issue #2932: an account with no usage limits (an Enterprise plan) reads as no limit: no problem. The meter (issue #2966):
+    // auto resolves an Enterprise plan to analytics, and the state says so.
     writeFileSync(join(control, 'plan'), 'enterprise');
     const e = await create();
     await waitFor(() => e.state!().refreshedAt, { what: 'the first read' });
     expect(e.state!().problem).toBeUndefined();
+    expect(e.state!().meter).toBe('analytics');
     expect(await e.poll()).toEqual([]);
+    // live: the same text is usage unknown, Enterprise plan or not.
+    const l = await create({ meter: 'live' });
+    await waitFor(() => (l.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect(l.state!().problem).toMatch(/^usage unavailable: claude printed no usage limits/);
+    expect(l.state!().meter).toBe('live');
+    // analytics: an account of another plan reads as having no limits.
     writeFileSync(join(control, 'plan'), 'max');
-    const n = await create({ noLimits: true });
+    const n = await create({ meter: 'analytics' });
+    expect(n.state!().meter).toBe('analytics');
     await waitFor(() => n.state!().refreshedAt, { what: 'the first read' });
     expect(n.state!().problem).toBeUndefined();
     expect(await n.poll()).toEqual([]);
-    // Told so, a source still says a failed read: only "no usage limits printed" reads as none.
+    // auto, a plan with limits: live.
+    const a = await create();
+    await waitFor(() => (a.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect(a.state!().meter).toBe('live');
+    // analytics still says a failed read: only "no usage limits printed" reads as none.
     writeFileSync(join(control, 'mode'), 'is-error');
-    const f = await create({ noLimits: true });
+    const f = await create({ meter: 'analytics' });
     await waitFor(() => (f.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(f.state!().problem).toBe('usage unavailable: Usage is not available right now');
 
