@@ -27,6 +27,24 @@ const exists = async (r: string): Promise<{ login: boolean; user: boolean }> => 
   const [x] = await dbs.admin<{ login: number; usr: number }>(`SELECT (SELECT COUNT(*) FROM sys.server_principals WHERE name = '${r}') AS login, (SELECT COUNT(*) FROM sys.database_principals WHERE name = '${r}') AS usr`);
   return { login: x!.login > 0, user: x!.usr > 0 };
 };
+/**
+ * The login dropped by the admin, its user left: an orphan. The mint's own check connection is closed, but the server can
+ * hold its session a moment longer, and a login with a session cannot be dropped: end its sessions first, and try again.
+ */
+const dropLogin = async (r: string): Promise<void> => {
+  for (let i = 0; ; i++) {
+    try {
+      await dbs.admin(`DECLARE @k nvarchar(max) = N'';
+        SELECT @k += N'KILL ' + CAST(session_id AS nvarchar(10)) + N';' FROM sys.dm_exec_sessions WHERE login_name = N'${r}' AND session_id <> @@SPID;
+        EXEC (@k);
+        DROP LOGIN [${r}];`, 'master');
+      return;
+    } catch (e) {
+      if (i >= 20) throw e;
+      await new Promise((ok) => setTimeout(ok, 250));
+    }
+  }
+};
 const refusal = async (r: string, batch: string, db?: string): Promise<string> => {
   let pool: Awaited<ReturnType<SqlServerDatabases['connectAs']>> | undefined;
   try {
@@ -145,7 +163,7 @@ describe('the end of a SQL Server database read role (issue #2231)', () => {
 
   it('sweeps a role older than the TTL and a user whose login is gone, and leaves a new one', async () => {
     const old = await minted(), orphan = await minted();
-    await dbs.admin(`DROP LOGIN [${orphan}]`, 'master');
+    await dropLogin(orphan);
     await new Promise((r) => setTimeout(r, 2500));
     const kept = await minted();
     // SQL Server has no VALID UNTIL: the sweep goes by the login's age, here a TTL of 2 s.
