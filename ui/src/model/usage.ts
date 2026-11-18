@@ -26,6 +26,13 @@ export function resetsIn(iso: string, now: number): string {
 export const shownSource = (sources: Pick<UsageSourceReport, 'name'>[], chosen: string | undefined): string | undefined =>
   sources.find((s) => s.name === chosen)?.name ?? sources[0]?.name;
 
+/**
+ * A usage source that read its account and found no usage limits (issue #2932: an Enterprise plan, or `noLimits`): read, with
+ * no problem and no reading. Its panel shows the account's token ledger in place of the windows (issue #2966).
+ */
+export const noUsageLimits = (s: UsageSourceReport, readings: readonly Pick<UsageReading, 'source'>[]): boolean =>
+  !s.problem && !!s.refreshedAt && !readings.some((r) => r.source === s.name);
+
 /** What a usage source says about itself: why it has no readings, else when it last read. */
 export function sourceLine(s: UsageSourceReport, now: number): { text: string; problem: boolean } {
   if (s.problem) return { text: s.problem, problem: true };

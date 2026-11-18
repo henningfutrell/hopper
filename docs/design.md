@@ -21689,6 +21689,15 @@ keeps what each job's agent spent, read from the agent session's own log, and ne
   `GET /api/usage/tokens` (`by` job, issue, repo, machine, lane, account, model or day; `job`, `repo`, `since`): the user's
   ledger summed per group, the costliest first, with the top spenders. `hopper usage tokens [--repo|--since|--by]` and
   `hopper usage tokens --job <id>` read them. The job view shows a **Tokens** panel.
+- **The ledger of an account with no usage limits** (issue #2966). A usage source that reads an account with no usage limits
+  (an Enterprise plan, or `noLimits`, issue #2932) has no session or weekly window: its read has no problem and no reading
+  (`noUsageLimits`, `ui/src/model/usage.ts`). Its panel on the Usage view shows that account's token ledger in their place
+  (`ui/src/views/usage-account-ledger.tsx`, model `accountLedger` in `ui/src/model/token-ledger.ts`): it reads
+  `by=day&split=account` for the last 30 UTC days, only while such a source is there, and takes the parts whose key is the
+  source's account (the **last account**, as the ledger keeps it). It shows the tokens and the estimated cost today (UTC) and
+  over the last 7 days, and the 30 days as one bar per day. Its label says it is estimated from the hopper's own jobs at list
+  prices: work outside the hopper on the same account is not counted, and it is not the billed cost. No new read, credential or
+  schema: the ledger and its read are part 1's and part 2's.
 - **Tokens over time** (part 2). `split` (one of the same groups) gives each group `parts`: its rows summed per that second
   group (`tokenRollup(…, split)`), which sum to it. The Dashboard's **Tokens over time** panel, beside the usage graph
   (`ui/src/views/dashboard/token-history.tsx`, chart `ui/src/charts/token-days.tsx`, model `tokenDays` in

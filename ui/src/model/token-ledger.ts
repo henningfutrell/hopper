@@ -125,3 +125,25 @@ export function tokenBudgetPatch(s: TokenBudgetSettings, d: TokenBudgetDraft): {
   }
   return { ok: true, patch: Object.keys(patch).length > 0 ? patch : undefined };
 }
+
+/** Tokens and an estimated cost over some days; `costKnown` false: a model in it has no known price. */
+export interface TokenSum { tokens: number; costUsd: number; costKnown: boolean }
+
+/** One account's token ledger (issue #2966): its tokens and estimated cost today and over the last 7 days, and its days as one stack. */
+export interface AccountLedger { today: TokenSum; week: TokenSum; days: TokenDay[]; stacks: TokenStack[] }
+
+const WEEK = 7;
+
+/**
+ * One account's share of the ledger by day split by account (GET /api/usage/tokens?by=day&split=account), as `days` UTC days
+ * up to `today`: for the Usage view of a usage source with no usage limits (an Enterprise plan), in place of its windows.
+ * Only the jobs the hopper ran, at list price.
+ */
+export function accountLedger(groups: readonly TokenRollupRow[], account: string, days: number, today: string): AccountLedger {
+  const own = groups.map((g) => ({ ...g, parts: (g.parts ?? []).filter((p) => p.key === account) }));
+  const shown = tokenDays(own, days, today);
+  const from = (n: number): string => new Date(Date.parse(`${today}T00:00:00.000Z`) - (n - 1) * DAY).toISOString().slice(0, 10);
+  const sum = (since: string): TokenSum => own.filter((g) => g.key >= since && g.key <= today).flatMap((g) => g.parts)
+    .reduce<TokenSum>((s, p) => ({ tokens: s.tokens + tokensOf(p), costUsd: s.costUsd + p.costUsd, costKnown: s.costKnown && p.costKnown }), { tokens: 0, costUsd: 0, costKnown: true });
+  return { today: sum(today), week: sum(from(WEEK)), days: shown.days, stacks: shown.stacks };
+}
