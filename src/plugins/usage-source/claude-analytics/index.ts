@@ -144,7 +144,14 @@ const claudeAnalytics: PluginDefinition<'usage-source', ClaudeAnalyticsOptions> 
         const tokens = ids.length ? await pages(key, '/v1/organizations/analytics/usage', range, true, parseUsagePage, signal) : { rows: [] };
         if ('answer' in tokens) return { problem: failed('/v1/organizations/analytics/usage', tokens.answer) };
         if ('problem' in tokens) return tokens;
-        return { budgets: [], daily: dailyUsageOf({ date, accounts, users: users.rows, cost: cost.rows, tokens: tokens.rows }) };
+        const daily = dailyUsageOf({ date, accounts, users: users.rows, cost: cost.rows, tokens: tokens.rows });
+        // Kept for the trend (part 4). A store that cannot keep it now costs the trend that day only: the read still shows.
+        try {
+          ctx.analytics?.keep?.(daily);
+        } catch (e) {
+          ctx.logger.warn(`hopper: usage source ${ctx.instanceName}: the daily usage of ${date} was read but not kept: ${message(e)}`);
+        }
+        return { budgets: [], daily };
       },
     });
   },
