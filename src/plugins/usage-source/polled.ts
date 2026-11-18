@@ -3,7 +3,7 @@
 // `intervalSeconds`; `poll` answers from the last good read and never waits; a budget past its
 // reset is left out; readings older than 3 intervals are stale. Each reading names the instance,
 // the machine it is of (if any, issue #139) and the executors whose jobs it limits.
-import type { Account, ToolSignIn, UsageReading, UsageSourceState } from '../../domain/types.ts';
+import type { Account, DailyUsageRead, ToolSignIn, UsageReading, UsageSourceState } from '../../domain/types.ts';
 import type { UsageSource } from '../../domain/ports.ts';
 
 /** One budget as a read finds it; the source, executors and time are added here. */
@@ -12,8 +12,10 @@ export type Budget = Pick<UsageReading, 'used' | 'limit' | 'unit' | 'window' | '
 /**
  * What one read found: budgets or why not, and the account if it read one. `notReady`: what it reads
  * was not there yet (a machine not listed or not probed online): read again soon, not an interval later.
+ * `notConfigured`: what a person must set first (issue #2966), a state and not a problem. `daily`: the daily usage read.
  */
-export type Read = ({ budgets: Budget[]; machineId?: string } | { problem: string }) & { account?: Account; notReady?: boolean };
+export type Read = ({ budgets: Budget[]; machineId?: string; daily?: DailyUsageRead } | { problem: string } | { notConfigured: string })
+  & { account?: Account; notReady?: boolean };
 
 export interface PolledContext {
   clock: { now(): Date };
@@ -32,6 +34,8 @@ export function createPolledUsageSource(
     intervalSeconds: number; machineId?: string; executors?: string[]; read(signal: AbortSignal): Promise<Read>;
     /** Its account day budget (issue #2966), in US dollars; absent or 0: off. */
     dayCostUsd?: number;
+    /** An informational source (issue #2966): each reading is informational, and with none its usage is not unknown. */
+    informational?: true;
     /** Its tool's sign-in on its machine (issue #1128): once one goes through, the account is read again at once. */
     signIn?(o: { email?: string }): Promise<ToolSignIn>;
     signInTarget?(): Promise<{ machineId: string; tool: string }>;
@@ -41,6 +45,8 @@ export function createPolledUsageSource(
   let budgets: Budget[] = [];
   /** The machine the last good read was of, when the source names none (issue #442). */
   let readOf: string | undefined;
+  let daily: DailyUsageRead | undefined;
+  let notConfigured: string | undefined;
   let refreshedAt: Date | undefined;
   let lastError: string | undefined;
   let account: Account | undefined;
@@ -64,8 +70,12 @@ export function createPolledUsageSource(
     if ('budgets' in r) {
       budgets = r.budgets;
       readOf = r.machineId;
+      daily = r.daily;
       refreshedAt = ctx.clock.now();
     }
+    // Not configured: what was read before no longer stands for this configuration.
+    if ('notConfigured' in r) { budgets = []; daily = undefined; refreshedAt = undefined; }
+    notConfigured = 'notConfigured' in r ? r.notConfigured : undefined;
     note('problem' in r ? r.problem : undefined);
     account = r.account;
     accountReadAt = r.account ? ctx.clock.now() : undefined;
@@ -97,17 +107,21 @@ export function createPolledUsageSource(
       // A budget past its reset no longer says anything: it is left out until the next read.
       const machineId = o.machineId ?? readOf;
       return budgets.filter((b) => !b.resetsAt || Date.parse(b.resetsAt) > now.getTime()).map((b) => ({
-        source: ctx.instanceName, ...(machineId ? { machineId } : {}), ...b, ...(o.executors ? { executors: [...o.executors] } : {}), at,
+        source: ctx.instanceName, ...(machineId ? { machineId } : {}), ...b, ...(o.executors ? { executors: [...o.executors] } : {}),
+        ...(o.informational ? { informational: true as const } : {}), at,
       }));
     },
     state(): UsageSourceState {
       const now = ctx.clock.now();
       const problem = stale(now)
         ? `stale: last read ${refreshedAt!.toISOString()}${lastError ? ` (${lastError})` : ''}`
-        : (lastError ?? (refreshedAt ? undefined : 'not read yet'));
+        : (lastError ?? (refreshedAt || notConfigured ? undefined : 'not read yet'));
       return {
         ...(refreshedAt ? { refreshedAt: refreshedAt.toISOString() } : {}),
         ...(problem ? { problem } : {}),
+        ...(notConfigured ? { notConfigured } : {}),
+        ...(daily && !stale(now) ? { daily } : {}),
+        ...(o.informational ? { informational: true as const } : {}),
         ...(account ? { account } : {}),
         ...(accountReadAt ? { accountReadAt: accountReadAt.toISOString() } : {}),
         ...(o.executors ? { executors: [...o.executors] } : {}),

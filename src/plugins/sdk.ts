@@ -12,7 +12,7 @@ import type { VaultBackend } from '../domain/vault.ts';
 import type { CommandBoxes } from '../domain/sandboxes.ts';
 import type { InfraPlanNotice } from '../domain/infra-watchers.ts';
 import type { ClientTransport } from '../executors/client.ts';
-import type { Advice, ChangeRule, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, ToolSignIn, UsageReading } from '../domain/types.ts';
+import type { Account, Advice, ChangeRule, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, ToolSignIn, UsageReading } from '../domain/types.ts';
 import type { Rejection } from '../domain/rejection.ts';
 import type { IssueGraphRepository } from '../domain/issue-graph.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
@@ -146,7 +146,17 @@ export type UsageSourceContext = MachineLookup & Pick<ExecutorContext, 'client'>
    * Absent: none.
    */
   agentSignIn?(machine: string): Promise<{ variable: string; value: string } | { none: true } | { refused: string }>;
+  /** What the `claude-analytics` usage source reads with (issue #2966). Absent: no key, no account. */
+  analytics?: AnalyticsContext;
 };
+
+/** The user's Claude Analytics API key and the Claude accounts of this hopper's machines (issue #2966, design.md "Daily usage"). */
+export interface AnalyticsContext {
+  /** The key, opened now from the user's system secret `claude-analytics-key`; undefined when none is set. Throws when it cannot be opened. */
+  key(): string | undefined;
+  /** The Claude accounts the other usage sources read now: the accounts whose daily usage is kept. Never a token. */
+  accounts(): Account[];
+}
 
 /**
  * What a machine source learns: the executors registered when it is asked, and how the hopper reaches

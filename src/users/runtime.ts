@@ -28,7 +28,7 @@ import { startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
 import { checksRedOf, createFailures, type Failures } from '../failures/index.ts'; import { giveBackChecks } from '../failures/give-backs.ts'; import { toolAccountOf } from '../failures/limits.ts';
-import { createLastAccounts, createLogins, createSignIns, setupTokenSignIn, type Logins, type SignIns } from '../logins/index.ts';
+import { analyticsContext } from './analytics-key.ts'; import { createLastAccounts, createLogins, createSignIns, setupTokenSignIn, type Logins, type SignIns } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
 import { userTypesafeKey } from './typesafe-key.ts';
@@ -281,7 +281,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
     jobSourceContext: { ...storeSourceContext(store, o.otherUsersKnow, o.access && ((login, actors) => o.access!.decideIntakeActor(user.id, login, actors)), { dataDir, logger }, (keys) => searchChanged(keys), () => clock.now(), lease), connectedAccounts, gitlabAccount },
     machineContext: { executors: () => executorNames(), target },
     executorContext: { client: clientNamed, ...(commandBoxes ? { boxes: commandBoxes } : {}), ...(o.jobPods ? { pods: { join: o.jobPods.join, instanceId: o.jobPods.instanceId, leave: (pod: string) => host.leavePod(pod), agentCredential: (ask: Parameters<Vault['podCredential']>[0]) => vault.podCredential(ask) } } : {}) }, // job pods (issue #1283), their agent's sign-in (issue #1287)
-    usageSourceContext: { agentSignIn: (machine) => lanePodSignIn(machine) }, intervalMs: o.pluginsConfigIntervalMs, diskDefaults: cachedDiskDefaults(() => store.settings.getDiskDefaults()), // the disk defaults (issue #2494)
+    usageSourceContext: { agentSignIn: (machine) => lanePodSignIn(machine), analytics: analyticsContext(system, () => host.usageSources()) }, intervalMs: o.pluginsConfigIntervalMs, diskDefaults: cachedDiskDefaults(() => store.settings.getDiskDefaults()), // the disk defaults (issue #2494)
     // The job sources follow the plugins config live (issue #356); reached only after `sync` exists.
     jobSourcesChanged: (built) => applyJobSources(built),
     derivedJobSources: (configured) => [...furtherAccountSources(configured, connectedAccounts.keys()), ...gitlabAccountSources(configured, store.settings.getGitLabAccount() !== undefined)], // a source for each further GitHub account, and the GitLab account's (issue #1448)

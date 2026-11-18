@@ -94,7 +94,8 @@ export interface LaneCap {
  */
 export function unreadUsageOf(sources: readonly { name: string; readings: readonly UsageReading[]; state: UsageSourceState | undefined }[]): UnreadUsage[] {
   return sources.flatMap(({ name, readings, state }) => {
-    if (readings.length > 0 || !state?.problem) return [];
+    // An informational source limits no job (issue #2966): with no reading, nothing is unknown.
+    if (readings.length > 0 || !state?.problem || state.informational) return [];
     const machineId = state.account?.detail.machine;
     return [{ source: name, ...(typeof machineId === 'string' ? { machineId } : {}), ...(state.executors ? { executors: [...state.executors] } : {}) }];
   });

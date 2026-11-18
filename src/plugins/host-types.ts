@@ -34,8 +34,11 @@ export interface PluginHostOptions {
   machineContext?: Partial<MachineSourceContext>;
   /** What every executor is told (RoleContext['executor']): a client target's link (issue #308). Default: none is reached. */
   executorContext?: ExecutorContext;
-  /** What every usage source is told besides the machines (RoleContext['usage-source']): a lane pod's sign-in (issue #1287). Default: none. */
-  usageSourceContext?: Pick<UsageSourceContext, 'agentSignIn'>;
+  /**
+   * What every usage source is told besides the machines (RoleContext['usage-source']): a lane pod's sign-in (issue #1287), the
+   * Claude Analytics API key and the Claude accounts (issue #2966). Default: none.
+   */
+  usageSourceContext?: Pick<UsageSourceContext, 'agentSignIn' | 'analytics'>;
   dataDir: string;
   /** PluginContext.userEnv: what the user's processes add to the daemon's environment; default none. */
   userEnv?: Readonly<Record<string, string>>;
