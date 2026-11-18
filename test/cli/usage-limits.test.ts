@@ -61,6 +61,21 @@ describe('hopper usage limits (issue #2932)', () => {
     await expect(usageCall(['no-limits', 'nope', 'on']).post!(daemon)).rejects.toThrow(/no usage source named nope/);
   });
 
+  it('sets a usage source\'s account day budget, or takes it off (issue #2966)', async () => {
+    const set = usageCall(['day-budget', 'claude-l4', '25.5']);
+    expect(set).toMatchObject({ role: 'admin' });
+    expect(await set.post!(daemon)).toEqual({
+      path: '/ui/api/plugins',
+      body: { action: 'options', role: 'usage-source', name: 'claude-l4', version: 'v1', options: { machine: 'l4', dayCostUsd: 25.5 } },
+    });
+    expect(((await usageCall(['day-budget', 'claude-l4', 'off']).post!(daemon)).body as { options: unknown }).options).toEqual({ machine: 'l4' });
+    expect(((await usageCall(['day-budget', 'claude-l4', '0']).post!(daemon)).body as { options: unknown }).options).toEqual({ machine: 'l4' });
+    await expect(usageCall(['day-budget', 'nope', '5']).post!(daemon)).rejects.toThrow(/no usage source named nope/);
+    expect(() => usageCall(['day-budget', 'claude-l4'])).toThrow(/usage: hopper usage day-budget/);
+    expect(() => usageCall(['day-budget', 'claude-l4', '$5'])).toThrow(/usage: hopper usage day-budget/);
+    expect(() => usageCall(['day-budget', 'claude-l4', '-1'])).toThrow(/usage: hopper usage day-budget/);
+  });
+
   it('refuses a bad call before any daemon', () => {
     expect(() => usageCall(['limits', 'set'])).toThrow(/usage: hopper usage limits/);
     expect(() => usageCall(['limits', 'set', '--soft-lanes', 'many'])).toThrow(/usage: hopper usage limits/);
