@@ -57,7 +57,9 @@ export function machineUsage(machineId: string, readings: UsageReading[], at: st
   const ignored = live.filter((x) => x.r.limit <= 0).map((x) => x.r);
   const counted = live.filter((x) => x.r.limit > 0).map((x) => ({ reading: x.r, usedFrac: x.r.used / x.r.limit, burning: x.phase === 'burn' }));
   const burning = counted.filter((c) => c.burning).map((c) => c.reading);
-  return { usedFrac: counted.length === 0 ? 0 : Math.max(...counted.map((c) => c.usedFrac)), counted, ignored, burning };
+  // An account day budget (issue #2966) is spend, not a usage window: it sets a band, never the used fraction.
+  const windows = counted.filter((c) => !c.reading.dayBudget);
+  return { usedFrac: windows.length === 0 ? 0 : Math.max(...windows.map((c) => c.usedFrac)), counted, ignored, burning };
 }
 
 /**
@@ -114,15 +116,19 @@ export const machinePolicy = (m: Pick<MachineSnapshot, 'usageLimits'>, p: Decide
 
 const BAND_RANK: Record<Exclude<CapBand, 'offline' | 'unknown'>, number> = { free: 1, soft: 2, hard: 3 };
 
-/** A reading's band at `p`: a burning week window reaches hard only when spent (issue #2169). */
+/**
+ * A reading's band at `p`: a burning week window reaches hard only when spent (issue #2169); an account day budget (issue
+ * #2966) is soft at its cap or over it, never hard.
+ */
 function bandOf(c: MachineUsage['counted'][number], p: DeciderPolicy): Exclude<CapBand, 'offline' | 'unknown'> {
+  if (c.reading.dayBudget) return c.usedFrac >= 1 ? 'soft' : 'free';
   if (c.usedFrac < p.softLimit) return 'free';
   return c.usedFrac >= (c.burning ? 1 : p.hardLimit) ? 'hard' : 'soft';
 }
 
 const throttleOf = (c: MachineUsage['counted'][number]): UsageThrottle => ({
   source: c.reading.source, ...(c.reading.window === undefined ? {} : { window: c.reading.window }),
-  usedFrac: c.usedFrac, ...(c.burning ? { burning: true as const } : {}),
+  usedFrac: c.usedFrac, ...(c.burning ? { burning: true as const } : {}), ...(c.reading.dayBudget ? { dayBudget: true as const } : {}),
 });
 
 /**
@@ -136,7 +142,8 @@ export function laneCap(m: MachineSnapshot, usage: Pick<MachineUsage, 'counted'>
   if (!m.online) return { cap: 0, band: 'offline' };
   const p = machinePolicy(m, policy);
   // Issue #2919: no reading counts and a source that limits these jobs cannot be read: not known, never free.
-  if (usage.counted.length === 0 && unread.length > 0) return { cap: Math.min(m.maxLanes, p.softLanes ?? DEFAULT_SOFT_LANES), band: 'unknown', unknown: [...unread] };
+  // An account day budget (issue #2966) says nothing of the usage windows: it does not make an unread source known.
+  if (usage.counted.every((c) => c.reading.dayBudget) && unread.length > 0) return { cap: Math.min(m.maxLanes, p.softLanes ?? DEFAULT_SOFT_LANES), band: 'unknown', unknown: [...unread] };
   const top = usage.counted
     .map((c) => ({ c, band: bandOf(c, p) }))
     .reduce<{ c: MachineUsage['counted'][number]; band: Exclude<CapBand, 'offline' | 'unknown'> } | undefined>(

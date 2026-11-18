@@ -4,6 +4,7 @@
 // the cap then counts again from what it had spent then (`budgetFrom`). Part 5, the day budgets: the most the user's jobs
 // may spend in one UTC day, in all or per repository; while one is reached, a waiting job it covers is held in admission. Pure.
 import { sumTokenUse, type TokenLedgerEntry, type TokenTotals } from './token-usage.ts';
+import type { UsageReading, UsageSourceState } from './usage.ts';
 
 export interface TokenBudgetSettings {
   /** The most tokens one job may use (input, output, cache read and cache write); 0: no cap. */
@@ -99,3 +100,30 @@ export function dayBudgetHold(repo: string | undefined, spend: DaySpend, s: Toke
   if (own) return `Held by the token budget: the jobs of ${repo} used its day's ${own} on ${spend.day} (UTC). No job of ${repo} starts or goes on ${until}`;
   return undefined;
 }
+
+const DAY_MS = 86_400_000;
+
+/**
+ * The account day budget readings (issue #2966, design.md "Account day budget"): for each usage source with a
+ * `dayCostUsd`, what its account's jobs spent on the UTC day of `at` — the ledger's rows of its identity, on any machine;
+ * with no identity known, the rows of its machine —, against that cap. A source that read no account yet has none.
+ */
+export function dayBudgetReadings(sources: readonly { name: string; state: UsageSourceState | undefined }[], entries: readonly TokenLedgerEntry[], at: string): UsageReading[] {
+  const day = at.slice(0, 10);
+  const today = entries.filter((e) => (e.last ?? e.readAt).slice(0, 10) === day);
+  const resetsAt = new Date(Date.parse(`${day}T00:00:00.000Z`) + DAY_MS).toISOString();
+  return sources.flatMap(({ name, state }) => {
+    const cap = state?.dayCostUsd ?? 0, account = state?.account;
+    const machine = account?.detail.machine;
+    if (!(cap > 0) || !account || typeof machine !== 'string') return [];
+    const mine = today.filter((e) => (account.identity !== undefined ? e.account === account.identity : e.machineId === machine));
+    const used = Math.round(sumTokenUse(mine).costUsd * 100) / 100;
+    return [{
+      source: name, machineId: machine, ...(state?.executors ? { executors: [...state.executors] } : {}),
+      used, limit: cap, unit: 'USD', window: 'day budget', resetsAt, dayBudget: true as const, at,
+    }];
+  });
+}
+
+/** Whether a usage source has an account day budget on: else no read of usage reads the ledger for it. */
+export const dayBudgetsOn = (states: readonly (UsageSourceState | undefined)[]): boolean => states.some((s) => (s?.dayCostUsd ?? 0) > 0);

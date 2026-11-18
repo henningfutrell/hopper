@@ -28,7 +28,7 @@ import { createPolledUsageSource, EXECUTORS_DESCRIPTION } from '../polled.ts';
 import { runCli, type CliRun } from '../run.ts';
 import { parseAuthStatus, parseUsageEnvelope } from './parse.ts';
 
-export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine?: string; sshBin: string; executors: string[]; noLimits?: boolean }
+export interface ClaudePlanOptions { bin: string; intervalSeconds: number; machine?: string; sshBin: string; executors: string[]; noLimits?: boolean; dayCostUsd?: number }
 
 /** Each claude call is killed after this long. */
 const TIMEOUT_MS = 45_000;
@@ -57,6 +57,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
     // The built-in Claude Code executor instance; name the others that run Claude.
     executors: z.array(z.string().min(1)).min(1).default(['herdr-claude', 'claude']).meta({ description: EXECUTORS_DESCRIPTION }),
     noLimits: z.boolean().optional().meta({ description: 'the account has no usage limits: when claude prints none, its jobs run on every lane, not on the soft lanes only. An Enterprise plan is read so without it' }),
+    dayCostUsd: z.number().min(0).max(1e6).optional().meta({ description: 'the account day budget (issue #2966): the most estimated cost, in US dollars, the jobs of this account may spend in one UTC day, as the token ledger counts it; at it or over it, its jobs run on the soft lanes only. Absent or 0: off' }),
   }),
   // claude runs on the machine, whichever it is: never a call to claude here. Whether it runs shows in the source's state.
   detect: async (_sys, o) => ({ status: 'available', detail: o.machine ? `claude on machine ${o.machine}` : 'claude on the only machine there is' }),
@@ -141,7 +142,7 @@ const claudePlan: PluginDefinition<'usage-source', ClaudePlanOptions> = {
     const notReady = (r: CliRun): boolean => 'error' in r && r.error.startsWith('machine ');
     const failure = (what: string, r: CliRun): string => (notReady(r) && 'error' in r ? r.error : failed(what, r));
     return createPolledUsageSource(ctx, {
-      signIn, signInTarget, intervalSeconds: o.intervalSeconds, executors: o.executors, ...(o.machine ? { machineId: o.machine } : {}),
+      signIn, signInTarget, intervalSeconds: o.intervalSeconds, executors: o.executors, ...(o.dayCostUsd ? { dayCostUsd: o.dayCostUsd } : {}), ...(o.machine ? { machineId: o.machine } : {}),
       async read(signal) {
         // None named: the only machine there is now; none, or several: said, and tried again soon (a machine is probed online after start).
         const picked = o.machine ? { machine: o.machine } : pickMachine({ reach: 'any', machines: await ctx.machines() });

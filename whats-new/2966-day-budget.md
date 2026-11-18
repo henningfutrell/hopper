@@ -1,0 +1,1 @@
+- A Claude account can now have a daily spending cap. Over the cap, its jobs run on fewer lanes until the next day. It is off unless you set it.

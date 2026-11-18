@@ -86,7 +86,7 @@ function lockedOf(all: Job[], ledger: Pick<WorkItemLedger, 'get'>): Job[] {
 }
 
 export function createQueries(c: EngineContext, diskOf: (machineId: string, sweep?: SweepSettings) => HopperDisk | undefined = () => undefined, leftoversOf: (machineId: string) => MachineLeftovers | undefined = () => undefined): Queries {
-  const getUsage = async (): Promise<UsageReading[]> => (await Promise.all(c.usage().map((u) => u.poll()))).flat();
+  const getUsage = async (): Promise<UsageReading[]> => (await readUsage(c)).readings;
   const getUsageSources = (): UsageSourceReport[] => c.usage().map((u) => ({ name: u.name, ...u.state?.() }));
   const onMachine = (machineId: string): string[] => {
     const onLanes = c.store.lanes.list(machineId).flatMap((l) => (l.state !== 'idle' && l.jobId ? [l.jobId] : []));

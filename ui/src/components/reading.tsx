@@ -14,6 +14,7 @@ export function ReadingGauge({ r, now, size = 104, showSource }: { r: UsageReadi
       <div className="max-w-full truncate font-mono text-xs" title={label}>{label}</div>
       {showSource && r.window && <div className="max-w-full truncate text-[11px] text-muted-foreground">{r.source}{r.machineId && ` @${r.machineId}`}</div>}
       {reset && <div className="num text-[11px] text-muted-foreground">{reset}</div>}
+      {r.dayBudget && <div className="rounded border px-1.5 text-[10px] text-muted-foreground" title="The account's estimated spend today against its day budget: at the budget or over it, its jobs run on the soft lanes only">day budget</div>}
       {r.informational && <div className="rounded border px-1.5 text-[10px] text-muted-foreground" title="This budget limits one model only, not every job: shown, never throttling">does not throttle</div>}
     </div>
   );
