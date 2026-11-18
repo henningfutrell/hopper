@@ -28,7 +28,7 @@ import { startHerdrSession } from '../plugins/machine-source/local/index.ts';
 import { createPluginHost, type BuiltJobSource, type PluginHost } from '../plugins/index.ts';
 import { splitSources } from './job-sources.ts';
 import { checksRedOf, createFailures, type Failures } from '../failures/index.ts'; import { giveBackChecks } from '../failures/give-backs.ts'; import { toolAccountOf } from '../failures/limits.ts';
-import { analyticsContext } from './analytics-key.ts'; import { createLastAccounts, createLogins, createSignIns, setupTokenSignIn, type Logins, type SignIns } from '../logins/index.ts';
+import { analyticsContext, userAnalyticsKey, type AnalyticsKey } from './analytics-key.ts'; import { createLastAccounts, createLogins, createSignIns, setupTokenSignIn, type Logins, type SignIns } from '../logins/index.ts';
 import { createReviewServices } from '../review/index.ts';
 import { createMinorDecisions, type MinorDecisions, type TypesafeKey } from '../minor-decisions/index.ts';
 import { userTypesafeKey } from './typesafe-key.ts';
@@ -151,7 +151,7 @@ export interface UserRuntime {
   /** Decider calls, Jev first (issue #550). */
   minorDecisions: MinorDecisions;
   /** The TypeSafe API key Jev asks with (issue #657): kept in the vault's system scope, set on the Jev page. */
-  typesafeKey: TypesafeKey;
+  typesafeKey: TypesafeKey; analyticsKey: AnalyticsKey; // the Claude Analytics API key (issue #2966): its view, set and remove; never the key
   /** The TL;DR of every long card (issue #569): its sweep. */
   tldrs: Tldrs; modelReviews: ModelReviews; // the model review of each completion review (issue #2846 part 3): its sweep
   dispatcher: WebhookDispatcher; executors: ExecutorRegistry; outbound: Outbound; // the user's outbound sends (issue #1014)
@@ -202,7 +202,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const { system, keys, readBackends } = openUserSystemSecrets({ user, store, env: o.env, ...(o.access ? { access: o.access } : {}), clock, logger });
   const runtime = userSecrets(o.env, user);
   const { jev, typesafeKey, secret: withTypesafe } = userTypesafeKey({ user, store, env: o.env, runtime, system, ...(seams.jev ? { seamJev: seams.jev } : {}), timeoutMs: JEV_TIMEOUT_MS, clock, logger });
-  const secret = withTypesafe;
+  const secret = withTypesafe, analyticsKey = userAnalyticsKey({ system, config: store.config, clock });
   const dataDir = userWorkDir(config.workDir, user);
   mkdirSync(dataDir, { recursive: true, mode: 0o700 }); const outbound = createOutbound({ guard: o.outboundGuard, clock, log: store.outboundSends }), lease = (name: string): SweepLease => o.leases?.lease(`${user.id}/${name}`) ?? soleLease(); // deliveries and notifier posts, into the send log (issue #1014)
   // The CLIs' logins of a user added later are their own (GH_CONFIG_DIR, CLAUDE_CONFIG_DIR in their work dir).
@@ -411,7 +411,7 @@ export async function createUserRuntime(o: UserRuntimeOptions): Promise<UserRunt
   const search = createUserSearch({ scope: { instance: o.search?.instanceId ?? 'local', user: user.id }, store, index: o.search?.index, access: o.search?.access, clock, logger, url: (type, ref, job) => { const route = searchHitRoute(type, ref, job); return route === undefined ? ref : uiUrl(route); }, intake: (key) => intakeOutcomeOf(sync.statuses(), key) }); searchChanged = (keys) => search.changed(keys); let started = false, stopped: Promise<void> | undefined, recovering: Promise<void> = Promise.resolve();
   return {
     search, jobStream, artifacts, githubProxy: proxy.githubProxy, windowsSteps, podmanHost: (name) => { const h = readPodmanHosts(store.config).find((x) => x.name === name); return h && createPodmanHostRuntime(h, { auth: sshAuth, sshDir: join(dataDir, 'ssh') }); }, podmanHostSocket: (name) => { const h = readPodmanHosts(store.config).find((x) => x.name === name); return h && podmanHostSocket(h, { auth: sshAuth, sshDir: join(dataDir, 'ssh') }); }, needSteps, bastions, stepSchedules, directJobs, sandboxRequests, heavyGate: createHeavyGate({ clock, idGen: randomUUID, machines: () => host.machines().list(), machineOf: (job) => store.lanes.list().find((l) => l.id === job.laneId)?.machineId, peaks: (job) => (job.source?.repo ? store.reads.memoryPeaks(job.source.repo, new Date(clock.now().getTime() - HEAVY_HISTORY_DAYS * 86_400_000).toISOString(), HEAVY_HISTORY_JOBS) : Promise.resolve([])) }), // issue #2622 parts 3, 4
-    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, tldrs, modelReviews, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
+    user, store, engine, sources: sync, registry: withFixedStatuses(sync, () => fixed, (name) => host.duplicateJobSources().get(name)), plugins, host, questions, reviews, logins, signIns, failures, minorDecisions, typesafeKey, analyticsKey, tldrs, modelReviews, dispatcher, executors, outbound, terminal: createJobTerminal({ store, executors, clock }), machineTerminal: createMachineTerminal({ store, executors, clock, machines: () => host.machines().list() }),
     levelNames: () => levels().map((l) => l.name), connectedAccounts, gitlabAccount,
     ...history.recorders, windowsLink: history.windowsLink,
     webhooksEditor: createWebhooksEditor({ store, secrets: webhookSecrets, logger }),
