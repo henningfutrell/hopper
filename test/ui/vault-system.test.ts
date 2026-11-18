@@ -22,6 +22,10 @@ describe('a system secret on the page (issue #658)', () => {
     expect(systemSecretTitle(secret('github-webhook-secret', 'github-webhook'))).toBe('GitHub webhook secret');
     expect(systemSecretWhere({ kind: 'github-webhook' })).toBe('Settings → GitHub webhook');
     expect(mayKeepInBackend(secret('github-webhook-secret', 'github-webhook', { scope: 'instance' }))).toBe(false);
+    // The analytics key (issue #2966): the user's, set on Usage, kept in the hopper.
+    expect(systemSecretTitle(secret('claude-analytics-key', 'claude-analytics'))).toBe('Claude Analytics API key (daily usage)');
+    expect(systemSecretWhere({ kind: 'claude-analytics' })).toBe('Usage');
+    expect(mayKeepInBackend(secret('claude-analytics-key', 'claude-analytics'))).toBe(false);
     // The cloud link key (issue #467): the whole hopper's, made by the hopper.
     expect(systemSecretTitle(secret('cloud-link.key', 'cloud-link'))).toBe('cloud link key: private half');
     expect(systemSecretWhere({ kind: 'cloud-link' })).toBe('Settings → hopper.io');
