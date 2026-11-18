@@ -21,6 +21,7 @@ describe('claude-analytics usage source', () => {
   let key: string | undefined;
   let keyThrows: Error | undefined;
   let accounts: Account[];
+  let kept: unknown[];
   const sources: UsageSource[] = [];
 
   beforeEach(async () => {
@@ -30,6 +31,7 @@ describe('claude-analytics usage source', () => {
     key = api.key;
     keyThrows = undefined;
     accounts = [claude('dev.a@example.com'), claude('dev.b@example.com'), claude('alias@example.com')];
+    kept = [];
   });
   afterEach(async () => {
     for (const s of sources.splice(0)) s.stop?.();
@@ -39,7 +41,7 @@ describe('claude-analytics usage source', () => {
   const ctx = () => ({
     clock: { now: () => now }, logger: { info() {}, warn() {} }, dataDir: '/nowhere', userEnv: {}, secretName: (n: string) => n, scratchDir: '/nowhere',
     instanceName: 'analytics', env: () => undefined, machine: async () => undefined, machines: async () => [], client: () => undefined,
-    analytics: { key: () => { if (keyThrows) throw keyThrows; return key; }, accounts: () => accounts },
+    analytics: { key: () => { if (keyThrows) throw keyThrows; return key; }, accounts: () => accounts, keep: (r: unknown) => { kept.push(r); } },
   });
   function create(raw: Record<string, unknown> = {}): UsageSource {
     const p = parseOptions(claudeAnalytics, { baseUrl: api.url, ...raw });
@@ -87,11 +89,13 @@ describe('claude-analytics usage source', () => {
       unmatched: ['alias@example.com'],
     });
     // Another user's row is dropped as it is read: no email, id, name or cost of theirs is kept.
-    const kept = JSON.stringify(st);
-    for (const other of ['someone.else', 'user_other', 'user_a', 'Name of', '7777', '999']) expect(kept).not.toContain(other);
+    const shown = JSON.stringify(st);
+    for (const other of ['someone.else', 'user_other', 'user_a', 'Name of', '7777', '999']) expect(shown).not.toContain(other);
     // No reading: it never throttles or caps a lane, and its usage is never unknown.
     expect(await s.poll()).toEqual([]);
     expect(await unread(s)).toEqual([]);
+    // Each read is kept for the trend (part 4): the same read, so the table holds only the matched accounts' counts.
+    expect(kept).toEqual([st.daily]);
   });
 
   it('asks the API as its docs say: the key, the version, the beta on cost and usage only; one day; only the matched users\' Claude Code cost and tokens', async () => {
