@@ -253,7 +253,9 @@ describe('a job that waits on its own background command (issue #1037)', () => {
 
   it('a wait flagged stuck before (issue #1694): its wait check ends it once the command is gone, and the job goes on, told why', async () => {
     const herdr = createFakeHerdrClient({ session: 'jh-test', turns: [OWN({ work: '1 shell', polls: 3, wakes: false }), DONE] });
-    const a = await start(herdr, GRACE);
+    // The default grace (issue #2976): a short one let the nudge come before the marks below under load, and the nudge,
+    // not the wait check, ended the wait. A wait marked stuck needs no grace to end.
+    const a = await start(herdr);
     const job = await waiting(a, herdr);
     const { check: _check, ...wait } = (await a.job(job.id)).wait!;
     a.user().store.jobs.update(job.id, { wait: { ...wait, nudgedAt: wait.since, stuckAt: wait.since } });
