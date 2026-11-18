@@ -1,0 +1,1 @@
+- On the Usage page, Claude Enterprise seats now show yesterday's cost, tokens and Claude Code work for each account, from the organization's usage reports. An admin pastes the organization's analytics key once on the same page.

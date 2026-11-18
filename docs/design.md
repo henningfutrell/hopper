@@ -37305,7 +37305,7 @@ issue named the legacy `user_cost_report`; the docs name it legacy and point to 
   API's message, cut to 200 characters, with anything like a key masked.
 - **Egress.** The daemon calls `api.anthropic.com` only, as the `anthropic-api` escalation level does. Tests use a fake on
   loopback (`test/plugins/fake-claude-analytics.ts`); the network guard refuses anything else.
-- **Left for the next parts.** Daily samples kept for a 30-day trend, the Usage view's daily panel and its What's new line,
+- **Left for the next parts.** Daily samples kept for a 30-day trend (part 3 added the Usage view's daily panel),
   and the per-account choice of usage source (auto from the plan, overridable in the account's settings). The shapes were
   read from the docs, not from a live organization: a live read confirms them.
 
@@ -37324,3 +37324,14 @@ issue named the legacy `user_cost_report`; the docs name it legacy and point to 
   source reads with it at its next read, with no restart.
 - **Operator CLI.** `hopper claude-analytics-key` shows the view; `hopper claude-analytics-key set` takes the key from stdin
   only, never as an argument; `hopper claude-analytics-key remove` removes it (`src/cli-operator-keys.ts`).
+
+### The daily usage panel (issue #2966, part 3, 2026-11-18)
+
+- **On Usage** (`ui/src/views/usage-daily.tsx`). A source that reads daily usage (its state has `daily`, `notConfigured`
+  or `informational`) shows its daily panel in place of readings or the token ledger: the day read, labelled "daily, one
+  day late"; one row for each matched account — cost, tokens, sessions, commits, pull requests and lines added and
+  removed (`ui/src/model/daily-usage.ts`, pure) —; each unmatched account with "no account matched"; and the
+  `notConfigured` text with its steps. It reads only `GET /api/usage`: no new route.
+- **The key on the panel.** Under it, the analytics key's view from `GET /api/claude-analytics-key` (set or not, its last 4
+  characters, when and by whom), for every role. An admin sees a write-only field with Save or Replace, and Remove, which
+  post to `POST /ui/api/claude-analytics-key`; the value typed is sent once, then cleared.

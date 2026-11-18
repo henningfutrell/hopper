@@ -97,7 +97,7 @@ async function boot(source: Record<string, unknown>, ready: string, as = 'admin'
 const slot = (name: string) => document.querySelector(`[data-slot="${name}"]`);
 const text = (name: string) => slot(name)?.textContent ?? '';
 const keyInput = () => document.querySelector<HTMLInputElement>('input[aria-label="Claude Analytics API key"]');
-const button = (label: string) => [...document.querySelectorAll('button')].find((b) => b.textContent === label);
+const button = (label: string) => [...document.querySelectorAll<HTMLButtonElement>('[data-slot="usage-analytics-key"] button')].find((b) => b.textContent === label);
 
 async function type(input: HTMLInputElement, value: string) {
   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
@@ -115,7 +115,7 @@ describe('the Usage page of the claude-analytics source (issue #2966)', () => {
   it('shows each matched account\'s day, the daily label and each unmatched account, and reads no token ledger', async () => {
     key = { set: true, last4: 'abcd' };
     await boot({ daily: { date: '2026-11-17', days: [DAY], unmatched: ['alias@example.com'] } }, '[data-slot="usage-daily-row"]');
-    expect(text('usage-daily-label')).toMatch(/daily, one day late/);
+    expect(text('usage-daily-label')).toMatch(/daily, one day late/i);
     expect(text('usage-daily-label')).toMatch(/2026-11-17/);
     const row = text('usage-daily-row');
     expect(row).toContain(SEAT);

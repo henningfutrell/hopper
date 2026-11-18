@@ -18,8 +18,8 @@ import { accountFacts, executorEffectLines, laneEffectText, noUsageLimits, order
 import { bandAt, capAt, limitsProblem, throttleLine, windowLines, type LimitBand } from '@/model/usage-limits';
 import type { MachineHistory, MachineLaneEffect, MemoryAlert, PartAccount, UsageHistory, UsageLimitPair, UsageReport } from '@/model/wire';
 import { act, refreshUsage, useHopper } from '@/store';
-import { MachinesResourcesPanel } from './machine-resources';
 import { AccountLedgerView, useAccountDays } from './usage-account-ledger'; import { NoLimitsOption } from './usage-no-limits';
+import { DailyUsageView, readsDailyUsage } from './usage-daily'; import { MachinesResourcesPanel } from './machine-resources';
 
 const pct = (f: number) => `${Math.round(f * 100)}%`;
 const lanes = (n: number) => `${n} ${n === 1 ? 'lane' : 'lanes'}`;
@@ -93,7 +93,8 @@ function LaneEffect({ usage }: { usage: UsageReport }) {
 function Sources({ usage }: { usage: UsageReport }) {
   const now = useNow();
   // A source with no usage limits shows its account's token ledger in place of its windows (issue #2966).
-  const ledger = useAccountDays(usage.sources.some((s) => noUsageLimits(s, usage.readings)));
+  // The claude-analytics source shows its daily usage in their place (issue #2966).
+  const ledger = useAccountDays(usage.sources.some((s) => !readsDailyUsage(s) && noUsageLimits(s, usage.readings)));
   if (!usage.sources.length) return <Panel title="Usage" icon={GaugeIcon}><Empty>no usage sources: lanes are capped by machines only</Empty></Panel>;
   return (
     <>
@@ -104,7 +105,7 @@ function Sources({ usage }: { usage: UsageReport }) {
           <Panel key={s.name} title={s.name} icon={GaugeIcon} fold={`usage.source.${s.name}`} count={readings.length || ''} bodyClassName="space-y-3">
             <div className={`text-xs break-words ${line.problem ? 'text-warn' : 'text-muted-foreground'}`}>{line.text}</div>
             <NoLimitsOption source={s.name} />
-            {readings.length ? <div className="flex flex-wrap justify-around gap-x-2 gap-y-4">{readings.map((r) => <ReadingGauge key={`${r.window ?? ''}|${r.machineId ?? ''}`} r={r} now={now} />)}</div>
+            {readsDailyUsage(s) ? <DailyUsageView source={s} /> : readings.length ? <div className="flex flex-wrap justify-around gap-x-2 gap-y-4">{readings.map((r) => <ReadingGauge key={`${r.window ?? ''}|${r.machineId ?? ''}`} r={r} now={now} />)}</div>
               : noUsageLimits(s, usage.readings) ? <AccountLedgerView account={s.account?.identity} {...ledger} /> : <Empty>no readings now</Empty>}
           </Panel>
         );
