@@ -34,6 +34,8 @@ export interface SlotDeps {
   client: ExecutorContext['client'];
   /** A usage read's agent sign-in on a lane pod (RoleContext['usage-source'], issue #1287). Absent: none. */
   agentSignIn?: UsageSourceContext['agentSignIn'];
+  /** The `claude-analytics` usage source's key and accounts (RoleContext['usage-source'], issue #2966). Absent: none. */
+  analytics?: UsageSourceContext['analytics'];
   /** Job pods (RoleContext['executor'], issue #1283). Absent: none. */
   pods?: ExecutorContext['pods'];
   /** A container target's command boxes (RoleContext['executor'], issue #865). Absent: none. */
@@ -77,6 +79,7 @@ function contextFor(deps: SlotDeps, id: string, instanceName: string) {
     clock: deps.clock, logger: deps.logger, dataDir: deps.dataDir, scratchDir, instanceName, env: deps.kit.env, secretName: deps.kit.secretName, userEnv: deps.userEnv,
     ...deps.jobSource, executors: deps.executors, target: deps.target, machine: deps.machine, machines: deps.machines, escalationMachine: deps.escalationMachine, client: deps.client,
     ...(deps.pods ? { pods: deps.pods } : {}), ...(deps.boxes ? { boxes: deps.boxes } : {}), ...(deps.agentSignIn ? { agentSignIn: deps.agentSignIn } : {}),
+    ...(deps.analytics ? { analytics: deps.analytics } : {}),
   };
 }
 

@@ -20,6 +20,7 @@ export function systemSecretTitle(s: Pick<SystemSecretView, 'name' | 'kind'>): s
   if (s.kind === 'remote-access') return `Remote access: ${REMOTE_ACCESS[s.name.slice('remote-access.'.length)] ?? s.name}`;
   if (s.kind === 'github-webhook') return 'GitHub webhook secret';
   if (s.kind === 'cloud-link') return s.name === 'cloud-link.previous-key' ? 'cloud link key before a rotation: private half' : 'cloud link key: private half';
+  if (s.kind === 'claude-analytics') return 'Claude Analytics API key (daily usage)';
   const [, realm, setting] = s.name.split('.');
   return `Sign-in realm ${realm ?? ''}: ${setting === 'bindPassword' ? 'bind password' : 'client secret'}`;
 }
@@ -33,6 +34,7 @@ export function systemSecretWhere(s: Pick<SystemSecretView, 'kind'>): string {
   if (s.kind === 'remote-access') return 'Settings → Remote access';
   if (s.kind === 'github-webhook') return 'Settings → GitHub webhook';
   if (s.kind === 'cloud-link') return 'Settings → hopper.io';
+  if (s.kind === 'claude-analytics') return 'Usage';
   return 'Settings → Sign-in';
 }
 

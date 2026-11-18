@@ -100,6 +100,45 @@ export interface UsageSourceState {
   signIn?: true;
   /** Its account day budget (issue #2966): the most estimated cost, in US dollars, its account's jobs may spend in one UTC day before they go to the soft lanes. Absent: off. */
   dayCostUsd?: number;
+  /**
+   * An informational source (issue #2966, glossary "Informational source"): its readings never limit a job, so with none
+   * its usage is not unknown (`unreadUsageOf` skips it).
+   */
+  informational?: true;
+  /** What a person must set before it can read (issue #2966): `analytics key not configured: …`. A state, not a problem. */
+  notConfigured?: string;
+  /** Its last read of daily usage (issue #2966, `claude-analytics`): absent for every other source. */
+  daily?: DailyUsageRead;
+}
+
+/**
+ * One Claude account's Claude Code use on one UTC day, as the Claude Enterprise Analytics API gives it (issue #2966, glossary
+ * "Daily usage"). Counts only: never a name, a user id or another account's row.
+ */
+export interface DailyUsage {
+  /** The Claude account it is of: the email its usage source reads (`claude auth status`). */
+  account: string;
+  /** The UTC day, `YYYY-MM-DD`. */
+  date: string;
+  /** Cost in US cents, after discounts and before credits. */
+  costCents: number;
+  tokens: { input: number; output: number; cacheRead: number; cacheCreation: number };
+  sessions: number;
+  commits: number;
+  pullRequests: number;
+  linesAdded: number;
+  linesRemoved: number;
+  /** Edit, write and notebook tool actions a person accepted or rejected. */
+  toolActions: { accepted: number; rejected: number };
+}
+
+/** One read of daily usage (issue #2966): the day read, each account matched, and each account no row matched. */
+export interface DailyUsageRead {
+  /** The UTC day read, `YYYY-MM-DD`: yesterday, or the newest day the API has. */
+  date: string;
+  days: DailyUsage[];
+  /** The Claude accounts of this hopper's machines that no user of the organization matched by email: shown as such, never hidden. */
+  unmatched: string[];
 }
 
 /** A usage source in `GET /api/usage`: its instance name and state. */
