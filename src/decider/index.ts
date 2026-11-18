@@ -55,7 +55,7 @@ export function decide(inputs: DecisionInputs, decisionId: string): Decision {
     for (const t of signedOut) reasons.push(signedOutNote(t));
     const mine = lanes.filter((l) => l.machineId === machine.id);
     const held = mine.filter((l) => l.state !== 'idle');
-    reasons.push(`${machine.id}: ${usedNote(usedFrac, unknown)}${throttle?.window ? ` (${throttle.window})` : ''}, lane cap ${cap} of ${machine.maxLanes} (${band})${ownLimits(machine)}${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
+    reasons.push(`${machine.id}: ${usedNote(usedFrac, unknown)}${throttle?.window ? ` (${throttle.window}${throttle.dayBudget ? ` ${Math.round(throttle.usedFrac * 100)}% spent` : ''})` : ''}, lane cap ${cap} of ${machine.maxLanes} (${band})${ownLimits(machine)}${machine.reservedLanes ? `, ${machine.reservedLanes} reserved for jobs pinned to it` : ''}`);
     for (const e of executors.filter((x) => x.cap !== cap || x.band !== band)) {
       reasons.push(`${machine.id} ${e.executor}: ${usedNote(e.usedFrac, e.unknown)}, lane cap ${e.cap} of ${machine.maxLanes} (${e.band})`);
     }

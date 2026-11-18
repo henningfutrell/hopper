@@ -3,7 +3,8 @@
 // lanes, keeping those it does not name (an admin's POST /ui/api/usage/limits); with `--machine` it sets that machine's own
 // usage limits (issue #1860), and `limits clear --machine` takes them off, each a plugins edit of the machine's options
 // (POST /ui/api/plugins). `hopper usage no-limits <source> on|off` sets a usage source's `noLimits` option: its account has
-// no usage limits, so a read that prints none is no limit. The daemon checks every value.
+// no usage limits, so a read that prints none is no limit. `hopper usage day-budget <source> <usd>|off` sets its `dayCostUsd`, the
+// account day budget (issue #2966). The daemon checks every value.
 import { parseArgs } from 'node:util';
 import { OperatorRefusal, usage, type Call, type Getter } from './cli-operator-call.ts';
 import type { UsageLimitPair, UsageLimits } from './domain/types.ts';
@@ -13,10 +14,13 @@ export const USAGE_LIMITS_USAGE = `  hopper usage limits                        
                                                      change them, or one machine's own; the limits not named stay
   hopper usage limits clear --machine <machine>      the machine goes by the user's usage limits again
   hopper usage no-limits <usage source> on|off       its account has no usage limits (an Enterprise plan is read so by
-                                                     itself): a read that prints none lets its jobs run on every lane`;
+                                                     itself): a read that prints none lets its jobs run on every lane
+  hopper usage day-budget <usage source> <usd>|off   its account day budget: at the estimated spend of one UTC day, its
+                                                     jobs run on the soft lanes only`;
 
 const LINE = 'usage limits [set [--machine <machine>] [--soft <0..1>] [--hard <0..1>] [--soft-lanes <n>] | clear --machine <machine>]';
 const NO_LIMITS_LINE = 'usage no-limits <usage source> on|off';
+const DAY_BUDGET_LINE = 'usage day-budget <usage source> <usd>|off';
 
 interface Configured { role: string; instance: { name: string; plugin: string; options?: Record<string, unknown> } }
 interface PluginsAnswer { config: { version: string }; instances: Configured[] }
@@ -98,5 +102,16 @@ export function noLimitsCall(args: string[]): Call {
   return {
     role: 'admin', path: '/ui/api/plugins',
     post: optionsEdit('usage-source', source, 'usage source', async ({ noLimits: _, ...rest }) => (onOff === 'on' ? { ...rest, noLimits: true } : rest)),
+  };
+}
+
+/** `usage day-budget <source> <usd>|off` (issue #2966): the source's `dayCostUsd`; off, or 0, takes it out of its options. */
+export function dayBudgetCall(args: string[]): Call {
+  const [, source, value, ...extra] = args;
+  const usd = value === 'off' ? 0 : Number(value);
+  if (!source || source.startsWith('-') || value === undefined || value === '' || !(usd >= 0) || extra.length > 0) throw usage(DAY_BUDGET_LINE);
+  return {
+    role: 'admin', path: '/ui/api/plugins',
+    post: optionsEdit('usage-source', source, 'usage source', async ({ dayCostUsd: _, ...rest }) => (usd > 0 ? { ...rest, dayCostUsd: usd } : rest)),
   };
 }

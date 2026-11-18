@@ -39,9 +39,11 @@ export const VAULT_REFERENCE_MAX = 500;
  * connection's tokens, each webhook's signing secret, each sign-in realm's secret (issue #658), and remote access's: each
  * provider's credential and the tunnel token the hopper minted with it (issues #880, #968); and the GitHub webhook secret GitHub
  * signs its deliveries with (issue #1079); the GitLab account's personal access token (issue #1448); the cloud link key's
- * private half (issue #467), and the key before a rotation until the new one connected (issue #2039). The hopper keeps no GitHub App private key (issue #1377). */
+ * private half (issue #467), and the key before a rotation until the new one connected (issue #2039); the Claude Analytics API key
+ * the `claude-analytics` usage source reads daily usage with (issue #2966). The hopper keeps no GitHub App private key (issue #1377). */
 export type SystemSecretName =
   | 'typesafe-api-key'
+  | 'claude-analytics-key'
   | `remote-access.${'ngrok-authtoken' | 'ngrok-api-key' | 'cloudflare-api-token' | 'cloudflare-tunnel-token'}`
   | 'artifact-content-key'
   | 'github-webhook-secret'
@@ -88,11 +90,11 @@ export interface SharedSecretView {
 }
 
 /** The kinds of system secret, by what the hopper keeps them for. */
-export type SystemSecretKind = 'typesafe' | 'artifact' | 'connected-account' | 'webhook' | 'sign-in' | 'remote-access' | 'github-webhook' | 'cloud-link';
+export type SystemSecretKind = 'typesafe' | 'artifact' | 'connected-account' | 'webhook' | 'sign-in' | 'remote-access' | 'github-webhook' | 'cloud-link' | 'claude-analytics';
 export const systemSecretKind = (name: string): SystemSecretKind =>
   name.startsWith('connected-account.') ? 'connected-account' : name.startsWith('webhook.') ? 'webhook' : name.startsWith('sign-in.') ? 'sign-in'
     : name.startsWith('remote-access.') ? 'remote-access' : name === 'github-webhook-secret' ? 'github-webhook' : name === 'artifact-content-key' ? 'artifact'
-      : name.startsWith('cloud-link.') ? 'cloud-link' : 'typesafe';
+      : name.startsWith('cloud-link.') ? 'cloud-link' : name === 'claude-analytics-key' ? 'claude-analytics' : 'typesafe';
 
 /**
  * Why a system secret may not be kept in a vault backend (issue #658, requirement 6), or undefined when it may. The
@@ -104,6 +106,7 @@ export function systemBackendRefusal(name: string): string | undefined {
   if (name === 'typesafe-api-key' || /^webhook\.[^.]+\.signing-secret$/.test(name)) return undefined;
   const kind = systemSecretKind(name);
   if (kind === 'typesafe' || kind === 'webhook') return `${name} is no system secret`;
+  if (kind === 'claude-analytics') return `${name} stays in the hopper: only the TypeSafe API key and a webhook's signing secret may be kept in a vault backend`;
   const why = kind === 'sign-in' || kind === 'remote-access' || kind === 'github-webhook' || kind === 'cloud-link' ? 'it is the whole hopper\'s, and a vault backend is one user\'s plugin' : 'the hopper writes it itself, and a vault backend only reads';
   return `${name} stays in the hopper: ${why}`;
 }

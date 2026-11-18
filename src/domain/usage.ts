@@ -18,6 +18,11 @@ export interface UsageReading {
   window?: string;
   /** Shown, never throttling: it limits one model only (glossary "Informational reading"); decider step 1 skips it. */
   informational?: true;
+  /**
+   * An account day budget (issue #2966, glossary): what the source's account spent today against the source's `dayCostUsd`.
+   * It never stops a machine: at the cap or over it, its jobs go to the soft lanes; below it, it throttles nothing.
+   */
+  dayBudget?: true;
   at: string;
 }
 
@@ -93,6 +98,59 @@ export interface UsageSourceState {
   executors?: string[];
   /** It can start its tool's sign-in on its machine (issue #1128, design.md "Tool sign-in"). */
   signIn?: true;
+  /** Its account day budget (issue #2966): the most estimated cost, in US dollars, its account's jobs may spend in one UTC day before they go to the soft lanes. Absent: off. */
+  dayCostUsd?: number;
+  /**
+   * An informational source (issue #2966, glossary "Informational source"): its readings never limit a job, so with none
+   * its usage is not unknown (`unreadUsageOf` skips it).
+   */
+  informational?: true;
+  /** What a person must set before it can read (issue #2966): `analytics key not configured: …`. A state, not a problem. */
+  notConfigured?: string;
+  /** Its last read of daily usage (issue #2966, `claude-analytics`): absent for every other source. */
+  daily?: DailyUsageRead;
+}
+
+/**
+ * One Claude account's Claude Code use on one UTC day, as the Claude Enterprise Analytics API gives it (issue #2966, glossary
+ * "Daily usage"). Counts only: never a name, a user id or another account's row.
+ */
+export interface DailyUsage {
+  /** The Claude account it is of: the email its usage source reads (`claude auth status`). */
+  account: string;
+  /** The UTC day, `YYYY-MM-DD`. */
+  date: string;
+  /** Cost in US cents, after discounts and before credits. */
+  costCents: number;
+  tokens: { input: number; output: number; cacheRead: number; cacheCreation: number };
+  sessions: number;
+  commits: number;
+  pullRequests: number;
+  linesAdded: number;
+  linesRemoved: number;
+  /** Edit, write and notebook tool actions a person accepted or rejected. */
+  toolActions: { accepted: number; rejected: number };
+}
+
+/** One read of daily usage (issue #2966): the day read, each account matched, and each account no row matched. */
+export interface DailyUsageRead {
+  /** The UTC day read, `YYYY-MM-DD`: yesterday, or the newest day the API has. */
+  date: string;
+  days: DailyUsage[];
+  /** The Claude accounts of this hopper's machines that no user of the organization matched by email: shown as such, never hidden. */
+  unmatched: string[];
+}
+
+/**
+ * The user's analytics key (issue #2966, glossary "Analytics key"), as Usage shows it: set or not, its last 4 characters,
+ * who set it and when. Never the key. `problem`: why no key can be kept or opened now.
+ */
+export interface AnalyticsKeyView {
+  set: boolean;
+  last4?: string;
+  setAt?: string;
+  setBy?: string;
+  problem?: string;
 }
 
 /** A usage source in `GET /api/usage`: its instance name and state. */
@@ -110,6 +168,8 @@ export interface UsageThrottle {
   window?: string;
   usedFrac: number;
   burning?: true;
+  /** An account day budget (issue #2966): `usedFrac` is the day's spend over its cap. */
+  dayBudget?: true;
 }
 
 /**
