@@ -59,6 +59,26 @@ export function typesafeKeyCall(args: string[], stdin: () => string): Call {
   return { role: 'operator', path: '/ui/api/typesafe-key', body: async () => ({ action: 'set', value }) };
 }
 
+export const ANALYTICS_KEY_USAGE = `  hopper claude-analytics-key                        the Claude Analytics API key daily usage is read with: set or not, its last 4
+                                                     characters, when; never the key
+  hopper claude-analytics-key set                    set it from stdin (never as an argument): checked once against the Analytics
+                                                     API, then kept in the vault. The hopper's admin's
+  hopper claude-analytics-key remove                 remove it: daily usage is not read until a key is set`;
+
+const ANALYTICS_KEY_SET = 'claude-analytics-key set (the key on stdin, never as an argument)';
+
+/** `hopper claude-analytics-key [set|remove]` (issue #2966): the key from stdin only, as `typesafe-key set`. */
+export function analyticsKeyCall(args: string[], stdin: () => string): Call {
+  const { positionals } = parseArgs({ args, allowPositionals: true, options: {} });
+  const [verb, ...extra] = positionals;
+  if (verb === undefined) return { role: 'viewer', path: '/api/claude-analytics-key' };
+  if (verb === 'remove' && extra.length === 0) return { role: 'admin', path: '/ui/api/claude-analytics-key', body: async () => ({ action: 'remove' }) };
+  if (verb !== 'set' || extra.length > 0) throw usage(verb === 'set' ? ANALYTICS_KEY_SET : `claude-analytics-key | hopper ${ANALYTICS_KEY_SET} | hopper claude-analytics-key remove`);
+  const value = stdin().trim();
+  if (!value) throw new OperatorRefusal('no key on stdin: pipe it in, e.g. hopper claude-analytics-key set < key-file');
+  return { role: 'admin', path: '/ui/api/claude-analytics-key', body: async () => ({ action: 'set', value }) };
+}
+
 export const TOKEN_USAGE = `  hopper token mint --label <who uses it> (--preset <id> | --scope <scope>) [--scope <scope> ...] [--holder <who keeps it>]
                     [--role viewer|operator|admin] [--days <1-365> | --no-expiry] [--minutes <5-15>] [--box] [--deny <name>]... [--jkt=<thumbprint>]
                     [--repo <owner/name>]... [--source <name>]...

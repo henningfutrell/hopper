@@ -45,6 +45,7 @@ import type { UiSessions } from './ui/sessions.ts';
 import type { SecretProblem } from './webhooks.ts';
 import type { UserMachineLink } from '../users/runtime.ts';
 import type { UserGitHubProxy } from '../users/github-proxy.ts';
+import type { AnalyticsKey } from '../users/analytics-key.ts';
 import type { WindowsSteps } from '../windows-steps/index.ts';
 import type { NeedSteps } from '../sandbox/need-steps.ts';
 import type { Bastions } from '../sandbox/bastions.ts';
@@ -79,6 +80,8 @@ export interface TenantParts {
   minorDecisions: MinorDecisions;
   /** The TypeSafe API key Jev asks with (issue #657): its view, set and remove; never the key. */
   typesafeKey: TypesafeKey;
+  /** The Claude Analytics API key (issue #2966): its view, set and remove; never the key. */
+  analyticsKey: AnalyticsKey;
   /** The TL;DR of every long card (issue #569): its sweep, run at once when the setting turns on. */
   tldrs: Pick<Tldrs, 'sweep'>;
   /** Every job source's status (/api/sources, SSE source.updated). */

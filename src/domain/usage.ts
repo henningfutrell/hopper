@@ -141,6 +141,18 @@ export interface DailyUsageRead {
   unmatched: string[];
 }
 
+/**
+ * The user's analytics key (issue #2966, glossary "Analytics key"), as Usage shows it: set or not, its last 4 characters,
+ * who set it and when. Never the key. `problem`: why no key can be kept or opened now.
+ */
+export interface AnalyticsKeyView {
+  set: boolean;
+  last4?: string;
+  setAt?: string;
+  setBy?: string;
+  problem?: string;
+}
+
 /** A usage source in `GET /api/usage`: its instance name and state. */
 export interface UsageSourceReport extends UsageSourceState {
   name: string;
