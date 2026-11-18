@@ -37305,8 +37305,8 @@ issue named the legacy `user_cost_report`; the docs name it legacy and point to 
   API's message, cut to 200 characters, with anything like a key masked.
 - **Egress.** The daemon calls `api.anthropic.com` only, as the `anthropic-api` escalation level does. Tests use a fake on
   loopback (`test/plugins/fake-claude-analytics.ts`); the network guard refuses anything else.
-- **Left for the next parts.** Daily samples kept for a 30-day trend (part 3 added the Usage view's daily panel),
-  and the per-account choice of usage source (auto from the plan, overridable in the account's settings). The shapes were
+- **Left for the next parts.** Daily samples kept for a 30-day trend (part 3 added the Usage view's daily panel; part 4
+  keeps the days, "The daily usage trend"), and the per-account choice of usage source (auto from the plan, overridable in the account's settings). The shapes were
   read from the docs, not from a live organization: a live read confirms them.
 
 ### Setting the analytics key (issue #2966, part 2, 2026-11-18)
@@ -37335,3 +37335,24 @@ issue named the legacy `user_cost_report`; the docs name it legacy and point to 
 - **The key on the panel.** Under it, the analytics key's view from `GET /api/claude-analytics-key` (set or not, its last 4
   characters, when and by whom), for every role. An admin sees a write-only field with Save or Replace, and Remove, which
   post to `POST /ui/api/claude-analytics-key`; the value typed is sent once, then cleared.
+
+### The daily usage trend (issue #2966, part 4, 2026-11-18)
+
+Part 1 kept only the last read, in memory: Usage showed one day. The person who accepted the proposal picked path 1, the
+trend in a tenant table; the per-account choice of usage source is its own job.
+
+- **The table** `daily_usage` (tenant migration 110, `src/store/daily-usage.ts`): one row per account and UTC day — cost in
+  cents, input, output, cache read and cache creation tokens, sessions, commits, pull requests, lines added and removed,
+  and tool actions accepted and rejected. Counts only. Its key is the account and the day, so a day read again is one row,
+  with the newest counts. Rows older than 90 days go at each keep (`DAILY_USAGE_KEPT_DAYS`, `src/domain/daily-usage.ts`).
+  A table only: the build before runs on the store, and never reads it.
+- **Who writes it.** The `claude-analytics` source, after each good read, through `AnalyticsContext.keep` (the user's
+  runtime gives it the user's store). It keeps the read's `days` only: the user's own matched accounts, as the source
+  already holds them, never another member's row, a user id or the key. A keep that fails is a warning in the log; the
+  read still shows.
+- **The read.** `GET /api/usage/daily?days=N` (`src/http/daily-usage.ts`; scope area `usage`): `DailyUsageTrend` — `days`,
+  `from`, `to` (yesterday, UTC: the newest day the Analytics API has) and `daily`, the rows of those days, oldest first.
+  `days` is 1 to 90, default 30; any other is a 400. `hopper usage analytics [--days <n>]` reads it.
+- **On Usage.** The daily panel shows the trend under the day's rows: the last 30 days, a bar per day of the tokens,
+  stacked by account, the day's cost on hover (`TokenDaysChart`, as the Dashboard's tokens over time), and the total cost
+  and tokens of the 30 days. With no day kept yet it says so: the trend fills one day at each read.
