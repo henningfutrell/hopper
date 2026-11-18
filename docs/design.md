@@ -6491,6 +6491,19 @@ holds no credential. Prior art: `a status-bar script`.
   every read. When the account's plan (`subscriptionType`) names `enterprise`, or the source's option `noLimits` is on,
   that text is a good read with no budget: no reading and no problem, so the source is no unread usage source and the
   machine's lanes are not capped as `unknown`. A failed read (`is_error`, an exit, not JSON) is still a problem.
+- **Account day budget** (issue #2966). Such an account is metered by spend, not by usage windows, so nothing above
+  gates it. The source's option `dayCostUsd` (US dollars; absent or 0: off, the default) caps what the account's jobs
+  spend in one UTC day, as the token ledger estimates it ("The token ledger"): the rows of the account's identity, on any
+  machine; with no identity read, the rows of its machine. Each read of usage (`readUsage`, `src/engine/usage-read.ts`)
+  adds one reading per such source — window `day budget`, unit `USD`, `dayBudget: true`, `resetsAt` the next UTC day —
+  built by `dayBudgetReadings` (`src/domain/token-budget.ts`). The ledger is read only while a source has a budget, and
+  only for the day. The decider takes that reading apart from the usage windows (`bandOf`, `src/decider/usage.ts`): below
+  the cap it throttles nothing; at the cap or over it the band is `soft`, so the source's executors' jobs run on the soft
+  lanes; it never reaches `hard`. It is not a usage window: it sets no used fraction (its `throttle` carries the spend,
+  `dayBudget: true`), and it does not make an unread source known. The ledger is an estimate, and a running job runs on:
+  it slows the spend, it cannot stop it. The token budget's day budgets ("The token ledger") hold every waiting job
+  instead; this one is the account's own. Any usage source can carry the budget (`UsageSourceState.dayCostUsd`); only
+  claude-plan has the option.
 - `claude auth status --json` (same run, same probe dir) gives the **account**: email, plan
   (`subscriptionType`), organization (`orgName`), sign-in method. Ids and anything else are dropped.
 

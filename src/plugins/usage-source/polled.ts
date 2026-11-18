@@ -30,6 +30,8 @@ export function createPolledUsageSource(
   ctx: PolledContext,
   o: {
     intervalSeconds: number; machineId?: string; executors?: string[]; read(signal: AbortSignal): Promise<Read>;
+    /** Its account day budget (issue #2966), in US dollars; absent or 0: off. */
+    dayCostUsd?: number;
     /** Its tool's sign-in on its machine (issue #1128): once one goes through, the account is read again at once. */
     signIn?(o: { email?: string }): Promise<ToolSignIn>;
     signInTarget?(): Promise<{ machineId: string; tool: string }>;
@@ -110,6 +112,7 @@ export function createPolledUsageSource(
         ...(accountReadAt ? { accountReadAt: accountReadAt.toISOString() } : {}),
         ...(o.executors ? { executors: [...o.executors] } : {}),
         ...(o.signIn ? { signIn: true as const } : {}),
+        ...(o.dayCostUsd ? { dayCostUsd: o.dayCostUsd } : {}),
       };
     },
     ...(o.signInTarget ? { signInTarget: o.signInTarget } : {}),

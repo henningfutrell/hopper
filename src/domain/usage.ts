@@ -18,6 +18,11 @@ export interface UsageReading {
   window?: string;
   /** Shown, never throttling: it limits one model only (glossary "Informational reading"); decider step 1 skips it. */
   informational?: true;
+  /**
+   * An account day budget (issue #2966, glossary): what the source's account spent today against the source's `dayCostUsd`.
+   * It never stops a machine: at the cap or over it, its jobs go to the soft lanes; below it, it throttles nothing.
+   */
+  dayBudget?: true;
   at: string;
 }
 
@@ -93,6 +98,8 @@ export interface UsageSourceState {
   executors?: string[];
   /** It can start its tool's sign-in on its machine (issue #1128, design.md "Tool sign-in"). */
   signIn?: true;
+  /** Its account day budget (issue #2966): the most estimated cost, in US dollars, its account's jobs may spend in one UTC day before they go to the soft lanes. Absent: off. */
+  dayCostUsd?: number;
 }
 
 /** A usage source in `GET /api/usage`: its instance name and state. */
@@ -110,6 +117,8 @@ export interface UsageThrottle {
   window?: string;
   usedFrac: number;
   burning?: true;
+  /** An account day budget (issue #2966): `usedFrac` is the day's spend over its cap. */
+  dayBudget?: true;
 }
 
 /**
