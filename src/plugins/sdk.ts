@@ -12,7 +12,7 @@ import type { VaultBackend } from '../domain/vault.ts';
 import type { CommandBoxes } from '../domain/sandboxes.ts';
 import type { InfraPlanNotice } from '../domain/infra-watchers.ts';
 import type { ClientTransport } from '../executors/client.ts';
-import type { Account, Advice, ChangeRule, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, ToolSignIn, UsageReading } from '../domain/types.ts';
+import type { Account, Advice, DailyUsageRead, ChangeRule, AdviceAction, AttachedMachine, Detection, OptionChoice, DomainEvent, Job, MachineSnapshot, NotifierActionResult, PreSortReject, Question, QuestionAttempt, RaisedBy, Role, ToolSignIn, UsageReading } from '../domain/types.ts';
 import type { Rejection } from '../domain/rejection.ts';
 import type { IssueGraphRepository } from '../domain/issue-graph.ts';
 import type { GitHubListingRepository } from '../domain/github-listing.ts';
@@ -156,6 +156,8 @@ export interface AnalyticsContext {
   key(): string | undefined;
   /** The Claude accounts the other usage sources read now: the accounts whose daily usage is kept. Never a token. */
   accounts(): Account[];
+  /** Keeps a read's days for the trend (issue #2966 part 4, `daily_usage`): the matched accounts' counts only. */
+  keep?(read: DailyUsageRead): void;
 }
 
 /**

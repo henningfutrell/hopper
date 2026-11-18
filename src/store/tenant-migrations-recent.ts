@@ -41,7 +41,7 @@ import { STEP_SCHEDULE_TABLES } from './step-schedules.ts';
 import { KEPT_TRACK_TABLES } from './kept-tracks.ts';
 import { GRADE_TABLES, ITEM_GRADE_TABLES } from './grades.ts'; import { COMPLETION_REVIEW_TABLE } from './completion-reviews.ts'; import { RECOMMENDATION_TABLE } from './review-recommendations.ts';
 import { MEMORY_ENTRY_TABLE } from './repo-memories.ts';
-import { WORK_PLAN_TABLES } from './work-plans.ts'; import { VAULT_SCOPE_GRANT_TABLE } from './vault-scope-grants.ts';
+import { WORK_PLAN_TABLES } from './work-plans.ts'; import { VAULT_SCOPE_GRANT_TABLE } from './vault-scope-grants.ts'; import { DAILY_USAGE_TABLE } from './daily-usage.ts';
 
 export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 48: Job checkpoints (issue #921): each job's latest patch and agent session. A table only: the build before runs on it.
@@ -241,4 +241,7 @@ export const RECENT_TENANT_MIGRATIONS: readonly Migration[] = [
   // 109: The scope grants (issue #2923): one row per scope a person granted the vault for. A table only: the build
   // before runs on it, and never reads it.
   VAULT_SCOPE_GRANT_TABLE,
+  // 110: The daily usage trend (issue #2966 part 4): one row per account and UTC day of the claude-analytics source's daily
+  // usage, counts only. A table only: the build before runs on it, and never reads it.
+  DAILY_USAGE_TABLE,
 ];

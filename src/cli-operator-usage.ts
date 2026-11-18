@@ -4,6 +4,7 @@
 // `hopper usage budget [set …]` (part 3): the token budget, GET /api/token-budget, or an admin's POST /ui/api/token-budget;
 // with the day caps, in all and per repository (part 5). `usage model-routing` and `usage job-budget`: cli-operator-model-routing.ts.
 // `usage limits` and `usage no-limits` (issue #2932), `usage day-budget` (issue #2966): cli-operator-usage-limits.ts.
+// `usage analytics [--days <n>]` (issue #2966 part 4): the daily usage trend, GET /api/usage/daily.
 import { parseArgs } from 'node:util';
 import { usage, type Call } from './cli-operator-call.ts';
 import { MODEL_ROUTING_USAGE, modelRoutingCall } from './cli-operator-model-routing.ts';
@@ -14,6 +15,9 @@ export const USAGE_USAGE = `  hopper usage tokens [--repo <owner/repo>] [--since
                                                      (default repo), each group split by a second one with --split, with the top spenders;
                                                      counts only
   hopper usage tokens --job <id>                     one job's token use and estimated cost, per model
+  hopper usage analytics [--days <n>]                the daily usage kept from the Analytics API: each account's cost, tokens and
+                                                     Claude Code work per UTC day, the last n days up to yesterday (default 30,
+                                                     at most 90); counts only
   hopper usage budget                                the token budget: the most one job may spend before it is paused, and the
                                                      most the jobs, or each repository's, may spend in a UTC day before none starts
   hopper usage budget set [--job-tokens <n>] [--job-cost <usd>] [--day-tokens <n>] [--day-cost <usd>]
@@ -27,6 +31,21 @@ const LINE = 'usage tokens [--repo <owner/repo>] [--since <date>] [--by <group>]
 /** Each cap's option, and the field it sets. */
 const CAPS = [['job-tokens', 'jobTokens'], ['job-cost', 'jobCostUsd'], ['day-tokens', 'dayTokens'], ['day-cost', 'dayCostUsd'], ['repo-day-tokens', 'repoDayTokens'], ['repo-day-cost', 'repoDayCostUsd']] as const;
 
+const ANALYTICS_LINE = 'usage analytics [--days <n>]';
+
+/** `hopper usage analytics [--days <n>]`: the daily usage trend. The daemon checks the number and answers 400 for a bad one. */
+function analyticsCall(args: string[]): Call {
+  let parsed;
+  try {
+    parsed = parseArgs({ args: args.slice(1), allowPositionals: false, strict: true, options: { days: { type: 'string' } } });
+  } catch {
+    throw usage(ANALYTICS_LINE);
+  }
+  const days = parsed.values.days;
+  if (days !== undefined && !/^\d+$/.test(days)) throw usage(ANALYTICS_LINE);
+  return { role: 'viewer', path: days === undefined ? '/api/usage/daily' : `/api/usage/daily?days=${days}` };
+}
+
 const amount = (s: string | undefined): number | undefined => {
   if (s === undefined) return undefined;
   if (!/^\d+(\.\d+)?$/.test(s)) throw usage(LINE);
@@ -38,6 +57,7 @@ export function usageCall(args: string[]): Call {
   if (args[0] === 'limits') return usageLimitsCall(args);
   if (args[0] === 'no-limits') return noLimitsCall(args);
   if (args[0] === 'day-budget') return dayBudgetCall(args);
+  if (args[0] === 'analytics') return analyticsCall(args);
   let parsed;
   try {
     parsed = parseArgs({ args, allowPositionals: true, strict: true, options: { job: { type: 'string' }, repo: { type: 'string' }, since: { type: 'string' }, by: { type: 'string' }, split: { type: 'string' }, ...Object.fromEntries(CAPS.map(([o]) => [o, { type: 'string' as const }])) } });

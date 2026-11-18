@@ -40,7 +40,7 @@ import { createSearchPendingRepository } from './search-pending.ts';
 import { createGitHubWatchRepository } from './github-watches.ts';
 import { createRepoChecksReadRepository } from './repo-checks.ts';
 import { createIntakeArrivalRepository } from './intake-arrivals.ts'; import { createTokenLedgerRepository } from './token-ledger.ts'; import { createResourceLedgerRepository } from './resource-ledger.ts';
-import { createDiskMeasureRepository } from './disk-measures.ts'; import { createDeliveryLedgerRepository } from './delivery-ledger.ts'; import { createStepScheduleRepository } from './step-schedules.ts'; import { createKeptTrackRepository } from './kept-tracks.ts'; import { createMemoryEntryRepository } from './repo-memories.ts'; import { createGradeRepository } from './grades.ts'; import { createWorkPlanRepository } from './work-plans.ts'; import { createCompletionReviewRepository } from './completion-reviews.ts'; import { createRecommendationRepository } from './review-recommendations.ts';
+import { createDiskMeasureRepository } from './disk-measures.ts'; import { createDeliveryLedgerRepository } from './delivery-ledger.ts'; import { createStepScheduleRepository } from './step-schedules.ts'; import { createKeptTrackRepository } from './kept-tracks.ts'; import { createMemoryEntryRepository } from './repo-memories.ts'; import { createGradeRepository } from './grades.ts'; import { createWorkPlanRepository } from './work-plans.ts'; import { createCompletionReviewRepository } from './completion-reviews.ts'; import { createRecommendationRepository } from './review-recommendations.ts'; import { createDailyUsageRepository } from './daily-usage.ts';
 import { createAppInstallationsReadRepository } from './app-installations.ts';
 import { createReviewItemRepository } from './review-items.ts';
 import { createQuestionRepository } from './questions.ts';
@@ -108,7 +108,7 @@ export function openUserStore(o: { url: string; clock: Clock; idGen: IdGen }): U
     problems: createProblemRepository(ctx),
     handoffs: createHandoffRepository(ctx),
     itemSnapshots: createItemSnapshotRepository(ctx),
-    vaultGrants: createVaultGrantRepository(ctx), vaultScopeGrants: createVaultScopeGrantRepository(ctx),
+    vaultGrants: createVaultGrantRepository(ctx), vaultScopeGrants: createVaultScopeGrantRepository(ctx), dailyUsage: createDailyUsageRepository(ctx),
     bugReports: createBugReportRepository(ctx),
     issueGraph: createIssueGraphRepository(ctx, workItems),
     workItems,
