@@ -132,8 +132,9 @@ describe('claude-plan plugin', () => {
 
   it('is a usage source; options machine (none: the only machine there is, #442), bin (command-bearing, default claude), intervalSeconds (default 600, at least 120) and executors (default the built-in herdr-claude and claude, issue #533)', () => {
     expect(claudePlan).toMatchObject({ id: 'claude-plan', role: 'usage-source' });
-    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'] } });
-    expect(parseOptions(claudePlan, { machine: 'local' })).toEqual({ ok: true, options: { machine: 'local', bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'] } });
+    expect(parseOptions(claudePlan, {})).toEqual({ ok: true, options: { bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'], meter: 'auto' } });
+    expect(parseOptions(claudePlan, { machine: 'local' })).toEqual({ ok: true, options: { machine: 'local', bin: 'claude', intervalSeconds: 600, sshBin: 'ssh', executors: ['herdr-claude', 'claude'], meter: 'auto' } });
+    expect(parseOptions(claudePlan, { meter: 'spend' }).ok).toBe(false);
     expect(parseOptions(claudePlan, { machine: 'local', executors: ['claude-big'] })).toMatchObject({ ok: true, options: { executors: ['claude-big'] } });
     expect(parseOptions(claudePlan, { machine: 'local', intervalSeconds: 60 }).ok).toBe(false);
     const schema = optionsJsonSchema(claudePlan) as { properties: Record<string, { commandBearing?: boolean; machine?: boolean }>; required?: string[] };
@@ -147,7 +148,7 @@ describe('claude-plan plugin', () => {
   it('detection never calls claude nor looks for it: claude runs on the machine the source names, this one too (#174)', async () => {
     let ran = false;
     const kit = fakeKit({ which: async () => undefined, version: async () => { ran = true; return 'x'; }, succeeds: async () => { ran = true; return true; } });
-    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', executors: ['herdr-claude'] }))
+    expect(await claudePlan.detect(kit, { bin: 'claude', intervalSeconds: 600, machine: 'laptop', sshBin: 'ssh', executors: ['herdr-claude'], meter: 'auto' }))
       .toEqual({ status: 'available', detail: 'claude on machine laptop' });
     expect(ran).toBe(false);
   });
@@ -166,7 +167,7 @@ describe('claude-plan plugin', () => {
     ]);
     await waitFor(() => s.state!().account, { what: 'account' });
     expect(s.state!()).toEqual({
-      refreshedAt: at, accountReadAt: at, executors: ['herdr-claude', 'claude'], signIn: true,
+      refreshedAt: at, accountReadAt: at, executors: ['herdr-claude', 'claude'], signIn: true, meter: 'live',
       account: { service: 'claude', identity: 'user@example.com', detail: { plan: 'max', organization: 'Example Org', authMethod: 'claude.ai', machine: 'local' } },
     });
     expect(JSON.stringify(s.state!())).not.toContain('SECRET');
@@ -205,21 +206,19 @@ describe('claude-plan plugin', () => {
     await waitFor(() => (t.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(t.state!().problem).toBe('usage unavailable: claude printed no usage limits (Claude Code could not read them from its usage service)');
 
-    // Issue #2932: an account with no usage limits (an Enterprise plan), or a source told so, reads as no limit: no problem.
+    // Issue #2932: an Enterprise plan reads as no limit, no problem: auto resolves it to the analytics meter (issue #2966).
     writeFileSync(join(control, 'plan'), 'enterprise');
-    const e = await create();
-    await waitFor(() => e.state!().refreshedAt, { what: 'the first read' });
-    expect(e.state!().problem).toBeUndefined();
-    expect(await e.poll()).toEqual([]);
-    writeFileSync(join(control, 'plan'), 'max');
-    const n = await create({ noLimits: true });
+    const e = await create(); await waitFor(() => e.state!().refreshedAt, { what: 'the first read' });
+    expect([e.state!().problem, e.state!().meter, await e.poll()]).toEqual([undefined, 'analytics', []]);
+    const l = await create({ meter: 'live' }); // live: the same text is usage unknown, Enterprise plan or not
+    await waitFor(() => (l.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect(l.state!()).toMatchObject({ problem: expect.stringMatching(/^usage unavailable: claude printed no usage limits/), meter: 'live' });
+    writeFileSync(join(control, 'plan'), 'max'); // analytics: another plan reads as having no limits
+    const n = await create({ meter: 'analytics' }); expect(n.state!().meter).toBe('analytics'); // set: known before any read
     await waitFor(() => n.state!().refreshedAt, { what: 'the first read' });
-    expect(n.state!().problem).toBeUndefined();
-    expect(await n.poll()).toEqual([]);
-    // Told so, a source still says a failed read: only "no usage limits printed" reads as none.
-    writeFileSync(join(control, 'mode'), 'is-error');
-    const f = await create({ noLimits: true });
-    await waitFor(() => (f.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
+    expect([n.state!().problem, await n.poll()]).toEqual([undefined, []]);
+    writeFileSync(join(control, 'mode'), 'is-error'); // analytics still says a failed read: only "none printed" is no limit
+    const f = await create({ meter: 'analytics' }); await waitFor(() => (f.state!().problem !== 'not read yet' ? true : undefined), { what: 'the first read' });
     expect(f.state!().problem).toBe('usage unavailable: Usage is not available right now');
 
     writeFileSync(join(control, 'mode'), 'logged-out');

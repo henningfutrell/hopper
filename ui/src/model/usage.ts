@@ -27,7 +27,7 @@ export const shownSource = (sources: Pick<UsageSourceReport, 'name'>[], chosen: 
   sources.find((s) => s.name === chosen)?.name ?? sources[0]?.name;
 
 /**
- * A usage source that read its account and found no usage limits (issue #2932: an Enterprise plan, or `noLimits`): read, with
+ * A usage source that read its account and found no usage limits (issue #2932: the meter `analytics`, issue #2966): read, with
  * no problem and no reading. Its panel shows the account's token ledger in place of the windows (issue #2966).
  */
 export const noUsageLimits = (s: UsageSourceReport, readings: readonly Pick<UsageReading, 'source'>[]): boolean =>

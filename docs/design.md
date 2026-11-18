@@ -6488,8 +6488,8 @@ holds no credential. Prior art: `a status-bar script`.
   usage limits (…)`. Since 2.1.3xx the text has no `Current session` line while no session runs, and ends with a
   contribution report (`What's contributing to your usage?`); the window lines are as before.
 - **An account with no usage limits** (issue #2932): an Enterprise plan prints the same text, with no window lines, at
-  every read. When the account's plan (`subscriptionType`) names `enterprise`, or the source's option `noLimits` is on,
-  that text is a good read with no budget: no reading and no problem, so the source is no unread usage source and the
+  every read. When the source's meter resolves to `analytics` (issue #2966, "The meter of an account": the option `meter`,
+  whose default `auto` resolves a plan (`subscriptionType`) that names `enterprise` so), that text is a good read with no budget: no reading and no problem, so the source is no unread usage source and the
   machine's lanes are not capped as `unknown`. A failed read (`is_error`, an exit, not JSON) is still a problem.
 - **Account day budget** (issue #2966). Such an account is metered by spend, not by usage windows, so nothing above
   gates it. The source's option `dayCostUsd` (US dollars; absent or 0: off, the default) caps what the account's jobs
@@ -14091,10 +14091,10 @@ The soft and hard limits are a setting of the user, edited on the Usage view, no
   the sources it has no reading of. `hopper usage limits set [--soft F] [--hard F] [--soft-lanes N]` posts the route
   above, the limits it does not name as they are now. With `--machine M` it sets that machine's own usage limits
   (issue #1860) as a plugins edit of its options, starting from the user's soft and hard limits when it has none;
-  `limits clear --machine M` takes them off. `hopper usage no-limits <usage source> on|off` sets the source's
-  `noLimits` option ("An account with no usage limits"). `src/cli-operator-usage-limits.ts`,
-  `test/cli/usage-limits.test.ts`. On the Usage page, an admin turns a source's **No usage limits** on or off on its
-  panel, one plugins edit of its options (`ui/src/views/usage-no-limits.tsx`, `test/ui/usage-no-limits.test.ts`).
+  `limits clear --machine M` takes them off. `hopper usage meter <usage source> auto|live|analytics` sets the source's
+  `meter` option (issue #2966, "The meter of an account"; it replaced `no-limits` and the option `noLimits`).
+  `src/cli-operator-usage-limits.ts`, `test/cli/usage-limits.test.ts`. On the Usage page, an admin picks a source's
+  meter on its panel, one plugins edit of its options (`ui/src/views/usage-meter.tsx`, `test/ui/usage-meter.test.ts`).
 
 **Verification:** `test/integration/usage-limits.test.ts` (the real daemon: defaults from the environment; an
 admin sets limits, the next Decision uses them and holds a job at the new hard limit, raising them starts it;
@@ -21703,7 +21703,7 @@ keeps what each job's agent spent, read from the agent session's own log, and ne
   ledger summed per group, the costliest first, with the top spenders. `hopper usage tokens [--repo|--since|--by]` and
   `hopper usage tokens --job <id>` read them. The job view shows a **Tokens** panel.
 - **The ledger of an account with no usage limits** (issue #2966). A usage source that reads an account with no usage limits
-  (an Enterprise plan, or `noLimits`, issue #2932) has no session or weekly window: its read has no problem and no reading
+  (the meter `analytics`, issue #2932) has no session or weekly window: its read has no problem and no reading
   (`noUsageLimits`, `ui/src/model/usage.ts`). Its panel on the Usage view shows that account's token ledger in their place
   (`ui/src/views/usage-account-ledger.tsx`, model `accountLedger` in `ui/src/model/token-ledger.ts`): it reads
   `by=day&split=account` for the last 30 UTC days, only while such a source is there, and takes the parts whose key is the
@@ -37306,7 +37306,7 @@ issue named the legacy `user_cost_report`; the docs name it legacy and point to 
 - **Egress.** The daemon calls `api.anthropic.com` only, as the `anthropic-api` escalation level does. Tests use a fake on
   loopback (`test/plugins/fake-claude-analytics.ts`); the network guard refuses anything else.
 - **Left for the next parts.** Daily samples kept for a 30-day trend (part 3 added the Usage view's daily panel; part 4
-  keeps the days, "The daily usage trend"), and the per-account choice of usage source (auto from the plan, overridable in the account's settings). The shapes were
+  keeps the days, "The daily usage trend"). The per-account choice of usage source is part 5's ("The meter of an account"). The shapes were
   read from the docs, not from a live organization: a live read confirms them.
 
 ### Setting the analytics key (issue #2966, part 2, 2026-11-18)
@@ -37356,3 +37356,39 @@ trend in a tenant table; the per-account choice of usage source is its own job.
 - **On Usage.** The daily panel shows the trend under the day's rows: the last 30 days, a bar per day of the tokens,
   stacked by account, the day's cost on hover (`TokenDaysChart`, as the Dashboard's tokens over time), and the total cost
   and tokens of the 30 days. With no day kept yet it says so: the trend fills one day at each read.
+
+### The meter of an account (issue #2966, part 5, 2026-11-18)
+
+The owner asked for the choice of usage source per account, auto-detected from the plan, overridable in that account's
+settings, and no environment toggle. A usage source is one account on one machine, so the choice is an option of the
+source. The person who accepted the proposal picked path 4.
+
+- **claude-plan option `meter`** (glossary "Meter"): `auto` (the default), `live` or `analytics`. `live` reads the
+  account's session and week windows from `/usage`; a read that prints none is `usage unavailable: …`, an **unread usage
+  source**, as for any plan. `analytics` reads the account as having no usage limits: a read that prints none, or any
+  windows, is a good read with no budget, so the machine's lanes are not capped as `unknown`; a failed read is still a
+  problem; the **account day budget** still applies. `auto` resolves an Enterprise plan (the `claude auth status` plan) to
+  `analytics`, any other plan to `live`; with no plan read it is not resolved yet.
+- **The resolved meter** is the source's state `meter` (`UsageSourceState.meter`, `live` or `analytics`): set at once for
+  `live` or `analytics`, after the first read that names a plan for `auto`, and kept until a read resolves another. The
+  Usage panel shows it (`meter: analytics`) to every role; an admin picks the option there in a select, one plugins edit of
+  the source's options (`ui/src/views/usage-meter.tsx`, `test/ui/usage-meter.test.ts`). Settings → Plugins sets it as any
+  option. `hopper usage meter <usage source> auto|live|analytics` posts the same edit; `auto` takes the option out
+  (`src/cli-operator-usage-limits.ts`).
+- **The implicit claude-analytics source** (`src/plugins/index.ts`, `implicitUsage`). While a usage source's state says
+  `meter: analytics` and the plugins config names no `claude-analytics` instance, the host runs one with the default
+  options, named `claude-analytics` (a taken name gets `-2`, `-3`, …). It is never written to the plugins config: Settings →
+  Plugins shows it among the running usage sources only, and an explicit instance wins. The host's watch signs the plugins
+  config's version and whether the implicit source is wanted, so it starts within one watch interval of the first read that
+  resolves to `analytics`, and stops when no source does. No new secret: it calls `api.anthropic.com` only while the
+  analytics key is set (`notConfigured` makes no call).
+- **`noLimits` is gone** (no compatibility for code; persisted state migrates). Tenant migration 111
+  (`src/store/migration-usage-meter.ts`) gives each claude-plan usage source with `noLimits: true` `meter: 'analytics'`,
+  and takes `noLimits: false` off. `hopper usage no-limits` is gone with it. The build before runs on the result: it drops
+  the option it does not know, and reads an Enterprise plan as having no usage limits.
+
+**Verification:** `test/plugins/claude-plan.test.ts` (auto resolves an Enterprise plan to analytics and another to live;
+live reads no windows as usage unknown; analytics reads another plan as no limits, a failed read still a problem),
+`test/plugins/host-usage-live.test.ts` (the implicit source starts and stops with the meter, is not in the plugins config,
+an explicit instance wins, a taken name), `test/cli/usage-limits.test.ts`, `test/store/migration-usage-meter.test.ts`,
+`test/ui/usage-meter.test.ts`.

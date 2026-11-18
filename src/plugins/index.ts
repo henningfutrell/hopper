@@ -23,7 +23,7 @@ import { machineOptions, optionsJsonSchema, parseOptions, withMachineChoices } f
 import { applyEdit, configuredInstances, describeEdit, type Configured } from './edit.ts'; import { duplicateJobSources } from './duplicates.ts';
 import { PLUGINS, loadPluginsConfig } from './plugins-config.ts';
 import { applyExecutorSpecs, executorStatus, type BuiltExecutor } from './executor-slot.ts';
-import { builtinInstances } from './builtin-instances.ts';
+import { builtinInstances } from './builtin-instances.ts'; import { implicitUsage } from './implicit-usage.ts';
 import { buildNotifier, notifierStatus, runNotifierAction, startNotifier, stopNotifiers } from './notifier-slot.ts';
 import { NO_SOURCE_CONTEXT, applyJobSourceSpecs, applyMachineSpecs, applyUsageSpecs, applyVaultBackendSpecs, configuredBackend, followSpecs, instanceStatus, type Built, type BuiltJobSource } from './source-slots.ts';
 import { targetOf } from './machine-source/targets.ts';
@@ -91,7 +91,8 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     client: o.executorContext?.client ?? (() => undefined), ...(o.executorContext?.pods ? { pods: o.executorContext.pods } : {}), ...(o.executorContext?.boxes ? { boxes: o.executorContext.boxes } : {}), ...(o.usageSourceContext?.agentSignIn ? { agentSignIn: o.usageSourceContext.agentSignIn } : {}), ...(o.usageSourceContext?.analytics ? { analytics: o.usageSourceContext.analytics } : {}),
   };
 
-  const sign = (): string => o.config.version(PLUGINS);
+  /** The plugins config's version, and whether the implicit source runs: either changed, the host configures again. */
+  const sign = (): string => `${o.config.version(PLUGINS)}|${implicitUsage(configured?.usageSources ?? [], usageSources.built).length}`;
 
   async function catalogueDetection(def: PluginDefinition): Promise<Detection> {
     // A machine option has no default (issue #174): each instance names its machine, so the plugin is
@@ -172,7 +173,7 @@ export function createPluginHost(o: PluginHostOptions): PluginHost {
     await applyExecutorSpecs(executors, spec.executors, deps);
     await applyJobSourceSpecs(jobSources, [...spec.jobSources, ...(o.derivedJobSources?.(spec.jobSources) ?? [])], deps, o.jobSourcesChanged);
     await applyMachineSpecs(machines, spec.machines, deps);
-    await applyUsageSpecs(usageSources, spec.usageSources, deps);
+    await applyUsageSpecs(usageSources, [...spec.usageSources, ...implicitUsage(spec.usageSources, usageSources.built)], deps);
     await followSpecs(notifiers, spec.notifiers, {
       label: 'notifier', logger: o.logger,
       build: async (s) => {

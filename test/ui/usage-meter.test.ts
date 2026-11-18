@@ -1,23 +1,23 @@
 // @vitest-environment happy-dom
-// Issue #2932: an account that prints no usage limits (an Enterprise plan) capped its machine at the soft lanes, and its usage
-// source's `noLimits` option was only in Settings → Plugins. The Usage page shows it on the source's panel: an admin turns it
-// on or off there, one plugins edit of that source's options.
+// Issue #2966 (was #2932): the meter of a usage source's account — auto, live or analytics — is on the source's panel on the
+// Usage page: an admin picks it there, one plugins edit of that source's options. The panel says which meter the source
+// resolved to.
 //
-// Feature: a usage source with no limits, on the Usage page
-//   Scenario: an admin sees the source's No usage limits and turns it on: one options edit, the other options kept
-//   Scenario: on, it turns off: the option leaves the options
+// Feature: the meter of a usage source, on the Usage page
+//   Scenario: an admin sees the resolved meter and picks analytics: one options edit, the other options kept
+//   Scenario: back to auto: the option leaves the options
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const SOURCE = { name: 'claude-usage', problem: 'claude printed no usage limits' };
+const SOURCE = { name: 'claude-usage', problem: 'claude printed no usage limits', meter: 'live' };
 let options: Record<string, unknown> = {};
 let calls: { method: string; path: string; body?: unknown }[] = [];
 
 const plugins = () => ({
   roles: [], config: { source: 'stored', version: 'v1', warnings: [] },
   instances: [{ role: 'usage-source', instance: { name: 'claude-usage', plugin: 'claude-plan', options } }],
-  plugins: [{ id: 'claude-plan', role: 'usage-source', options: { type: 'object', properties: { bin: { type: 'string' }, noLimits: { type: 'boolean', description: 'the account has no usage limits' } } } }],
+  plugins: [{ id: 'claude-plan', role: 'usage-source', options: { type: 'object', properties: { bin: { type: 'string' }, meter: { type: 'string', enum: ['auto', 'live', 'analytics'], default: 'auto' } } } }],
   router: { instance: { name: 'r', plugin: 'pass-through' }, selection: {}, detection: {}, active: 'r', fallback: false },
   queueSorter: {}, escalationLevels: [], lists: {},
 });
@@ -66,10 +66,16 @@ async function boot(now: Record<string, unknown>) {
   const app = '../../ui/src/app/app.tsx'; // browser code, type-checked by ui/tsconfig.json: imported by path
   const { App } = (await import(app)) as { App: () => ReturnType<typeof createElement> };
   await act(async () => { root = createRoot(document.getElementById('root')!); root.render(createElement(App)); });
-  await vi.waitFor(() => expect(document.querySelector('[data-slot="usage-no-limits"]')).not.toBeNull());
+  await vi.waitFor(() => expect(document.querySelector('[data-slot="usage-meter"]')).not.toBeNull());
 }
 
-const box = (): HTMLInputElement => document.querySelector<HTMLInputElement>('[data-slot="usage-no-limits"] input[type="checkbox"]')!;
+const select = (): HTMLSelectElement => document.querySelector<HTMLSelectElement>('[data-slot="usage-meter"] select')!;
+const pick = async (value: string) => {
+  await act(async () => {
+    select().value = value;
+    select().dispatchEvent(new Event('change', { bubbles: true }));
+  });
+};
 const posts = () => calls.filter((c) => c.method === 'POST' && c.path === '/ui/api/plugins');
 
 afterEach(() => {
@@ -78,23 +84,24 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('a usage source with no limits, on the Usage page (issue #2932)', () => {
-  it('an admin turns No usage limits on: one options edit, the other options kept', async () => {
+describe('the meter of a usage source, on the Usage page (issue #2966)', () => {
+  it('an admin sees the resolved meter and picks analytics: one options edit, the other options kept', async () => {
     await boot({ bin: 'claude' });
-    expect(document.querySelector('[data-slot="usage-no-limits"]')!.textContent).toMatch(/No usage limits/);
-    expect(box().checked).toBe(false);
-    await act(async () => { box().click(); });
+    expect(document.querySelector('[data-slot="usage-meter"]')!.textContent).toMatch(/Meter/);
+    expect(document.querySelector('[data-meter="claude-usage"]')!.textContent).toBe('meter: live');
+    expect(select().value).toBe('auto');
+    await pick('analytics');
     await vi.waitFor(() => expect(posts()).toHaveLength(1));
-    expect(posts()[0]!.body).toEqual({ action: 'options', role: 'usage-source', name: 'claude-usage', version: 'v1', options: { bin: 'claude', noLimits: true } });
-    await vi.waitFor(() => expect(box().checked).toBe(true));
+    expect(posts()[0]!.body).toEqual({ action: 'options', role: 'usage-source', name: 'claude-usage', version: 'v1', options: { bin: 'claude', meter: 'analytics' } });
+    await vi.waitFor(() => expect(select().value).toBe('analytics'));
   });
 
-  it('on, it turns off: the option leaves the options', async () => {
-    await boot({ bin: 'claude', noLimits: true });
-    expect(box().checked).toBe(true);
-    await act(async () => { box().click(); });
+  it('back to auto: the option leaves the options', async () => {
+    await boot({ bin: 'claude', meter: 'live' });
+    expect(select().value).toBe('live');
+    await pick('auto');
     await vi.waitFor(() => expect(posts()).toHaveLength(1));
     expect(posts()[0]!.body).toMatchObject({ options: { bin: 'claude' } });
-    expect((posts()[0]!.body as { options: object }).options).not.toHaveProperty('noLimits');
+    expect((posts()[0]!.body as { options: object }).options).not.toHaveProperty('meter');
   });
 });
