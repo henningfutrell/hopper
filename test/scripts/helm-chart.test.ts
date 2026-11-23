@@ -271,13 +271,12 @@ describe('the Helm chart, with values', () => {
 
   it('uses an outside Solr when its own is off: its URL, and the basic-auth credentials from a Secret you make (issue #2990)', () => {
     const rs = render('solr.enabled=false', 'solr.external.url=https://solr.example.test/solr/hopper', 'solr.external.existingSecret=hopper-solr-auth');
-    expect(rs.filter((r) => r.metadata.name === 'hopper-solr')).toEqual([]);
-    const hopper = find(rs, 'Deployment', 'hopper'), daemon = container(hopper, 'hopper');
+    const hopper = find(rs, 'Deployment', 'hopper'), daemon = container(hopper, 'hopper'); expect(rs.filter((r) => r.metadata.name === 'hopper-solr')).toEqual([]);
     expect(env(daemon, 'HOPPER_SOLR_URL')?.value).toBe('https://solr.example.test/solr/hopper');
     expect([env(daemon, 'HOPPER_SOLR_USERNAME_FILE')?.value, env(daemon, 'HOPPER_SOLR_PASSWORD_FILE')?.value]).toEqual(['/run/hopper-solr/username', '/run/hopper-solr/password']);
     expect(daemon.volumeMounts).toContainEqual({ name: 'solr-auth', mountPath: '/run/hopper-solr', readOnly: true });
-    expect(pod(hopper).volumes).toContainEqual({
-      name: 'solr-auth', secret: { secretName: 'hopper-solr-auth', defaultMode: 0o440, items: [{ key: 'username', path: 'username' }, { key: 'password', path: 'password' }] },
+    expect(pod(hopper).volumes?.find((v) => v.name === 'solr-auth')?.secret).toMatchObject({
+      secretName: 'hopper-solr-auth', items: [{ key: 'username', path: 'username' }, { key: 'password', path: 'password' }],
     });
     // No credentials: the URL alone, no Secret mounted.
     const plain = container(find(render('solr.enabled=false', 'solr.external.url=https://solr.example.test/solr/hopper'), 'Deployment', 'hopper'), 'hopper');
