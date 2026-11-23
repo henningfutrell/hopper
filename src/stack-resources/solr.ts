@@ -1,7 +1,8 @@
 // The Solr meter (issue #947, design.md "Stack resources"): the search index's queries, their time, its documents and its
 // index size, from Solr's own metrics API (`/solr/admin/metrics`, JSON) on the Solr of the core HOPPER_SOLR_URL names. A
 // query is a request to the core's `/select`: the hopper's searches, type-ahead and counts. The counts are since the core
-// was loaded; the times are Solr's own timer, which weighs the last minutes most.
+// was loaded; the times are Solr's own timer, which weighs the last minutes most. With the search's basic auth (issue
+// #2990); a managed Solr's user may not read the metrics API (Solr's `metrics-read`), and then the reading says so.
 import type { SolrMeter, SolrReading } from '../domain/stack-resources.ts';
 
 const WAIT_MS = 2_000;
@@ -25,18 +26,20 @@ export function solrMetricsUrl(coreUrl: string): string {
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 
-export function createSolrMeter(o: { url: string }): SolrMeter {
+export function createSolrMeter(o: { url: string; authorization?: () => string | undefined }): SolrMeter {
   const { core } = coreOf(o.url);
   const url = solrMetricsUrl(o.url);
   return {
     async read(): Promise<SolrReading> {
       let res: Response;
       try {
-        res = await fetch(url, { signal: AbortSignal.timeout(WAIT_MS) });
+        const authorization = o.authorization?.();
+        res = await fetch(url, { signal: AbortSignal.timeout(WAIT_MS), ...(authorization ? { headers: { authorization } } : {}) });
       } catch (e) {
         const cause = (e as { cause?: { code?: string } }).cause;
         throw new Error(`Solr's metrics (${url}) did not answer: ${cause?.code ?? (e instanceof Error ? e.message : String(e))}`, { cause: e });
       }
+      if (res.status === 401 || res.status === 403) throw new Error(`Solr's metrics (${url}) answered ${res.status}: the Solr user may not read the metrics API (Solr's metrics-read permission)`);
       if (!res.ok) throw new Error(`Solr's metrics (${url}) answered ${res.status}`);
       const metrics = ((await res.json()) as { metrics?: Record<string, unknown> }).metrics ?? {};
       const get = (m: (typeof METRICS)[number]): unknown => metrics[`solr.core.${core}:${m}`];

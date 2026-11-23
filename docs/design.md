@@ -22137,7 +22137,7 @@ its memory against its 256 MiB limit).
 Owner direction: Solr in the hopper stack now, and search built on it from the start, not keyword search first.
 
 **The container.** compose.yaml runs `solr` (`docker.io/library/solr`, slim), required like Postgres and OpenFGA, one core
-in standalone mode (not SolrCloud): `solr-precreate hopper` makes the core `hopper` from Solr's default config at its first
+in standalone mode (not SolrCloud; a managed SolrCloud collection is "Search with a managed Solr"): `solr-precreate hopper` makes the core `hopper` from Solr's default config at its first
 start, on the volume `solr`. On no host port, and on a network of its own, `search` (`hopper_search`), that it shares with
 the hopper alone: no box and no other service reaches it, so Solr holds no credential and the hopper keeps none for it
 (nothing in `.env`, nothing in the vault). The hopper does not wait for it (`depends_on` names Postgres only). The hopper
@@ -22271,6 +22271,40 @@ the highlight read as text, the search in the hash, the Search view's hits, face
 `https://`, and the links and intake snippets), `test/authz/model.test.ts`, `test/update/drift.test.ts`
 and `test/scripts/compose.test.ts` (the `solr` service). The Solr tests use `HOPPER_TEST_SOLR_URL` when it names a core,
 else start Solr in a container (`test/support/solr.ts`).
+
+### Search with a managed Solr (issue #2990, 2026-11-23)
+
+Requirement: search can use a managed, authenticated Solr — one SolrCloud cluster, one collection and one user per app,
+with basic auth on and each app permitted only on its own collection —, where a private Solr container per hopper is not
+allowed. The compose and Helm `solr` service stay as they are, with no credential.
+
+- **The URL.** `HOPPER_SOLR_URL` names a standalone core or a collection on a SolrCloud cluster: a collection answers the
+  same calls at the same paths (`/select`, `/update`, `/schema`, `/config`), so the index (`src/search/solr.ts`) does not
+  ask which. Every call is the core's or the collection's own, the schema calls of each start too: none reaches the
+  Collections API, another collection or ZooKeeper, so a user permitted on its collection only does all the hopper does.
+- **The credentials are given, not owned** ("Secrets": a credential for an outside service comes from the runtime).
+  `HOPPER_SOLR_USERNAME` and `HOPPER_SOLR_PASSWORD`, each also as `NAME_FILE` and read again at each call, so a rotated
+  password applies at once; or the URL's userinfo, decoded. Both forms, or a username with no password, stop the start, in
+  words that name no value (`src/search/solr-connection.ts`). The userinfo is always taken out of the URL (fetch refuses
+  one with it): the URL the start log, an error and the Solr meter name has none. Sent as basic auth on every call to
+  Solr: the index's and the Solr meter's.
+- **The start log** says which Solr and whether basic auth is on: `hopper: search: Solr at <url>, basic auth on|off`.
+- **Unauthorized.** A 401 (credentials refused, or none sent to a Solr that asks) or a 403 (the user may not use the core
+  or collection) throws `SearchUnauthorized` (`src/domain/search.ts`); search's state is then `unauthorized` with why
+  (`GET /api/search`, `/suggest`, `/status`; the Search view says "Search is unauthorized"), and the pass backs off and
+  keeps the pending index updates, as while Solr is down. The why names the variables to check, never a value.
+- **The Solr meter** sends the same auth; a managed Solr's user may not read Solr's metrics API (`metrics-read`), and the
+  Solr reading then says so. It still names a standalone core's metrics only (`solr.core.<core>`): a SolrCloud collection's
+  cores are named per shard and replica.
+- **Not done yet:** the credentials kept in the hopper's vault (an instance system secret set by the admin), and the Helm
+  chart's values for an outside Solr.
+
+Tests: `test/search/solr-connection.test.ts` (userinfo, the variables, a password file read again, both forms or half
+refused, no value in an error, the start line), `test/adapters/solr-cloud-auth.test.ts` (a real SolrCloud cluster with
+basic auth and a per-collection permission, `startTestSolrCloud` in `test/support/solr.ts`, else `HOPPER_TEST_SOLR_CLOUD_URL`
+with `HOPPER_TEST_SOLR_CLOUD_ADMIN`: schema, writes, count, search and suggest with the credentials; wrong ones, none, and
+another collection unauthorized), `test/integration/search.test.ts` (unauthorized and caught up after) and
+`test/ui/search.test.ts` (the unauthorized state).
 
 ## The command palette (issue #2661, 2026-10-23)
 

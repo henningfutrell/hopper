@@ -6,6 +6,8 @@
 //   Scenario: a direct job's hit is private: its owner finds it, any other person does not; a job from GitHub is not private
 //   Scenario: no secret is indexed: a token in a job's prompt finds nothing
 //   Scenario: Solr down: search says degraded and why, the rest goes on, and the jobs changed meanwhile are written once it is back
+//   Scenario: Solr refuses the credentials: search says unauthorized and why; the jobs changed meanwhile are written once
+//     it takes them (issue #2990)
 //   Scenario: the first start with an index that lacks the user's jobs writes them all (the backfill); Reindex does it again
 //   Scenario: Access that cannot be asked hides every hit, and says why
 //   Scenario: with no Solr set up, search says it is not set up
@@ -18,7 +20,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { runCli, type CliIo } from '../../src/cli.ts';
 import { ADMIN_ID } from '../../src/domain/types.ts';
-import type { SearchAnswer, SearchIndex, SearchStatus, SuggestAnswer } from '../../src/domain/search.ts';
+import { SearchUnauthorized, type SearchAnswer, type SearchIndex, type SearchStatus, type SuggestAnswer } from '../../src/domain/search.ts';
 import type { InfraPlan } from '../../src/domain/infra-plans.ts';
 import { createSolrIndex } from '../../src/search/solr.ts';
 import type { IntakeOutcome } from '../../src/domain/intake.ts';
@@ -44,11 +46,12 @@ afterEach(async () => {
   for (const c of cleanups.splice(0)) await c();
 });
 
-/** Solr behind a switch: `down` makes every call fail as a Solr that cannot be reached. */
-function switchable(inner: SearchIndex): SearchIndex & { down: boolean } {
-  const s = { down: false } as SearchIndex & { down: boolean };
+/** Solr behind a switch: `down` makes every call fail as a Solr that cannot be reached, `refused` as one that refuses the credentials. */
+function switchable(inner: SearchIndex): SearchIndex & { down: boolean; refused: boolean } {
+  const s = { down: false, refused: false } as SearchIndex & { down: boolean; refused: boolean };
   const gate = <A extends unknown[], R>(f: (...a: A) => Promise<R>) => async (...a: A): Promise<R> => {
     if (s.down) throw new Error('Solr not reached: ECONNREFUSED');
+    if (s.refused) throw new SearchUnauthorized('Solr refused the credentials (401): check HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD');
     return f(...a);
   };
   return Object.assign(s, {
@@ -121,6 +124,22 @@ describe('Search (issue #945)', () => {
     expect((await app.api('GET', '/api/jobs')).status).toBe(200);
     s.down = false;
     await found(app, 'q=second', [second.id], 'the job written once Solr is back');
+    await waitFor(async () => (await app.api<SearchStatus>('GET', '/api/search/status')).body.state === 'ok', { timeoutMs: 70_000, what: 'search ok again' });
+  }, 90_000);
+
+  it('says unauthorized while Solr refuses the credentials, and writes the jobs changed meanwhile once it takes them (issue #2990)', async () => {
+    const { app, index } = await start();
+    const s = index as SearchIndex & { refused: boolean };
+    const first = await app.pull({ op: 'echo', message: 'one' }, { title: 'First job' });
+    await found(app, 'q=first', [first.id]);
+    s.refused = true;
+    expect(await search(app, 'q=first')).toMatchObject({ state: 'unauthorized', why: expect.stringMatching(/^Solr refused the credentials \(401\)/), hits: [] });
+    expect((await app.api<{ state: string }>('GET', '/api/search/suggest?q=fir')).body.state).toBe('unauthorized');
+    const second = await app.pull({ op: 'echo', message: 'two' }, { title: 'Second job' });
+    await app.waitForStatus(second.id, 'finished');
+    await waitFor(async () => (await app.api<SearchStatus>('GET', '/api/search/status')).body.state === 'unauthorized', { timeoutMs: 15_000, what: 'status unauthorized' });
+    s.refused = false;
+    await found(app, 'q=second', [second.id], 'the job written once Solr takes the credentials');
     await waitFor(async () => (await app.api<SearchStatus>('GET', '/api/search/status')).body.state === 'ok', { timeoutMs: 70_000, what: 'search ok again' });
   }, 90_000);
 

@@ -1385,6 +1385,20 @@ events.
 - **Elsewhere**: run Solr in standalone mode with one core made from its default config (`solr-precreate hopper`), and
   set `HOPPER_SOLR_URL` to the core's URL. Keep the core off every network a job or a person reaches: it holds your jobs'
   words. The hopper puts its schema into the core itself at each start.
+- **A managed Solr** (issue #2990): a platform that offers Solr as a service gives each app one collection on a
+  SolrCloud cluster and one user, with basic auth on and the user permitted on its own collection only. Set
+  `HOPPER_SOLR_URL` to the collection's URL (`https://solr.example.com/solr/hopper`) and give the credentials at launch:
+  `HOPPER_SOLR_USERNAME` and `HOPPER_SOLR_PASSWORD`, each also as `NAME_FILE` (a mounted secret, read again at each call,
+  so a rotated password applies at once), or the URL's userinfo (`https://hopper:<password>@solr.example.com/solr/hopper`,
+  the password URL-encoded); not both. The hopper sends them as basic auth on every call to Solr. Every call is the
+  collection's own — `/select`, `/update`, and at each start `/schema` and `/config` (it puts its fields in and turns off
+  field guessing) —, so the user needs these on its collection only (in Solr's rule-based authorization, a permission with
+  `collection` the collection and `path` `/*`). The collection must use a managed schema (Solr's default configset does).
+  The start log says which Solr, with no userinfo, and whether basic auth is on (`hopper: search: Solr at
+  https://solr.example.com/solr/hopper, basic auth on`). No log, event, answer or error holds the credentials. Credentials
+  Solr refuses (401), or a user it does not permit on the collection (403), make search answer `unauthorized`, with why;
+  the changes wait, as when Solr is down, and are written once Solr takes the credentials. The Resources page reads
+  Solr's metrics API only when the user may (Solr's `metrics-read`), and says so when it may not.
 - **Unset** `HOPPER_SOLR_URL`: search answers `not-configured`; nothing else changes.
 - **What the hopper keeps**: Postgres is the source of truth. A lost `solr` volume loses nothing: at the next start the
   hopper finds the core empty and writes every job, artifact, plan, issue and pull request again. **Reindex** (`POST /ui/api/search/reindex`) does that when you

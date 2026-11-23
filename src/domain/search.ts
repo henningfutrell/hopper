@@ -102,10 +102,16 @@ export interface IndexAnswer {
 export interface IndexSuggestion { type: SearchType; ref: string; private: boolean; title: string; job?: string }
 
 /**
- * Whether search can answer now: `ok`; `degraded` (Solr not reached, or Access not asked: `why` says which); or
+ * Whether search can answer now: `ok`; `degraded` (Solr not reached, or Access not asked: `why` says which);
+ * `unauthorized` (Solr refused the hopper's credentials, or its user may not use the core or collection, issue #2990); or
  * `not-configured` (no HOPPER_SOLR_URL). Search being down stops nothing else.
  */
-export type SearchState = 'ok' | 'degraded' | 'not-configured';
+export type SearchState = 'ok' | 'degraded' | 'unauthorized' | 'not-configured';
+
+/** What a search index throws when Solr refuses the hopper's credentials (401) or its user (403): search is `unauthorized`. */
+export class SearchUnauthorized extends Error {
+  override name = 'SearchUnauthorized';
+}
 
 /** The index's state for one user: whether it answers, the updates not written yet, and the backfill. */
 export interface SearchStatus {
