@@ -15706,6 +15706,16 @@ migrations, and a second process in the hopper's container would need a supervis
 (`AppSeams.authorizationServer`, `test/support/fake-authorization-server.ts`, which evaluates the model's JSON);
 `test/authz/openfga-real.test.ts` runs against a real one when `HOPPER_TEST_OPENFGA_URL` is set.
 
+**The store** (issue #2988). Unset, the hopper makes its own store, named `hopper`, and keeps its id in the instance
+schema. A platform that provisions one store for each app gives its id in `HOPPER_OPENFGA_STORE_ID`, the
+**provisioned store**: the hopper uses that store and never calls `createStore`, so the platform's backups, retention
+and key scope cover the hopper's data. The model is written into it once for each model version, as in a store of the
+hopper's own. At start, a provisioned store that OpenFGA does not hold (a 404 or a 400) stops the daemon with an error
+that names the id; OpenFGA not reached does not stop it (it may start after the hopper), and each push checks the store
+again, so a store removed later is a deny with that reason, never a new store. The key: a server with no authn
+(`--authn-method none`) needs no `HOPPER_OPENFGA_KEY`, and the hopper sends no token when it is unset; a server with
+preshared keys takes the key, an API token, from the variable or the file `HOPPER_OPENFGA_KEY_FILE` names.
+
 Tests (issue #581): `test/integration/access-requesters.test.ts` (a real joined box: a job on a box of an approved
 template allowed with the path user, job, machine, template; the box and the user too; a box of a template not approved
 denied; a job's tuples gone when it ends and a box's when it leaves, each next check denied; the matrix rows),

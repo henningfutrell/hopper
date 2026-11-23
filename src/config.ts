@@ -80,7 +80,8 @@ export interface Config extends SandboxSettings {
   /** The hopper's app — its GitHub App — people sign in and connect through (issue #214): the shipped one unless the environment names another. */
   hopperApps: HopperApps;
   /** The OpenFGA server access asks before every mint (issue #559), or undefined: none, and every mint is denied. */
-  openFgaUrl?: string;
+  /** And the OpenFGA store provisioned for the hopper (issue #2988); undefined: the hopper makes and keeps its own. */
+  openFgaUrl?: string; openFgaStoreId?: string;
   /** The Solr core search reads and writes (issue #945): HOPPER_SOLR_URL. Absent: no search. */
   solrUrl?: string;
   /** The vault in a container of its own (issue #586); unset: the vault runs in the hopper. */
@@ -145,7 +146,7 @@ const schema = z.object({
   HOPPER_GITHUB_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_GITHUB_CLIENT_ID: z.string().min(1).optional(),
   HOPPER_GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'a GitHub App slug: lowercase letters, digits and dashes').optional(),
-  HOPPER_OPENFGA_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
+  HOPPER_OPENFGA_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(), HOPPER_OPENFGA_STORE_ID: z.string().regex(/^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$/, 'must be an OpenFGA store id: 26 characters, a ULID').optional(),
   HOPPER_SOLR_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL: the Solr core, http://solr:8983/solr/hopper' }).optional(),
   HOPPER_VAULT_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_KMS_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
@@ -210,7 +211,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_GITHUB_URL: 'the GitHub people sign in with and connect (a GitHub Enterprise origin). Unset: https://github.com',
   HOPPER_GITHUB_CLIENT_ID: 'the client id of the GitHub App (device flow on) people sign in and connect through. Unset: the hopper\'s own',
   HOPPER_GITHUB_APP_SLUG: 'that GitHub App\'s slug, for its install link. Unset: the hopper\'s own',
-  HOPPER_OPENFGA_URL: 'the OpenFGA server asked before every credential a job is given (http://openfga:8080); its preshared key HOPPER_OPENFGA_KEY. Unset: every credential is denied',
+  HOPPER_OPENFGA_URL: 'the OpenFGA server asked before every credential a job is given (http://openfga:8080); its preshared key HOPPER_OPENFGA_KEY, when it has one. Unset: every credential is denied', HOPPER_OPENFGA_STORE_ID: 'the OpenFGA store provisioned for the hopper: the hopper writes its model into it and makes no store; one OpenFGA does not hold stops the start. Unset: the hopper makes its own store, `hopper`',
   HOPPER_SOLR_URL: 'the Solr core search keeps its index in (http://solr:8983/solr/hopper, the compose service `solr`). Unset: no search',
   HOPPER_VAULT_URL: 'the vault in a container of its own (http://hopper-vault:4791, the compose profile `hopper-vault`), reached with its preshared key HOPPER_VAULT_KEY. Unset: the vault runs in the hopper',
   HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_MASTER_KEY',
@@ -259,8 +260,8 @@ Sign-in set up at launch (each also NAME_FILE; written to the database at every 
                                           and what they sealed is sealed again under HOPPER_MASTER_KEY at start
   HOPPER_TOKEN_KEY                        the old token key (also _FILE: the compose secrets volume's token_key): read
                                           only while HOPPER_MASTER_KEY is unset, to move an install to it
-  HOPPER_OPENFGA_KEY                      the preshared key of the OpenFGA server HOPPER_OPENFGA_URL names, read at
-                                          each call. Unset: none sent
+  HOPPER_OPENFGA_KEY                      the preshared key (an API token) of the OpenFGA server HOPPER_OPENFGA_URL
+                                          names, read at each call. Unset: none sent, for a server with no authn
   HOPPER_VAULT_KEY                        the preshared key of the vault container HOPPER_VAULT_URL names, read at
                                           each call. Unset: the vault container is not asked
   HOPPER_TUNNEL_KEY                       the preshared key the tunnel service asks for its settings with (the compose
@@ -359,7 +360,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     lanPeers: e.HOPPER_LAN_PEERS,
     updateCheckMs: e.HOPPER_UPDATE_CHECK_MS,
     ...(e.HOPPER_RESTART ? { restart: e.HOPPER_RESTART } : {}),
-    ...(e.HOPPER_OPENFGA_URL ? { openFgaUrl: e.HOPPER_OPENFGA_URL } : {}),
+    ...(e.HOPPER_OPENFGA_URL ? { openFgaUrl: e.HOPPER_OPENFGA_URL } : {}), ...(e.HOPPER_OPENFGA_STORE_ID ? { openFgaStoreId: e.HOPPER_OPENFGA_STORE_ID } : {}),
     ...(e.HOPPER_SOLR_URL ? { solrUrl: e.HOPPER_SOLR_URL } : {}),
     ...(e.HOPPER_VAULT_URL ? { vaultUrl: e.HOPPER_VAULT_URL } : {}),
     ...(e.HOPPER_KMS_REGION ? { kms: { region: e.HOPPER_KMS_REGION, key: e.HOPPER_KMS_KEY, ...(e.HOPPER_KMS_URL ? { url: e.HOPPER_KMS_URL } : {}) } }

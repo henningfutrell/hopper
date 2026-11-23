@@ -218,4 +218,11 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(() => loadConfig({ ...DB, HOPPER_BURN_WINDOW_HOURS: '-1' })).toThrow('HOPPER_BURN_WINDOW_HOURS');
     expect(loadConfig({ ...DB, HOPPER_BURN_WINDOW_HOURS: '1.5' }).pacing.burnWindowMs).toBe(5_400_000);
   });
+
+  it('reads the provisioned OpenFGA store id (issue #2988), and refuses one that is no store id', () => {
+    expect(loadConfig({ ...DB, HOPPER_OPENFGA_STORE_ID: '01HQ3V9Y4K7P8R2M5N6T0WXYZA' })).toMatchObject({ openFgaStoreId: '01HQ3V9Y4K7P8R2M5N6T0WXYZA' });
+    expect(loadConfig(DB).openFgaStoreId).toBeUndefined();
+    expect(loadConfig({ ...DB, HOPPER_OPENFGA_STORE_ID: '01HQ3V9Y4K7P8R2M5N6T0WXYZA' }).leftoverEnv).toEqual({});
+    expect(() => loadConfig({ ...DB, HOPPER_OPENFGA_STORE_ID: 'hopper' })).toThrow('HOPPER_OPENFGA_STORE_ID');
+  });
 });

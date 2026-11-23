@@ -1025,7 +1025,12 @@ OpenFGA no login is a trusted actor, every issue is a request card, and Approve 
   the binary, and keeps the config, the key and the schema.
 - **Elsewhere**: run OpenFGA (`openfga migrate`, then `openfga run`, its datastore any it supports), and set
   `HOPPER_OPENFGA_URL` and, with `--authn-method preshared`, `HOPPER_OPENFGA_KEY` (or `HOPPER_OPENFGA_KEY_FILE`).
-  The key is read at each call: rotate it in OpenFGA and the runtime together.
+  The key is read at each call: rotate it in OpenFGA and the runtime together. A server with no authn
+  (`--authn-method none`) needs no key: leave `HOPPER_OPENFGA_KEY` unset, and the hopper sends none.
+- **A provisioned store** (issue #2988): when your platform makes one OpenFGA store for each app, set
+  `HOPPER_OPENFGA_STORE_ID` to its id. The hopper then writes its model into that store, keeps its tuples there, and
+  makes no store of its own. A store id that OpenFGA does not hold stops the start with an error that names it. Unset,
+  the hopper makes its own store, `hopper`, on the server.
 - **Update OpenFGA** with the hopper: the `compose.yaml` each hopper image ships with names the OpenFGA version it
   runs, and the update puts it in (issue #697). Do not change the tag in `compose.yaml` by hand.
 - **What the hopper keeps**: the approvals and the model are in its own database, so an emptied or new OpenFGA is
