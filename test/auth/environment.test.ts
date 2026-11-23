@@ -94,6 +94,14 @@ describe('readSignInEnvironment', () => {
     })).toThrow(/HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_URL/);
   });
 
+  it('a gateway realm\'s first gateway admin (issue #2996): FIRST_ADMIN', () => {
+    const [realm] = readSignInEnvironment({
+      HOPPER_SIGN_IN_REALM_EDGE_TYPE: 'gateway', HOPPER_SIGN_IN_REALM_EDGE_ISSUER: 'https://idp.example.com', HOPPER_SIGN_IN_REALM_EDGE_AUDIENCE: 'hopper',
+      HOPPER_SIGN_IN_REALM_EDGE_FIRST_ADMIN: 'true',
+    }).realms;
+    expect(realm).toMatchObject({ type: 'gateway', firstAdmin: true });
+  });
+
   it('the login code and no sign-in', () => {
     expect(readSignInEnvironment({ HOPPER_SIGN_IN_LOCAL_ENABLED: 'false', HOPPER_SIGN_IN_NONE_ROLE: 'viewer' }))
       .toEqual({ realms: [], local: false, none: 'viewer' });
