@@ -181,6 +181,22 @@ describe('a session a gateway realm made: the gateway stays the authority', () =
     expect(ended.map((e) => [e.userId, e.reason])).toEqual([['u1', 'refresh-refused'], ['u2', 'refresh-refused']]);
   });
 
+  it('a renewal takes the role the check gives now (issue #2986: a role provider\'s answer changes)', async () => {
+    setUp();
+    const s = sessions.create({ role: 'admin', identity: edgeAda, userId: 'u1' });
+    at(HOUR);
+    await sessions.renew(s.token, await forwarded());
+    expect(sessions.find(s.token)?.role).toBe('viewer');
+  });
+
+  it('a role provider not asked since the start keeps the session and its role at a reconcile (issue #2986)', () => {
+    setUp();
+    const s = sessions.create({ role: 'operator', identity: edgeAda, userId: 'u1' });
+    signIn.apply(loadSignInConfig({ version: 1, realms: [{ ...gatewayRealm(idp.issuer), roles: { provider: 'check', check: { url: 'http://127.0.0.1:9/check', object: 'app:hopper' } } }] }));
+    expect(sessions.reconcile(signIn.roleOf)).toEqual({ dropped: 0, changed: 0 });
+    expect(sessions.find(s.token)?.role).toBe('operator');
+  });
+
   it('an issuer that cannot be reached briefly does not end it; past the grace period it does', async () => {
     setUp();
     const s = sessions.create({ role: 'viewer', identity: edgeAda, userId: 'u1' });

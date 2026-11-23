@@ -59,6 +59,13 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
     { path: 'claims.name', label: 'Name claim', kind: 'text', placeholder: 'name' },
     { path: 'claims.groups', label: 'Groups claim', kind: 'text', placeholder: 'groups' },
     { path: 'trustUnverifiedEmail', label: 'Trust unverified email', kind: 'switch', help: 'count the email even when the issuer does not mark it verified' },
+    // The role provider (issue #2986): an authorization service decides the role in place of the role rules.
+    { path: 'roles.provider', label: 'Role provider', kind: 'text', placeholder: 'the role rules', help: 'check: an authorization service decides the role; the role rules then grant only admin, by subject (break-glass)' },
+    { path: 'roles.check.url', label: 'Role check URL', kind: 'text', placeholder: 'https://authz.example.com/check', help: 'the hopper posts { object, permission } here with the person\'s own token' },
+    { path: 'roles.check.object', label: 'Role check object', kind: 'text', placeholder: 'app:hopper', help: 'the resource that stands for this hopper' },
+    { path: 'roles.check.permissions.admin', label: 'Admin permission', kind: 'text', placeholder: 'can_admin' },
+    { path: 'roles.check.permissions.operator', label: 'Operator permission', kind: 'text', placeholder: 'can_operate' },
+    { path: 'roles.check.permissions.viewer', label: 'Viewer permission', kind: 'text', placeholder: 'can_view' },
   ],
   saml: [
     { path: 'entryPoint', label: 'Sign-on URL', kind: 'text', placeholder: 'https://idp.example.com/sso/saml' },
@@ -159,7 +166,9 @@ export function realmOf(d: RealmDraft): { name: string; label?: string; type: Re
     rule[r.match] = [...(rule[r.match] ?? []), ...values];
   }
   if (d.defaultRole !== '') roles.defaultRole = d.defaultRole;
-  if (Object.keys(roles).length > 0) settings.roles = roles;
+  // A gateway realm's role provider fields (issue #2986) sit in roles too.
+  const all = { ...(settings.roles as Record<string, unknown> | undefined), ...roles };
+  if (Object.keys(all).length > 0) settings.roles = all;
   const label = d.label.trim();
   return { name: d.name.trim(), ...(label === '' ? {} : { label }), type: d.type, ...settings };
 }

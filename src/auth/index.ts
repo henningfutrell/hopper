@@ -27,6 +27,7 @@
 //
 // Gateway realms (issue #215): an auth gateway in front of the hopper signed the person in and forwards
 // their token; each gateway realm that is on checks it, in order, and the first that accepts it decides.
+// With a role provider (issue #2986, `role-check.ts`, `role-of.ts`) an authorization service decides its roles.
 //
 // The API door (issue #255): a token in `Authorization: Bearer …` on a read of /api/ is checked here too,
 // by the same checks as the UI door: a JWT by the gateway realms (`checkGateway`), any other token by
@@ -41,14 +42,15 @@ import { deviceFlow, deviceFlowFailure, type Grant, type PendingGrant } from '..
 import { whoIs } from '../connected-accounts/identity.ts';
 import { CLIENT_ID_VARIABLE, hopperApps, type HopperApps } from '../connected-accounts/hopper-app.ts';
 import { webFlow, type WebFlow } from '../connected-accounts/web-flow.ts';
-import { isDeviceRealm, isFormRealm, isGatewayRealm, isRedirectRealm, type AuthConfig, type DeviceRealmConfig, type RealmConfig } from './config.ts';
+import { isDeviceRealm, isFormRealm, isGatewayRealm, isRedirectRealm, type AuthConfig, type DeviceRealmConfig, type GatewayRealmConfig, type RealmConfig } from './config.ts';
 import { createTokenCheck, githubIdentity, type TokenCheckOutcome } from './api-door.ts';
-import { createGatewayRealm } from './gateway.ts';
+import { createGatewayRealm, tokenIn } from './gateway.ts';
 import { createLdapRealm } from './ldap.ts';
-import { createLocalAccountsRealm, LOCAL_ACCOUNTS_REALM, localAccountRole, type LocalAccounts } from './local-accounts.ts';
+import { createLocalAccountsRealm, type LocalAccounts } from './local-accounts.ts';
 import { createOidcRealm } from './oidc.ts';
 import type { FlowSecrets, FormRealm, GatewayRealm, RealmCallback, RedirectRealm } from './realm.ts';
-import { isSuperAdmin, roleFor } from './roles.ts';
+import { breakGlass, roleIn } from './role-of.ts';
+import { roleCheckOf, type RoleCheck } from './role-check.ts';
 import { createSamlRealm } from './saml.ts';
 
 export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from './config.ts';
@@ -57,6 +59,7 @@ export type { TokenCheckOutcome } from './api-door.ts';
 export { claimGithubAdmin } from './github-admin.ts';
 export { prepareSignIn } from './start.ts';
 export { isSuperAdmin } from './roles.ts';
+export { roleIn, roleSourceIn, type RoleSource } from './role-of.ts';
 
 const FLOW_MS = 10 * 60_000;
 const TICKET_MS = 2 * 60_000;
@@ -128,8 +131,14 @@ export interface SignIn {
   callback(name: string, cb: RealmCallback): Promise<CallbackOutcome>;
   /** The identity and role behind a ticket, once, for the browser holding the binding; a GitHub sign-in's connection with them. */
   complete(ticket: string, binding: string): { who: Identity; role: UiRole; connection?: Connection } | undefined;
-  /** The role the sign-in config grants this identity now; null: none, or its realm is gone or off. */
-  roleOf(who: Identity): UiRole | null;
+  /**
+   * The role the sign-in config grants this identity now; null: none, or its realm is gone or off. undefined: a
+   * gateway realm's role provider decides it and has not been asked for it since the hopper started (issue #2986):
+   * what holds a role keeps it until the next check.
+   */
+  roleOf(who: Identity): UiRole | null | undefined;
+  /** The last answer of the role provider of `who`'s realm (issue #2986); undefined: none since the hopper started, or no provider. */
+  providedRole(who: Identity): UiRole | null | undefined;
   /** The sign-in config as it applies now. */
   config(): AuthConfig;
   /** Apply a changed sign-in config at once: the realms, local sign-in and no sign-in. Flows in progress stay. */
@@ -146,19 +155,6 @@ interface Ticket { who: Identity; role: UiRole; binding: string; expires: number
 
 const hash = (s: string): Buffer => createHash('sha256').update(s, 'utf8').digest();
 const random = (): string => randomBytes(32).toString('hex');
-
-/** The role `config` grants `who`, a local account's from `accounts`; null: none, or its realm is gone or off. */
-export function roleIn(config: AuthConfig, who: Identity, accounts?: LocalAccounts): UiRole | null {
-  if (who.realm === 'local') return config.local.enabled ? 'admin' : null;
-  if (who.realm === LOCAL_ACCOUNTS_REALM) return accounts ? localAccountRole(accounts, who) : null;
-  if (who.realm === 'none') return config.none?.role ?? null;
-  const r = config.realms.find((x) => x.name === who.realm);
-  if (!r?.enabled) return null;
-  const first = config.githubAdmin;
-  if (r.type === 'github' && first?.realm === who.realm && first.subject === who.subject) return 'admin';
-  if (isSuperAdmin(config, who)) return 'admin';
-  return roleFor(who, r.roles);
-}
 
 function buildRedirect(r: Extract<RealmConfig, { type: 'oidc' | 'saml' }>, origin: string): RedirectRealm {
   const callback = `${origin}/ui/auth/${r.name}/callback`;
@@ -192,13 +188,14 @@ export function createSignIn(o: {
   const maxFlows = o.maxFlows ?? MAX_FLOWS;
   let config = o.config;
   let forms: FormRealm[] = [];
-  let gateways: GatewayRealm[] = [];
+  /** Each gateway realm that is on, with its role check when its role provider is `check` (issue #2986). */
+  let gateways: { realm: GatewayRealm; config: GatewayRealmConfig; roles: RoleCheck | undefined }[] = [];
   // Built on first use: the redirect URIs need the bound port.
   let redirects: Map<string, RedirectRealm> | undefined;
   const on = (): RealmConfig[] => config.realms.filter((r) => r.enabled);
   const build = (): void => {
     forms = on().filter(isFormRealm).map(createLdapRealm);
-    gateways = on().filter(isGatewayRealm).map(createGatewayRealm);
+    gateways = on().filter(isGatewayRealm).map((c) => ({ realm: createGatewayRealm(c), config: c, roles: roleCheckOf(c, () => o.clock.now().getTime()) }));
     redirects = undefined;
   };
   build();
@@ -235,7 +232,7 @@ export function createSignIn(o: {
       ...(g.refreshToken ? { refreshToken: g.refreshToken } : {}),
       ...(g.refreshTokenExpiresAt ? { refreshTokenExpiresAt: g.refreshTokenExpiresAt.toISOString() } : {}),
     };
-    return { who, role: roleOf(who), connection };
+    return { who, role: roleOf(who) ?? null, connection };
   }
 
   /** Wait for the provider; then who signed in, their role, and the connection — or why not. */
@@ -250,7 +247,9 @@ export function createSignIn(o: {
       f.state = { state: 'failed', status: 403, error: `${label} sign-in failed: ${deviceFlowFailure(e)}` };
     }
   }
-  const roleOf = (who: Identity): UiRole | null => roleIn(config, who, o.accounts);
+  /** A role provider's last answer for `who`. */
+  const provided = (who: Identity): UiRole | null | undefined => gateways.find((g) => g.config.name === who.realm)?.roles?.last(who.subject);
+  const roleOf = (who: Identity): UiRole | null | undefined => roleIn(config, who, o.accounts, provided);
   const accountsRealm = o.accounts && createLocalAccountsRealm(o.accounts);
   // The local accounts first, while there is one.
   const formsNow = (): FormRealm[] => (accountsRealm && o.accounts!.list().length > 0 ? [accountsRealm, ...forms] : forms);
@@ -258,11 +257,17 @@ export function createSignIn(o: {
   async function checkGateway(headers: Record<string, string | string[] | undefined>): Promise<GatewayCheckOutcome> {
     const refusals: string[] = [];
     const errors: string[] = [];
-    for (const realm of gateways) {
+    for (const { realm, config: c, roles } of gateways) {
       const r = await realm.check(headers);
       if (r.ok) {
         // The first realm that accepts the token decides, even when it grants no role.
-        const role = roleOf(r.who);
+        if (roles && !breakGlass(config, c, r.who)) {
+          // The person's own token, as the gateway forwarded it: the realm's check just read it.
+          const asked = await roles.decide(r.who.subject, tokenIn(headers, c.header)!);
+          if (!asked.ok) return { ok: false, status: 502, error: `authorization service unavailable (${realm.label}): ${asked.error}`, who: r.who };
+          return asked.role === null ? { ok: false, status: 403, error: 'signed in at the gateway, but the authorization service grants this account no role', who: r.who } : { ok: true, who: r.who, role: asked.role };
+        }
+        const role = roleOf(r.who) ?? null;
         return role === null ? { ok: false, status: 403, error: 'signed in at the gateway, but the sign-in config grants this account no role', who: r.who } : { ok: true, who: r.who, role };
       }
       if ('error' in r) errors.push(`${realm.label}: ${r.error}`); else refusals.push(`${realm.label}: ${r.refused}`);
@@ -272,7 +277,7 @@ export function createSignIn(o: {
 
   const tokens = createTokenCheck({
     checkGateway, gatewayOn: () => gateways.length > 0, githubRealm: () => on().filter(isDeviceRealm)[0],
-    whoIs: (token) => whoIs(apps.github, token), roleOf, now,
+    whoIs: (token) => whoIs(apps.github, token), roleOf: (who) => roleOf(who) ?? null, now,
   });
 
 
@@ -354,6 +359,7 @@ export function createSignIn(o: {
     },
     redirectRealm: (name) => redirect().get(name),
     roleOf,
+    providedRole: provided,
     config: () => config,
     apply(next) {
       config = next;
@@ -389,7 +395,7 @@ export function createSignIn(o: {
       } catch (e) {
         return { ok: false, status: 502, error: `${r.label} sign-in failed: ${(e as Error).message}` };
       }
-      const role = roleOf(who);
+      const role = roleOf(who) ?? null;
       if (role === null) return { ok: false, status: 403, error: 'signed in, but the sign-in config grants this account no role', who };
       const ticket = random();
       tickets.set(ticket, { who, role, binding: flow.binding, expires: now() + TICKET_MS });

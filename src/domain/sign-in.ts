@@ -222,6 +222,10 @@ export interface PersonView {
   subject: string;
   user: string;
   role: UiRole | null;
+  /** Where the role comes from (issue #2986): the realm's role provider (an authorization service), or the role rules. */
+  roleFrom: 'provider' | 'rule';
+  /** The role provider has not been asked for this identity since the hopper started: `role` is null, not known. */
+  roleUnknown?: true;
   superAdmin: boolean;
 }
 

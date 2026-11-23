@@ -81,6 +81,19 @@ describe('readSignInEnvironment', () => {
     expect(() => readSignInEnvironment({ HOPPER_SIGN_IN_REALM_DIR_TYPE: 'ldap', HOPPER_SIGN_IN_REALM_DIR_ROLES_ADMIN_GROUPS: '[1]' })).toThrow(/ROLES_ADMIN_GROUPS.*JSON array/);
   });
 
+  it('a gateway realm\'s role provider (issue #2986): ROLES_PROVIDER, ROLES_CHECK_URL, ROLES_CHECK_OBJECT, ROLES_CHECK_PERMISSIONS_<ROLE>', () => {
+    const [realm] = readSignInEnvironment({
+      HOPPER_SIGN_IN_REALM_EDGE_TYPE: 'gateway', HOPPER_SIGN_IN_REALM_EDGE_ISSUER: 'https://idp.example.com', HOPPER_SIGN_IN_REALM_EDGE_AUDIENCE: 'hopper',
+      HOPPER_SIGN_IN_REALM_EDGE_ROLES_PROVIDER: 'check', HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_URL: 'https://authz.example.com/check',
+      HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_OBJECT: 'app:hopper', HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_PERMISSIONS_ADMIN: 'owner',
+    }).realms;
+    expect(realm!.roles).toEqual({ provider: 'check', check: { url: 'https://authz.example.com/check', object: 'app:hopper', permissions: { admin: 'owner' } } });
+    expect(() => readSignInEnvironment({
+      HOPPER_SIGN_IN_REALM_EDGE_TYPE: 'gateway', HOPPER_SIGN_IN_REALM_EDGE_ISSUER: 'https://idp.example.com', HOPPER_SIGN_IN_REALM_EDGE_AUDIENCE: 'hopper',
+      HOPPER_SIGN_IN_REALM_EDGE_ROLES_PROVIDER: 'check',
+    })).toThrow(/HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_URL/);
+  });
+
   it('the login code and no sign-in', () => {
     expect(readSignInEnvironment({ HOPPER_SIGN_IN_LOCAL_ENABLED: 'false', HOPPER_SIGN_IN_NONE_ROLE: 'viewer' }))
       .toEqual({ realms: [], local: false, none: 'viewer' });
