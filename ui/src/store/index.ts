@@ -31,8 +31,6 @@ export interface HopperState {
   user: SessionUser | null;
   /** The ways to sign in (GET /ui/api/session); null until read. */
   signIn: SessionView['signIn'] | null;
-  /** Why the auth gateway's token got no session (issue #2996): it names what the role rules can match on; null: none. */
-  gatewayRefusal: string | null;
   health: Health | null;
   /** Every job the daemon's /api/queue holds — not ended, or ended in the last 24 hours — by id. */
   jobs: Record<string, Job>;
@@ -105,7 +103,7 @@ export interface HopperState {
 }
 
 export const useHopper = create<HopperState>(() => ({
-  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, gatewayRefusal: null, health: null, jobs: {}, waitingOrder: [], effectivePriority: {}, locked: [], items: null, inFlight: null, gate: null, presort: null, highPriority: null, criticalPriority: null, priorityLanes: null, blastRadius: null, machines: [],
+  loaded: false, loadError: null, conn: 'connecting', sessionRead: false, authed: false, user: null, signIn: null, health: null, jobs: {}, waitingOrder: [], effectivePriority: {}, locked: [], items: null, inFlight: null, gate: null, presort: null, highPriority: null, criticalPriority: null, priorityLanes: null, blastRadius: null, machines: [],
   decisions: [], questions: [], handled: [], reviews: EMPTY_REVIEWS, logins: [], loginSettings: null, failures: null, serverOffsetMs: 0, events: [], history: [], sources: [], deliveries: [], subscriptions: [],
   plugins: null, pluginsError: null, usage: null, accounts: [], routing: null, routingError: null, update: null, loadedCommit: undefined,
   recorded: { usage: 0, machine: 0 },
@@ -245,13 +243,9 @@ export async function checkSession() {
     let s = await readSession();
     // The sign-in config's `none`: nobody signs in; take the session at once (design.md "Sign-in", issue #53).
     // A gateway realm: the auth gateway in front signed the person in; take the session from its token (issue #215).
-    let gatewayRefusal: string | null = null;
-    if (wantsGatewaySignIn(s.authenticated, s.signIn)) {
-      gatewayRefusal = await signInThroughGateway();
-      if (gatewayRefusal === null) s = await readSession();
-    }
+    if (wantsGatewaySignIn(s.authenticated, s.signIn) && (await signInThroughGateway()) === null) s = await readSession();
     if (wantsNoSignIn(s.authenticated, s.signIn) && (await signInWithoutCredential()) === null) s = await readSession();
-    set({ authed: s.authenticated, user: s.user ?? null, signIn: s.signIn, gatewayRefusal: s.authenticated ? null : gatewayRefusal });
+    set({ authed: s.authenticated, user: s.user ?? null, signIn: s.signIn });
     // Signed in again after a session ended (issue #439): back to the page the person was on.
     const back = s.authenticated ? takeReturn() : null;
     if (back && (location.hash === '' || location.hash === '#')) location.hash = back;

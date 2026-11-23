@@ -164,7 +164,6 @@ const Showcase = () => (
 /** Logged out: the hopper's name and the ways to sign in, or that the hopper could not be reached. Nothing else. */
 export function Landing() {
   const signIn = useHopper((s) => s.signIn);
-  const gatewayRefusal = useHopper((s) => s.gatewayRefusal);
   const [device, setDevice] = useState<{ realm: DeviceRealm; s: DeviceSignIn } | null>(null);
   const [end] = useState(() => () => setDevice(null));
   return (
@@ -187,10 +186,7 @@ export function Landing() {
               ) : device ? (
                 <DeviceSignInPanel realm={device.realm} s={device.s} onEnd={end} />
               ) : (
-                <>
-                  {gatewayRefusal && <p data-gateway-refusal role="alert" className="w-full rounded-lg border border-bad/40 bg-bad/10 px-3 py-2 text-xs break-words text-bad">{gatewayRefusal}</p>}
-                  <SignInOptions signIn={signIn} onCode={(realm, s) => setDevice({ realm, s })} />
-                </>
+                <SignInOptions signIn={signIn} onCode={(realm, s) => setDevice({ realm, s })} />
               )}
             </div>
           </div>

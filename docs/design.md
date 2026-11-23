@@ -7215,28 +7215,6 @@ back, until the session's next renewal (a minute of use) or the grant's minter's
 API grant's refresh never asks the service itself: it has no gateway token to forward.
 
 
-### A gateway refusal says what it saw; the first gateway admin (issue #2996, 2026-11-23)
-
-Request: behind an auth gateway a valid token whose username claim is absent or not the expected value ends in
-"grants this account no role", which named only the realm and subject; with the login code and GitHub off, nobody can
-become admin from the UI. Built so it applies whichever source decides the role: the rules or the role provider (#2986).
-
-- **The refusal names what the rules match on.** `matchedOn` (`src/auth/roles.ts`): subject, username and the claim it
-  came from, email (only one the realm counts), groups. In the 403 error, so in the journal line (`refuse`) and on the
-  landing page, which now shows the refusal of the automatic gateway sign-in (`gatewayRefusal` in the store). The role
-  provider's own failure keeps its message ("authorization service unavailable", 502); its "no role" names the same values.
-  The API door's GitHub refusal names them too.
-- **Username fallback** (`gatewayIdentity`, `src/auth/realm.ts`), gateway realms only: the configured claim, else
-  `username`, else the local part of the email the realm counts. Not from an email it does not count: a `usernames` rule
-  then cannot be matched by an address nobody verified. The OIDC realm reads the ID token, which carries the claim.
-- **The first gateway admin** (`firstAdmin` on a gateway realm, off by default; `src/auth/gateway-admin.ts`). Of the two
-  ways the issue names, the first identity, not a bootstrap code: it needs no code to keep, print or expire, and mirrors
-  the first GitHub admin (#239). While no admin exists — no super admin (nor `githubAdmin`), no local account with role
-  `admin`, no session with role `admin` — the first identity the realm accepts is written as the only `superAdmins` entry,
-  in one transaction with the config's version check. A super admin, not an admin rule: it is top-level, so realms set
-  from the environment, which replace the realms, keep it; and it is break-glass under a role provider. Once one exists
-  the setting makes nobody admin. Role rules are not counted as an admin: a rule that matches nobody is the case this is for.
-
 ### Session lifetime (issue #439, 2026-10-08)
 
 Sessions ended too early: a fixed `HOPPER_UI_SESSION_HOURS` (12) set at creation, never extended, and only

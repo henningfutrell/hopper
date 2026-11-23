@@ -128,9 +128,8 @@ The setting's name in error messages is in brackets.
 | | Audience (`audience`) | — | Space-separated. A token must name one of them in `aud`. Required for `jwt`; for `introspection`, checked when set. |
 | | Token header (`header`) | `authorization` | The request header the gateway forwards the token in. `authorization` carries `Bearer <token>`; any other header carries the token alone (`x-forwarded-access-token` for oauth2-proxy). |
 | | Client ID, Client secret (`clientId`, `clientSecret`) | none | `introspection` only, and then both required (the secret once the realm is on): the hopper's client at the issuer, sent with HTTP Basic. The secret is stored, never shown. |
-| | Email / Username / Name / Groups claim (`claims.…`) | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the token or the introspection answer. A token without the username claim takes the `username` claim, else the local part of the email the realm counts ([The username of a gateway identity](#the-username-of-a-gateway-identity)). |
+| | Email / Username / Name / Groups claim (`claims.…`) | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the token or the introspection answer. |
 | | Trust unverified email (`trustUnverifiedEmail`) | off | Count the email even without `email_verified: true`. |
-| | First sign-in becomes admin (`firstAdmin`) | off | While no admin exists, the first person this realm accepts becomes admin ([The first gateway admin](#the-first-gateway-admin)). |
 | | Role provider (`roles.provider`) | the role rules | `check`: an authorization service decides the role ([Roles from an authorization service](#roles-from-an-authorization-service)). |
 | | Role check URL, Role check object (`roles.check.url`, `roles.check.object`) | — | With `roles.provider: check`, both required: where the hopper asks, and the resource that stands for this hopper there. https (http only to `127.0.0.1`/`localhost`). |
 | | Admin / Operator / Viewer permission (`roles.check.permissions.…`) | `can_admin` / `can_operate` / `can_view` | The permission on the object that grants each role. |
@@ -541,47 +540,6 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
   hopper session outlives the gateway's and ends at the next check.
 - The gateway realm composes with the others: with an LDAP realm also on, the sign-in page shows
   both, and **Sign in through the gateway** tries the token again.
-- **A refusal says what the hopper saw** (issue #2996). When the realm accepts the token but no rule (or
-  the authorization service) grants a role, the refusal names the values the role rules match on — the
-  subject, the username and the claim it came from, the email and the groups —, in the journal line and
-  on the sign-in page:
-
-  ```
-  signed in at the gateway, but the sign-in config grants this account no role (Gateway: subject "8c1f…", username "ada" (from username), email none, groups "devs")
-  ```
-
-  Write the rule from it: a `subjects` rule with that subject is the surest. An email shows only when the
-  realm counts it (`email_verified: true`, or `trustUnverifiedEmail`). An authorization service that
-  could not be asked says `authorization service unavailable` instead.
-
-### The username of a gateway identity
-
-An identity provider often leaves profile claims such as `preferred_username` out of its access tokens,
-and the gateway forwards only the access token. When the token has no username claim (`claims.username`,
-default `preferred_username`), the hopper takes, in order:
-
-1. the `username` claim;
-2. the local part of the email, when the realm counts the email (`ada` of `ada@example.com`).
-
-The refusal above says which one it used. A `usernames` rule matched on the local part of an email is
-only as safe as the domains the issuer gives emails for: prefer `subjects`, groups or `emails` rules.
-
-### The first gateway admin
-
-A hopper only a gateway signs in to has no first GitHub admin, and with the login code off nobody can
-get admin from the UI. Turn **First sign-in becomes admin** (`firstAdmin: true`) on for one gateway
-realm, before anyone reaches the hopper (issue #2996):
-
-- The first identity that realm accepts **while no admin exists** becomes admin, whatever the role rules
-  or the authorization service say. No admin exists while there is no super admin (nor a first GitHub
-  admin), no local account with role `admin`, and no session with role `admin` (a login code's included).
-- The hopper records it once, as the first of the `superAdmins` in [the sign-in config](#the-sign-in-config-from-the-cli),
-  so it holds across restarts and realms set from the environment (`HOPPER_SIGN_IN_REALM_<NAME>_FIRST_ADMIN=true`).
-  The journal says so: `<realm> made <realm> <subject> admin: the first sign-in while no admin exists`.
-- After that the setting makes nobody admin; everyone else gets what the rules grant. Turn it off again
-  when the admin is in.
-- Off by default. Whoever the gateway lets through first gets admin, so keep the hopper unreachable to
-  others until you have signed in.
 
 ### Roles from an authorization service
 
@@ -1234,7 +1192,6 @@ The same for every realm, no sign-in and the login code:
 | OIDC: "sign-in failed: JWT signature verification failed" or "no applicable keys found" | The ID token is signed with a key the issuer does not publish at its `jwks_uri`, or with `HS256`. Set the client to sign with `RS256` or `ES256`. Just after a key rotation, try again in a minute ([How an OIDC sign-in is checked](#how-an-oidc-sign-in-is-checked)). |
 | OIDC: "sign-in failed: unexpected JWT claim value encountered: …" | The message names the claim: `iss` (the issuer URL differs from the one in the token, often a trailing `/`), `aud` (the client ID is wrong), `nonce`, or the times (the clocks differ). |
 | "signed in, but the sign-in config grants this account no role" | No rule matched. The journal line names the account; for OIDC check that the email is verified or match on groups. |
-| "signed in at the gateway, but … grants this account no role (…)" | No rule matched the gateway's token. The message lists the subject, username (and its claim), email and groups the rules can match ([Behind an auth gateway](#behind-an-auth-gateway)). No admin at all on a gateway-only hopper: [The first gateway admin](#the-first-gateway-admin). |
 | "unknown or expired sign-in; start again" | The sign-in took over 10 minutes, the daemon restarted meanwhile, or the callback was opened twice. |
 | "another browser began it" | The callback page ran in a browser (or private window) other than the one that clicked *Sign in*. |
 | SAML "Invalid signature" | `idpCert` is not the IdP's current signing certificate, or the IdP signs only the response — sign the assertion. |

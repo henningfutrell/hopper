@@ -59,7 +59,6 @@ export const REALM_FIELDS: Record<RealmType, RealmField[]> = {
     { path: 'claims.name', label: 'Name claim', kind: 'text', placeholder: 'name' },
     { path: 'claims.groups', label: 'Groups claim', kind: 'text', placeholder: 'groups' },
     { path: 'trustUnverifiedEmail', label: 'Trust unverified email', kind: 'switch', help: 'count the email even when the issuer does not mark it verified' },
-    { path: 'firstAdmin', label: 'First sign-in becomes admin', kind: 'switch', help: 'while no admin exists, the first person this realm accepts becomes admin; then nobody more' },
     // The role provider (issue #2986): an authorization service decides the role in place of the role rules.
     { path: 'roles.provider', label: 'Role provider', kind: 'text', placeholder: 'the role rules', help: 'check: an authorization service decides the role; the role rules then grant only admin, by subject (break-glass)' },
     { path: 'roles.check.url', label: 'Role check URL', kind: 'text', placeholder: 'https://authz.example.com/check', help: 'the hopper posts { object, permission } here with the person\'s own token' },
