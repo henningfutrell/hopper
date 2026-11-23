@@ -21,9 +21,9 @@ let VIEW: Record<string, unknown> & { realms: Record<string, unknown>[] };
 const BASE = {
   version: 'v1', local: true, none: null, origin: 'http://localhost:4790', sessions: { idleHours: 168, maxHours: 720 }, githubAdmin: { realm: 'github', user: 'octo' },
   people: [
-    { realm: 'github', subject: '1', user: 'octo', role: 'admin', superAdmin: true },
-    { realm: 'github', subject: '2', user: 'bea', role: 'operator', superAdmin: false },
-    { realm: 'corp', subject: 'ada', user: 'ada', role: 'admin', superAdmin: false },
+    { realm: 'github', subject: '1', user: 'octo', role: 'admin', roleFrom: 'rule', superAdmin: true },
+    { realm: 'github', subject: '2', user: 'bea', role: 'operator', roleFrom: 'rule', superAdmin: false },
+    { realm: 'corp', subject: 'ada', user: 'ada', role: 'admin', roleFrom: 'provider', superAdmin: false },
   ],
   realms: [
     GITHUB,
@@ -290,6 +290,9 @@ describe('Settings: Sign-in', () => {
     expect(person('octo').textContent).toContain('super admin');
     expect(person('bea').textContent).toContain('operator');
     expect(person('ada').textContent).toContain('admin');
+    // Where each role comes from (issue #2986).
+    expect(person('bea').textContent).toContain('from the role rules');
+    expect(person('ada').textContent).toContain('from the authorization service');
     expect(buttonIn(person('octo'), 'Make admin')).toBeUndefined();
     expect(buttonIn(person('octo'), 'Make super admin')).toBeUndefined();
     expect(buttonIn(person('ada'), 'Make admin')).toBeUndefined();
