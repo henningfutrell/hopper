@@ -26,6 +26,10 @@ describe('a system secret on the page (issue #658)', () => {
     expect(systemSecretTitle(secret('claude-analytics-key', 'claude-analytics'))).toBe('Claude Analytics API key (daily usage)');
     expect(systemSecretWhere({ kind: 'claude-analytics' })).toBe('Usage');
     expect(mayKeepInBackend(secret('claude-analytics-key', 'claude-analytics'))).toBe(false);
+    // The Solr credentials (issue #2990): the whole hopper's, set on Settings → Search, kept in the hopper.
+    expect(systemSecretTitle(secret('solr-credentials', 'solr'))).toBe('Solr credentials (search)');
+    expect(systemSecretWhere({ kind: 'solr' })).toBe('Settings → Search');
+    expect(mayKeepInBackend(secret('solr-credentials', 'solr'))).toBe(false);
     // The cloud link key (issue #467): the whole hopper's, made by the hopper.
     expect(systemSecretTitle(secret('cloud-link.key', 'cloud-link'))).toBe('cloud link key: private half');
     expect(systemSecretWhere({ kind: 'cloud-link' })).toBe('Settings → hopper.io');
