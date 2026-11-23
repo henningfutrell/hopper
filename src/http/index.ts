@@ -134,8 +134,6 @@ export interface ServerOptions {
   remoteAccess: RemoteAccess;
   /** GitHub deliveries (issue #1079): POST /github/webhook, GET /api/github-deliveries, POST /ui/api/github-deliveries. */
   githubDeliveries: GitHubDeliveries;
-  /** The Solr credentials kept in the instance's vault (issue #2990): Settings → Search. */
-  solrCredentials: import('../search/solr-credentials.ts').SolrCredentialsAdmin;
   /** The hosts the admin allowed and this host's tailnet (issue #1024): GET /api/allowed-hosts, POST /ui/api/allowed-hosts. `lan` reads them. */
   allowedHosts: AllowedHosts;
   /** The telemetry setting (issue #1486): GET /api/telemetry-settings, POST /ui/api/telemetry-settings. */
@@ -296,7 +294,7 @@ export function createServer(o: ServerOptions): FastifyInstance {
   artifactLibRoutes(app, join(o.uiDir, 'artifact-lib'));
   registerUiRoutes(app, {
     ...tenant, tenants: o.tenants, instance: o.instance, sessions, grants, proofs, scopeRegistry: routeScopeRegistry(), signIn: o.signIn, realms, localAccounts, passkeys, pluginStore: o.pluginStore, port: o.port, lan: o.lan, clock: o.clock, caller: o.caller ?? ((req) => req.ip),
-    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, solrCredentials: o.solrCredentials, allowedHosts: o.allowedHosts, telemetrySettings: o.telemetrySettings, sourceEmailMatch: o.sourceEmailMatch, infraApplies: o.infraApplies, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.instance.settings, wsl: o.wsl,
+    updater: o.updater, instanceAdmin, access: o.access, playground: o.playground, artifacts: artifactEdge, masterKey: o.masterKey, rateLimiter: o.rateLimiter, remoteAccess: o.remoteAccess, githubDeliveries: o.githubDeliveries, allowedHosts: o.allowedHosts, telemetrySettings: o.telemetrySettings, sourceEmailMatch: o.sourceEmailMatch, infraApplies: o.infraApplies, cloudLink: o.cloudLink, displayName: o.displayName, hostLink: o.instance.settings, wsl: o.wsl,
   });
   return app;
 }

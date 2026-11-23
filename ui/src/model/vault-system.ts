@@ -21,7 +21,6 @@ export function systemSecretTitle(s: Pick<SystemSecretView, 'name' | 'kind'>): s
   if (s.kind === 'github-webhook') return 'GitHub webhook secret';
   if (s.kind === 'cloud-link') return s.name === 'cloud-link.previous-key' ? 'cloud link key before a rotation: private half' : 'cloud link key: private half';
   if (s.kind === 'claude-analytics') return 'Claude Analytics API key (daily usage)';
-  if (s.kind === 'solr') return 'Solr credentials (search)';
   const [, realm, setting] = s.name.split('.');
   return `Sign-in realm ${realm ?? ''}: ${setting === 'bindPassword' ? 'bind password' : 'client secret'}`;
 }
@@ -36,7 +35,6 @@ export function systemSecretWhere(s: Pick<SystemSecretView, 'kind'>): string {
   if (s.kind === 'github-webhook') return 'Settings → GitHub webhook';
   if (s.kind === 'cloud-link') return 'Settings → hopper.io';
   if (s.kind === 'claude-analytics') return 'Usage';
-  if (s.kind === 'solr') return 'Settings → Search';
   return 'Settings → Sign-in';
 }
 

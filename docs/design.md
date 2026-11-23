@@ -15044,8 +15044,7 @@ goes through the hopper, which reads the token through the vault at each call.
 - **Where.** A user's in that user's vault (`vault_secrets`): `typesafe-api-key`, `claude-analytics-key` (issue #2966), `connected-account.github.access-token`,
   `connected-account.github.refresh-token`, `webhook.<subscription id>.signing-secret`. The whole hopper's in the
   **instance's vault**, a `vault_secrets` table in the instance schema (instance migration 33, a table only):
-  `sign-in.<realm>.clientSecret` (oidc, gateway), `sign-in.<realm>.bindPassword` (ldap) and `solr-credentials` (issue #2990,
-  "Search with a managed Solr", kept with no last 4 characters). Each a row `system/<name>`,
+  `sign-in.<realm>.clientSecret` (oidc, gateway) and `sign-in.<realm>.bindPassword` (ldap). Each a row `system/<name>`,
   sealed by the hopper's sealer under the master key `HOPPER_MASTER_KEY` (issue #659), bound to `vault:<id>/value`, its
   metadata (who, when, its last 4 characters) in the row's body. Never in clear: without the master key (the hopper
   limited) none is kept (503, naming `HOPPER_MASTER_KEY`) or opened, and no old copy is moved; a realm's secret given
@@ -22312,21 +22311,7 @@ allowed. The compose and Helm `solr` service stay as they are, with no credentia
   words that name no value (`src/search/solr-connection.ts`). The userinfo is always taken out of the URL (fetch refuses
   one with it): the URL the start log, an error and the Solr meter name has none. Sent as basic auth on every call to
   Solr: the index's and the Solr meter's.
-- **Or kept in the hopper's vault** (part 3; owner scope: the credentials are deployment inputs and can also be kept in
-  the vault, never in a `.env` file). One system secret of the instance's vault, `solr-credentials` (kind `solr`), the pair
-  as JSON, sealed under the master key, kept with no last 4 characters (its end is the password's). Read again at each
-  Solr call, only when the URL and the runtime give none: they win, and a set is refused (409) while they do. The hopper's
-  admin sets it (`src/search/solr-credentials.ts`): `GET /api/solr-credentials` answers `SolrCredentialsView` — `configured`,
-  the `url` with no userinfo, `source` (`url`, `runtime`, `vault` or `none`), `kept` (who set it and when), `problem` —, never
-  the username or the password; `POST /ui/api/solr-credentials` (`src/http/ui/solr-credentials.ts`, the `instance` guard,
-  scope area `solr-credentials`) `set` checks the pair once against Solr (one count on the core or collection, with basic
-  auth) and keeps it through `SystemSecrets.keep` (`vault.secret_set`), or `remove`s it (`vault.secret_removed`). A pair
-  Solr refuses, or a check that cannot reach it, is not kept: 400, with the password masked. A set or a remove makes every
-  user's search try Solr again at its next pass, past the back-off (`UserSearch.retry`). Settings → Search shows it;
-  `hopper solr-credentials [set --username <name> | remove]` takes the password on stdin (`src/cli-operator-solr.ts`). A
-  pair that cannot be opened sends none, and the view says why.
-- **The start log** says which Solr and whether basic auth is on, and from where:
-  `hopper: search: Solr at <url>, basic auth on (the URL|the runtime|the vault)|off`.
+- **The start log** says which Solr and whether basic auth is on: `hopper: search: Solr at <url>, basic auth on|off`.
 - **Unauthorized.** A 401 (credentials refused, or none sent to a Solr that asks) or a 403 (the user may not use the core
   or collection) throws `SearchUnauthorized` (`src/domain/search.ts`); search's state is then `unauthorized` with why
   (`GET /api/search`, `/suggest`, `/status`; the Search view says "Search is unauthorized"), and the pass backs off and
@@ -22340,6 +22325,7 @@ allowed. The compose and Helm `solr` service stay as they are, with no credentia
 - **Helm** (part 2): with `solr.enabled=false`, `solr.external.url` names the outside Solr (`HOPPER_SOLR_URL`), and
   `solr.external.existingSecret` a Secret you make with `username` and `password`, mounted at `/run/hopper-solr` and read
   through `HOPPER_SOLR_USERNAME_FILE` and `HOPPER_SOLR_PASSWORD_FILE`. With the chart's own Solr on, both are ignored.
+- **Not done yet:** the credentials kept in the hopper's vault (an instance system secret set by the admin).
 
 Tests: `test/search/solr-connection.test.ts` (userinfo, the variables, a password file read again, both forms or half
 refused, no value in an error, the start line), `test/adapters/solr-cloud-auth.test.ts` (a real SolrCloud cluster with
@@ -22347,10 +22333,7 @@ basic auth and a per-collection permission, `startTestSolrCloud` in `test/suppor
 with `HOPPER_TEST_SOLR_CLOUD_ADMIN`: schema, writes, count, search and suggest with the credentials; wrong ones, none, and
 another collection unauthorized), `test/integration/search.test.ts` (unauthorized and caught up after) and
 `test/ui/search.test.ts` (the unauthorized state); part 2: `test/adapters/solr-meter.test.ts` (a SolrCloud collection's
-replicas, another collection or core not counted), `test/scripts/helm-chart.test.ts` (the outside Solr and its Secret);
-part 3: `test/search/solr-credentials.test.ts` (set checked and kept, refused, masked, the runtime wins, remove),
-`test/integration/solr-credentials.test.ts` (a fake Solr that asks for basic auth: unauthorized, then set and written again;
-the operator CLI; no value answered, logged or in clear), `test/ui/solr-credentials.test.ts` (Settings → Search).
+replicas, another collection or core not counted), `test/scripts/helm-chart.test.ts` (the outside Solr and its Secret).
 
 ## The command palette (issue #2661, 2026-10-23)
 

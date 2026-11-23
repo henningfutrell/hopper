@@ -1,1 +1,0 @@
-- An admin can now keep the sign-in for a managed search service in the hopper's own safe storage, on the Search settings page, in place of giving it at launch.

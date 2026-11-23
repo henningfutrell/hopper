@@ -1394,12 +1394,8 @@ events.
   collection's own — `/select`, `/update`, and at each start `/schema` and `/config` (it puts its fields in and turns off
   field guessing) —, so the user needs these on its collection only (in Solr's rule-based authorization, a permission with
   `collection` the collection and `path` `/*`). The collection must use a managed schema (Solr's default configset does).
-  Or keep them in the hopper's vault in place of the launch inputs: as the hopper's admin, on **Settings → Search**, or
-  `hopper solr-credentials set --username hopper < password-file`. The hopper checks them once against Solr, and keeps
-  them only when Solr takes them; it sends them from the next call. The launch inputs win: while they are given, a set
-  is refused. `hopper solr-credentials remove` removes them. Never put them in a `.env` file. The start log says which
-  Solr, with no userinfo, and whether basic auth is on, and from where (`hopper: search: Solr at
-  https://solr.example.com/solr/hopper, basic auth on (the runtime)`). No log, event, answer or error holds the credentials. Credentials
+  The start log says which Solr, with no userinfo, and whether basic auth is on (`hopper: search: Solr at
+  https://solr.example.com/solr/hopper, basic auth on`). No log, event, answer or error holds the credentials. Credentials
   Solr refuses (401), or a user it does not permit on the collection (403), make search answer `unauthorized`, with why;
   the changes wait, as when Solr is down, and are written once Solr takes the credentials. The Resources page reads
   Solr's metrics API only when the user may (Solr's `metrics-read`), and says so when it may not; on SolrCloud it sums

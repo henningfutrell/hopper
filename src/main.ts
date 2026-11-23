@@ -10,7 +10,7 @@ import { createMachineLinks } from './machines/links.ts'; import { LANE_POOL_KEY
 import { hopperAddresses, wslHopperUrl } from './machines/hopper-address.ts';
 import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts';
 import { createCredentialMinter } from './vault/minter.ts';
-import { createOpenFgaServer } from './authz/openfga.ts'; import { checkProvisionedStore } from './authz/store.ts'; import { createSolrIndex } from './search/solr.ts'; import { solrConnection, solrStartLine } from './search/solr-connection.ts'; import { createSolrCredentials, solrCheck, solrCredentialsReader } from './search/solr-credentials.ts'; import type { SolrCredentials } from './search/solr-connection.ts'; import type { SearchIndex } from './domain/search.ts';
+import { createOpenFgaServer } from './authz/openfga.ts'; import { checkProvisionedStore } from './authz/store.ts'; import { createSolrIndex } from './search/solr.ts'; import { solrConnection, solrStartLine } from './search/solr-connection.ts'; import type { SearchIndex } from './domain/search.ts';
 import { fileURLToPath } from 'node:url';
 import type { AuthorizationServer, ContainerRuntime, InstanceStore, ReleaseCheck, Restarter, StackProbe, UpdateBuilder, Updater } from './domain/ports.ts';
 import { machineOfLane } from './domain/raised-by.ts';
@@ -124,8 +124,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   const clock = { now: () => new Date() };
   const logger = { info: (l: string) => console.log(l), warn: (l: string) => console.warn(l) };
   warnLeftoverEnv(config);
-  // The Solr search reads and writes (issue #2990): its credentials checked before anything opens; a bad pair stops the start. With none from the runtime, the vault's pair (the start line once the vault is open).
-  const env = seams.env ?? process.env, solrKept: { read?: () => SolrCredentials | undefined } = {}, solr = config.solrUrl ? solrConnection(config.solrUrl, runtimeSecrets(env), () => solrKept.read?.()) : undefined;
+  // The Solr search reads and writes (issue #2990): its credentials checked before anything opens; a bad pair stops the start.
+  const env = seams.env ?? process.env, solr = config.solrUrl ? solrConnection(config.solrUrl, runtimeSecrets(env)) : undefined; if (solr && seams.searchIndex === undefined) logger.info(solrStartLine(solr));
   const store = openInstanceStore({ url: config.databaseUrl, clock });
   // Held shared while the daemon runs, so several hoppers share one database (issue #1662): the operator CLI refuses
   // `user transfer` while any daemon runs (issue #212).
@@ -147,7 +147,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   logMasterKey(masterKey, masterKeyStatus.view().saved, logger);
   // The sign-in realms' secrets are in the instance's vault (issue #658): moved there now, before the sign-in config is read.
   const secrets = openInstanceSecrets(store, { env: keyed, clock, logger, migrate: true });
-  const { instance } = secrets; solrKept.read = solrCredentialsReader(secrets.system); if (solr && seams.searchIndex === undefined) logger.info(solrStartLine(solr));
+  const { instance } = secrets;
   // Before anything starts: the sign-in config with what the environment sets (no bootstrap login, issue
   // #238); an invalid one stops the daemon (sign-in fails closed).
   let auth: AuthConfig;
@@ -331,7 +331,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     },
     port: () => port, signIn, signInEnvironment, events: runtimes.events, held: seams.held === undefined ? watchHeld(config.healthPort === undefined ? {} : { health: { port: config.healthPort, version: VERSION } }) : seams.held ?? undefined, // issue #1383: where a held loop runs, and the health port
     // GitHub deliveries (issue #1079): signed with the GitHub webhook secret of the instance's vault; each makes its repository due at every user's sources.
-    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, telemetrySettings, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), infraApplies: createInfraApplies({ settings: instance.settings, events: runtimes.events }), cloudLink, displayName: createDisplayName({ settings: instance.settings, events: runtimes.events }), solrCredentials: createSolrCredentials({ secrets: secrets.system, connection: solr, check: solrCheck(solr, instance.settings.instanceId()), changed: () => { for (const rt of runtimes.all()) rt.search.retry(); } }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
+    lan: { names: config.lanNames, peers: config.lanPeers, publicUrl: config.publicUrl, tunnelUrl: remoteAccess.url, moreNames: allowedHosts.names, tailnet: allowedHosts.tailnet }, remoteAccess, allowedHosts, telemetrySettings, sourceEmailMatch: createSourceEmailMatch({ settings: instance.settings, events: runtimes.events }), infraApplies: createInfraApplies({ settings: instance.settings, events: runtimes.events }), cloudLink, displayName: createDisplayName({ settings: instance.settings, events: runtimes.events }), githubDeliveries: createGitHubDeliveries({ secrets: secrets.system, tenants: { list: () => instance.users.list(), user: (id) => runtimes.get(id) }, clock }), wsl, uiDir: seams.uiDir ?? UI_DIR, caller: tunnelCaller(remoteAccess.watch),
     client: { links, release: clientRelease, installScript: readFileSync(join(APP_DIR, 'scripts', 'client-install.sh'), 'utf8'), poolKey: () => { try { return secret(LANE_POOL_KEY_VARIABLE); } catch { return undefined; } } }, // the lane pool key (issue #1284)
   });
 

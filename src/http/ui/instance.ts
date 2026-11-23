@@ -10,7 +10,7 @@ import { HttpError, parseWith } from '../errors.ts';
 import { registerRateLimiterRoutes } from './github-rate-limiter.ts';
 import { registerHostLinkRoutes } from './host-link.ts';
 import { registerRemoteAccessRoutes } from './remote-access.ts';
-import { registerGitHubDeliveriesRoutes } from './github-deliveries.ts'; import { registerSolrCredentialsRoutes } from './solr-credentials.ts'; import type { SolrCredentialsAdmin } from '../../search/solr-credentials.ts';
+import { registerGitHubDeliveriesRoutes } from './github-deliveries.ts';
 import type { GitHubDeliveries } from '../github-deliveries.ts';
 import { registerAllowedHostsRoutes } from './allowed-hosts.ts';
 import type { AllowedHosts } from '../allowed-hosts.ts';
@@ -43,12 +43,11 @@ export const updateBody = z.discriminatedUnion('action', [
  */
 export const masterKeyBody = z.strictObject({ action: z.enum(['reveal', 'saved', 'rotate']), hostSeals: z.boolean().optional() });
 
-export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; updater: Updater; masterKey: MasterKeyStatus; rateLimiter: RateLimiterControl; remoteAccess: RemoteAccess; githubDeliveries: GitHubDeliveries; solrCredentials: SolrCredentialsAdmin; allowedHosts: AllowedHosts; telemetrySettings: TelemetrySettingsService; sourceEmailMatch: SourceEmailMatch; infraApplies: InfraApplies; cloudLink: CloudLink; hopperIoState: Parameters<typeof registerCloudLinkRoutes>[1]['hopperIoState']; displayName: DisplayName; hostLink: Parameters<typeof registerHostLinkRoutes>[1]['hostLink']; wsl: boolean; port: () => number; origins: () => string[]; by: (req: FastifyRequest) => string }): void {
+export function registerInstanceRoutes(app: FastifyInstance, o: { instance: Guard; instanceAdmin: InstanceAdmin; updater: Updater; masterKey: MasterKeyStatus; rateLimiter: RateLimiterControl; remoteAccess: RemoteAccess; githubDeliveries: GitHubDeliveries; allowedHosts: AllowedHosts; telemetrySettings: TelemetrySettingsService; sourceEmailMatch: SourceEmailMatch; infraApplies: InfraApplies; cloudLink: CloudLink; hopperIoState: Parameters<typeof registerCloudLinkRoutes>[1]['hopperIoState']; displayName: DisplayName; hostLink: Parameters<typeof registerHostLinkRoutes>[1]['hostLink']; wsl: boolean; port: () => number; origins: () => string[]; by: (req: FastifyRequest) => string }): void {
   registerRateLimiterRoutes(app, o);
   registerHostLinkRoutes(app, o);
   registerRemoteAccessRoutes(app, o);
   registerGitHubDeliveriesRoutes(app, o);
-  registerSolrCredentialsRoutes(app, o);
   registerAllowedHostsRoutes(app, o);
   registerSourceEmailMatchRoutes(app, o);
   registerInfraAppliesRoutes(app, o);
