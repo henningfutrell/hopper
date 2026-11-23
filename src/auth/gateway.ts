@@ -8,7 +8,7 @@
 import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import * as client from 'openid-client';
 import type { GatewayRealmConfig } from './config.ts';
-import { gatewayIdentity, isLoopbackHttp, stringList, type GatewayOutcome, type GatewayRealm } from './realm.ts';
+import { claimsIdentity, isLoopbackHttp, stringList, type GatewayOutcome, type GatewayRealm } from './realm.ts';
 
 /** Seconds of clock difference between the issuer and the hopper a token's times may carry. */
 const CLOCK_TOLERANCE = 30;
@@ -44,7 +44,7 @@ export function createGatewayRealm(c: GatewayRealmConfig): GatewayRealm {
     try {
       const { payload } = await jwtVerify(token, keys, { issuer: meta.issuer, audience: c.audience!, clockTolerance: CLOCK_TOLERANCE });
       if (!payload.sub) return { ok: false, refused: 'the token names no subject (sub)' };
-      return { ok: true, ...gatewayIdentity(c.name, payload.sub, payload, c.claims, c.trustUnverifiedEmail) };
+      return { ok: true, who: claimsIdentity(c.name, payload.sub, payload, c.claims, c.trustUnverifiedEmail) };
     } catch (e) {
       if (isRefusal(e)) return { ok: false, refused: `token refused: ${e.message}` };
       return { ok: false, error: `the issuer's keys could not be read: ${(e as Error).message}` };
@@ -61,7 +61,7 @@ export function createGatewayRealm(c: GatewayRealmConfig): GatewayRealm {
     if (answer.active !== true) return { ok: false, refused: 'the token is not active' };
     if (c.audience?.length && !stringList(answer.aud).some((a) => c.audience!.includes(a))) return { ok: false, refused: 'the token is for another audience' };
     if (!answer.sub) return { ok: false, refused: 'the token names no subject (sub)' };
-    return { ok: true, ...gatewayIdentity(c.name, answer.sub, answer, c.claims, c.trustUnverifiedEmail) };
+    return { ok: true, who: claimsIdentity(c.name, answer.sub, answer, c.claims, c.trustUnverifiedEmail) };
   }
 
   return {

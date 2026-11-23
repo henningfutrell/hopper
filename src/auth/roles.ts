@@ -44,14 +44,3 @@ export function isSuperAdmin(config: AuthConfig, who: Pick<Identity, 'realm' | '
   return config.superAdmins.some((a) => a.realm === who.realm && a.subject === who.subject)
     && config.realms.some((r) => r.name === who.realm && r.enabled);
 }
-
-/**
- * The values of `who` the role rules match on (issue #2996), for a refusal: an operator writes a rule from it. `usernameClaim`:
- * the claim the username came from.
- */
-export function matchedOn(who: Identity, usernameClaim?: string): string {
-  const q = (x: string): string => JSON.stringify(x);
-  const username = who.username === undefined ? 'none' : `${q(who.username)}${usernameClaim ? ` (from ${usernameClaim})` : ''}`;
-  return `subject ${q(who.subject)}, username ${username}, email ${who.email === undefined ? 'none' : q(who.email)}, `
-    + `groups ${who.groups.length ? who.groups.map(q).join(', ') : 'none'}`;
-}
