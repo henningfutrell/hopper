@@ -94,6 +94,10 @@ describe('loadSignInConfig', () => {
     ['a gateway realm introspecting with no client', realms({ name: 'x', type: 'gateway', issuer: 'https://idp', check: 'introspection', clientSecret: 'oidc-secret' }), /realms\.0\.clientId/],
     ['a gateway realm introspecting with no client secret', realms({ name: 'x', type: 'gateway', issuer: 'https://idp', check: 'introspection', clientId: 'a' }), /realms\.0\.clientSecret/],
     ['a gateway realm with a plain-http issuer', realms({ name: 'x', type: 'gateway', issuer: 'http://idp.example.com', audience: ['h'] }), /realms\.0\.issuer/],
+    ['a gateway realm\'s check role provider with no check (issue #2986)', realms({ name: 'x', type: 'gateway', issuer: 'https://idp', audience: ['h'], roles: { provider: 'check' } }), /realms\.0\.roles\.check/],
+    ['a role check with a plain-http url', realms({ name: 'x', type: 'gateway', issuer: 'https://idp', audience: ['h'], roles: { provider: 'check', check: { url: 'http://authz.example.com/check', object: 'app:h' } } }), /realms\.0\.roles\.check\.url/],
+    ['an unknown role provider', realms({ name: 'x', type: 'gateway', issuer: 'https://idp', audience: ['h'], roles: { provider: 'opa' } }), /realms\.0\.roles\.provider/],
+    ['a role provider on a realm that is not a gateway', realms({ name: 'x', ...GH, roles: { provider: 'check' } }), /provider|unrecognized/i],
     ['a wrong version', { version: 2 }, /version/],
   ])('refuses %s, naming the field', (_what, value, msg) => {
     expect(() => load(value)).toThrow(msg);
@@ -107,6 +111,15 @@ describe('loadSignInConfig', () => {
     expect(load(realms({
       name: 'edge', type: 'gateway', issuer: 'https://idp.example.com', check: 'introspection', clientId: 'hopper', clientSecret: 'oidc-secret', header: 'X-Forwarded-Access-Token',
     })).realms[0]).toMatchObject({ check: 'introspection', clientId: 'hopper', clientSecret: 'oidc-secret', header: 'x-forwarded-access-token' });
+  });
+
+  it('a gateway realm\'s check role provider (issue #2986): can_admin, can_operate and can_view by default', () => {
+    const r = load(realms({ name: 'edge', type: 'gateway', issuer: 'https://idp.example.com', audience: ['hopper'],
+      roles: { provider: 'check', check: { url: 'https://authz.example.com/check', object: 'app:hopper', permissions: { viewer: 'read' } }, admin: { subjects: ['s1'] } } })).realms[0]!;
+    expect(r.roles).toEqual({
+      provider: 'check', admin: { subjects: ['s1'] },
+      check: { url: 'https://authz.example.com/check', object: 'app:hopper', permissions: { admin: 'can_admin', operator: 'can_operate', viewer: 'read' } },
+    });
   });
 
   it('names the field in an error that starts "invalid sign-in config: "', () => {

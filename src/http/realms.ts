@@ -14,7 +14,7 @@
 // An admin runs the instance, never another user's work (issue #221, design.md "What an admin sees"): no
 // sign-in is kept off while the hopper has more than one user (it signs everyone in as admin).
 import type { FastifyInstance } from 'fastify';
-import { AuthEditError, editSignIn, isSuperAdmin, loadSignInConfig, realmsView, roleIn, type AuthConfig, type SignIn } from '../auth/index.ts';
+import { AuthEditError, editSignIn, isSuperAdmin, loadSignInConfig, realmsView, roleIn, roleSourceIn, type AuthConfig, type SignIn } from '../auth/index.ts';
 import type { InstanceStore } from '../domain/store.ts';
 import { roleAllows, type Identity, type PersonView, type RealmsEdit, type RealmsView } from '../domain/types.ts';
 import { HttpError } from './errors.ts';
@@ -51,7 +51,11 @@ export function createRealmsAdmin(o: {
       .filter((p) => config.realms.some((r) => r.name === p.realm))
       .map((p) => {
         const who: Identity = live.get(`${p.realm} ${p.subject}`) ?? { realm: p.realm, subject: p.subject, groups: [] };
-        return { realm: p.realm, subject: p.subject, user: o.instance.users.get(p.userId)?.name ?? p.userId, role: roleIn(config, who), superAdmin: isSuperAdmin(config, who) };
+        const role = roleIn(config, who, undefined, o.signIn.providedRole);
+        return {
+          realm: p.realm, subject: p.subject, user: o.instance.users.get(p.userId)?.name ?? p.userId, role: role ?? null,
+          roleFrom: roleSourceIn(config, who), ...(role === undefined ? { roleUnknown: true as const } : {}), superAdmin: isSuperAdmin(config, who),
+        };
       });
   };
   const view = (): RealmsView => {
@@ -110,8 +114,9 @@ export function createRealmsAdmin(o: {
       if (!superActor && supersOf(config).join('\n') !== supersOf(current).join('\n')) {
         throw new HttpError(403, 'this change would change who is a super admin: only a super admin may');
       }
-      const role = roleIn(config, actor, o.instance.localAccounts);
-      if (role === null || !roleAllows(role, 'admin')) {
+      // undefined: a role provider decides it at the session's next renewal (issue #2986); the change ends nothing now.
+      const role = roleIn(config, actor, o.instance.localAccounts, o.signIn.providedRole);
+      if (role === null || (role !== undefined && !roleAllows(role, 'admin'))) {
         throw new HttpError(409, `this change would end your own admin session (${actor.realm}): sign in as an admin another way first, or change it with hopper config set sign-in`);
       }
       if (!store.write(next, version)) throw new HttpError(409, MOVED);

@@ -162,6 +162,16 @@ spec:
             {{- if .Values.solr.enabled }}
             - name: HOPPER_SOLR_URL
               value: {{ printf "http://%s-solr:8983/solr/hopper" $name | quote }}
+            {{- else if .Values.solr.external.url }}
+            # An outside Solr (issue #2990), with its basic-auth credentials from a Secret you make.
+            - name: HOPPER_SOLR_URL
+              value: {{ .Values.solr.external.url | quote }}
+            {{- if .Values.solr.external.existingSecret }}
+            - name: HOPPER_SOLR_USERNAME_FILE
+              value: /run/hopper-solr/username
+            - name: HOPPER_SOLR_PASSWORD_FILE
+              value: /run/hopper-solr/password
+            {{- end }}
             {{- end }}
             {{- with .Values.telemetry }}
             {{- if and .viewer.enabled (not (hasKey .env "OTEL_EXPORTER_OTLP_ENDPOINT")) }}
@@ -270,6 +280,11 @@ spec:
               mountPath: /run/hopper-database
               readOnly: true
             {{- end }}
+            {{- if and (not .Values.solr.enabled) .Values.solr.external.url .Values.solr.external.existingSecret }}
+            - name: solr-auth
+              mountPath: /run/hopper-solr
+              readOnly: true
+            {{- end }}
       volumes:
         - name: secrets
           secret:
@@ -298,6 +313,17 @@ spec:
             items:
               - key: database_url
                 path: database_url
+        {{- end }}
+        {{- if and (not .Values.solr.enabled) .Values.solr.external.url .Values.solr.external.existingSecret }}
+        - name: solr-auth
+          secret:
+            secretName: {{ .Values.solr.external.existingSecret }}
+            defaultMode: 0440
+            items:
+              - key: username
+                path: username
+              - key: password
+                path: password
         {{- end }}
         - name: lane-pool
           secret:

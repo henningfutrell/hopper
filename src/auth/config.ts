@@ -12,6 +12,26 @@ import { DEFAULT_SESSION_LENGTHS, DEVICE_REALM_TYPES, FORM_REALM_TYPES, MAX_SESS
 import { LOCAL_ACCOUNTS_REALM } from './local-accounts.ts';
 import type { RoleRules } from './roles.ts';
 
+/** The permissions the role check asks for on its object, one per role (issue #2986). */
+export interface RoleCheckPermissions { admin: string; operator: string; viewer: string }
+/**
+ * A gateway realm's role check (issue #2986): an external authorization service decides the role. The hopper
+ * posts `{ object, permission }` to `url` for each permission, with the person's own token, and the highest
+ * permission granted decides.
+ */
+export interface RoleCheckConfig {
+  url: string;
+  /** The resource that stands for this hopper instance at the authorization service. */
+  object: string;
+  permissions: RoleCheckPermissions;
+}
+/** A gateway realm's role rules, and the role provider that decides in their place when it is set. */
+export interface GatewayRoleRules extends RoleRules {
+  /** `check`: the role check decides; the rules grant only break-glass admin, by `admin.subjects`. Absent: the rules decide. */
+  provider?: 'check';
+  check?: RoleCheckConfig;
+}
+
 interface RealmBase { name: string; label: string; enabled: boolean }
 export interface LdapRealmConfig extends RealmBase {
   type: 'ldap';
@@ -84,7 +104,7 @@ export interface GatewayRealmConfig extends RealmBase {
   /** Claim names, in the token or the introspection answer. */
   claims: { email: string; username: string; name: string; groups: string };
   trustUnverifiedEmail: boolean;
-  roles: RoleRules;
+  roles: GatewayRoleRules;
 }
 export type RealmConfig = LdapRealmConfig | OidcRealmConfig | DeviceRealmConfig | SamlRealmConfig | GatewayRealmConfig;
 /** No sign-in: everyone who reaches the UI gets a session with this role. */
@@ -119,9 +139,26 @@ const endpoint = z.url().refine((u) => { const x = new URL(u); return x.protocol
   'must be https (http only to 127.0.0.1 or localhost)');
 const list = z.array(z.string().min(1)).optional();
 const roleMatch = z.strictObject({ subjects: list, usernames: list, emails: list, emailDomains: list, groups: list });
-const roles = z.strictObject({
+const roleShape = {
   admin: roleMatch.optional(), operator: roleMatch.optional(), viewer: roleMatch.optional(),
   defaultRole: z.enum(UI_ROLES).nullable().optional(),
+};
+const roles = z.strictObject(roleShape).default({});
+/** The default permission of each role a role check asks for (issue #2986). */
+export const DEFAULT_ROLE_CHECK_PERMISSIONS: RoleCheckPermissions = { admin: 'can_admin', operator: 'can_operate', viewer: 'can_view' };
+const permission = z.string().min(1);
+const gatewayRoles = z.strictObject({
+  ...roleShape,
+  provider: z.enum(['check']).optional(),
+  check: z.strictObject({
+    url: endpoint,
+    object: z.string().min(1),
+    permissions: z.strictObject({
+      admin: permission.default(DEFAULT_ROLE_CHECK_PERMISSIONS.admin),
+      operator: permission.default(DEFAULT_ROLE_CHECK_PERMISSIONS.operator),
+      viewer: permission.default(DEFAULT_ROLE_CHECK_PERMISSIONS.viewer),
+    }).default(DEFAULT_ROLE_CHECK_PERMISSIONS),
+  }).optional(),
 }).default({});
 const base = {
   name: z.string().regex(/^[a-z0-9][a-z0-9-]{0,31}$/, 'must be lowercase letters, digits and dashes (it is a URL path segment)')
@@ -177,7 +214,7 @@ const gateway = z.strictObject({
   clientId: z.string().min(1).optional(),
   claims: oidcClaims,
   trustUnverifiedEmail: z.boolean().default(false),
-  roles,
+  roles: gatewayRoles,
 });
 const realm = z.discriminatedUnion('type', [ldap, oidc, github, saml, gateway]);
 const schema = z.strictObject({
@@ -201,6 +238,7 @@ const schema = z.strictObject({
       if (r.check === 'jwt' && !r.audience?.length) ctx.addIssue({ code: 'custom', path: at('audience'), message: 'checking JWTs needs audience: the aud values a token for the hopper carries' });
       if (r.check === 'introspection' && r.clientId === undefined) ctx.addIssue({ code: 'custom', path: at('clientId'), message: 'introspection needs clientId: the hopper\'s client at the issuer' });
       if (r.enabled && r.check === 'introspection' && r.clientSecret === undefined) ctx.addIssue({ code: 'custom', path: at('clientSecret'), message: 'introspection needs its client secret' });
+      if (r.roles.provider === 'check' && r.roles.check === undefined) ctx.addIssue({ code: 'custom', path: at('roles', 'check', 'url'), message: 'the check role provider needs roles.check: its url and object' });
     }
     if (r.type === 'ldap') {
       const u = new URL(r.url);

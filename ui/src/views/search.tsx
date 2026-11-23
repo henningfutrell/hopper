@@ -113,7 +113,7 @@ export function Search() {
         {down && (
           <div data-slot="search-state" data-state={down.state} className="flex items-center gap-2 rounded-lg border border-warn/40 bg-warn/5 p-3 text-sm text-warn">
             <AlertTriangle className="size-4 shrink-0" />
-            <span>{down.state === 'not-configured' ? 'Search is not set up' : 'Search is degraded'}{down.why ? `: ${down.why}` : ''}. The rest of the hopper works as before.</span>
+            <span>{down.state === 'not-configured' ? 'Search is not set up' : down.state === 'unauthorized' ? 'Search is unauthorized' : 'Search is degraded'}{down.why ? `: ${down.why}` : ''}. The rest of the hopper works as before.</span>
           </div>
         )}
         {!current

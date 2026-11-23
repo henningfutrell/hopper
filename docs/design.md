@@ -7183,6 +7183,37 @@ the daemon restarts, as for every realm; logging out of the hopper does not log 
 the next visit takes a new session. With `introspection`, the issuer is asked once per exchange, not
 per request.
 
+### A gateway realm's roles from an authorization service (issue #2986, 2026-11-23)
+
+Request: in a shared deployment behind an authenticating gateway, an authorization store records who
+administers, operates or views each app, and apps ask a decision API. The token's username claim may be
+absent, so static rules do not match, and role lists in config drift from the platform's grants. An
+extension, not a fork: the static rules stay the default.
+
+- **A role provider on a gateway realm.** `roles.provider: check` with `roles.check` (`url`, https or
+  http to loopback; `object`; `permissions`, default `can_admin`/`can_operate`/`can_view`). Only the gateway
+  realm has it: only there does the hopper hold a token of the person's own to forward. `src/auth/role-check.ts`.
+- **The contract**, chosen here because the issue names none: `POST <url>`, `Authorization: Bearer <the
+  token as the gateway forwarded it>`, body `{ object, permission }`, answer `200 { allowed: boolean }`.
+  One request per permission, all at once; the highest allowed decides; none: no role. Plain `fetch`:
+  a JSON POST needs no library, and no sign-in protocol is hand-rolled.
+- **Fails closed.** Anything else is an error ("authorization service unavailable", 502), never "no
+  role". At a renewal it follows the gateway's grace rule: the session keeps its role, unrenewed, for 5
+  minutes after the last good check.
+- **Cache** 60 s per subject, in memory; errors not kept. A renewal (at most once a minute) sets the
+  session's role to the answer, so a change at the service reaches it in about two minutes.
+- **Break-glass admin.** With a provider, only `roles.admin.subjects` and the super admins grant a role
+  from the config (admin), with no check; the other rules and `defaultRole` do nothing.
+- **A role not known.** `SignIn.roleOf` answers `undefined` for a provider realm's identity the service
+  was not asked about since the start (answers are in memory). A reconcile (start, Settings change) keeps
+  such a session and its role, and a grant refreshes with the role it holds, until the next gateway check.
+- **Where a role comes from** is on Settings → Sign-in → Admins (`PersonView.roleFrom`), where the people
+  and their roles are listed; the issue's "Users & access" lists users, not identities and roles.
+
+**Residual risk, stated.** After a restart a session or a grant keeps a role the service may have taken
+back, until the session's next renewal (a minute of use) or the grant's minter's next gateway check. An
+API grant's refresh never asks the service itself: it has no gateway token to forward.
+
 
 ### Session lifetime (issue #439, 2026-10-08)
 
@@ -22058,8 +22089,9 @@ proxy, which lets through ping, inspect and exec, never stats. So the stack reso
 
 Solr is the search index's (issue #945, "Search"). The **Solr meter** (`src/stack-resources/solr.ts`) reads it for the stack
 resources, from Solr's own metrics API: `GET /solr/admin/metrics` on the Solr of the core `HOPPER_SOLR_URL` names (compose:
-`http://solr:8983/solr/hopper`, so `http://solr:8983/solr/admin/metrics`), JSON, four `key`s of the core's registry
-(`solr.core.<core>:…`). No setting of its own, and no credential: the hopper reaches Solr on the `search` network it shares
+`http://solr:8983/solr/hopper`, so `http://solr:8983/solr/admin/metrics`), JSON, four metrics of each core (`group=core`,
+`prefix=`), of which it takes the core's registry (`solr.core.<core>`; a SolrCloud collection's replicas, "Search with a
+managed Solr"). No setting of its own, and no credential: the hopper reaches Solr on the `search` network it shares
 with it alone.
 
 - **Query latency**: `QUERY./select.requestTimes`, the core's `/select` handler: every search, type-ahead and count the
@@ -22106,7 +22138,7 @@ its memory against its 256 MiB limit).
 Owner direction: Solr in the hopper stack now, and search built on it from the start, not keyword search first.
 
 **The container.** compose.yaml runs `solr` (`docker.io/library/solr`, slim), required like Postgres and OpenFGA, one core
-in standalone mode (not SolrCloud): `solr-precreate hopper` makes the core `hopper` from Solr's default config at its first
+in standalone mode (not SolrCloud; a managed SolrCloud collection is "Search with a managed Solr"): `solr-precreate hopper` makes the core `hopper` from Solr's default config at its first
 start, on the volume `solr`. On no host port, and on a network of its own, `search` (`hopper_search`), that it shares with
 the hopper alone: no box and no other service reaches it, so Solr holds no credential and the hopper keeps none for it
 (nothing in `.env`, nothing in the vault). The hopper does not wait for it (`depends_on` names Postgres only). The hopper
@@ -22240,6 +22272,46 @@ the highlight read as text, the search in the hash, the Search view's hits, face
 `https://`, and the links and intake snippets), `test/authz/model.test.ts`, `test/update/drift.test.ts`
 and `test/scripts/compose.test.ts` (the `solr` service). The Solr tests use `HOPPER_TEST_SOLR_URL` when it names a core,
 else start Solr in a container (`test/support/solr.ts`).
+
+### Search with a managed Solr (issue #2990, 2026-11-23)
+
+Requirement: search can use a managed, authenticated Solr — one SolrCloud cluster, one collection and one user per app,
+with basic auth on and each app permitted only on its own collection —, where a private Solr container per hopper is not
+allowed. The compose and Helm `solr` service stay as they are, with no credential.
+
+- **The URL.** `HOPPER_SOLR_URL` names a standalone core or a collection on a SolrCloud cluster: a collection answers the
+  same calls at the same paths (`/select`, `/update`, `/schema`, `/config`), so the index (`src/search/solr.ts`) does not
+  ask which. Every call is the core's or the collection's own, the schema calls of each start too: none reaches the
+  Collections API, another collection or ZooKeeper, so a user permitted on its collection only does all the hopper does.
+- **The credentials are given, not owned** ("Secrets": a credential for an outside service comes from the runtime).
+  `HOPPER_SOLR_USERNAME` and `HOPPER_SOLR_PASSWORD`, each also as `NAME_FILE` and read again at each call, so a rotated
+  password applies at once; or the URL's userinfo, decoded. Both forms, or a username with no password, stop the start, in
+  words that name no value (`src/search/solr-connection.ts`). The userinfo is always taken out of the URL (fetch refuses
+  one with it): the URL the start log, an error and the Solr meter name has none. Sent as basic auth on every call to
+  Solr: the index's and the Solr meter's.
+- **The start log** says which Solr and whether basic auth is on: `hopper: search: Solr at <url>, basic auth on|off`.
+- **Unauthorized.** A 401 (credentials refused, or none sent to a Solr that asks) or a 403 (the user may not use the core
+  or collection) throws `SearchUnauthorized` (`src/domain/search.ts`); search's state is then `unauthorized` with why
+  (`GET /api/search`, `/suggest`, `/status`; the Search view says "Search is unauthorized"), and the pass backs off and
+  keeps the pending index updates, as while Solr is down. The why names the variables to check, never a value.
+- **The Solr meter** sends the same auth; a managed Solr's user may not read Solr's metrics API (`metrics-read`), and the
+  Solr reading then says so. It reads every core's four metrics (`group=core`, `prefix=` the four) and takes the core
+  `HOPPER_SOLR_URL` names (`solr.core.<core>`) or, on SolrCloud, each replica of that collection
+  (`solr.core.<collection>.<shard>.<replica>`; part 2): queries, failed queries and index size summed, the mean time
+  weighed by each replica's queries, the 95th percentile the highest, and each shard's documents once (its replica with the
+  most). Only the cores of the node that answers are read, and a distributed query counts each shard's request too.
+- **Helm** (part 2): with `solr.enabled=false`, `solr.external.url` names the outside Solr (`HOPPER_SOLR_URL`), and
+  `solr.external.existingSecret` a Secret you make with `username` and `password`, mounted at `/run/hopper-solr` and read
+  through `HOPPER_SOLR_USERNAME_FILE` and `HOPPER_SOLR_PASSWORD_FILE`. With the chart's own Solr on, both are ignored.
+- **Not done yet:** the credentials kept in the hopper's vault (an instance system secret set by the admin).
+
+Tests: `test/search/solr-connection.test.ts` (userinfo, the variables, a password file read again, both forms or half
+refused, no value in an error, the start line), `test/adapters/solr-cloud-auth.test.ts` (a real SolrCloud cluster with
+basic auth and a per-collection permission, `startTestSolrCloud` in `test/support/solr.ts`, else `HOPPER_TEST_SOLR_CLOUD_URL`
+with `HOPPER_TEST_SOLR_CLOUD_ADMIN`: schema, writes, count, search and suggest with the credentials; wrong ones, none, and
+another collection unauthorized), `test/integration/search.test.ts` (unauthorized and caught up after) and
+`test/ui/search.test.ts` (the unauthorized state); part 2: `test/adapters/solr-meter.test.ts` (a SolrCloud collection's
+replicas, another collection or core not counted), `test/scripts/helm-chart.test.ts` (the outside Solr and its Secret).
 
 ## The command palette (issue #2661, 2026-10-23)
 

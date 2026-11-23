@@ -1,10 +1,12 @@
 // The search index in Solr (issue #945, design.md "Search"): one core in standalone mode, HOPPER_SOLR_URL
-// (http://solr:8983/solr/hopper in compose). Spoken to over Solr's own JSON API with fetch: no Node client for Solr has
+// (http://solr:8983/solr/hopper in compose), or one collection on a SolrCloud cluster, a managed Solr's, with basic auth
+// on every call (issue #2990, src/search/solr-connection.ts). Every call is the core's or the collection's own, the schema
+// calls too: nothing reaches another collection or Solr's admin API. Spoken to over Solr's own JSON API with fetch: no Node client for Solr has
 // a steady release history, and the five calls this needs (update, select, schema, config, count) are plain HTTP.
 // The core is made by the Solr container from Solr's default config (`solr-precreate`); the schema below is the
 // hopper's, put in at each start (`ensureSchema`), so a new build adds what it needs to the core it finds.
 import type { IndexAnswer, IndexHit, IndexSuggestion, SearchFacet, SearchIndex, SearchQuery, SearchScope, SearchType } from '../domain/search.ts';
-import { emptyFacets, SEARCH_FACETS } from '../domain/search.ts';
+import { emptyFacets, SEARCH_FACETS, SearchUnauthorized } from '../domain/search.ts';
 
 /** A field of the hopper's schema, as Solr's Schema API takes it. */
 interface FieldDef { name: string; type: string; stored?: boolean; indexed?: boolean; multiValued?: boolean; docValues?: boolean }
@@ -43,24 +45,39 @@ const term = (field: string, value: string): string => `{!term f=${field}}${valu
 type Json = Record<string, unknown>;
 const TIMEOUT_MS = { read: 5_000, write: 15_000 };
 
-export function createSolrIndex(o: { url: string; fetch?: typeof fetch }): SearchIndex {
+/** Why Solr refused a call for its credentials or its user (issue #2990), in words that never hold a credential. */
+export function solrRefusal(status: 401 | 403, sent: boolean): string {
+  if (status === 403) return 'Solr refused the request (403): the Solr user may not use this core or collection; give it a permission on the collection HOPPER_SOLR_URL names';
+  return sent
+    ? 'Solr refused the credentials (401): check HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD, or the userinfo of HOPPER_SOLR_URL'
+    : 'Solr refused the credentials (401): Solr asks for a sign-in and none was sent; set HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD';
+}
+
+/**
+ * The index at `url` (no userinfo). `authorization` is the Authorization header of each call, read at each call (absent:
+ * none). A 401 or a 403 throws SearchUnauthorized.
+ */
+export function createSolrIndex(o: { url: string; authorization?: () => string | undefined; fetch?: typeof fetch }): SearchIndex {
   const base = o.url.replace(/\/+$/, '');
   const doFetch = o.fetch ?? fetch;
 
   /** One call to the core; Solr's own error message when it refuses, `Solr not reached: …` when it cannot be reached. */
   const call = async (path: string, init: { method?: 'GET' | 'POST'; params?: URLSearchParams; body?: unknown; timeout: number }): Promise<Json> => {
     const url = `${base}${path}${init.params ? `?${init.params}` : ''}`;
+    const authorization = o.authorization?.();
+    const headers: Record<string, string> = { ...(authorization ? { authorization } : {}), ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}) };
     let res: Response;
     try {
       res = await doFetch(url, {
-        method: init.method ?? 'GET', signal: AbortSignal.timeout(init.timeout),
-        ...(init.body !== undefined ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(init.body) } : {}),
+        method: init.method ?? 'GET', signal: AbortSignal.timeout(init.timeout), headers,
+        ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       });
     } catch (e) {
       const cause = (e as { cause?: { code?: string; message?: string } }).cause;
       throw new Error(`Solr not reached: ${cause?.code ?? cause?.message ?? (e as Error).message}`, { cause: e });
     }
     const raw = await res.text();
+    if (res.status === 401 || res.status === 403) throw new SearchUnauthorized(solrRefusal(res.status, authorization !== undefined));
     let body: Json;
     try { body = JSON.parse(raw) as Json; } catch { throw new Error(`Solr answered ${res.status}, not JSON: ${raw.slice(0, 200)}`); }
     if (!res.ok) {

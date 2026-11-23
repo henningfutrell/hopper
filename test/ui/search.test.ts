@@ -9,6 +9,7 @@
 //   Scenario: the Search view reads the hash's search, shows each hit with a link to its job, and marks the matched words
 //   Scenario: a facet value filters the search; picked again, it no longer filters
 //   Scenario: search degraded or not set up says why, and shows no hits
+//   Scenario: search unauthorized (Solr refuses the credentials) says so and why (issue #2990)
 //   Scenario: an artifact's hit links to the artifact, an infra plan's to Infra, and an artifact's text is a snippet (part 3)
 import { act, createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -142,6 +143,11 @@ describe('the Search view', () => {
     await act(async () => root?.unmount());
     await renderView(searchHash({ q: 'cache', type: [], status: [], label: [], repo: [], offset: 0 }), () => ({ state: 'not-configured', why: 'search is not set up', total: 0, hits: [], facets: { type: {}, status: {}, labels: {}, repo: {} } }));
     expect(document.querySelector('[data-slot="search-state"]')?.textContent).toContain('search is not set up');
+  });
+
+  it('says search is unauthorized when Solr refuses the credentials (issue #2990)', async () => {
+    await renderView(searchHash({ q: 'cache', type: [], status: [], label: [], repo: [], offset: 0 }), () => ({ state: 'unauthorized', why: 'Solr refused the credentials (401)', total: 0, hits: [], facets: { type: {}, status: {}, labels: {}, repo: {} } }));
+    expect(document.querySelector('[data-slot="search-state"]')?.textContent).toContain('Search is unauthorized: Solr refused the credentials (401)');
   });
 });
 

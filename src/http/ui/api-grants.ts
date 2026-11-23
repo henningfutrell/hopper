@@ -68,13 +68,13 @@ export interface ApiGrants {
   /** End every grant of the user; how many. */
   revokeAll(userId: string): number;
   /** The sign-in config as it is now, applied to every grant: no role ends it, a lower role lowers it, never raises it. */
-  reconcile(roleOf: (who: Identity) => UiRole | null): { dropped: number; changed: number };
+  reconcile(roleOf: (who: Identity) => UiRole | null | undefined): { dropped: number; changed: number };
 }
 
 export function createApiGrants(o: {
   repo: ApiGrantRepository; sessions: UiSessions; clock: Clock;
-  /** The role the minter's sign-in grants now (null: none); asked at each refresh. */
-  roleOf: (who: Identity) => UiRole | null;
+  /** The role the minter's sign-in grants now (null: none; undefined: not known now, issue #2986); asked at each refresh. */
+  roleOf: (who: Identity) => UiRole | null | undefined;
   recorded?: (userId: string, record: GrantRecord) => void;
 }): ApiGrants {
   const now = (): number => o.clock.now().getTime();
@@ -83,7 +83,12 @@ export function createApiGrants(o: {
   const minutesOf = (g: ApiGrantRow): number => Math.min(g.tokenMinutes ?? Infinity, tokenMinutes());
   const idleEnd = (g: ApiGrantRow): number => Date.parse(g.lastUsedAt) + GRANT_IDLE_DAYS * DAY;
   /** The CLI's identity is no realm's (the CLI's own sessions end at each start): its grants keep the role they were minted with. */
-  const roleNow = (g: ApiGrantRow, roleOf = o.roleOf): UiRole | null => (g.identity.realm === CLI_REALM ? g.role : roleOf(g.identity));
+  // A role a gateway realm's role provider has not answered since the hopper started is the one it was minted with (issue #2986).
+  const roleNow = (g: ApiGrantRow, roleOf = o.roleOf): UiRole | null => {
+    if (g.identity.realm === CLI_REALM) return g.role;
+    const granted = roleOf(g.identity);
+    return granted === undefined ? g.role : granted;
+  };
   /** Answers a rotated refresh token gave, for a retry within the grace period, by the rotated token's hash. */
   const answered = new Map<string, { at: number; value: ApiTokenRefreshed }>();
 

@@ -130,6 +130,9 @@ The setting's name in error messages is in brackets.
 | | Client ID, Client secret (`clientId`, `clientSecret`) | none | `introspection` only, and then both required (the secret once the realm is on): the hopper's client at the issuer, sent with HTTP Basic. The secret is stored, never shown. |
 | | Email / Username / Name / Groups claim (`claims.…`) | `email` / `preferred_username` / `name` / `groups` | Claim names, read from the token or the introspection answer. |
 | | Trust unverified email (`trustUnverifiedEmail`) | off | Count the email even without `email_verified: true`. |
+| | Role provider (`roles.provider`) | the role rules | `check`: an authorization service decides the role ([Roles from an authorization service](#roles-from-an-authorization-service)). |
+| | Role check URL, Role check object (`roles.check.url`, `roles.check.object`) | — | With `roles.provider: check`, both required: where the hopper asks, and the resource that stands for this hopper there. https (http only to `127.0.0.1`/`localhost`). |
+| | Admin / Operator / Viewer permission (`roles.check.permissions.…`) | `can_admin` / `can_operate` / `can_view` | The permission on the object that grants each role. |
 
 ### How an OIDC sign-in is checked
 
@@ -537,6 +540,46 @@ in. `HOPPER_PUBLIC_URL` is the address people reach through the gateway.
   hopper session outlives the gateway's and ends at the next check.
 - The gateway realm composes with the others: with an LDAP realm also on, the sign-in page shows
   both, and **Sign in through the gateway** tries the token again.
+
+### Roles from an authorization service
+
+In a shared deployment, a platform can keep who may administer, operate or view each app in an
+authorization service, and the app asks it. A gateway realm can take its roles from there in place of
+its role rules (issue #2986): set `roles.provider` to `check`.
+
+```sh
+HOPPER_SIGN_IN_REALM_EDGE_ROLES_PROVIDER=check
+HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_URL=https://authz.example.com/check
+HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_OBJECT=app:hopper
+# Optional; these are the defaults:
+HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_PERMISSIONS_ADMIN=can_admin
+HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_PERMISSIONS_OPERATOR=can_operate
+HOPPER_SIGN_IN_REALM_EDGE_ROLES_CHECK_PERMISSIONS_VIEWER=can_view
+```
+
+Or in Settings → Sign-in, in the realm's form: Role provider, Role check URL, Role check object and the
+three permissions.
+
+- **The request.** At each gateway sign-in and each [renewal](#behind-an-auth-gateway), once the realm
+  accepted the token, the hopper asks once for each permission, at the same time:
+  `POST <url>` with `Authorization: Bearer <token>` — the person's own token, as the gateway forwarded
+  it — and the body `{ "object": "<object>", "permission": "<permission>" }`. The service answers
+  `200` with `{ "allowed": true }` or `{ "allowed": false }`.
+- **The highest permission allowed decides the role.** None allowed → no role, no session ("signed in at
+  the gateway, but the authorization service grants this account no role").
+- **It fails closed.** No answer within 10 seconds, another status, or another body is an error, never a
+  no: the sign-in is 502 "authorization service unavailable (<realm>): …", and no session starts. At a
+  renewal, an error is treated as an issuer out of reach: the session keeps its role, unrenewed, and ends
+  5 minutes after the last good check (`provider-unreachable`).
+- **A short cache.** An answer is kept for 60 seconds per subject; an error is not kept. A renewal takes
+  the role the service answers now, so a change at the service reaches a session within about two minutes.
+- **The role rules give only break-glass admin.** With a role provider, a subject in `roles.admin.subjects`
+  and a [super admin](#super-admins) are admin without a check, also while the service is down. The other
+  rules and the default role do nothing.
+- **Settings → Sign-in → Admins** shows for each person where the role comes from: "from the
+  authorization service" or "from the role rules". After a restart the hopper knows no answer until the
+  person's next sign-in or renewal: until then the list says "role not known yet", and the sessions and
+  [grants](#api-tokens) there are keep the role they have.
 
 ## Reading the API with a token
 
