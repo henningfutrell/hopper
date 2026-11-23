@@ -50,7 +50,7 @@ const SETTINGS: Record<RealmType, [string, Kind][]> = {
   github: [...COMMON, ...ROLE_RULES],
   gateway: [
     ...COMMON, ...text('issuer', 'check'), ['audience', 'words'], ...text('header', 'clientId', 'clientSecret',
-      'claims.email', 'claims.username', 'claims.name', 'claims.groups'), ['trustUnverifiedEmail', 'switch'], ...ROLE_RULES,
+      'claims.email', 'claims.username', 'claims.name', 'claims.groups'), ['trustUnverifiedEmail', 'switch'], ['firstAdmin', 'switch'], ...ROLE_RULES,
     // The role provider (issue #2986): ROLES_PROVIDER=check, ROLES_CHECK_URL, ROLES_CHECK_OBJECT, ROLES_CHECK_PERMISSIONS_<ROLE>.
     ...text('roles.provider', 'roles.check.url', 'roles.check.object',
       'roles.check.permissions.admin', 'roles.check.permissions.operator', 'roles.check.permissions.viewer'),
