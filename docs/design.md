@@ -22111,8 +22111,9 @@ proxy, which lets through ping, inspect and exec, never stats. So the stack reso
 
 Solr is the search index's (issue #945, "Search"). The **Solr meter** (`src/stack-resources/solr.ts`) reads it for the stack
 resources, from Solr's own metrics API: `GET /solr/admin/metrics` on the Solr of the core `HOPPER_SOLR_URL` names (compose:
-`http://solr:8983/solr/hopper`, so `http://solr:8983/solr/admin/metrics`), JSON, four `key`s of the core's registry
-(`solr.core.<core>:…`). No setting of its own, and no credential: the hopper reaches Solr on the `search` network it shares
+`http://solr:8983/solr/hopper`, so `http://solr:8983/solr/admin/metrics`), JSON, four metrics of each core (`group=core`,
+`prefix=`), of which it takes the core's registry (`solr.core.<core>`; a SolrCloud collection's replicas, "Search with a
+managed Solr"). No setting of its own, and no credential: the hopper reaches Solr on the `search` network it shares
 with it alone.
 
 - **Query latency**: `QUERY./select.requestTimes`, the core's `/select` handler: every search, type-ahead and count the
@@ -22316,17 +22317,23 @@ allowed. The compose and Helm `solr` service stay as they are, with no credentia
   (`GET /api/search`, `/suggest`, `/status`; the Search view says "Search is unauthorized"), and the pass backs off and
   keeps the pending index updates, as while Solr is down. The why names the variables to check, never a value.
 - **The Solr meter** sends the same auth; a managed Solr's user may not read Solr's metrics API (`metrics-read`), and the
-  Solr reading then says so. It still names a standalone core's metrics only (`solr.core.<core>`): a SolrCloud collection's
-  cores are named per shard and replica.
-- **Not done yet:** the credentials kept in the hopper's vault (an instance system secret set by the admin), and the Helm
-  chart's values for an outside Solr.
+  Solr reading then says so. It reads every core's four metrics (`group=core`, `prefix=` the four) and takes the core
+  `HOPPER_SOLR_URL` names (`solr.core.<core>`) or, on SolrCloud, each replica of that collection
+  (`solr.core.<collection>.<shard>.<replica>`; part 2): queries, failed queries and index size summed, the mean time
+  weighed by each replica's queries, the 95th percentile the highest, and each shard's documents once (its replica with the
+  most). Only the cores of the node that answers are read, and a distributed query counts each shard's request too.
+- **Helm** (part 2): with `solr.enabled=false`, `solr.external.url` names the outside Solr (`HOPPER_SOLR_URL`), and
+  `solr.external.existingSecret` a Secret you make with `username` and `password`, mounted at `/run/hopper-solr` and read
+  through `HOPPER_SOLR_USERNAME_FILE` and `HOPPER_SOLR_PASSWORD_FILE`. With the chart's own Solr on, both are ignored.
+- **Not done yet:** the credentials kept in the hopper's vault (an instance system secret set by the admin).
 
 Tests: `test/search/solr-connection.test.ts` (userinfo, the variables, a password file read again, both forms or half
 refused, no value in an error, the start line), `test/adapters/solr-cloud-auth.test.ts` (a real SolrCloud cluster with
 basic auth and a per-collection permission, `startTestSolrCloud` in `test/support/solr.ts`, else `HOPPER_TEST_SOLR_CLOUD_URL`
 with `HOPPER_TEST_SOLR_CLOUD_ADMIN`: schema, writes, count, search and suggest with the credentials; wrong ones, none, and
 another collection unauthorized), `test/integration/search.test.ts` (unauthorized and caught up after) and
-`test/ui/search.test.ts` (the unauthorized state).
+`test/ui/search.test.ts` (the unauthorized state); part 2: `test/adapters/solr-meter.test.ts` (a SolrCloud collection's
+replicas, another collection or core not counted), `test/scripts/helm-chart.test.ts` (the outside Solr and its Secret).
 
 ## The command palette (issue #2661, 2026-10-23)
 

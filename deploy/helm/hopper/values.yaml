@@ -171,8 +171,8 @@ tunnel:
   cloudflared:
     enabled: true
 
-# Search (docs/deploy.md "Search"): one Solr core. Off: the hopper has no search. Its index is built again from Postgres
-# when lost.
+# Search (docs/deploy.md "Search"): one Solr core. Off: the hopper has no search, unless `external.url` names an outside
+# Solr. Its index is built again from Postgres when lost.
 solr:
   enabled: true
   image: docker.io/library/solr:9.11.0-slim
@@ -180,6 +180,13 @@ solr:
   size: 5Gi
   storageClass: ""
   resources: {}
+  # An outside Solr, used only when enabled is false (issue #2990): a managed Solr's core or SolrCloud collection.
+  external:
+    # Its URL, https://solr.example/solr/hopper, with no userinfo. Empty: no search.
+    url: ""
+    # A Secret you make with the keys `username` and `password`: the Solr user's basic-auth credentials, read again at
+    # each call (a rotated one counts). Empty: none are sent.
+    existingSecret: ""
 
 # Telemetry (docs/deploy.md "Telemetry", issue #1486): OpenTelemetry traces, metrics and logs. Off unless `env` names an
 # OTLP endpoint or an exporter, or the viewer is on.

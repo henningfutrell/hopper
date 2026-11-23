@@ -1398,7 +1398,11 @@ events.
   https://solr.example.com/solr/hopper, basic auth on`). No log, event, answer or error holds the credentials. Credentials
   Solr refuses (401), or a user it does not permit on the collection (403), make search answer `unauthorized`, with why;
   the changes wait, as when Solr is down, and are written once Solr takes the credentials. The Resources page reads
-  Solr's metrics API only when the user may (Solr's `metrics-read`), and says so when it may not.
+  Solr's metrics API only when the user may (Solr's `metrics-read`), and says so when it may not; on SolrCloud it sums
+  the replicas of the collection on the node that answers. **With Helm**: `--set solr.enabled=false --set
+  solr.external.url=https://solr.example.com/solr/hopper --set solr.external.existingSecret=hopper-solr-auth`, the Secret
+  made by you with the keys `username` and `password` (`kubectl create secret generic hopper-solr-auth
+  --from-literal=username=hopper --from-file=password=<file>`).
 - **Unset** `HOPPER_SOLR_URL`: search answers `not-configured`; nothing else changes.
 - **What the hopper keeps**: Postgres is the source of truth. A lost `solr` volume loses nothing: at the next start the
   hopper finds the core empty and writes every job, artifact, plan, issue and pull request again. **Reindex** (`POST /ui/api/search/reindex`) does that when you
