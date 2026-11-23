@@ -45,8 +45,9 @@ export interface UiSessions {
    * Apply the sign-in config as it is now to every stored session (at start, and after every change from
    * Settings → Sign-in): `roleOf` null ends it (its realm is gone or off, or no rule grants it a role
    * any more); another role replaces the stored one — for an API token only a lower one: it keeps the role it was minted with at most.
+   * undefined keeps it as it is: a gateway realm's role provider decides at its next renewal (issue #2986).
    */
-  reconcile(roleOf: (who: Identity) => UiRole | null): { dropped: number; changed: number };
+  reconcile(roleOf: (who: Identity) => UiRole | null | undefined): { dropped: number; changed: number };
   /** The identities of the stored sessions, as their realms gave them at sign-in. */
   identities(): Identity[];
   /** End every session and API token of this identity but `keep` (a local account's password changed, issue #1380); how many. */
@@ -203,7 +204,12 @@ export function createUiSessions(o: {
       // An API token renews by its own use: the gateway's token is not in its requests to check again.
       if (r.kind === 'api' || !isGateway(r.identity.realm)) { o.repo.touch(r.tokenHash, at); return; }
       const check = await o.signIn.checkGateway(headers);
-      if (check.ok && check.who.realm === r.identity.realm && check.who.subject === r.identity.subject) { o.repo.touch(r.tokenHash, at, at); return; }
+      if (check.ok && check.who.realm === r.identity.realm && check.who.subject === r.identity.subject) {
+        o.repo.touch(r.tokenHash, at, at);
+        // A role provider's answer may have changed (issue #2986): the session takes the role the check gave.
+        if (check.role !== r.role) o.repo.setRole(r.tokenHash, check.role);
+        return;
+      }
       // Out of reach: the session stands, unrenewed, until the grace period after the last good check.
       if (!check.ok && check.status === 502) {
         if (now() - Date.parse(r.checkedAt) >= GATEWAY_GRACE_MS) end(r, 'provider-unreachable');
@@ -220,6 +226,7 @@ export function createUiSessions(o: {
       let changed = 0;
       for (const r of o.repo.all()) {
         const granted = roleOf(r.identity);
+        if (granted === undefined) continue;
         const role = granted === null || r.kind !== 'api' ? granted : lowerRole(granted, r.role);
         if (role === null) { end(r, 'realm-changed'); dropped++; } else if (role !== r.role) { o.repo.setRole(r.tokenHash, role); changed++; }
       }

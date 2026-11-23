@@ -1,5 +1,5 @@
 // Settings → Sign-in → Admins (issue #242): everyone who has signed in, each with their role and whether
-// they are a super admin. Any admin makes someone admin; a super admin also makes them super admin, or
+// they are a super admin, and where the role comes from (issue #2986). Any admin makes someone admin; a super admin also makes them super admin, or
 // hands their own over (they stay admin). A regular admin is offered neither. The changes are the Sign-in
 // page's (POST /ui/api/realms); this only shows the people and asks.
 import { Crown, ShieldCheck } from 'lucide-react';
@@ -35,7 +35,12 @@ export function Admins({ view: { people, realms, version }, busy, change }: {
               <li key={`${p.realm} ${p.subject}`} data-person={p.user} className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
                 <span className="min-w-0 truncate font-medium">{p.user}</span>
                 <span className="text-xs text-muted-foreground">{label(p.realm)}</span>
-                {p.superAdmin ? <StatusBadge status="super admin" tone="ok" /> : <StatusBadge status={p.role ?? 'no role'} tone={p.role === 'admin' ? 'ok' : 'muted'} />}
+                {p.superAdmin ? <StatusBadge status="super admin" tone="ok" /> : <StatusBadge status={p.roleUnknown ? 'role not known yet' : p.role ?? 'no role'} tone={p.role === 'admin' ? 'ok' : 'muted'} />}
+                {/* Issue #2986: a gateway realm's role provider decides the role, else the role rules. */}
+                <span data-role-from={p.roleFrom} className="text-xs text-muted-foreground"
+                  title={p.roleUnknown ? 'The authorization service is asked at the next sign-in or renewal.' : undefined}>
+                  {p.roleFrom === 'provider' ? 'from the authorization service' : 'from the role rules'}
+                </span>
                 <span className="ml-auto flex flex-wrap items-center gap-1">
                   {p.role !== 'admin' && <Button size="xs" variant="outline" disabled={busy} onClick={() => onAdmin(p)}>Make admin</Button>}
                   {superAdmin && !p.superAdmin && <>

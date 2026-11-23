@@ -43,7 +43,7 @@ const exchange = (app: { url: string }, host: string, origin: string, token: str
   rawRequest(app.url, { method: 'POST', path: '/ui/auth/gateway', body: '{}', headers: { host, origin, 'content-type': 'application/json', authorization: `Bearer ${token}` } });
 const tokenOf = (text: string): string => (JSON.parse(text) as { token: string }).token;
 
-async function setUp(allowed: (tokens: Record<string, string>) => Record<string, string[]>, roles: Record<string, unknown> = {}) {
+async function setUp(allowed: (tokens: { ada: string; bea: string; cy: string }) => Record<string, string[]>, roles: Record<string, unknown> = {}) {
   const idp = await oidcIdp(h);
   const tokens = {
     ada: await idp.token({ sub: 'ada-1', aud: 'hopper' }, 300),

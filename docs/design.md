@@ -7183,6 +7183,37 @@ the daemon restarts, as for every realm; logging out of the hopper does not log 
 the next visit takes a new session. With `introspection`, the issuer is asked once per exchange, not
 per request.
 
+### A gateway realm's roles from an authorization service (issue #2986, 2026-11-23)
+
+Request: in a shared deployment behind an authenticating gateway, an authorization store records who
+administers, operates or views each app, and apps ask a decision API. The token's username claim may be
+absent, so static rules do not match, and role lists in config drift from the platform's grants. An
+extension, not a fork: the static rules stay the default.
+
+- **A role provider on a gateway realm.** `roles.provider: check` with `roles.check` (`url`, https or
+  http to loopback; `object`; `permissions`, default `can_admin`/`can_operate`/`can_view`). Only the gateway
+  realm has it: only there does the hopper hold a token of the person's own to forward. `src/auth/role-check.ts`.
+- **The contract**, chosen here because the issue names none: `POST <url>`, `Authorization: Bearer <the
+  token as the gateway forwarded it>`, body `{ object, permission }`, answer `200 { allowed: boolean }`.
+  One request per permission, all at once; the highest allowed decides; none: no role. Plain `fetch`:
+  a JSON POST needs no library, and no sign-in protocol is hand-rolled.
+- **Fails closed.** Anything else is an error ("authorization service unavailable", 502), never "no
+  role". At a renewal it follows the gateway's grace rule: the session keeps its role, unrenewed, for 5
+  minutes after the last good check.
+- **Cache** 60 s per subject, in memory; errors not kept. A renewal (at most once a minute) sets the
+  session's role to the answer, so a change at the service reaches it in about two minutes.
+- **Break-glass admin.** With a provider, only `roles.admin.subjects` and the super admins grant a role
+  from the config (admin), with no check; the other rules and `defaultRole` do nothing.
+- **A role not known.** `SignIn.roleOf` answers `undefined` for a provider realm's identity the service
+  was not asked about since the start (answers are in memory). A reconcile (start, Settings change) keeps
+  such a session and its role, and a grant refreshes with the role it holds, until the next gateway check.
+- **Where a role comes from** is on Settings → Sign-in → Admins (`PersonView.roleFrom`), where the people
+  and their roles are listed; the issue's "Users & access" lists users, not identities and roles.
+
+**Residual risk, stated.** After a restart a session or a grant keeps a role the service may have taken
+back, until the session's next renewal (a minute of use) or the grant's minter's next gateway check. An
+API grant's refresh never asks the service itself: it has no gateway token to forward.
+
 
 ### Session lifetime (issue #439, 2026-10-08)
 

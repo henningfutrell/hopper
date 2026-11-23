@@ -69,8 +69,8 @@ describe('two admin tiers (issue #242)', () => {
     expect(await me(app, second)).toMatchObject({ role: 'viewer', superAdmin: false });
     const view = await realms(app, first);
     expect(view.people).toEqual(expect.arrayContaining([
-      { realm: 'github', subject: expect.any(String), user: 'octo', role: 'admin', superAdmin: true },
-      { realm: 'github', subject: expect.any(String), user: 'bea', role: 'viewer', superAdmin: false },
+      { realm: 'github', subject: expect.any(String), user: 'octo', role: 'admin', roleFrom: 'rule', superAdmin: true },
+      { realm: 'github', subject: expect.any(String), user: 'bea', role: 'viewer', roleFrom: 'rule', superAdmin: false },
     ]));
   });
 
