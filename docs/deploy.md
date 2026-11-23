@@ -1385,6 +1385,13 @@ events.
 - **Elsewhere**: run Solr in standalone mode with one core made from its default config (`solr-precreate hopper`), and
   set `HOPPER_SOLR_URL` to the core's URL. Keep the core off every network a job or a person reaches: it holds your jobs'
   words. The hopper puts its schema into the core itself at each start.
+- **A managed Solr** (a SolrCloud cluster with basic auth, one collection and one user for the hopper): set
+  `HOPPER_SOLR_URL` to the collection's URL (`https://solr.example/solr/hopper`), and `HOPPER_SOLR_USERNAME` and
+  `HOPPER_SOLR_PASSWORD` (or `HOPPER_SOLR_PASSWORD_FILE`, a mounted secret file). Or put `user:password` in the URL's
+  userinfo, percent-encoded; the hopper takes it out of the URL. Every call goes to the collection only, as HTTP basic
+  auth: a permission on that collection is enough. The start log says which Solr and whether basic auth is on, never the
+  credentials. Wrong credentials, or a user not permitted on the collection, make search `degraded` with the reason
+  `unauthorized: …`. The collection's configset must let the Schema API change the schema (Solr's `_default` does).
 - **Unset** `HOPPER_SOLR_URL`: search answers `not-configured`; nothing else changes.
 - **What the hopper keeps**: Postgres is the source of truth. A lost `solr` volume loses nothing: at the next start the
   hopper finds the core empty and writes every job, artifact, plan, issue and pull request again. **Reindex** (`POST /ui/api/search/reindex`) does that when you

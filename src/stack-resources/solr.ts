@@ -3,6 +3,7 @@
 // query is a request to the core's `/select`: the hopper's searches, type-ahead and counts. The counts are since the core
 // was loaded; the times are Solr's own timer, which weighs the last minutes most.
 import type { SolrMeter, SolrReading } from '../domain/stack-resources.ts';
+import { solrAuthHeaders, type SolrCredentials } from '../search/solr.ts';
 
 const WAIT_MS = 2_000;
 const METRICS = ['QUERY./select.requestTimes', 'QUERY./select.errors', 'SEARCHER.searcher.numDocs', 'INDEX.sizeInBytes'] as const;
@@ -25,18 +26,19 @@ export function solrMetricsUrl(coreUrl: string): string {
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
 
-export function createSolrMeter(o: { url: string }): SolrMeter {
+export function createSolrMeter(o: { url: string; auth?: SolrCredentials | undefined }): SolrMeter {
   const { core } = coreOf(o.url);
   const url = solrMetricsUrl(o.url);
   return {
     async read(): Promise<SolrReading> {
       let res: Response;
       try {
-        res = await fetch(url, { signal: AbortSignal.timeout(WAIT_MS) });
+        res = await fetch(url, { headers: solrAuthHeaders(o.auth), signal: AbortSignal.timeout(WAIT_MS) });
       } catch (e) {
         const cause = (e as { cause?: { code?: string } }).cause;
         throw new Error(`Solr's metrics (${url}) did not answer: ${cause?.code ?? (e instanceof Error ? e.message : String(e))}`, { cause: e });
       }
+      if (res.status === 401 || res.status === 403) throw new Error(`Solr's metrics (${url}) answered ${res.status}: its user may not read Solr's admin metrics (a managed Solr); search does not need them`);
       if (!res.ok) throw new Error(`Solr's metrics (${url}) answered ${res.status}`);
       const metrics = ((await res.json()) as { metrics?: Record<string, unknown> }).metrics ?? {};
       const get = (m: (typeof METRICS)[number]): unknown => metrics[`solr.core.${core}:${m}`];

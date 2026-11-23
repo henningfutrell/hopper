@@ -1,5 +1,8 @@
 // The search index in Solr (issue #945, design.md "Search"): one core in standalone mode, HOPPER_SOLR_URL
-// (http://solr:8983/solr/hopper in compose). Spoken to over Solr's own JSON API with fetch: no Node client for Solr has
+// (http://solr:8983/solr/hopper in compose), or one collection on a SolrCloud cluster, a managed Solr (issue #2990): every
+// call goes to that URL and below it, never to Solr's admin API, so a user permitted only on its collection is enough. With
+// credentials (HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD, or the URL's userinfo), each call carries them as HTTP basic
+// auth; a 401 or a 403 is `unauthorized`, and no message carries them. Spoken to over Solr's own JSON API with fetch: no Node client for Solr has
 // a steady release history, and the five calls this needs (update, select, schema, config, count) are plain HTTP.
 // The core is made by the Solr container from Solr's default config (`solr-precreate`); the schema below is the
 // hopper's, put in at each start (`ensureSchema`), so a new build adds what it needs to the core it finds.
@@ -43,9 +46,26 @@ const term = (field: string, value: string): string => `{!term f=${field}}${valu
 type Json = Record<string, unknown>;
 const TIMEOUT_MS = { read: 5_000, write: 15_000 };
 
-export function createSolrIndex(o: { url: string; fetch?: typeof fetch }): SearchIndex {
+/** Basic-auth credentials for Solr (issue #2990). */
+export interface SolrCredentials { username: string; password: string }
+
+/** The `authorization` header of Solr's basic auth; none with no credentials. */
+export function solrAuthHeaders(auth: SolrCredentials | undefined): Record<string, string> {
+  return auth ? { authorization: `Basic ${Buffer.from(`${auth.username}:${auth.password}`, 'utf8').toString('base64')}` } : {};
+}
+
+/** The start log's line: which Solr (its URL holds no userinfo) and whether basic auth is on. Never the credentials. */
+export function solrStartLine(url: string, auth: SolrCredentials | undefined): string {
+  return `hopper: search: Solr ${url}, basic auth ${auth ? 'on' : 'off'}`;
+}
+
+/** The start of every error a refused sign-in gives: search is `unauthorized`. */
+export const UNAUTHORIZED = 'unauthorized';
+
+export function createSolrIndex(o: { url: string; auth?: SolrCredentials | undefined; fetch?: typeof fetch }): SearchIndex {
   const base = o.url.replace(/\/+$/, '');
   const doFetch = o.fetch ?? fetch;
+  const authHeaders = solrAuthHeaders(o.auth);
 
   /** One call to the core; Solr's own error message when it refuses, `Solr not reached: …` when it cannot be reached. */
   const call = async (path: string, init: { method?: 'GET' | 'POST'; params?: URLSearchParams; body?: unknown; timeout: number }): Promise<Json> => {
@@ -54,11 +74,18 @@ export function createSolrIndex(o: { url: string; fetch?: typeof fetch }): Searc
     try {
       res = await doFetch(url, {
         method: init.method ?? 'GET', signal: AbortSignal.timeout(init.timeout),
-        ...(init.body !== undefined ? { headers: { 'content-type': 'application/json' }, body: JSON.stringify(init.body) } : {}),
+        headers: { ...authHeaders, ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}) },
+        ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       });
     } catch (e) {
       const cause = (e as { cause?: { code?: string; message?: string } }).cause;
       throw new Error(`Solr not reached: ${cause?.code ?? cause?.message ?? (e as Error).message}`, { cause: e });
+    }
+    if (res.status === 401 || res.status === 403) {
+      await res.body?.cancel();
+      throw new Error(res.status === 401
+        ? `${UNAUTHORIZED}: Solr answered 401: ${o.auth ? 'it refused the credentials (HOPPER_SOLR_USERNAME, HOPPER_SOLR_PASSWORD)' : 'it asks for credentials: set HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD'}`
+        : `${UNAUTHORIZED}: Solr answered 403: its user is not permitted on ${base}`);
     }
     const raw = await res.text();
     let body: Json;

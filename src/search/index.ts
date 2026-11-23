@@ -22,6 +22,7 @@ import type { UserStore } from '../domain/store.ts';
 import { DIRECT_SOURCE } from '../domain/direct-jobs.ts';
 import type { IntakeOutcome } from '../domain/intake.ts';
 import type { IssueGraph } from '../domain/issue-graph.ts';
+import { UNAUTHORIZED } from './solr.ts';
 import { artifactDocument, CONTENT_READ_MAX, issueDocument, jobDocument, planDocument, pullRequestDocument } from './document.ts';
 
 export const SEARCH_PASS_MS = 2_000;
@@ -99,7 +100,8 @@ export function createUserSearch(o: {
   let stopped = false;
 
   const degrade = (why: string): void => {
-    if (state.state !== 'degraded' || state.why !== why) o.logger.warn(`hopper: search: degraded, Solr is not written: ${why}`);
+    // A refused sign-in says `hopper: search: unauthorized: …` (issue #2990).
+    if (state.state !== 'degraded' || state.why !== why) o.logger.warn(why.startsWith(`${UNAUTHORIZED}:`) ? `hopper: search: ${why}` : `hopper: search: degraded, Solr is not written: ${why}`);
     state = { state: 'degraded', why };
     failures++;
     nextAt = o.clock.now().getTime() + Math.min(MAX_BACKOFF_MS, passMs * 2 ** Math.min(failures, 10));

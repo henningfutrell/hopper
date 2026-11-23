@@ -22241,6 +22241,22 @@ the highlight read as text, the search in the hash, the Search view's hits, face
 and `test/scripts/compose.test.ts` (the `solr` service). The Solr tests use `HOPPER_TEST_SOLR_URL` when it names a core,
 else start Solr in a container (`test/support/solr.ts`).
 
+**A managed Solr (issue #2990).** A shared platform can give Solr as a managed service: one SolrCloud cluster, one
+collection and one user for each app, with basic auth on and each user permitted only on its own collection. So
+`HOPPER_SOLR_URL` names a standalone core or a SolrCloud collection (`https://solr.example/solr/hopper`): every call the
+hopper makes — the schema and config calls at start, update, select, count — goes to that URL and below it, never to
+Solr's admin API, so the collection's own permission is enough. The credentials are a credential the hopper is *given*
+("Secrets"): `HOPPER_SOLR_USERNAME` and `HOPPER_SOLR_PASSWORD` (or `HOPPER_SOLR_PASSWORD_FILE`, a mounted file), or the
+URL's userinfo, which the config takes out of the URL (`src/search/settings.ts`); half of them, both forms at once, or
+credentials with no URL stop the start. Each call carries them as HTTP basic auth, the Solr meter's too. A 401 or a 403
+is `unauthorized` (`degraded`, its `why` `unauthorized: Solr answered 401: …`, the log line `hopper: search:
+unauthorized: …`); no error, log or answer carries the credentials. The start log says which Solr (no userinfo) and
+whether basic auth is on. On a managed Solr the meter's metrics API is an admin call, and its `problem` says it was
+refused; search does not need it. Without credentials nothing changes: the compose `solr` service has none. Tests:
+`test/adapters/solr-cloud-auth.test.ts` (a SolrCloud node with basic auth and a permission for one collection:
+schema, index, search, suggest and remove with the credentials; 401 with wrong ones or none; 403 on another
+collection), `test/integration/config.test.ts`.
+
 ## The command palette (issue #2661, 2026-10-23)
 
 Owner direction: replace the header's search box with one global command palette, so everything in the hopper is a few

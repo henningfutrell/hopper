@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { hopperApps, type HopperApps } from './connected-accounts/hopper-app.ts';
 import type { UsagePacing } from './domain/types.ts';
 import { playgroundLimitsProblem } from './sandbox/playground.ts';
-import { egressProblem, SANDBOX_SETTING_HELP, SANDBOX_SETTINGS, sandboxSettings, type SandboxSettings } from './sandbox/settings.ts';
+import { SOLR_SETTING_HELP, SOLR_SETTINGS, solrProblem, solrSettings, type SolrCredentials } from './search/settings.ts'; import { egressProblem, SANDBOX_SETTING_HELP, SANDBOX_SETTINGS, sandboxSettings, type SandboxSettings } from './sandbox/settings.ts';
 import { MASTER_KEY_VARIABLES } from './secrets/master-key.ts';
 import { runtimeSecrets } from './secrets/runtime.ts';
 import { parseDatabaseUrl } from './store/db.ts';
@@ -82,8 +82,9 @@ export interface Config extends SandboxSettings {
   /** The OpenFGA server access asks before every mint (issue #559), or undefined: none, and every mint is denied. */
   /** And the OpenFGA store provisioned for the hopper (issue #2988); undefined: the hopper makes and keeps its own. */
   openFgaUrl?: string; openFgaStoreId?: string;
-  /** The Solr core search reads and writes (issue #945): HOPPER_SOLR_URL. Absent: no search. */
-  solrUrl?: string;
+  /** The Solr core or SolrCloud collection search uses (issues #945, #2990): HOPPER_SOLR_URL, its userinfo taken out (absent: no
+   * search); and its basic-auth credentials, from HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD or the userinfo (src/search/settings.ts). */
+  solrUrl?: string; solrAuth?: SolrCredentials;
   /** The vault in a container of its own (issue #586); unset: the vault runs in the hopper. */
   vaultUrl?: string;
   /** The KMS the vault's data key is wrapped by (issues #586, #1288); unset: the vault seals under the master key. */
@@ -147,7 +148,7 @@ const schema = z.object({
   HOPPER_GITHUB_CLIENT_ID: z.string().min(1).optional(),
   HOPPER_GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'a GitHub App slug: lowercase letters, digits and dashes').optional(),
   HOPPER_OPENFGA_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(), HOPPER_OPENFGA_STORE_ID: z.string().regex(/^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$/, 'must be an OpenFGA store id: 26 characters, a ULID').optional(),
-  HOPPER_SOLR_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL: the Solr core, http://solr:8983/solr/hopper' }).optional(),
+  ...SOLR_SETTINGS,
   HOPPER_VAULT_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_KMS_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_KMS_KEY: z.string().min(1).max(256).default(DEFAULT_KMS_KEY),
@@ -167,8 +168,9 @@ const schema = z.object({
   const problem = playgroundLimitsProblem(sandboxSettings(e).playground);
   if (problem) ctx.addIssue({ code: 'custom', message: problem, path: ['HOPPER_SANDBOX_MAX_CPUS'] });
   // A read-only box's egress (issue #849): its network, its proxy and the shared directory together, or none.
-  const egress = egressProblem(e);
-  if (egress) ctx.addIssue({ code: 'custom', message: egress, path: ['HOPPER_SANDBOX_EGRESS_NETWORK'] });
+  const egress = egressProblem(e); if (egress) ctx.addIssue({ code: 'custom', message: egress, path: ['HOPPER_SANDBOX_EGRESS_NETWORK'] });
+  // Search's Solr credentials (issue #2990): whole, with a URL, and in one place.
+  const solr = solrProblem(e); if (solr) ctx.addIssue({ code: 'custom', message: solr.message, path: [solr.path] });
 });
 
 /** What each setting does, for `node src/main.ts --help`. Keyed by the schema: a new setting needs its line. */
@@ -212,7 +214,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_GITHUB_CLIENT_ID: 'the client id of the GitHub App (device flow on) people sign in and connect through. Unset: the hopper\'s own',
   HOPPER_GITHUB_APP_SLUG: 'that GitHub App\'s slug, for its install link. Unset: the hopper\'s own',
   HOPPER_OPENFGA_URL: 'the OpenFGA server asked before every credential a job is given (http://openfga:8080); its preshared key HOPPER_OPENFGA_KEY, when it has one. Unset: every credential is denied', HOPPER_OPENFGA_STORE_ID: 'the OpenFGA store provisioned for the hopper: the hopper writes its model into it and makes no store; one OpenFGA does not hold stops the start. Unset: the hopper makes its own store, `hopper`',
-  HOPPER_SOLR_URL: 'the Solr core search keeps its index in (http://solr:8983/solr/hopper, the compose service `solr`). Unset: no search',
+  ...SOLR_SETTING_HELP,
   HOPPER_VAULT_URL: 'the vault in a container of its own (http://hopper-vault:4791, the compose profile `hopper-vault`), reached with its preshared key HOPPER_VAULT_KEY. Unset: the vault runs in the hopper',
   HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_MASTER_KEY',
   HOPPER_KMS_KEY: 'the KMS key, by id, ARN or alias, that wraps the vault\'s data key; an alias a local KMS lacks is made, never one in AWS',
@@ -279,7 +281,7 @@ Read on: README.md, docs/deploy.md, docs/sign-in.md, docs/plugins.md.
 }
 
 /** A secret among the settings: also read from a mounted file, `<name>_FILE`. */
-const SECRET_SETTINGS = ['HOPPER_DATABASE_URL'];
+const SECRET_SETTINGS = ['HOPPER_DATABASE_URL', 'HOPPER_SOLR_PASSWORD'];
 /**
  * Read by the parts, not here (design.md "Target authentication"): the hopper's ssh key;
  * and the GitHub App's client secret, read by sign-in at each use (issue #258).
@@ -361,7 +363,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     updateCheckMs: e.HOPPER_UPDATE_CHECK_MS,
     ...(e.HOPPER_RESTART ? { restart: e.HOPPER_RESTART } : {}),
     ...(e.HOPPER_OPENFGA_URL ? { openFgaUrl: e.HOPPER_OPENFGA_URL } : {}), ...(e.HOPPER_OPENFGA_STORE_ID ? { openFgaStoreId: e.HOPPER_OPENFGA_STORE_ID } : {}),
-    ...(e.HOPPER_SOLR_URL ? { solrUrl: e.HOPPER_SOLR_URL } : {}),
+    ...(e.HOPPER_SOLR_URL ? solrSettings(e.HOPPER_SOLR_URL, e.HOPPER_SOLR_USERNAME, e.HOPPER_SOLR_PASSWORD) : {}),
     ...(e.HOPPER_VAULT_URL ? { vaultUrl: e.HOPPER_VAULT_URL } : {}),
     ...(e.HOPPER_KMS_REGION ? { kms: { region: e.HOPPER_KMS_REGION, key: e.HOPPER_KMS_KEY, ...(e.HOPPER_KMS_URL ? { url: e.HOPPER_KMS_URL } : {}) } }
       : e.HOPPER_KMS_URL ? { kms: { url: e.HOPPER_KMS_URL, key: e.HOPPER_KMS_KEY } } : {}),
