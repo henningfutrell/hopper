@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config.ts';
+import { solrStartLine } from '../../src/search/solr.ts';
 import { SHIPPED_APPS } from '../../src/connected-accounts/hopper-app.ts';
 import { PLAYGROUND_LIMITS } from '../../src/sandbox/playground.ts';
 
@@ -224,5 +225,42 @@ describe('configuration from env: process settings only (phase 5 slice 4)', () =
     expect(loadConfig(DB).openFgaStoreId).toBeUndefined();
     expect(loadConfig({ ...DB, HOPPER_OPENFGA_STORE_ID: '01HQ3V9Y4K7P8R2M5N6T0WXYZA' }).leftoverEnv).toEqual({});
     expect(() => loadConfig({ ...DB, HOPPER_OPENFGA_STORE_ID: 'hopper' })).toThrow('HOPPER_OPENFGA_STORE_ID');
+  });
+});
+
+describe('the Solr search uses: a URL, and credentials for a managed Solr (issue #2990)', () => {
+  const SOLR = 'https://solr.example.test/solr/hopper';
+  it('no credentials: the URL alone, as before', () => {
+    const c = loadConfig({ ...DB, HOPPER_SOLR_URL: SOLR });
+    expect([c.solrUrl, c.solrAuth]).toEqual([SOLR, undefined]);
+    expect(solrStartLine(c.solrUrl!, c.solrAuth)).toBe(`hopper: search: Solr ${SOLR}, basic auth off`);
+  });
+
+  it('HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD, the password also from a mounted file', () => {
+    const c = loadConfig({ ...DB, HOPPER_SOLR_URL: SOLR, HOPPER_SOLR_USERNAME: 'app', HOPPER_SOLR_PASSWORD: 's3cret' });
+    expect([c.solrUrl, c.solrAuth]).toEqual([SOLR, { username: 'app', password: 's3cret' }]);
+    const file = join(mkdtempSync(join(tmpdir(), 'jh-solr-')), 'password');
+    writeFileSync(file, 'from-file\n', { mode: 0o600 });
+    const f = loadConfig({ ...DB, HOPPER_SOLR_URL: SOLR, HOPPER_SOLR_USERNAME: 'app', HOPPER_SOLR_PASSWORD_FILE: file });
+    expect(f.solrAuth).toEqual({ username: 'app', password: 'from-file' });
+    expect(f.leftoverEnv).toEqual({});
+  });
+
+  it('the URL\'s userinfo is the credentials, taken out of the URL the hopper calls and logs', () => {
+    const c = loadConfig({ ...DB, HOPPER_SOLR_URL: 'https://app:p%40ss%3Aword@solr.example.test/solr/hopper' });
+    expect([c.solrUrl, c.solrAuth]).toEqual([SOLR, { username: 'app', password: 'p@ss:word' }]);
+    const line = solrStartLine(c.solrUrl!, c.solrAuth);
+    expect(line).toBe(`hopper: search: Solr ${SOLR}, basic auth on`);
+    expect(line).not.toContain('p@ss');
+  });
+
+  it('refuses half the credentials, credentials with no URL, and two sets of them, never showing the password', () => {
+    const problem = (env: Record<string, string>) => { try { loadConfig({ ...DB, ...env }); return ''; } catch (e) { return (e as Error).message; } };
+    expect(problem({ HOPPER_SOLR_URL: SOLR, HOPPER_SOLR_USERNAME: 'app' })).toMatch(/HOPPER_SOLR_PASSWORD: must be set with HOPPER_SOLR_USERNAME/);
+    expect(problem({ HOPPER_SOLR_URL: SOLR, HOPPER_SOLR_PASSWORD: 'pw-only' })).toMatch(/HOPPER_SOLR_USERNAME: must be set with HOPPER_SOLR_PASSWORD/);
+    expect(problem({ HOPPER_SOLR_USERNAME: 'app', HOPPER_SOLR_PASSWORD: 'pw-nourl' })).toMatch(/HOPPER_SOLR_URL: must be set with/);
+    const both = problem({ HOPPER_SOLR_URL: 'https://app:pw-url@solr.example.test/solr/hopper', HOPPER_SOLR_USERNAME: 'app', HOPPER_SOLR_PASSWORD: 'pw-vars' });
+    expect(both).toMatch(/HOPPER_SOLR_URL: carries credentials; set them there or in HOPPER_SOLR_USERNAME/);
+    for (const msg of [both, problem({ HOPPER_SOLR_URL: SOLR, HOPPER_SOLR_PASSWORD: 'pw-only' })]) expect(msg).not.toMatch(/pw-/);
   });
 });
