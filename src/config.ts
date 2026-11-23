@@ -82,7 +82,7 @@ export interface Config extends SandboxSettings {
   /** The OpenFGA server access asks before every mint (issue #559), or undefined: none, and every mint is denied. */
   /** And the OpenFGA store provisioned for the hopper (issue #2988); undefined: the hopper makes and keeps its own. */
   openFgaUrl?: string; openFgaStoreId?: string;
-  /** The Solr core search reads and writes (issue #945): HOPPER_SOLR_URL. Absent: no search. */
+  /** The Solr core or SolrCloud collection search reads and writes (issues #945, #2990): HOPPER_SOLR_URL, maybe with userinfo (never logged). Absent: no search. */
   solrUrl?: string;
   /** The vault in a container of its own (issue #586); unset: the vault runs in the hopper. */
   vaultUrl?: string;
@@ -147,7 +147,7 @@ const schema = z.object({
   HOPPER_GITHUB_CLIENT_ID: z.string().min(1).optional(),
   HOPPER_GITHUB_APP_SLUG: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, 'a GitHub App slug: lowercase letters, digits and dashes').optional(),
   HOPPER_OPENFGA_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(), HOPPER_OPENFGA_STORE_ID: z.string().regex(/^[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$/, 'must be an OpenFGA store id: 26 characters, a ULID').optional(),
-  HOPPER_SOLR_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL: the Solr core, http://solr:8983/solr/hopper' }).optional(),
+  HOPPER_SOLR_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL: the Solr core or collection, http://solr:8983/solr/hopper' }).optional(),
   HOPPER_VAULT_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_KMS_URL: z.url({ protocol: /^https?$/, error: 'must be an http(s) URL' }).optional(),
   HOPPER_KMS_KEY: z.string().min(1).max(256).default(DEFAULT_KMS_KEY),
@@ -212,7 +212,7 @@ const SETTING_HELP: Record<keyof typeof schema.shape, string> = {
   HOPPER_GITHUB_CLIENT_ID: 'the client id of the GitHub App (device flow on) people sign in and connect through. Unset: the hopper\'s own',
   HOPPER_GITHUB_APP_SLUG: 'that GitHub App\'s slug, for its install link. Unset: the hopper\'s own',
   HOPPER_OPENFGA_URL: 'the OpenFGA server asked before every credential a job is given (http://openfga:8080); its preshared key HOPPER_OPENFGA_KEY, when it has one. Unset: every credential is denied', HOPPER_OPENFGA_STORE_ID: 'the OpenFGA store provisioned for the hopper: the hopper writes its model into it and makes no store; one OpenFGA does not hold stops the start. Unset: the hopper makes its own store, `hopper`',
-  HOPPER_SOLR_URL: 'the Solr core search keeps its index in (http://solr:8983/solr/hopper, the compose service `solr`). Unset: no search',
+  HOPPER_SOLR_URL: 'the Solr core, or the collection on a SolrCloud cluster, search keeps its index in (http://solr:8983/solr/hopper, the compose service `solr`); a managed Solr\'s basic auth is HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD (each also as NAME_FILE, read at each call) or the URL\'s userinfo, not both, never logged. Unset: no search',
   HOPPER_VAULT_URL: 'the vault in a container of its own (http://hopper-vault:4791, the compose profile `hopper-vault`), reached with its preshared key HOPPER_VAULT_KEY. Unset: the vault runs in the hopper',
   HOPPER_KMS_URL: 'a local KMS the vault\'s data key is wrapped by (http://kms:8080, the compose profile `kms`), read where the vault runs. Unset: the vault seals under HOPPER_MASTER_KEY',
   HOPPER_KMS_KEY: 'the KMS key, by id, ARN or alias, that wraps the vault\'s data key; an alias a local KMS lacks is made, never one in AWS',
@@ -290,8 +290,9 @@ const PART_SETTINGS = [
   ...MASTER_KEY_VARIABLES,
   // Read by access at each call to OpenFGA (src/authz/openfga.ts, issue #559).
   'HOPPER_OPENFGA_KEY', 'HOPPER_OPENFGA_KEY_FILE',
-  // Read by the vault's client at each call to the vault container (src/vault/remote.ts, issue #586).
-  'HOPPER_VAULT_KEY', 'HOPPER_VAULT_KEY_FILE',
+  // Read by the vault's client at each call to the vault container (src/vault/remote.ts, issue #586); and by search at
+  // each call to Solr (src/search/solr-connection.ts, issue #2990).
+  'HOPPER_VAULT_KEY', 'HOPPER_VAULT_KEY_FILE', 'HOPPER_SOLR_USERNAME', 'HOPPER_SOLR_USERNAME_FILE', 'HOPPER_SOLR_PASSWORD', 'HOPPER_SOLR_PASSWORD_FILE',
   // Read at each ask of the tunnel service (src/http/remote-access.ts, issue #880).
   'HOPPER_TUNNEL_KEY', 'HOPPER_TUNNEL_KEY_FILE',
   // Read at each join of a lane pod (src/machines/lane-pool.ts, issue #1284).

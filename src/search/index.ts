@@ -10,11 +10,12 @@
 // - **Backfill.** At the first pass that reaches Solr, a user whose documents the core lacks (none for this hopper and
 //   user: a new core, a lost volume) has every job, artifact, plan, issue and pull request marked; `reindex` marks them again when a person asks.
 // - **Degraded.** Solr not reached: the pass waits longer each time (up to a minute), a search answers `degraded` with
-//   why, and nothing else waits on it. Access not asked: the hits are hidden, and the search says so.
+//   why, and nothing else waits on it. Access not asked: the hits are hidden, and the search says so. Solr refuses the
+//   credentials or the user (issue #2990): the same, but the state is `unauthorized`.
 import type { Access } from '../authz/access-port.ts';
 import type { Clock, EventFollower } from '../domain/ports.ts';
 import {
-  emptyFacets, parsePendingKey, pendingKey, searchDocumentId,
+  emptyFacets, parsePendingKey, pendingKey, searchDocumentId, SearchUnauthorized,
   type SearchAnswer, type SearchDocument, type SearchIndex, type SearchQuery, type SearchScope, type SearchStatus, type SearchType, type SuggestAnswer,
 } from '../domain/search.ts';
 import type { DomainEvent } from '../domain/types.ts';
@@ -29,6 +30,9 @@ const MAX_BACKOFF_MS = 60_000;
 /** Documents per write, and writes per pass: a backfill of many jobs is written over several passes. */
 const BATCH = 100, BATCHES_PER_PASS = 10;
 export const NO_SOLR = 'search is not set up: set HOPPER_SOLR_URL (docs/deploy.md "Search")';
+
+/** The state a failed call to the index leaves search in: `unauthorized` when Solr refused the credentials, else `degraded`. */
+const stateOfError = (e: unknown): 'degraded' | 'unauthorized' => (e instanceof SearchUnauthorized ? 'unauthorized' : 'degraded');
 
 /** An issue's source key is its URL on GitHub; another source's key names no issue the graph keeps. */
 const isItemUrl = (k: unknown): k is string => typeof k === 'string' && k.startsWith('https://');
@@ -98,9 +102,10 @@ export function createUserSearch(o: {
   let follower: EventFollower | undefined;
   let stopped = false;
 
-  const degrade = (why: string): void => {
-    if (state.state !== 'degraded' || state.why !== why) o.logger.warn(`hopper: search: degraded, Solr is not written: ${why}`);
-    state = { state: 'degraded', why };
+  const degrade = (e: Error): void => {
+    const why = e.message, down = stateOfError(e);
+    if (state.state !== down || state.why !== why) o.logger.warn(`hopper: search: ${down}, Solr is not written: ${why}`);
+    state = { state: down, why };
     failures++;
     nextAt = o.clock.now().getTime() + Math.min(MAX_BACKOFF_MS, passMs * 2 ** Math.min(failures, 10));
   };
@@ -192,10 +197,10 @@ export function createUserSearch(o: {
         store.searchPending.clear(taken);
       }
       if (backfill && !backfill.done && store.searchPending.count() === 0) backfill = { ...backfill, done: true };
-      if (state.state === 'degraded') o.logger.warn('hopper: search: Solr is written again');
+      if (state.state === 'degraded' || state.state === 'unauthorized') o.logger.warn('hopper: search: Solr is written again');
       state = { state: 'ok' }; failures = 0; nextAt = 0;
     } catch (e) {
-      degrade((e as Error).message);
+      degrade(e as Error);
     }
   };
 
@@ -221,7 +226,7 @@ export function createUserSearch(o: {
       if (!index) return { state: 'not-configured', why: NO_SOLR, total: 0, hits: [], facets: emptyFacets() };
       let found;
       try { found = await index.search(scope, q); } catch (e) {
-        return { state: 'degraded', why: (e as Error).message, total: 0, hits: [], facets: emptyFacets() };
+        return { state: stateOfError(e), why: (e as Error).message, total: 0, hits: [], facets: emptyFacets() };
       }
       const { kept, why } = await allowed(viewerId, found.hits);
       const now = why !== undefined ? { state: 'degraded' as const, why } : stateNow();
@@ -234,7 +239,7 @@ export function createUserSearch(o: {
       if (!index) return { state: 'not-configured', why: NO_SOLR, suggestions: [] };
       let found;
       try { found = await index.suggest(scope, prefix, limit); } catch (e) {
-        return { state: 'degraded', why: (e as Error).message, suggestions: [] };
+        return { state: stateOfError(e), why: (e as Error).message, suggestions: [] };
       }
       const { kept, why } = await allowed(viewerId, found);
       return { ...(why !== undefined ? { state: 'degraded' as const, why } : stateNow()), suggestions: kept.map(({ private: _p, ...s }) => ({ ...s, url: o.url(s.type, s.ref, s.job) })) };
