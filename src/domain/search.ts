@@ -123,6 +123,22 @@ export interface SearchStatus {
   backfill?: { at: string; done: boolean };
 }
 
+/**
+ * The Solr credentials as Settings → Search shows them to the hopper's admin (issue #2990): which Solr (no userinfo), where
+ * the credentials the hopper sends come from now, and whether the vault keeps a pair, who set it and when. Never the
+ * username or the password.
+ */
+export interface SolrCredentialsView {
+  /** Whether HOPPER_SOLR_URL is set: without it search is off, and no credentials are kept. */
+  configured: boolean;
+  url?: string;
+  /** `url` or `runtime`: given at launch, and they win over the vault's; `vault`: the vault's; `none`: none is sent. */
+  source: 'url' | 'runtime' | 'vault' | 'none';
+  kept: { set: false } | { set: true; setBy: string; setAt: string };
+  /** Why none can be kept or opened now (no master key, a value that cannot be opened). */
+  problem?: string;
+}
+
 /** A search's answer to a person: the hits Access let them see. */
 export interface SearchAnswer {
   state: SearchState;
