@@ -35,8 +35,8 @@ export interface SystemChanger { userId: string; admin: boolean; by: string }
 /** A system secret's metadata: who set it and when, and its last 4 characters. Never its value. */
 export interface SystemSecretMeta { setBy: string; setAt: string; last4?: string }
 
-/** How a value is kept: `rotated` when the hopper made or renewed it. */
-export interface KeepHow { rotated?: boolean }
+/** How a value is kept: `rotated` when the hopper made or renewed it; `noLast4` when its end is part of a password (issue #2990). */
+export interface KeepHow { rotated?: boolean; noLast4?: boolean }
 
 export interface SystemSecrets {
   /** Its value, opened now, read by the hopper for `purpose`; undefined when none is stored. Throws SecretUnreadable when it cannot be opened. */
@@ -136,7 +136,7 @@ export function createSystemSecrets(o: {
       const was = vault.get(row);
       const id = was?.id ?? o.idGen();
       const sealed = sealer.seal(value, vaultContext(id));
-      const meta = { last4: value.slice(-4) };
+      const meta = how.noLast4 ? {} : { last4: value.slice(-4) };
       if (was) {
         // A value given here keeps it in the hopper again, in place of a backend.
         const { last4: _l, backend: _b, ...rest } = was;

@@ -208,7 +208,7 @@ hopper's note naming the job and the request by id only, and gets no label or as
   hashed. **Every secret the hopper owns for itself is a system secret** (issues #657, #658, `docs/design.md`
   "The vault's system scope"): the GitHub connection's access and refresh tokens, the GitLab account's personal access token (issue #1448), each webhook signing secret, each
   user's TypeSafe API key and Claude Analytics API key (issue #2966) in that user's vault, each sign-in realm's `clientSecret` or `bindPassword` (set in the UI or
-  from the `HOPPER_SIGN_IN_*` environment) and remote access's — each tunnel provider's credential and the tunnel token the hopper
+  from the `HOPPER_SIGN_IN_*` environment), the Solr credentials when the runtime gives none (issue #2990, set in Settings → Search) and remote access's — each tunnel provider's credential and the tunnel token the hopper
   minted with it (issues #880, #968, set in Settings → Remote access, never in `.env`) — and the GitHub webhook secret (issue #1079, made in Settings → GitHub webhook) in the instance's vault — rows named `system/<name>`, sealed, written only
   through `SystemSecrets.keep` (src/vault/system.ts), each set, replace, rotation, removal, move and read an event with no
   value, shown with its audit trail on Vault, and never given to a job, a machine or a box: OpenFGA
