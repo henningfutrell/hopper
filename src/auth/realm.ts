@@ -40,8 +40,8 @@ export interface FormRealm {
 
 /** What a gateway realm makes of the token an auth gateway forwarded. */
 export type GatewayOutcome =
-  /** The token is valid: who it was issued to. */
-  | { ok: true; who: Identity }
+  /** The token is valid: who it was issued to, and the claim its username came from (issue #2996). */
+  | { ok: true; who: Identity; usernameClaim?: string }
   /** No token, or one the realm refuses (bad signature, wrong audience, expired, not active). */
   | { ok: false; refused: string }
   /** The realm could not decide (its issuer is unreachable). */
@@ -67,6 +67,23 @@ export function claimsIdentity(realm: string, subject: string, claims: Record<st
     realm, subject, groups: stringList(claims[names.groups]),
     ...(email && verified ? { email } : {}), ...(username ? { username } : {}), ...(name ? { name } : {}),
   };
+}
+
+/** Where a gateway realm's username came from when it took the local part of the email (issue #2996). */
+export const EMAIL_LOCAL_PART = 'email (local part)';
+
+/**
+ * A gateway realm's Identity (issue #2996): as `claimsIdentity`, and the claim its username came from. An access token often
+ * leaves the configured username claim out; then `username`, then the local part of the email the realm vouches for.
+ */
+export function gatewayIdentity(realm: string, subject: string, claims: Record<string, unknown>, names: ClaimNames, trustUnverifiedEmail: boolean): { who: Identity; usernameClaim?: string } {
+  const who = claimsIdentity(realm, subject, claims, names, trustUnverifiedEmail);
+  if (who.username !== undefined) return { who, usernameClaim: names.username };
+  const named = stringOf(claims.username);
+  if (named) return { who: { ...who, username: named }, usernameClaim: 'username' };
+  const at = who.email?.lastIndexOf('@') ?? -1;
+  if (at > 0) return { who: { ...who, username: who.email!.slice(0, at) }, usernameClaim: EMAIL_LOCAL_PART };
+  return { who };
 }
 
 /** A loopback http endpoint (a local test or dev IdP) may skip https; the sign-in config allows nothing else. */

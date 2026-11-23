@@ -161,8 +161,8 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
     const { username, password } = parseWith(passwordBody, req.body);
     const r = await signIn.checkPassword(username, password);
     if (!r.ok) {
-      const who = r.who ? ` (${r.who.realm} ${r.who.subject})` : '';
-      if (r.status === 403) return o.refuse(req, reply, `${r.error}${who}`);
+      // A refusal of a verified identity names what the role rules can match on (issue #2996).
+      if (r.status === 403) return o.refuse(req, reply, r.error);
       console.warn(`hopper: password sign-in failed: ${r.error}`);
       return reply.code(r.status).send({ error: r.error });
     }
@@ -193,8 +193,8 @@ function routes(app: FastifyInstance, o: Parameters<typeof registerSignInRoutes>
     if (!fromUiOrigin(req)) return o.refuse(req, reply, `origin ${req.headers.origin ?? '(none)'} not allowed`);
     const r = await signIn.checkGateway(req.headers);
     if (!r.ok) {
-      const who = r.who ? ` (${r.who.realm} ${r.who.subject})` : '';
-      if (r.status === 403) return o.refuse(req, reply, `${r.error}${who}`);
+      // A refusal of a verified identity names what the role rules can match on (issue #2996).
+      if (r.status === 403) return o.refuse(req, reply, r.error);
       console.warn(`hopper: gateway sign-in failed: ${r.error}`);
       return reply.code(r.status).send({ error: r.error });
     }

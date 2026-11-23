@@ -44,12 +44,13 @@ import { CLIENT_ID_VARIABLE, hopperApps, type HopperApps } from '../connected-ac
 import { webFlow, type WebFlow } from '../connected-accounts/web-flow.ts';
 import { isDeviceRealm, isFormRealm, isGatewayRealm, isRedirectRealm, type AuthConfig, type DeviceRealmConfig, type GatewayRealmConfig, type RealmConfig } from './config.ts';
 import { createTokenCheck, githubIdentity, type TokenCheckOutcome } from './api-door.ts';
-import { createGatewayRealm, tokenIn } from './gateway.ts';
+import { createGatewayRealm } from './gateway.ts';
 import { createLdapRealm } from './ldap.ts';
 import { createLocalAccountsRealm, type LocalAccounts } from './local-accounts.ts';
 import { createOidcRealm } from './oidc.ts';
 import type { FlowSecrets, FormRealm, GatewayRealm, RealmCallback, RedirectRealm } from './realm.ts';
-import { breakGlass, roleIn } from './role-of.ts';
+import { roleIn } from './role-of.ts';
+import { decideGateway } from './gateway-decide.ts';
 import { roleCheckOf, type RoleCheck } from './role-check.ts';
 import { createSamlRealm } from './saml.ts';
 
@@ -57,6 +58,7 @@ export { SIGN_IN, loadSignInConfig, signInConfigProblem, type AuthConfig } from 
 export { AuthEditError, editSignIn, realmsView, type SignInEdit } from './edit.ts';
 export type { TokenCheckOutcome } from './api-door.ts';
 export { claimGithubAdmin } from './github-admin.ts';
+export { claimGatewayAdmin } from './gateway-admin.ts';
 export { prepareSignIn } from './start.ts';
 export { isSuperAdmin } from './roles.ts';
 export { roleIn, roleSourceIn, type RoleSource } from './role-of.ts';
@@ -177,6 +179,8 @@ interface DeviceFlowState {
 export function createSignIn(o: {
   config: AuthConfig; origin: () => string; clock: Clock; maxFlows?: number;
   claimGithubAdmin?: (who: Identity) => AuthConfig | undefined;
+  /** Record a gateway identity as the first gateway admin (issue #2996), answering the sign-in config with it; undefined: not. */
+  claimGatewayAdmin?: (who: Identity) => AuthConfig | undefined;
   /** The hopper's app (issue #214) the GitHub realms sign in through; default: the shipped one. */
   apps?: HopperApps;
   /** The app's client secret, from the runtime, read at each use (issue #258); undefined: no browser redirect, the device code only. */
@@ -260,15 +264,11 @@ export function createSignIn(o: {
     for (const { realm, config: c, roles } of gateways) {
       const r = await realm.check(headers);
       if (r.ok) {
+        // The first person a realm with firstAdmin on accepts while no admin exists becomes admin (issue #2996).
+        const claimed = c.firstAdmin && config.superAdmins.length === 0 ? o.claimGatewayAdmin?.(r.who) : undefined;
+        if (claimed) { config = claimed; build(); console.warn(`hopper: ${realm.label} made ${r.who.realm} ${r.who.subject} admin: the first sign-in while no admin exists (firstAdmin)`); }
         // The first realm that accepts the token decides, even when it grants no role.
-        if (roles && !breakGlass(config, c, r.who)) {
-          // The person's own token, as the gateway forwarded it: the realm's check just read it.
-          const asked = await roles.decide(r.who.subject, tokenIn(headers, c.header)!);
-          if (!asked.ok) return { ok: false, status: 502, error: `authorization service unavailable (${realm.label}): ${asked.error}`, who: r.who };
-          return asked.role === null ? { ok: false, status: 403, error: 'signed in at the gateway, but the authorization service grants this account no role', who: r.who } : { ok: true, who: r.who, role: asked.role };
-        }
-        const role = roleOf(r.who) ?? null;
-        return role === null ? { ok: false, status: 403, error: 'signed in at the gateway, but the sign-in config grants this account no role', who: r.who } : { ok: true, who: r.who, role };
+        return decideGateway({ realm, config: c, roles, who: r.who, usernameClaim: r.usernameClaim, headers, auth: config, roleOf });
       }
       if ('error' in r) errors.push(`${realm.label}: ${r.error}`); else refusals.push(`${realm.label}: ${r.refused}`);
     }
