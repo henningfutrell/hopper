@@ -67,8 +67,6 @@ export interface UserSearch {
   reindex(): number;
   /** Documents a change outside the event log names (a read of the issue graph): marked at the next pass. */
   changed(keys: readonly string[]): void;
-  /** Try Solr again at the next pass, past any back-off: its credentials changed (issue #2990). */
-  retry(): void;
   /** One pass now: the pending documents written while Solr takes them (tests, and `reindex`). */
   pass(): Promise<void>;
   start(): void;
@@ -254,7 +252,6 @@ export function createUserSearch(o: {
       nextAt = 0;
       return n;
     },
-    retry() { nextAt = 0; },
     changed(keys) {
       if (!index || stopped) return;
       for (const k of keys) named.add(k);

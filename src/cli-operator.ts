@@ -27,7 +27,7 @@ import { SESSION_HEADER } from './http/ui/guard.ts';
 import { CLI_REALM, createUiSessions } from './http/ui/sessions.ts';
 import { loadSignInConfig } from './auth/index.ts';
 import { ARTIFACT_USAGE, artifactCall } from './cli-operator-artifact.ts';
-import { SOLR_CREDENTIALS_USAGE, solrCredentialsCall } from './cli-operator-solr.ts'; import { ANALYTICS_KEY_USAGE, MASTER_KEY_USAGE, TOKEN_USAGE, analyticsKeyCall, masterKeyCall, tokenCall, typesafeKeyCall } from './cli-operator-keys.ts';
+import { ANALYTICS_KEY_USAGE, MASTER_KEY_USAGE, TOKEN_USAGE, analyticsKeyCall, masterKeyCall, tokenCall, typesafeKeyCall } from './cli-operator-keys.ts';
 import { ACCOUNTS_USAGE, accountsCall } from './cli-operator-accounts.ts';
 import { TERMINAL_USAGE, terminalCall } from './cli-operator-terminal.ts';
 import { LANES_USAGE, lanesCall } from './cli-operator-lanes.ts';
@@ -42,7 +42,7 @@ import { VAULT_USAGE, grantCall, sandboxCall, templateCall, vaultCall } from './
 import { driftCall } from './cli-update-drift.ts';
 import { WINDOWS_LINK_USAGE, windowsLinkCall } from './cli-operator-windows-link.ts';
 
-export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'proposal', 'typesafe-key', 'claude-analytics-key', 'solr-credentials', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link', 'infra', 'intake', 'usage', 'grades', 'plan', 'forecast', 'deployment', 'schedule', 'memory'] as const;
+export const OPERATOR_COMMANDS = ['job', 'queue', 'question', 'problem', 'handoff', 'failure', 'prs', 'pr', 'repo', 'yolo', 'backfill', 'proposal', 'typesafe-key', 'claude-analytics-key', 'artifact', 'master-key', 'lanes', 'machine', 'cloud-link', 'accounts', 'terminal', 'vault', 'grant', 'template', 'sandbox', 'token', 'report', 'search', 'windows-link', 'infra', 'intake', 'usage', 'grades', 'plan', 'forecast', 'deployment', 'schedule', 'memory'] as const;
 
 export const OPERATOR_USAGE = `  hopper job show <id>                               one job, by its id or short id: its state, and why it is held or waits (holdReason, waitReason),
                                                      or, on its own wait, what it waits on (waitsOn, waitsFor, wait)
@@ -98,7 +98,7 @@ ${INTAKE_USAGE}
   hopper typesafe-key                                the TypeSafe API key Jev asks with: set or not, its last 4 characters, when; never the key
   hopper typesafe-key set                            set it from stdin (never as an argument): checked once against TypeSafe, then kept in the vault
   hopper typesafe-key remove                         remove it: Jev is off until a key is set
-${ANALYTICS_KEY_USAGE}\n${SOLR_CREDENTIALS_USAGE}\n${MASTER_KEY_USAGE}
+${ANALYTICS_KEY_USAGE}\n${MASTER_KEY_USAGE}
 ${ARTIFACT_USAGE}
 ${REPORT_USAGE}
 ${SEARCH_USAGE}
@@ -278,7 +278,7 @@ function callOf(command: string, args: string[], stdin: () => string): Call {
   if (command === 'report') return reportCall(args);
   if (command === 'search') return searchCall(args);
   if (command === 'windows-link') return windowsLinkCall(args);
-  if (command === 'typesafe-key') return typesafeKeyCall(args, stdin); if (command === 'claude-analytics-key') return analyticsKeyCall(args, stdin); if (command === 'solr-credentials') return solrCredentialsCall(args, stdin);
+  if (command === 'typesafe-key') return typesafeKeyCall(args, stdin); if (command === 'claude-analytics-key') return analyticsKeyCall(args, stdin);
   if (command === 'proposal') return proposalCall(args);
   if (command === 'prs') return prsCall(args);
   if (command === 'pr') return prCall(args);

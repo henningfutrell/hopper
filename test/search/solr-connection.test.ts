@@ -24,7 +24,7 @@ describe('the Solr connection (issue #2990)', () => {
     const c = connect('https://hopper:p%40ss%3Aw0rd@solr.example.test/solr/hopper/');
     expect(c).toMatchObject({ url: 'https://solr.example.test/solr/hopper', auth: true });
     expect(c.authorization()).toBe(basic('hopper', 'p@ss:w0rd'));
-    expect(solrStartLine(c)).toBe('hopper: search: Solr at https://solr.example.test/solr/hopper, basic auth on (the URL)');
+    expect(solrStartLine(c)).toBe('hopper: search: Solr at https://solr.example.test/solr/hopper, basic auth on');
     expect(solrStartLine(c)).not.toContain('p@ss');
   });
 
@@ -45,38 +45,6 @@ describe('the Solr connection (issue #2990)', () => {
     expect(() => connect('http://solr:8983/solr/hopper', { HOPPER_SOLR_USERNAME: 'u' })).toThrow(/HOPPER_SOLR_USERNAME is set with no HOPPER_SOLR_PASSWORD/);
     expect(() => connect('http://solr:8983/solr/hopper', { HOPPER_SOLR_PASSWORD: 'p' })).toThrow(/HOPPER_SOLR_PASSWORD is set with no HOPPER_SOLR_USERNAME/);
     expect(() => connect('http://u@solr:8983/solr/hopper')).toThrow(/HOPPER_SOLR_URL has a username and no password/);
-  });
-
-  it('takes the credentials kept in the instance\'s vault when the runtime gives none, read again at each call', () => {
-    let kept: { username: string; password: string } | undefined;
-    const c = solrConnection('http://solr:8983/solr/hopper', runtimeSecrets({}), () => kept);
-    expect(c.source()).toBe('none');
-    expect(c.auth).toBe(false);
-    expect(c.authorization()).toBeUndefined();
-    kept = { username: 'hopper', password: 'from-vault' };
-    expect(c.source()).toBe('vault');
-    expect(c.auth).toBe(true);
-    expect(c.authorization()).toBe(basic('hopper', 'from-vault'));
-    expect(solrStartLine(c)).toBe('hopper: search: Solr at http://solr:8983/solr/hopper, basic auth on (the vault)');
-    kept = undefined;
-    expect(c.authorization()).toBeUndefined();
-  });
-
-  it('lets the runtime\'s credentials and the URL\'s userinfo win over the vault\'s', () => {
-    const kept = () => ({ username: 'vault-user', password: 'vault-pass' });
-    const env = solrConnection('http://solr:8983/solr/hopper', runtimeSecrets({ HOPPER_SOLR_USERNAME: 'env', HOPPER_SOLR_PASSWORD: 'env-pass' }), kept);
-    expect(env.source()).toBe('runtime');
-    expect(env.authorization()).toBe(basic('env', 'env-pass'));
-    expect(solrStartLine(env)).toBe('hopper: search: Solr at http://solr:8983/solr/hopper, basic auth on (the runtime)');
-    const url = solrConnection('http://u:p@solr:8983/solr/hopper', runtimeSecrets({}), kept);
-    expect(url.source()).toBe('url');
-    expect(url.authorization()).toBe(basic('u', 'p'));
-  });
-
-  it('sends no credentials when the vault\'s cannot be read', () => {
-    const c = solrConnection('http://solr:8983/solr/hopper', runtimeSecrets({}), () => { throw new Error('cannot be opened'); });
-    expect(c.source()).toBe('none');
-    expect(c.authorization()).toBeUndefined();
   });
 
   it('never names the password in an error', () => {
