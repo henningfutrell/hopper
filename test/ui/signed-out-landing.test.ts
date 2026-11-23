@@ -18,6 +18,7 @@ class FakeEventSource {
   close(): void {}
 }
 
+const GATEWAY_REFUSAL = 'signed in at the gateway, but the sign-in config grants this account no role (Edge: subject "ada-1", username none, email none, groups none)';
 let root: Root | undefined;
 let reads: string[] = [];
 /** True once any part of the app shell (the navigation) was in the page, at any moment. */
@@ -35,6 +36,7 @@ async function boot(session: (path: string) => Promise<Response>) {
     const path = String(input).split('?')[0]!;
     reads.push(path);
     if (path === '/ui/api/session') return session(path);
+    if (path === '/ui/auth/gateway') return json({ error: GATEWAY_REFUSAL }, 403);
     return json({ error: 'not found' }, 404);
   }));
   vi.stubGlobal('EventSource', FakeEventSource);
@@ -96,6 +98,14 @@ describe('logged out: only the landing page', () => {
     ]);
     expect(showcase!.contains(card)).toBe(false);
     expect(landing()!.querySelectorAll('.landing-lane').length).toBeGreaterThanOrEqual(3);
+  });
+
+  // Issue #2996: the gateway's token got no session; the page says why, with what the role rules can match on.
+  it('a gateway realm that refused the token: the landing page shows the refusal', async () => {
+    await boot(async () => json({ authenticated: false, signIn: { ...offer(false), password: false, gateway: true } }));
+    await vi.waitFor(() => expect(landing()?.querySelector('[data-gateway-refusal]')).toBeTruthy());
+    expect(landing()!.querySelector('[data-gateway-refusal]')!.textContent).toBe(GATEWAY_REFUSAL);
+    expect(reads).toContain('/ui/auth/gateway');
   });
 
   it('the daemon unreachable: the landing page says so, and nothing of the app shows', async () => {

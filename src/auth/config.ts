@@ -104,6 +104,8 @@ export interface GatewayRealmConfig extends RealmBase {
   /** Claim names, in the token or the introspection answer. */
   claims: { email: string; username: string; name: string; groups: string };
   trustUnverifiedEmail: boolean;
+  /** The first identity it accepts while no admin exists becomes admin (issue #2996); off by default. */
+  firstAdmin: boolean;
   roles: GatewayRoleRules;
 }
 export type RealmConfig = LdapRealmConfig | OidcRealmConfig | DeviceRealmConfig | SamlRealmConfig | GatewayRealmConfig;
@@ -214,6 +216,7 @@ const gateway = z.strictObject({
   clientId: z.string().min(1).optional(),
   claims: oidcClaims,
   trustUnverifiedEmail: z.boolean().default(false),
+  firstAdmin: z.boolean().default(false),
   roles: gatewayRoles,
 });
 const realm = z.discriminatedUnion('type', [ldap, oidc, github, saml, gateway]);
