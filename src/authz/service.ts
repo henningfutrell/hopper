@@ -19,6 +19,7 @@ import { belowMinimum, gateTuples, holderTuples, minTrusts, setMinTrust, trusted
 import { apiTokenBoxCheck, apiTokenCheck, approvalTuples, artifactObject, gitlabIntakeActorCheck, intakeActorCheck, itemObject, linkObject, machineTerminalCheck, profileOf, relayCheck, requesterObject, searchHitCheck, requesterTuples, runningTuple, assetObject, sharedSecretCheck, shareTuples, systemSecretCheck, terminalCheck, userObject, vaultGrantObject, keyedByEmail } from './objects.ts';
 import { requesterCopy, requesterRows, requesterText, standing, templateOnPath } from './requesters.ts';
 import { AccessEditError, requestProblem } from './edits.ts';
+import { pushStore } from './store.ts';
 
 /** A job is live while it is claimed, running, waiting on an answer or on its own wait (issue #483): parked, operator-led, ended or not yet started, it gets nothing. */
 export const LIVE_JOB_STATUSES: readonly JobStatus[] = ['claimed', 'running', 'waiting_answer', 'waiting_on'];
@@ -26,7 +27,7 @@ export const LIVE_JOB_STATUSES: readonly JobStatus[] = ['claimed', 'running', 'w
 export const ACCESS_SYNC_MS = 30_000;
 /** How often who is live is compared with what OpenFGA was given: a job started or ended, a box joined or left (issue #581). */
 export const REQUESTERS_CHECK_MS = 2_000;
-const STORE_NAME = 'hopper', DECISIONS_SHOWN = 50, REVOKED_SHOWN = 20;
+const DECISIONS_SHOWN = 50, REVOKED_SHOWN = 20;
 export const NOT_CONFIGURED = 'OpenFGA is not set up: set HOPPER_OPENFGA_URL (docs/deploy.md "Access: OpenFGA")';
 
 export { AccessEditError, requestProblem } from './edits.ts';
@@ -43,7 +44,8 @@ export interface AccessOptions {
   /** Who is live now, per user (issue #581): written to OpenFGA, and what a requester may ask by. */
   requesters(): LiveRequesters[];
   logger: { warn(line: string): void };
-  syncMs?: number;
+  /** `storeId`: the provisioned store (issue #2988, HOPPER_OPENFGA_STORE_ID, `src/authz/store.ts`), used as it is, never made; unset, the hopper makes and keeps its own. */
+  syncMs?: number; storeId?: string;
   /** Every user's vault templates (issue #584), each with that user's blast-radius rules: what a template's rating reads beside its approvals. */
   templates?: () => { name: string; scope: TemplateScope; rules: RadiusRules }[];
   /** Every user's live artifact shares (issue #624): written to OpenFGA as viewers. */
@@ -114,8 +116,7 @@ export function createAccess(o: AccessOptions): Access {
   const liveKey = (): string => keyOf([...requesterTuples(o.requesters()), ...liveShareTuples(), ...liveTrustTuples()].map(emailKeyed()));
 
   const push = async (server: AuthorizationServer): Promise<void> => {
-    const storeId = await server.store(o.repo.state(KEY_STORE), STORE_NAME);
-    if (storeId !== o.repo.state(KEY_STORE)) o.repo.setState(KEY_STORE, storeId);
+    const storeId = await pushStore(server, o.storeId, { get: () => o.repo.state(KEY_STORE), set: (id) => o.repo.setState(KEY_STORE, id) });
     const m = model();
     const gaps = gapsOf(m.dsl);
     if (gaps.length > 0) throw new Error(`the access model lacks what the hopper writes or asks: ${gaps.join(', ')}: save one that has them in Users & access → Access`);

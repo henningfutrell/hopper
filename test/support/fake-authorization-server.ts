@@ -2,7 +2,7 @@
 // that evaluates the authorization model's JSON as OpenFGA does for the rewrites a model uses here (direct, computed
 // userset, tuple to userset, union, intersection, difference), contextual tuples included. `reachable = false` makes
 // every call fail as a refused connection; `refuseModels` makes a model write fail as OpenFGA's validation does.
-import { randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type { AuthorizationServer, RelationshipTuple } from '../../src/domain/ports.ts';
 import { authorizationServerRefusal } from '../../src/domain/ports.ts';
 
@@ -27,6 +27,9 @@ export interface FakeAuthorizationServer extends AuthorizationServer {
   storeTuples(storeId: string): Map<string, RelationshipTuple>;
 }
 
+/** A store id as OpenFGA makes one: a ULID, 26 characters of Crockford's base32. */
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const ulid = (): string => [...randomBytes(26)].map((b) => CROCKFORD[b % 32]).join('');
 const key = (t: RelationshipTuple) => `${t.subject} ${t.relation} ${t.object}`;
 const typeOf = (object: string) => object.slice(0, object.indexOf(':'));
 
@@ -43,9 +46,13 @@ export function createFakeAuthorizationServer(): FakeAuthorizationServer {
     async store(id, name) {
       reach();
       if (id !== undefined && stores.has(id)) return id;
-      const created = `store-${randomUUID()}`;
+      const created = ulid();
       stores.set(created, { name, models: new Map(), tuples: new Map() });
       return created;
+    },
+    async hasStore(id) {
+      reach();
+      return stores.has(id);
     },
     async writeModel(storeId, model) {
       reach();

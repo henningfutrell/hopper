@@ -1,5 +1,5 @@
 // OpenFGA at the AuthorizationServer seam (issue #559), through its SDK (@openfga/sdk). The server is
-// HOPPER_OPENFGA_URL; its preshared key, when it has one, comes from the runtime (HOPPER_OPENFGA_KEY or the file
+// HOPPER_OPENFGA_URL, its store the hopper's own or the one HOPPER_OPENFGA_STORE_ID names (issue #2988); its preshared key, when it has one, comes from the runtime (HOPPER_OPENFGA_KEY or the file
 // HOPPER_OPENFGA_KEY_FILE names), read at each call so a rotated key counts: one client per key. No retries: a check
 // that cannot be answered at once (the SDK's 10 s connection timeout) is a deny (fail closed), not a wait.
 import { CredentialsMethod, FgaApiNotFoundError, FgaApiValidationError, OpenFgaClient, type UserClientConfigurationParams } from '@openfga/sdk';
@@ -45,6 +45,15 @@ export function createOpenFgaServer(o: { url: string; key: () => string | undefi
         }
       }
       return call(async () => (await fga().createStore({ name })).id);
+    },
+    async hasStore(id) {
+      try {
+        await fga().getStore({ storeId: id });
+        return true;
+      } catch (e) {
+        if (e instanceof FgaApiNotFoundError || e instanceof FgaApiValidationError) return false;
+        return rethrow(e);
+      }
     },
     writeModel: (storeId, model) => call(async () =>
       (await fga().writeAuthorizationModel(model as Parameters<OpenFgaClient['writeAuthorizationModel']>[0], { storeId })).authorization_model_id),
