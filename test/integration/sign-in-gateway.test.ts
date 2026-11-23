@@ -58,6 +58,26 @@ describe('a gateway realm, checking JWTs', () => {
     expect(unverified.text).toMatch(/no role/);
   });
 
+  it('a refusal for no role names what the role rules match on: subject, username and its claim, email, groups (issue #2996)', async () => {
+    const idp = await oidcIdp(h);
+    const { app, origin, host } = await start({ version: 1, realms: [gatewayRealm(idp, { admin: { usernames: ['grace'] } })] });
+    const res = await exchange(app, host, origin, bearer(await tokenFrom(idp, { preferred_username: 'ada', email: 'ada@example.com', email_verified: true, groups: ['devs'] })));
+    expect(res.status).toBe(403);
+    expect(JSON.parse(res.text).error).toBe('signed in at the gateway, but the sign-in config grants this account no role '
+      + '(Edge gateway: subject "ada-1", username "ada" (from preferred_username), email "ada@example.com", groups "devs")');
+  });
+
+  it('a token without preferred_username takes its username from username, else from the email (issue #2996)', async () => {
+    const idp = await oidcIdp(h);
+    const { app, origin, host } = await start({ version: 1, realms: [gatewayRealm(idp, { admin: { usernames: ['ada'] } })] });
+    const named = await exchange(app, host, origin, bearer(await tokenFrom(idp, { username: 'ada' })));
+    expect((await session(app, tokenOf(named.text))).user.role).toBe('admin');
+    const mailed = await exchange(app, host, origin, bearer(await tokenFrom(idp, { sub: 'ada-2', email: 'ada@example.com', email_verified: true })));
+    expect((await session(app, tokenOf(mailed.text))).user.role).toBe('admin');
+    const refused = await exchange(app, host, origin, bearer(await tokenFrom(idp, { sub: 'grace-1', email: 'grace@example.com', email_verified: true })));
+    expect(JSON.parse(refused.text).error).toMatch(/username "grace" \(from email \(local part\)\)/);
+  });
+
   it('no token on the request: refused', async () => {
     const idp = await oidcIdp(h);
     const { app, origin, host } = await start({ version: 1, realms: [gatewayRealm(idp, { defaultRole: 'admin' })] });

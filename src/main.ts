@@ -18,7 +18,7 @@ import type { MachineSnapshot, User } from './domain/types.ts';
 import { daemonHelp, loadConfig, type Config } from './config.ts';
 import { logStartup } from './startup-log.ts';
 import { createAllowedHosts, createCloudLinkParts, createDisplayName, createInfraApplies, createSourceEmailMatch, createGitHubDeliveries, createRemoteAccess, createServer, kernelVersion, runsInWsl, tunnelCaller, type TailnetSource } from './http/index.ts'; import { watchHeld, type HeldWatch } from './http/event-loop-held.ts'; import type { CloudLinkTarget } from './http/cloud-link-agent.ts';
-import { claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
+import { claimGatewayAdmin, claimGithubAdmin, createSignIn, prepareSignIn, type AuthConfig } from './auth/index.ts';
 import { readRelease } from './client/release.ts'; import { inCluster } from './client/cluster.ts';
 import { BUILTIN_PLUGINS } from './plugins/builtin.ts';
 import { createPluginStore, DEFAULT_PLUGIN_STORE, installedDirOf } from './plugins/plugin-store.ts';
@@ -270,7 +270,7 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   }
   const signIn = createSignIn({
     config: auth, clock, origin: () => config.publicUrl ?? `http://localhost:${port}`, apps: config.hopperApps,
-    claimGithubAdmin: (who) => claimGithubAdmin(instance, who), accounts: instance.localAccounts,
+    claimGithubAdmin: (who) => claimGithubAdmin(instance, who), claimGatewayAdmin: (who) => claimGatewayAdmin(instance, who, clock.now()), accounts: instance.localAccounts,
     githubClientSecret: () => { try { return secret(CLIENT_SECRET_VARIABLE); } catch { return undefined; } },
   });
   // Self-update (issue #44): the restart reaches app.stop() through `restartApp`, set below.
