@@ -278,3 +278,47 @@ describe('access: OpenFGA decides each mint (issue #559)', () => {
     expect((await edit(a, token, { action: 'approve', template: 'kubectl-diag', operation: 'read', asset: { kind: 'cluster', name: 'a#b' } })).status).toBe(400);
   });
 });
+
+// Issue #2988: a platform that provisions one OpenFGA store per app gives the hopper its id. The hopper uses that store,
+// writes its model into it once, and never makes a store of its own; a store id OpenFGA does not hold stops the start.
+describe('a provisioned OpenFGA store (issue #2988)', () => {
+  const start = (server: FakeAuthorizationServer, storeId: string) => {
+    const db = tempDbPath();
+    cleanups.push(db.cleanup);
+    return startTestApp({ dbPath: db.dbPath, env: { HOPPER_OPENFGA_STORE_ID: storeId }, plugins: { machines: lanes(2) }, seams: { authorizationServer: server } });
+  };
+
+  it('uses the store HOPPER_OPENFGA_STORE_ID names: makes no store, writes the model once, and checks in it', async () => {
+    const server = createFakeAuthorizationServer();
+    const storeId = await server.store(undefined, 'provisioned');
+    const a = await start(server, storeId);
+    apps.push(a);
+    const token = await a.login();
+    expect((await approve(a, token)).status).toBe(200);
+    expect((await check(a, token, 'read')).body).toMatchObject({ allowed: true });
+    expect((await check(a, token, 'write')).body).toMatchObject({ allowed: false });
+    expect((await view(a, token)).status).toMatchObject({ state: 'connected', storeId });
+    expect([...server.stores.keys()]).toEqual([storeId]);
+    expect(server.stores.get(storeId)!.models.size).toBe(1);
+  });
+
+  it('stops the start when OpenFGA holds no store of that id, and makes none', async () => {
+    const server = createFakeAuthorizationServer();
+    await expect(start(server, '01JZZZZZZZZZZZZZZZZZZZZZZZ')).rejects.toThrow(/no store 01JZZZZZZZZZZZZZZZZZZZZZZZ, the one HOPPER_OPENFGA_STORE_ID names/);
+    expect(server.stores.size).toBe(0);
+  });
+
+  it('starts while OpenFGA cannot be reached, and every check is a deny until it can', async () => {
+    const server = createFakeAuthorizationServer();
+    const storeId = await server.store(undefined, 'provisioned');
+    server.reachable = false;
+    const a = await start(server, storeId);
+    apps.push(a);
+    const token = await a.login();
+    expect((await view(a, token)).status).toMatchObject({ state: 'unreachable' });
+    server.reachable = true;
+    expect((await approve(a, token)).status).toBe(200);
+    expect((await check(a, token, 'read')).body).toMatchObject({ allowed: true });
+    expect([...server.stores.keys()]).toEqual([storeId]);
+  });
+});

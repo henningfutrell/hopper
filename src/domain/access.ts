@@ -271,6 +271,8 @@ export const ACCESS_UNAVAILABLE = 'access checks are unavailable: OpenFGA is not
 export interface AuthorizationServer {
   /** The store `id` names, or a new one named `name` when `id` is absent or the server holds no such store. */
   store(id: string | undefined, name: string): Promise<string>;
+  /** Whether the server holds the store `id` names (issue #2988): a provisioned store is used, never made. */
+  hasStore(id: string): Promise<boolean>;
   /** A new authorization model (OpenFGA's JSON); its id. */
   writeModel(storeId: string, model: object): Promise<string>;
   /** Every tuple the store holds. */

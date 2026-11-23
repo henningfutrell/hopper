@@ -10,7 +10,7 @@ import { createMachineLinks } from './machines/links.ts'; import { LANE_POOL_KEY
 import { hopperAddresses, wslHopperUrl } from './machines/hopper-address.ts';
 import { createAccess, LIVE_JOB_STATUSES, type Access } from './authz/service.ts';
 import { createCredentialMinter } from './vault/minter.ts';
-import { createOpenFgaServer } from './authz/openfga.ts'; import { createSolrIndex } from './search/solr.ts'; import type { SearchIndex } from './domain/search.ts';
+import { createOpenFgaServer } from './authz/openfga.ts'; import { checkProvisionedStore } from './authz/store.ts'; import { createSolrIndex } from './search/solr.ts'; import type { SearchIndex } from './domain/search.ts';
 import { fileURLToPath } from 'node:url';
 import type { AuthorizationServer, ContainerRuntime, InstanceStore, ReleaseCheck, Restarter, StackProbe, UpdateBuilder, Updater } from './domain/ports.ts';
 import { machineOfLane } from './domain/raised-by.ts';
@@ -157,6 +157,9 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
     instance.close();
     throw e;
   }
+  // OpenFGA (issue #559), and the store provisioned for the hopper (issue #2988): one OpenFGA does not hold stops the start.
+  const fgaKey = runtimeSecrets(env), fgaServer = seams.authorizationServer ?? (config.openFgaUrl ? createOpenFgaServer({ url: config.openFgaUrl, key: () => fgaKey('HOPPER_OPENFGA_KEY') }) : undefined);
+  try { if (fgaServer && config.openFgaStoreId !== undefined) await checkProvisionedStore(fgaServer, config.openFgaStoreId, logger); } catch (e) { instance.close(); throw e; }
   // The leftover default admin account goes into the first GitHub admin's user (issue #265), before any runtime.
   try {
     const folded = foldLeftoverAdmin(instance);
@@ -185,10 +188,8 @@ export async function startApp(config: Config, seams: AppSeams = {}): Promise<Ap
   // Access (issue #559): the instance's. Who is live (issue #581): each user's live jobs, each on the machine it runs on
   // and with the level its stamp verifies at (issue #655, part 15), and each box with its template; a template is rated from every user's vault templates of its name (issue #584).
   // Made before the runtimes: each user's vault approves profiles in it.
-  const fgaKey = runtimeSecrets(env);
   const access = createAccess({
-    repo: instance.access, clock, logger,
-    server: seams.authorizationServer ?? (config.openFgaUrl ? createOpenFgaServer({ url: config.openFgaUrl, key: () => fgaKey('HOPPER_OPENFGA_KEY') }) : undefined),
+    repo: instance.access, clock, logger, server: fgaServer, ...(config.openFgaStoreId === undefined ? {} : { storeId: config.openFgaStoreId }),
     jobStatus: (userId, jobId) => runtimes.get(userId)?.store.jobs.get(jobId)?.status,
     requesters: () => runtimes.all().map((rt) => ({
       userId: rt.user.id,
