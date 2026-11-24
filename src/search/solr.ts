@@ -49,8 +49,8 @@ const TIMEOUT_MS = { read: 5_000, write: 15_000 };
 export function solrRefusal(status: 401 | 403, sent: boolean): string {
   if (status === 403) return 'Solr refused the request (403): the Solr user may not use this core or collection; give it a permission on the collection HOPPER_SOLR_URL names';
   return sent
-    ? 'Solr refused the credentials (401): check HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD, or the userinfo of HOPPER_SOLR_URL'
-    : 'Solr refused the credentials (401): Solr asks for a sign-in and none was sent; set HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD';
+    ? 'Solr refused the credentials (401): check HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD, the userinfo of HOPPER_SOLR_URL, or the credentials on Settings → Search'
+    : 'Solr refused the credentials (401): Solr asks for a sign-in and none was sent; set HOPPER_SOLR_USERNAME and HOPPER_SOLR_PASSWORD, or the credentials on Settings → Search';
 }
 
 /**

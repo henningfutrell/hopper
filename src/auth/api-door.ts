@@ -8,6 +8,7 @@ import type { AccountIdentity } from '../connected-accounts/identity.ts';
 import type { Identity, UiRole } from '../domain/types.ts';
 import type { DeviceRealmConfig } from './config.ts';
 import { tokenIn } from './gateway.ts';
+import { matchedOn } from './roles.ts';
 import type { GatewayCheckOutcome } from './index.ts';
 
 /**
@@ -74,7 +75,7 @@ export function createTokenCheck(o: {
     }
     const who = githubIdentity(r, id);
     const role = o.roleOf(who);
-    if (role === null) return { ok: false, status: 403, error: 'signed in, but the sign-in config grants this account no role', who };
+    if (role === null) return { ok: false, status: 403, error: `signed in, but the sign-in config grants this account no role (${r.label}: ${matchedOn(who)})`, who };
     return { ok: true, who, role, via: 'github' };
   }
 
