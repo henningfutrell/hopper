@@ -146,7 +146,7 @@ export type { ActionAskView, ActionGrantView } from '../../../src/domain/action-
 export type { BastionView } from '../../../src/domain/bastions.ts';
 export type { VaultGrant, VaultGrantAsk, VaultGrantItem, VaultGrantView } from '../../../src/domain/vault-grants.ts';
 export type { VaultScopeGrantView, VaultScopeJob } from '../../../src/domain/vault-scope-grants.ts';
-export type { SearchAnswer, SearchFacet, SearchState, SearchStatus, SuggestAnswer } from '../../../src/domain/search.ts';
+export type { SearchAnswer, SearchFacet, SearchState, SearchStatus, SolrCredentialsView, SuggestAnswer } from '../../../src/domain/search.ts';
 export type { JobTranscript, TranscriptPart, TranscriptTurn } from '../../../src/domain/transcript.ts';
 export type { JobTokenView, TokenRollupRow, TokenTotals } from '../../../src/domain/token-usage.ts';
 export type { TokenBudgetSettings } from '../../../src/domain/token-budget.ts'; export type { JobBudget, ModelBudget, ModelRoutingSettings } from '../../../src/domain/model-routing.ts';
