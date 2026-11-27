@@ -309,10 +309,13 @@ is only in the hopper's environment, given at launch.
   compose network reaches it by; set `HOPPER_PUBLIC_URL` for one.
 - **Over Tailscale** (issue #1024, docs/design.md "Reaching the UI across a tailnet"). With `HOPPER_BIND=0.0.0.0`, a
   device on the host's tailnet reaches the UI at the host's MagicDNS name or tailnet address with the port, after sign-in.
-  The hopper finds those names itself from tailscaled, which a container sees only when the host's socket directory is
-  mounted: in `compose.override.yaml`, `services.hopper.volumes: ["/var/run/tailscale:/var/run/tailscale:ro"]`. Without
-  it, add the names in Settings → Allowed hosts. A tailnet peer whose address the container sees as `100.64.0.0/10` needs
-  that mount too, or that range in `HOPPER_LAN_PEERS`.
+  The hopper finds those names itself. In a container it sees neither tailscaled nor the Tailscale interface, so the user
+  service ("The user service" below) reads them on the host: at each start and every minute it writes
+  `tailscale status --json --peers=false` (this host only, no peers) to `$XDG_RUNTIME_DIR/hopper-service/tailnet.json`,
+  which `compose.yaml` mounts read-only into the hopper (`HOPPER_TAILNET_HOST_FILE`). With no `tailscale` on the host the
+  file is empty. Then a tailnet peer is a LAN peer too, as on a host install. Without the service (Docker), mount the host's
+  socket directory in `compose.override.yaml`: `services.hopper.volumes: ["/var/run/tailscale:/var/run/tailscale:ro"]`, or
+  add the names in Settings → Allowed hosts.
 - **Health:** the image's HEALTHCHECK reads `/api/health` on loopback inside the container. While the event loop is held, that read times out; the **health port** still answers inside the container (`curl 127.0.0.1:4791/api/health`: 503 and `eventLoopHeldMs`, issue #1383, docs/design.md "Reading the held event loop"). It is not published. `HOPPER_HEALTH_PORT` moves it; a host install has none unless it is set. An admin reads the process's memory and event-loop delay at `GET /api/process`.
 - **Keep it running.** Every container restarts unless stopped. Rootless Podman has no daemon, so
   nothing starts them after a reboot by itself: the user service does, with linger on ("The user service" below).

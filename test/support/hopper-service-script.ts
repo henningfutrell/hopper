@@ -1,5 +1,5 @@
 // The harness of scripts/hopper-service.sh's tests (test/scripts/hopper-service*.test.ts): podman, systemctl, loginctl,
-// journalctl and notify-send are stubs on PATH that record each call; no unit of this machine is written or started.
+// journalctl, notify-send and tailscale are stubs on PATH that record each call; no unit of this machine is written or started.
 // Nothing leaves this process tree. The test file removes `dirs` and closes `servers` after each test.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -18,6 +18,8 @@ const PODMAN = `#!/bin/sh
 file=''
 [ -n "\${HOPPER_MASTER_KEY_HOST_FILE:-}" ] && file=" | file=$(cat "$HOPPER_MASTER_KEY_HOST_FILE") at \${HOPPER_MASTER_KEY_FILE:-}"
 printf 'podman %s | key=%s%s\\n' "$*" "\${HOPPER_MASTER_KEY:-}" "$file" >> "$STUB_LOG"
+# This host's tailnet as compose is given it (issue #1024): the file, in a log of its own.
+[ -n "\${HOPPER_TAILNET_HOST_FILE:-}" ] && printf 'podman %s | tailnet=%s\\n' "$*" "$HOPPER_TAILNET_HOST_FILE" >> "$STUB_LOG.tailnet"
 case "$*" in
   "run --rm "*" hopper master-key script") [ -n "\${STUB_MASTER_KEY_SCRIPT:-}" ] && cat "$STUB_MASTER_KEY_SCRIPT" ;;
   "ps -aq --filter label=io.podman.compose.project=hopper") [ "\${STUB_STACK:-}" = podman-compose ] && echo 0123456789ab ;;
@@ -62,6 +64,12 @@ printf 'journalctl %s\\n' "$*" >> "$STUB_LOG"
 echo 'hopper-service: start the stack'
 echo 'hopper-service: no master key is given, and the hopper keeps data (the volume hopper_postgres): the stack does not start'
 `;
+// This host's tailscale (issue #1024): STUB_TAILNET's text as its status, else none (it is not up). Never this machine's.
+const TAILSCALE = `#!/bin/sh
+printf 'tailscale %s\\n' "$*" >> "$STUB_LOG.tailscale"
+[ -n "\${STUB_TAILNET:-}" ] || exit 1
+cat "$STUB_TAILNET"
+`;
 const NOTIFY_SEND = `#!/bin/sh
 printf 'notify-send %s\\n' "$*" >> "$STUB_LOG"
 `;
@@ -73,7 +81,7 @@ export function folder(o: { podmanCompose?: boolean } = {}) {
   writeFileSync(join(dir, 'compose.yaml'), readFileSync(join(ROOT, 'compose.yaml')));
   const bin = join(dir, '.bin');
   mkdirSync(bin);
-  const tools: Record<string, string> = { podman: PODMAN, systemctl: SYSTEMCTL, loginctl: LOGINCTL, journalctl: JOURNALCTL, 'notify-send': NOTIFY_SEND, ...(o.podmanCompose ? { 'podman-compose': PODMAN_COMPOSE } : {}) };
+  const tools: Record<string, string> = { podman: PODMAN, systemctl: SYSTEMCTL, loginctl: LOGINCTL, journalctl: JOURNALCTL, 'notify-send': NOTIFY_SEND, tailscale: TAILSCALE, ...(o.podmanCompose ? { 'podman-compose': PODMAN_COMPOSE } : {}) };
   for (const [name, body] of Object.entries(tools)) { writeFileSync(join(bin, name), body); chmodSync(join(bin, name), 0o755); }
   const home = join(dir, '.home');
   // Short, for a socket path.

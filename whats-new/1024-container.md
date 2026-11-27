@@ -1,0 +1,1 @@
+- A hopper in containers on a Tailscale host now answers on its Tailscale name and address by itself, so other devices on your tailnet can open it and join machines with no manual step.

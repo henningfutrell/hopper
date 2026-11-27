@@ -1,11 +1,13 @@
-// The master key as a file (issue #1487): hopper-compose.service writes the key to a file in memory and names it, so no
-// container's config holds the key. Asserted on the rendered form compose runs (`docker compose config`), from an empty
+// The master key as a file (issue #1487), and this host's tailnet as a file (issue #1024): hopper-compose.service writes
+// them to files in memory and names them, so no container's config holds the key. Asserted on the rendered form compose
+// runs (`docker compose config`), from an empty
 // directory, as test/scripts/compose.test.ts does.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { TAILNET_STATUS_FILES } from '../../src/http/tailnet.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 
@@ -48,5 +50,13 @@ describe('compose.yaml: the master key as a file (issue #1487)', () => {
       expect(s.volumes).toContainEqual(expect.objectContaining({ source: host, target: '/run/hopper-master-key', read_only: true }));
       expect(s.security_opt).toContain('label=disable');
     }
+  });
+});
+
+describe('compose.yaml: this host\'s tailnet as a file (issue #1024)', () => {
+  it('mounts the file hopper-service.sh names, read-only, where the hopper reads it; else /dev/null', () => {
+    expect(svc(render(), 'hopper').volumes).toContainEqual(expect.objectContaining({ source: '/dev/null', target: TAILNET_STATUS_FILES[0], read_only: true }));
+    const host = '/run/user/1000/hopper-service/tailnet.json';
+    expect(svc(render({ HOPPER_TAILNET_HOST_FILE: host }), 'hopper').volumes).toContainEqual(expect.objectContaining({ source: host, target: TAILNET_STATUS_FILES[0], read_only: true }));
   });
 });
