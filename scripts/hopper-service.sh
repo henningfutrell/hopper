@@ -38,14 +38,20 @@
 #                                machine for example, which stops with its host and which nothing else starts. A container
 #                                of the hopper's compose project, and a sandbox (a label io.hopper.*), is never one. One to
 #                                keep stopped: take it off the network (podman network disconnect hopper_default <name>).
-#                                Its stop takes the stack down and removes the file; the volumes and the data stay.
+#                                This host's tailnet (issue #1024): the container sees neither tailscaled's socket nor
+#                                the Tailscale interface, so the start writes `tailscale status --json --peers=false` to
+#                                $XDG_RUNTIME_DIR/hopper-service/tailnet.json (empty with no tailscale here), mounted
+#                                read-only into the hopper's container (HOPPER_TAILNET_HOST_FILE). The hopper reads it every
+#                                minute: its MagicDNS name and addresses are LAN names, and tailnet peers LAN peers.
+#                                Its stop takes the stack down and removes the files; the volumes and the data stay.
 #   hopper-compose-alert.service runs when the start fails (OnFailure=, issue #1487): it says what stopped the start in a
 #                                desktop notice (notify-send, when there is one) and gives it to hopper-alert.sh beside
 #                                this file, when there is one, as its one argument: write there what reaches you (a
 #                                webhook, a mail, a phone notice). The hopper is down then, so it cannot tell you itself.
 #   hopper-compose-check.timer   every minute, hopper-compose-check.service checks the published port from this host.
 #                                When the hopper's container runs and its port does not answer, twice, 10 s apart, it
-#                                restarts hopper-compose.service.
+#                                restarts hopper-compose.service. It also writes this host's tailnet again (above), so a
+#                                Tailscale that comes up or changes after the start reaches the hopper within a minute.
 # The settings compose.yaml names (HOPPER_PORT, HOPPER_BIND, COMPOSE_PROFILES, …) that are set where the install runs go
 # into the service as its environment, but never a secret (a name with KEY, TOKEN, SECRET or PASSWORD) and never
 # HOPPER_IMAGE: the update writes the image into compose.yaml. Run the install again to change them.
@@ -299,6 +305,26 @@ launch_key() {
   fi
 }
 
+# This host's tailnet as `tailscale status --json --peers=false` says it (issue #1024): this host's name and addresses only,
+# no peers. Empty when there is no tailscale here, or it does not answer.
+tailnet_status() {
+  command -v tailscale >/dev/null || return 0
+  timeout 10 tailscale status --json --peers=false </dev/null 2>/dev/null || true
+}
+
+# Writes this host's tailnet to the file compose mounts into the hopper's container, in place: a new file would not reach
+# a container that has the old one mounted. Only when it changed. Nothing when there is no runtime folder.
+write_tailnet() {
+  local dir; dir="$(key_dir)"
+  [ -n "$dir" ] || return 0
+  (umask 077 && mkdir -p "$dir") && chmod 700 "$dir" || { say "cannot make $dir for this host's tailnet"; return 0; }
+  local file="$dir/tailnet.json" now
+  now="$(tailnet_status)"
+  [ -f "$file" ] && [ "$(cat "$file")" = "$now" ] && return 0
+  # The folder keeps out every other user of this host; the file is readable by the container's own user.
+  (umask 022 && printf '%s' "$now" >"$file") || say "cannot write this host's tailnet to $file"
+}
+
 sealed() { [ -f master-key.sh ] && { [ -f hopper-master-key.cred ] || [ -f hopper-master-key.enc ]; }; }
 
 # ExecStart: the stack, made again under this service, so its port belongs to the service and not to a caller.
@@ -341,6 +367,8 @@ up() {
     export HOPPER_MASTER_KEY_HOST_FILE="$dir/master-key" HOPPER_MASTER_KEY_FILE=/run/hopper-master-key
     unset HOPPER_MASTER_KEY
   fi
+  write_tailnet
+  [ -z "$dir" ] || export HOPPER_TAILNET_HOST_FILE="$dir/tailnet.json"
   compose up -d </dev/null
   start_joined
 }
@@ -397,7 +425,7 @@ start_with_key() {
 stop() {
   local status=0 dir; dir="$(key_dir)"
   compose down </dev/null || status=$?
-  [ -z "$dir" ] || rm -f "$dir/master-key"
+  [ -z "$dir" ] || rm -f "$dir/master-key" "$dir/tailnet.json"
   return "$status"
 }
 
@@ -437,6 +465,7 @@ check() {
     say "$UNIT is not active: nothing to check"
     return 0
   fi
+  write_tailnet
   local id
   id="$(podman ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter label=com.docker.compose.service=hopper 2>/dev/null | head -n 1 || true)"
   [ -n "$id" ] || { say 'the hopper container does not run: nothing to check'; return 0; }
