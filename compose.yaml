@@ -228,6 +228,13 @@ services:
         source: ${HOPPER_MASTER_KEY_HOST_FILE:-/dev/null}
         target: /run/hopper-master-key
         read_only: true
+      # This host's tailnet (issue #1024): HOPPER_TAILNET_HOST_FILE, `tailscale status --json --peers=false` as
+      # hopper-compose.service writes it at each start and every minute, in memory. The hopper reads it every minute: this
+      # host's MagicDNS name and tailnet addresses are then LAN names, and tailnet peers LAN peers. Unset, /dev/null: none.
+      - type: bind
+        source: ${HOPPER_TAILNET_HOST_FILE:-/dev/null}
+        target: /run/hopper-tailnet/status.json
+        read_only: true
     # podman.socket makes the socket readable and writable by your group (mode 0660). In a rootless container your group is
     # group 0, so the hopper's user joins group 0 to reach the socket.
     group_add: ["0"]
